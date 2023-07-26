@@ -1,0 +1,28 @@
+[package]
+name = "mediathingyrust"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-trait = "0.1.72"
+axum = "0.6.19"
+chrono = { version = "0.4.26", features = ["serde"] }
+color-eyre = "0.6.2"
+eyre = "0.6.8"
+html-escape = "0.2.13"
+notify = "6.0.1"
+parse-size = { version = "1.0.0", features = ["std"] }
+serde = { version = "1.0.175", features = ["derive"] }
+sqlx = {version ="0.7.1", features = ["sqlite", "runtime-tokio", "chrono", "migrate"]}
+tokio = { version = "1.29.1", features = ["full"] }
+tokio-util = "0.7.8"
+toml = "0.7.6"
+tracing = "0.1.37"
+tracing-error = "0.2.0"
+tracing-subscriber = {version = "0.3.17", features = ["env-filter"]}
+walkdir = "2.3.3"
+
+[profile.dev.package.sqlx-macros]
+opt-level = 3

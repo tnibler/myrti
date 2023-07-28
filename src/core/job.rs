@@ -1,8 +1,4 @@
-use std::{
-    collections::HashMap,
-    fmt::Debug,
-    sync::{Arc, Mutex},
-};
+use std::fmt::Debug;
 
 use async_trait::async_trait;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -19,30 +15,26 @@ pub enum JobType {
 }
 
 pub enum JobHandleType {
-    Indexing(AJobHandle<IndexingJob>),
-    Thumbnail(AJobHandle<ThumbnailJob>),
+    Indexing(JobHandle<IndexingJob>),
+    Thumbnail(JobHandle<ThumbnailJob>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobProgress {
+    pub percent: Option<i32>,
+    pub description: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JobStatus {
     NotStarted,
-    Running,
+    Running(JobProgress),
     Complete,
-    Failed,
+    Failed { msg: String },
     Canceled,
 }
 
-pub struct JobHandle {
-    pub cancel: CancellationToken,
-    pub typed_handle: JobHandleType,
-}
-
-pub struct TypedJobHandle<T: Job> {
-    pub status_rx: mpsc::Receiver<JobStatus>,
-    pub join_handle: JoinHandle<T::Result>,
-}
-
-pub struct AJobHandle<T: Job> {
+pub struct JobHandle<T: Job> {
     pub cancel: CancellationToken,
     pub status_rx: mpsc::Receiver<JobStatus>,
     pub join_handle: JoinHandle<T::Result>,

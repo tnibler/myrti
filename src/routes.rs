@@ -3,6 +3,7 @@ use crate::{
     core::scheduler::{SchedulerEvent, UserRequest},
     eyre::Result,
     http_error::HttpError,
+    job::indexing_job::IndexingJobParams,
     model::AssetRootDirId,
     repository,
 };
@@ -12,7 +13,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use eyre::eyre;
+use eyre::{eyre, Context};
 use serde::Deserialize;
 use tracing::info;
 
@@ -41,11 +42,18 @@ async fn post_index_asset_root(
     info!("reindex dir {}", id);
     // let asset_root_dir = repository::asset_root_dir::get_asset_root(&app_state.pool, id).await?;
     // dbg!(&asset_root_dir);
+    let asset_root = repository::asset_root_dir::get_asset_root(&app_state.pool, id)
+        .await
+        .wrap_err("No asset root with this id")?;
+    let params = IndexingJobParams {
+        asset_root,
+        sub_paths: None,
+    };
     app_state
         .scheduler
-        .send(SchedulerEvent::UserRequest(UserRequest::ReindexFullRoot {
-            id,
-        }))
+        .send(SchedulerEvent::UserRequest(
+            UserRequest::ReindexAssetRoots { params },
+        ))
         .await
         .unwrap();
     Ok(())

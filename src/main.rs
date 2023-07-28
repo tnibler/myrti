@@ -88,13 +88,7 @@ async fn post_cancel(
     query: Query<QueryCancel>,
     app_state: State<SharedState>,
 ) -> Result<impl IntoResponse, HttpError> {
-    app_state
-        .scheduler
-        .send(SchedulerEvent::CancelJob {
-            id: JobId(query.0.id),
-        })
-        .await
-        .unwrap();
+    app_state.monitor.cancel_job(JobId(query.0.id)).await?;
     Ok(())
 }
 
@@ -102,7 +96,7 @@ async fn get_status(
     query: Query<QueryCancel>,
     app_state: State<SharedState>,
 ) -> Result<impl IntoResponse, HttpError> {
-    let status = app_state.monitor.lock().await.get_status(JobId(query.id))?;
+    let status = app_state.monitor.get_status(JobId(query.id)).await?;
     Ok(format!("{:#?}", status))
 }
 

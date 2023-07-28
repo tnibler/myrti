@@ -44,7 +44,6 @@ INSERT INTO Assets (id, ty, root_dir_id, file_path, file_created_at, file_modifi
             thumb_path_jpg,
             thumb_path_webp,
         ).execute(pool).await?;
-    debug!("inserted, last row id {}", result.last_insert_rowid());
     let rowid = result.last_insert_rowid();
     match &asset.asset {
         Asset::Image {} => {

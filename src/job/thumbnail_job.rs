@@ -3,7 +3,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    core::job::{AJobHandle, Job, JobHandleType, JobStatus},
+    core::job::{Job, JobHandle, JobHandleType, JobStatus},
     model::AssetId,
     repository::pool::DbPool,
 };
@@ -30,7 +30,7 @@ impl Job for ThumbnailJob {
         let cancel = CancellationToken::new();
         let cancel_copy = cancel.clone();
         let join_handle = tokio::spawn(async move { self.run(tx).await });
-        let handle: AJobHandle<Self> = AJobHandle {
+        let handle: JobHandle<Self> = JobHandle {
             status_rx: rx,
             join_handle,
             cancel,

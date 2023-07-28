@@ -6,9 +6,10 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, info_span, instrument};
 
 use crate::{
-    core::job::{AJobHandle, Job, JobHandle, JobHandleType, JobStatus, TypedJobHandle},
-    model::{AssetId, AssetRootDirId},
-    repository::pool::DbPool,
+    core::job::{Job, JobHandle, JobHandleType, JobProgress, JobStatus},
+    indexing,
+    model::{AssetId, AssetRootDir, AssetRootDirId},
+    repository::{asset_root_dir, pool::DbPool},
 };
 
 pub struct IndexingJob {
@@ -17,7 +18,7 @@ pub struct IndexingJob {
 }
 
 pub struct IndexingJobParams {
-    pub asset_root_id: Vec<AssetRootDirId>,
+    pub asset_root: AssetRootDir,
     pub sub_paths: Option<Vec<PathBuf>>,
 }
 
@@ -26,7 +27,6 @@ impl IndexingJob {
         IndexingJob { params, pool }
     }
 
-    #[instrument(skip(self))]
     async fn run(
         self,
         status_tx: mpsc::Sender<JobStatus>,
@@ -34,34 +34,26 @@ impl IndexingJob {
     ) -> Vec<AssetId> {
         // let span = info_span!("IndexingJob");
         // let _enter = span.enter();
-        info!("indexing job running");
-        status_tx.send(JobStatus::Running).await;
-        let mut interval = tokio::time::interval(Duration::from_secs(1));
-        let mut i = 0;
-        tokio::task::spawn(async move {
-            loop {
-                select! {
-                    _ = cancel.cancelled() => {
-                    status_tx.send(JobStatus::Canceled).await;
-                    return vec![];
-                }
-                    _ = interval.tick() => {
-                        i += 1;
-                        info!("doing indexing lalalala");
-                        if i >= 20 {
-                            if self.params.asset_root_id[0].0 == 3 {
-                                status_tx.send(JobStatus::Failed).await;
-                                return vec![];
-                            }
-                            status_tx.send(JobStatus::Complete).await;
-                            return vec![AssetId(1), AssetId(2), AssetId(3)];
-                        }
-                    }
-                }
+        let mut asset_ids: Vec<AssetId> = Vec::new();
+        status_tx.send(JobStatus::Running(JobProgress {
+            percent: None,
+            description: format!(
+                "Indexing asset root {}",
+                self.params.asset_root.path.to_string_lossy()
+            ),
+        }));
+        match indexing::index_asset_root(&self.params.asset_root, &self.pool).await {
+            Ok(new_asset_ids) => {
+                status_tx.send(JobStatus::Complete).await;
+                return new_asset_ids;
             }
-        })
-        .await
-        .unwrap()
+            Err(e) => {
+                status_tx
+                    .send(JobStatus::Failed { msg: e.to_string() })
+                    .await;
+                return asset_ids;
+            }
+        };
     }
 }
 
@@ -74,7 +66,7 @@ impl Job for IndexingJob {
         let cancel = CancellationToken::new();
         let cancel_copy = cancel.clone();
         let join_handle = tokio::spawn(async move { self.run(tx, cancel_copy).await });
-        let handle: AJobHandle<Self> = AJobHandle {
+        let handle: JobHandle<Self> = JobHandle {
             status_rx: rx,
             join_handle,
             cancel,

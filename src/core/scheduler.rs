@@ -12,7 +12,7 @@ use super::{
 use crate::{
     eyre::Result,
     job::indexing_job::{IndexingJob, IndexingJobParams},
-    model::AssetRootDirId,
+    model::{AssetRootDir, AssetRootDirId},
 };
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
@@ -25,13 +25,10 @@ pub enum SchedulerEvent {
     UserRequest(UserRequest),
     JobComplete { id: JobId },
     ConfigChange,
-    CancelJob { id: JobId },
 }
 
 pub enum UserRequest {
-    ReindexFullRoot { id: AssetRootDirId },
-    ReindexPartialRoot { id: AssetRootDirId, path: PathBuf },
-    ReindexAll,
+    ReindexAssetRoots { params: IndexingJobParams },
 }
 
 #[derive(Clone)]
@@ -91,9 +88,7 @@ impl SchedulerImpl {
                         SchedulerEvent::FileSystemChange { changed_files } => todo!(),
                         SchedulerEvent::UserRequest(request) => {
                             match request {
-                                UserRequest::ReindexFullRoot { id } => {
-                                        info!("scheduler received event ReindexFullRoot");
-                                    let params = IndexingJobParams { asset_root_id: vec![id], sub_paths: None };
+                                UserRequest::ReindexAssetRoots { params } => {
                                     self.queue_or_start_indexing(params).await;
                                 },
                                 _ => todo!()
@@ -104,12 +99,6 @@ impl SchedulerImpl {
                             self.queue_jobs_if_required().await;
                         },
                         SchedulerEvent::ConfigChange => todo!(),
-                        // TODO cancelling should be done on the monitor directly so we get the
-                        // result synchrounously
-                        SchedulerEvent::CancelJob { id } => {
-                            info!("cancelling job");
-                            // self.monitor.cancel_job(id);
-                        }
                     }
                 }
             }

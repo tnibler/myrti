@@ -13,7 +13,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use eyre::{eyre, Context};
+use eyre::{Context};
 use serde::Deserialize;
 use tracing::info;
 

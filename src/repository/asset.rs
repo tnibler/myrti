@@ -1,6 +1,6 @@
 use color_eyre::eyre;
 use std::path::Path;
-use tracing::debug;
+
 
 use crate::model::{
     entity::{DbAsset, DbAssetType},
@@ -13,7 +13,7 @@ pub async fn insert_asset(pool: &DbPool, asset: FullAsset) -> eyre::Result<Asset
     // let transaction = self.pool.begin().await.unwrap();
     let ty = match &asset.asset {
         Asset::Image {} => DbAssetType::Image,
-        Asset::Video { dash_manifest_path } => DbAssetType::Video,
+        Asset::Video { dash_manifest_path: _ } => DbAssetType::Video,
     };
     let file_path = asset
         .base

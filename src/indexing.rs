@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::{
     model::*,
-    repository::{self, pool::DbPool, *},
+    repository::{self, pool::DbPool},
 };
 use color_eyre::eyre::Result;
 use tokio::fs;
@@ -67,8 +67,8 @@ async fn index_file(
                     ty,
                     root_dir_id: asset_root.id,
                     file_path: path.to_owned(),
-                    file_created_at: metadata.created()?.into(),
-                    file_modified_at: metadata.modified()?.into(),
+                    file_created_at: metadata.created().ok().map(|t| t.into()),
+                    file_modified_at: metadata.modified().ok().map(|t| t.into()),
                     thumb_path_jpg: None,
                     thumb_path_webp: None,
                 };

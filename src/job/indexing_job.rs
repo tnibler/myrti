@@ -1,15 +1,15 @@
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf};
 
 use async_trait::async_trait;
-use tokio::{select, sync::mpsc};
+use tokio::{sync::mpsc};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, info_span, instrument};
+
 
 use crate::{
     core::job::{Job, JobHandle, JobHandleType, JobProgress, JobStatus},
     indexing,
-    model::{AssetId, AssetRootDir, AssetRootDirId},
-    repository::{asset_root_dir, pool::DbPool},
+    model::{AssetId, AssetRootDir},
+    repository::{pool::DbPool},
 };
 
 pub struct IndexingJob {
@@ -30,11 +30,11 @@ impl IndexingJob {
     async fn run(
         self,
         status_tx: mpsc::Sender<JobStatus>,
-        cancel: CancellationToken,
+        _cancel: CancellationToken,
     ) -> Vec<AssetId> {
         // let span = info_span!("IndexingJob");
         // let _enter = span.enter();
-        let mut asset_ids: Vec<AssetId> = Vec::new();
+        let asset_ids: Vec<AssetId> = Vec::new();
         status_tx.send(JobStatus::Running(JobProgress {
             percent: None,
             description: format!(

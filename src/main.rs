@@ -4,27 +4,27 @@ use crate::core::{
 };
 use axum::{
     extract::{Query, State},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     routing::{get, post},
-    Json, Router,
+    Router,
 };
 use color_eyre::eyre::Context;
 use config::Config;
-use eyre::{self, bail, Result};
+use eyre::{self, Result};
 use http_error::HttpError;
 use repository::pool::DbPool;
 use serde::Deserialize;
-use sqlx::{migrate::MigrateDatabase, Executor, Sqlite, SqlitePool};
+use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 use tokio::{signal, sync::mpsc};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{prelude::*, EnvFilter};
 
 use crate::{
     app_state::{AppState, SharedState},
-    core::scheduler::{Scheduler, SchedulerEvent},
+    core::scheduler::Scheduler,
     model::{AssetRootDir, AssetRootDirId},
 };
 
@@ -46,7 +46,7 @@ mod repository {
 async fn db_setup() -> Result<SqlitePool> {
     let db_url = "sqlite://mediathingy.db";
     if !Sqlite::database_exists(db_url).await.unwrap_or(false) {
-        println!("creating database");
+        info!("Creating database {}", db_url);
         Sqlite::create_database(db_url).await?;
     }
     // } else {

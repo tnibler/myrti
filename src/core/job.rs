@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 
 use async_trait::async_trait;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -8,6 +8,12 @@ use crate::job::{indexing_job::IndexingJob, thumbnail_job::ThumbnailJob};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JobId(pub u64);
+
+impl Display for JobId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("JobId({})", self.0))
+    }
+}
 
 pub enum JobType {
     Indexing(IndexingJob),
@@ -31,7 +37,7 @@ pub enum JobStatus {
     Running(JobProgress),
     Complete,
     Failed { msg: String },
-    Canceled,
+    Cancelled,
 }
 
 pub struct JobHandle<T: Job> {

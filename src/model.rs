@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use color_eyre::eyre;
+
 use serde::Serialize;
 use std::{fmt::Display, path::PathBuf};
 
@@ -37,7 +37,7 @@ impl Display for AssetId {
 
 pub mod entity {
     use super::{AssetId, AssetRootDirId};
-    use chrono::{DateTime, NaiveDateTime, Utc};
+    use chrono::NaiveDateTime;
 
     #[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
     #[repr(i32)]
@@ -58,8 +58,8 @@ pub mod entity {
         pub ty: DbAssetType,
         pub root_dir_id: AssetRootDirId,
         pub file_path: String,
-        pub file_created_at: NaiveDateTime,
-        pub file_modified_at: NaiveDateTime,
+        pub file_created_at: Option<NaiveDateTime>,
+        pub file_modified_at: Option<NaiveDateTime>,
         pub thumb_path_jpg: Option<String>,
         pub thumb_path_webp: Option<String>,
     }
@@ -112,8 +112,8 @@ pub struct AssetBase {
     pub ty: AssetType,
     pub root_dir_id: AssetRootDirId,
     pub file_path: PathBuf,
-    pub file_created_at: DateTime<Utc>,
-    pub file_modified_at: DateTime<Utc>,
+    pub file_created_at: Option<DateTime<Utc>>,
+    pub file_modified_at: Option<DateTime<Utc>>,
     pub thumb_path_jpg: Option<PathBuf>,
     pub thumb_path_webp: Option<PathBuf>,
 }
@@ -136,8 +136,8 @@ impl From<entity::DbAsset> for AssetBase {
             ty: value.ty.into(),
             root_dir_id: value.root_dir_id,
             file_path: value.file_path.into(),
-            file_created_at: value.file_created_at.and_utc(),
-            file_modified_at: value.file_modified_at.and_utc(),
+            file_created_at: value.file_created_at.map(|t| t.and_utc()),
+            file_modified_at: value.file_modified_at.map(|t| t.and_utc()),
             thumb_path_jpg: value.thumb_path_jpg.map(|p| p.into()),
             thumb_path_webp: value.thumb_path_webp.map(|p| p.into()),
         }

@@ -8,8 +8,8 @@ CREATE TABLE IF NOT EXISTS Assets (
   ty  INTEGER NOT NULL CHECK(ty IN (1, 2)),
   root_dir_id INTEGER NOT NULL,
   file_path TEXT NOT NULL UNIQUE,
-  file_created_at DATETIME NOT NULL,
-  file_modified_at DATETIME NOT NULL,
+  file_created_at DATETIME,
+  file_modified_at DATETIME,
   thumb_path_jpg TEXT,
   thumb_path_webp TEXT,
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDirs(id) ON DELETE CASCADE

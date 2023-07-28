@@ -2,7 +2,7 @@ use crate::{
     core::{monitor::Monitor, scheduler::Scheduler},
     repository::pool::DbPool,
 };
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 
 pub struct AppState {
     pub pool: DbPool,

@@ -1,8 +1,5 @@
 use std::{
-    collections::HashMap,
     path::PathBuf,
-    sync::{Arc, Mutex},
-    time::Duration,
 };
 
 use super::{
@@ -12,7 +9,6 @@ use super::{
 use crate::{
     eyre::Result,
     job::indexing_job::{IndexingJob, IndexingJobParams},
-    model::{AssetRootDir, AssetRootDirId},
 };
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
@@ -85,7 +81,7 @@ impl SchedulerImpl {
                 Some(event) = self.events_rx.recv() => {
                     match event {
                         SchedulerEvent::Timer => todo!(),
-                        SchedulerEvent::FileSystemChange { changed_files } => todo!(),
+                        SchedulerEvent::FileSystemChange { changed_files: _ } => todo!(),
                         SchedulerEvent::UserRequest(request) => {
                             match request {
                                 UserRequest::ReindexAssetRoots { params } => {

@@ -1,25 +1,22 @@
+use crate::core::{
+    job::JobId,
+    monitor::{Monitor, MonitorMessage},
+};
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
-use color_eyre::{eyre::Context, owo_colors::colors::xterm::CanCanPink};
+use color_eyre::eyre::Context;
 use config::Config;
 use eyre::{self, bail, Result};
 use http_error::HttpError;
-use indexing::index_asset_root;
-use model::AssetBase;
 use repository::pool::DbPool;
-use scheduler::SchedulerEvent;
 use serde::Deserialize;
 use sqlx::{migrate::MigrateDatabase, Executor, Sqlite, SqlitePool};
 use std::{path::PathBuf, str::FromStr, sync::Arc};
-use tokio::{
-    signal,
-    sync::{mpsc, Mutex},
-};
+use tokio::{signal, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 use tracing_error::ErrorLayer;
@@ -27,18 +24,18 @@ use tracing_subscriber::{prelude::*, EnvFilter};
 
 use crate::{
     app_state::{AppState, SharedState},
+    core::scheduler::{Scheduler, SchedulerEvent},
     model::{AssetRootDir, AssetRootDirId},
-    scheduler::Scheduler,
 };
 
 mod app_state;
 mod config;
+mod core;
 mod http_error;
 mod indexing;
-mod indexing_job;
+mod job;
 mod model;
 mod routes;
-mod scheduler;
 
 mod repository {
     pub mod asset;
@@ -93,10 +90,20 @@ async fn post_cancel(
 ) -> Result<impl IntoResponse, HttpError> {
     app_state
         .scheduler
-        .send(SchedulerEvent::CancelJob { id: query.0.id })
+        .send(SchedulerEvent::CancelJob {
+            id: JobId(query.0.id),
+        })
         .await
         .unwrap();
     Ok(())
+}
+
+async fn get_status(
+    query: Query<QueryCancel>,
+    app_state: State<SharedState>,
+) -> Result<impl IntoResponse, HttpError> {
+    let status = app_state.monitor.lock().await.get_status(JobId(query.id))?;
+    Ok(format!("{:#?}", status))
 }
 
 #[tokio::main]
@@ -121,14 +128,19 @@ async fn main() -> Result<()> {
     let pool = db_setup().await.unwrap();
     store_asset_roots_from_config(&config, &pool).await?;
     // run it with hyper on localhost:3000
-    let scheduler = Scheduler::start();
+    let (monitor_tx, monitor_rx) = mpsc::channel::<MonitorMessage>(1000);
+    let scheduler = Scheduler::start(monitor_tx, pool.clone());
+    let monitor_cancel = CancellationToken::new();
+    let monitor = Monitor::new(monitor_rx, scheduler.tx.clone(), monitor_cancel.clone());
     let shared_state: SharedState = Arc::new(AppState {
         pool: pool.clone(),
         scheduler,
+        monitor,
     });
     let app = Router::new()
         .nest("/api", routes::api_router())
         .route("/cancel", post(post_cancel))
+        .route("/status", get(get_status))
         .with_state(shared_state);
     // .route("/api/assets", get(get_assets))
     // .route("/api/assetRoots", get(get_asset_roots))

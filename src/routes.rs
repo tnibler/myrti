@@ -1,10 +1,10 @@
 use crate::{
     app_state::SharedState,
+    core::scheduler::{SchedulerEvent, UserRequest},
     eyre::Result,
     http_error::HttpError,
     model::AssetRootDirId,
-    repository::{self, asset_root_dir},
-    scheduler::{SchedulerEvent, UserRequest},
+    repository,
 };
 use axum::{
     extract::{Query, State},

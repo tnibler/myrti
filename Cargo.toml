@@ -13,6 +13,7 @@ color-eyre = "0.6.2"
 eyre = "0.6.8"
 futures = "0.3.28"
 html-escape = "0.2.13"
+lazy_static = "1.4.0"
 notify = "6.0.1"
 parse-size = { version = "1.0.0", features = ["std"] }
 serde = { version = "1.0.175", features = ["derive"] }
@@ -27,3 +28,8 @@ walkdir = "2.3.3"
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3
+
+[build-dependencies]
+cc = "1.0.79"
+pkg-config = "0.3.27"
+bindgen = "0.66.1"

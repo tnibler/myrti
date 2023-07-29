@@ -173,3 +173,25 @@ WHERE thumb_path_jpg IS NULL OR thumb_path_webp IS NULL;
     } 
         .into_iter().map(|r| Ok(r.into())).collect()
 }
+
+// pub async fn get_asset(
+//     pool: &DbPool,
+//     id: AssetId
+// ) -> Result<FullAsset> {
+//         let asset_base: AssetBase = sqlx::query_as!(
+//             DbAsset,
+//             r#"
+// SELECT id, ty as "ty: _", root_dir_id, file_path, file_created_at, file_modified_at, thumb_path_jpg, thumb_path_webp FROM Assets
+// WHERE id = ?;
+//     "#, id.0)
+//         // TODO don't collect into vec before mapping
+//             .fetch_one(pool)
+//             .await.and_then(|r| Ok(r.into()))?;
+//     let asset = match asset_base.ty {
+//         crate::model::AssetType::Image => {
+//
+//         },
+//         crate::model::AssetType::Video => {
+//         },
+//     }
+// }

@@ -1,6 +1,4 @@
-use std::{
-    path::PathBuf,
-};
+use std::path::PathBuf;
 
 use super::{
     job::{Job, JobId},
@@ -8,7 +6,11 @@ use super::{
 };
 use crate::{
     eyre::Result,
-    job::indexing_job::{IndexingJob, IndexingJobParams},
+    job::{
+        indexing_job::{IndexingJob, IndexingJobParams},
+        thumbnail_job::ThumbnailJob,
+    },
+    repository,
 };
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
@@ -103,6 +105,15 @@ impl SchedulerImpl {
 
     async fn queue_jobs_if_required(&mut self) {
         info!("checking if any jobs need to be run...");
+        if !repository::asset::get_assets_with_missing_thumbnail(&self.pool, Some(1))
+            .await
+            .unwrap()
+            .is_empty()
+        {
+            let job = ThumbnailJob::new(Vec::new(), self.pool.clone());
+            let handle = job.start();
+            self.monitor_tx.send(MonitorMessage::AddJob(handle)).await;
+        }
     }
 
     async fn queue_or_start_indexing(&mut self, params: IndexingJobParams) {

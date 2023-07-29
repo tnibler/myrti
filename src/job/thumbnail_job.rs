@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+use tracing::instrument;
 
 use crate::{
-    core::job::{Job, JobHandle, JobHandleType, JobStatus},
+    core::job::{Job, JobHandle, JobHandleType, JobProgress, JobStatus},
     model::AssetId,
-    repository::pool::DbPool,
+    repository::{self, pool::DbPool},
+    thumbnail::generate_thumbnails,
 };
 
 pub struct ThumbnailJob {
@@ -18,7 +20,22 @@ impl ThumbnailJob {
         ThumbnailJob { asset_ids, pool }
     }
 
-    async fn run(self, _status_tx: mpsc::Sender<JobStatus>) {}
+    #[instrument(skip(self, status_tx))]
+    async fn run(self, status_tx: mpsc::Sender<JobStatus>) {
+        // let assets = self.asset_ids.iter().map(|id| repository::asset::get)
+        // info!("")
+        status_tx
+            .send(JobStatus::Running(JobProgress {
+                percent: None,
+                description: "".to_string(),
+            }))
+            .await;
+        let assets = repository::asset::get_assets_with_missing_thumbnail(&self.pool, None)
+            .await
+            .unwrap();
+        generate_thumbnails(&assets, &self.pool).await;
+        status_tx.send(JobStatus::Complete).await;
+    }
 }
 
 #[async_trait]

@@ -2,6 +2,7 @@ use color_eyre::eyre;
 use eyre::{Context, Result};
 use sqlx::{Executor, Sqlite, SqliteConnection, SqliteExecutor, Transaction};
 use std::path::Path;
+use tracing::instrument;
 
 use crate::model::{
     db_entity::{DbAsset, DbVideoInfo},
@@ -10,15 +11,8 @@ use crate::model::{
 
 use super::pool::DbPool;
 
+#[instrument(name = "Insert FullAsset", skip(pool, asset), level = "debug")]
 pub async fn insert_asset(pool: &DbPool, asset: FullAsset) -> Result<AssetId> {
-    insert_or_update_asset(pool, asset, false).await
-}
-
-pub async fn update_asset(pool: &DbPool, asset: FullAsset) -> Result<AssetId> {
-    insert_or_update_asset(pool, asset, true).await
-}
-
-async fn insert_or_update_asset(pool: &DbPool, asset: FullAsset, update: bool) -> Result<AssetId> {
     debug_assert!(
         asset.base.ty
             == match asset.asset {
@@ -27,35 +21,44 @@ async fn insert_or_update_asset(pool: &DbPool, asset: FullAsset, update: bool) -
             }
     );
     let mut tx = pool.begin().await?;
-    let id: AssetId = if update {
-        update_asset_base(&mut tx, &asset.base).await?;
-        asset.base.id
-    } else {
-        insert_asset_base(&mut tx, &asset.base).await?
-    };
+    let id = insert_asset_base(&mut tx, &asset.base).await?;
     match &asset.asset {
         AssetAll::Image(image) => {
-            if update {
-                update_image_info(&mut tx, id, image).await?;
-            } else {
-                insert_image_info(&mut tx, id, image).await?;
-            }
+            insert_image_info(&mut tx, id, image).await?;
         }
         AssetAll::Video(video) => {
-            if update {
-                update_video_info(&mut tx, id, video).await?;
-            } else {
-                insert_video_info(&mut tx, id, video).await?;
-            }
+            insert_video_info(&mut tx, id, video).await?;
         }
     };
     tx.commit().await?;
-    if update {
-        debug_assert!(id == asset.base.id);
-    }
     Ok(id)
 }
 
+#[instrument(name = "Update FullAsset", skip(pool, asset), fields(id=%asset.base.id), level = "debug")]
+pub async fn update_asset(pool: &DbPool, asset: FullAsset) -> Result<()> {
+    debug_assert!(
+        asset.base.ty
+            == match asset.asset {
+                AssetAll::Image(_) => AssetType::Image,
+                AssetAll::Video(_) => AssetType::Video,
+            }
+    );
+    let mut tx = pool.begin().await?;
+    update_asset_base(&mut tx, &asset.base).await?;
+    let id = asset.base.id;
+    match &asset.asset {
+        AssetAll::Image(image) => {
+            update_image_info(&mut tx, id, image).await?;
+        }
+        AssetAll::Video(video) => {
+            update_video_info(&mut tx, id, video).await?;
+        }
+    };
+    tx.commit().await?;
+    Ok(())
+}
+
+#[instrument(name = "Get AssetBase with path", skip(pool), level = "debug")]
 pub async fn get_asset_with_path(pool: &DbPool, path: &Path) -> Result<Option<AssetBase>> {
     let path = path.to_str().unwrap();
     let db_asset = sqlx::query_as!(
@@ -70,6 +73,7 @@ SELECT id, ty as "ty: _", root_dir_id, file_path, file_created_at, file_modified
     db_asset.map(|db_asset| db_asset.try_into()).transpose()
 }
 
+#[instrument(name = "Get all AssetBases", skip(pool), level = "debug")]
 pub async fn get_assets(pool: &DbPool) -> Result<Vec<AssetBase>> {
     sqlx::query_as!(
         DbAsset,
@@ -84,6 +88,11 @@ SELECT id, ty as "ty: _", root_dir_id, file_path, file_created_at, file_modified
         .collect::<Result<Vec<AssetBase>>>()
 }
 
+#[instrument(
+    name = "Get AssetBases with missing thumbnails",
+    skip(pool),
+    level = "debug"
+)]
 pub async fn get_assets_with_missing_thumbnail(
     pool: &DbPool,
     limit: Option<i32>,
@@ -112,6 +121,7 @@ WHERE thumb_path_jpg IS NULL OR thumb_path_webp IS NULL;
     }
 }
 
+#[instrument(name = "Update AssetBase", skip(conn, asset), fields(id=%asset.id), level = "debug")]
 pub async fn update_asset_base(conn: &mut SqliteConnection, asset: &AssetBase) -> Result<()> {
     debug_assert!(asset.id.0 != 0);
     let db_asset_base: DbAsset = asset.try_into()?;
@@ -132,6 +142,7 @@ WHERE id=?;
     Ok(())
 }
 
+#[instrument(name = "Insert AssetBase", skip(conn, asset), level = "debug")]
 pub async fn insert_asset_base(conn: &mut SqliteConnection, asset: &AssetBase) -> Result<AssetId> {
     debug_assert!(asset.id.0 == 0);
     let db_asset_base: DbAsset = asset.try_into()?;
@@ -152,6 +163,7 @@ INSERT INTO Assets (id, ty, root_dir_id, file_path, file_created_at, file_modifi
     Ok(AssetId(rowid))
 }
 
+#[instrument(name = "Insert ImageInfo", skip(conn, image), level = "debug")]
 pub async fn insert_image_info(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
@@ -166,6 +178,7 @@ pub async fn insert_image_info(
     Ok(())
 }
 
+#[instrument(name = "Update ImageInfo", skip(conn, image), level = "debug")]
 pub async fn update_image_info(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
@@ -176,6 +189,7 @@ pub async fn update_image_info(
     Ok(())
 }
 
+#[instrument(name = "Insert VideoInfo", skip(conn, video), level = "debug")]
 pub async fn insert_video_info(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
@@ -197,6 +211,7 @@ INSERT INTO VideoInfo (asset_id, dash_manifest_path) VALUES
     Ok(())
 }
 
+#[instrument(name = "Update VideoInfo", skip(conn, video), level = "debug")]
 pub async fn update_video_info(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
@@ -217,25 +232,3 @@ WHERE asset_id=?;
     .wrap_err("could not update table VideoInfo")?;
     Ok(())
 }
-
-// pub async fn get_asset(
-//     pool: &DbPool,
-//     id: AssetId
-// ) -> Result<FullAsset> {
-//         let asset_base: AssetBase = sqlx::query_as!(
-//             DbAsset,
-//             r#"
-// SELECT id, ty as "ty: _", root_dir_id, file_path, file_created_at, file_modified_at, thumb_path_jpg, thumb_path_webp FROM Assets
-// WHERE id = ?;
-//     "#, id.0)
-//         // TODO don't collect into vec before mapping
-//             .fetch_one(pool)
-//             .await.and_then(|r| Ok(r.into()))?;
-//     let asset = match asset_base.ty {
-//         crate::model::AssetType::Image => {
-//
-//         },
-//         crate::model::AssetType::Video => {
-//         },
-//     }
-// }

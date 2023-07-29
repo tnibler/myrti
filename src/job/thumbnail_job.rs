@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use async_trait::async_trait;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -33,8 +35,18 @@ impl ThumbnailJob {
         let assets = repository::asset::get_assets_with_missing_thumbnail(&self.pool, None)
             .await
             .unwrap();
-        generate_thumbnails(&assets, &self.pool).await;
-        status_tx.send(JobStatus::Complete).await;
+        let result =
+            generate_thumbnails(&assets, PathBuf::from("thumbnails").as_path(), &self.pool).await;
+        match result {
+            Ok(()) => {
+                status_tx.send(JobStatus::Complete).await;
+            }
+            Err(e) => {
+                status_tx
+                    .send(JobStatus::Failed { msg: e.to_string() })
+                    .await;
+            }
+        }
     }
 }
 

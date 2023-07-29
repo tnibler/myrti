@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 async-trait = "0.1.72"
-axum = "0.6.19"
+axum = { version = "0.6.19", features = ["tracing"] }
 chrono = { version = "0.4.26", features = ["serde"] }
 color-eyre = "0.6.2"
 eyre = "0.6.8"
@@ -16,11 +16,14 @@ html-escape = "0.2.13"
 lazy_static = "1.4.0"
 notify = "6.0.1"
 parse-size = { version = "1.0.0", features = ["std"] }
+rayon = "1.7.0"
 serde = { version = "1.0.175", features = ["derive"] }
 sqlx = {version ="0.7.1", features = ["sqlite", "runtime-tokio", "chrono", "migrate"]}
 tokio = { version = "1.29.1", features = ["full"] }
 tokio-util = "0.7.8"
 toml = "0.7.6"
+tower = { version = "0.4.13", features = ["tracing"] }
+tower-http = { version = "0.4.3", features = ["trace", "request-id", "util"] }
 tracing = "0.1.37"
 tracing-error = "0.2.0"
 tracing-subscriber = {version = "0.3.17", features = ["env-filter"]}
@@ -33,3 +36,6 @@ opt-level = 3
 cc = "1.0.79"
 pkg-config = "0.3.27"
 bindgen = "0.66.1"
+
+[profile.dev.package.backtrace]
+opt-level = 3

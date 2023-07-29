@@ -15,9 +15,10 @@ use crate::{
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tracing::{debug, info, info_span, instrument, Instrument};
 
-pub enum SchedulerEvent {
+#[derive(Debug)]
+pub enum SchedulerMessage {
     Timer,
     FileSystemChange { changed_files: Vec<PathBuf> },
     UserRequest(UserRequest),
@@ -25,6 +26,7 @@ pub enum SchedulerEvent {
     ConfigChange,
 }
 
+#[derive(Debug)]
 pub enum UserRequest {
     ReindexAssetRoots { params: IndexingJobParams },
 }
@@ -32,12 +34,12 @@ pub enum UserRequest {
 #[derive(Clone)]
 pub struct Scheduler {
     cancel: CancellationToken,
-    pub tx: mpsc::Sender<SchedulerEvent>,
+    pub tx: mpsc::Sender<SchedulerMessage>,
 }
 
 impl Scheduler {
     pub fn start(monitor_tx: mpsc::Sender<MonitorMessage>, pool: SqlitePool) -> Scheduler {
-        let (tx, rx) = mpsc::channel::<SchedulerEvent>(1000);
+        let (tx, rx) = mpsc::channel::<SchedulerMessage>(1000);
         let cancel = CancellationToken::new();
         let cancel_copy = cancel.clone();
         let tx_copy = tx.clone();
@@ -57,21 +59,22 @@ impl Scheduler {
         }
     }
 
-    pub async fn send(&self, msg: SchedulerEvent) -> Result<()> {
+    pub async fn send(&self, msg: SchedulerMessage) -> Result<()> {
         self.tx.send(msg).await?;
         Ok(())
     }
 }
 
 struct SchedulerImpl {
-    pub events_tx: mpsc::Sender<SchedulerEvent>,
-    pub events_rx: mpsc::Receiver<SchedulerEvent>,
+    pub events_tx: mpsc::Sender<SchedulerMessage>,
+    pub events_rx: mpsc::Receiver<SchedulerMessage>,
     pub cancel: CancellationToken,
     pool: SqlitePool,
     monitor_tx: mpsc::Sender<MonitorMessage>,
 }
 
 impl SchedulerImpl {
+    #[instrument(name = "Scheduler event loop", skip(self))]
     async fn run(&mut self) {
         info!("Scheduler starting");
         loop {
@@ -80,11 +83,12 @@ impl SchedulerImpl {
                     info!("Scheduler cancelled");
                     break;
                 }
-                Some(event) = self.events_rx.recv() => {
-                    match event {
-                        SchedulerEvent::Timer => todo!(),
-                        SchedulerEvent::FileSystemChange { changed_files: _ } => todo!(),
-                        SchedulerEvent::UserRequest(request) => {
+                Some(message) = self.events_rx.recv() => {
+                    debug!(?message, "Received message");
+                    match message {
+                        SchedulerMessage::Timer => todo!(),
+                        SchedulerMessage::FileSystemChange { changed_files: _ } => todo!(),
+                        SchedulerMessage::UserRequest(request) => {
                             match request {
                                 UserRequest::ReindexAssetRoots { params } => {
                                     self.queue_or_start_indexing(params).await;
@@ -92,11 +96,10 @@ impl SchedulerImpl {
                                 _ => todo!()
                             }
                         },
-                        SchedulerEvent::JobComplete { id }=> {
-                            info!("job {} completed", id.0);
+                        SchedulerMessage::JobComplete { id }=> {
                             self.queue_jobs_if_required().await;
                         },
-                        SchedulerEvent::ConfigChange => todo!(),
+                        SchedulerMessage::ConfigChange => todo!(),
                     }
                 }
             }

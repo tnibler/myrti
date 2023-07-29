@@ -1,15 +1,14 @@
-use std::{path::PathBuf};
+use std::path::PathBuf;
 
 use async_trait::async_trait;
-use tokio::{sync::mpsc};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-
 
 use crate::{
     core::job::{Job, JobHandle, JobHandleType, JobProgress, JobStatus},
     indexing,
     model::{AssetId, AssetRootDir},
-    repository::{pool::DbPool},
+    repository::pool::DbPool,
 };
 
 pub struct IndexingJob {
@@ -17,6 +16,7 @@ pub struct IndexingJob {
     pool: DbPool,
 }
 
+#[derive(Debug)]
 pub struct IndexingJobParams {
     pub asset_root: AssetRootDir,
     pub sub_paths: Option<Vec<PathBuf>>,

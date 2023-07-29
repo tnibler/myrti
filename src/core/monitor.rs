@@ -1,8 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 
 use super::{
     job::{JobHandleType, JobId, JobStatus},
-    scheduler::SchedulerEvent,
+    scheduler::SchedulerMessage,
 };
 use eyre::eyre;
 use eyre::Result;
@@ -15,7 +15,7 @@ use tracing::{debug, error, info, instrument, Instrument};
 pub struct Monitor {
     inner: Arc<tokio::sync::Mutex<MonitorInner>>,
     statuses: Arc<tokio::sync::Mutex<HashMap<JobId, JobStatus>>>,
-    scheduler_tx: mpsc::Sender<SchedulerEvent>,
+    scheduler_tx: mpsc::Sender<SchedulerMessage>,
 }
 
 struct MonitorInner {
@@ -38,10 +38,18 @@ pub enum MonitorMessage {
     AddJob(JobHandleType),
 }
 
+impl Display for MonitorMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MonitorMessage::AddJob(job_handle_type) => write!(f, "AddJob({})", job_handle_type),
+        }
+    }
+}
+
 impl Monitor {
     pub fn new(
         mut msg_rx: mpsc::Receiver<MonitorMessage>,
-        scheduler_tx: mpsc::Sender<SchedulerEvent>,
+        scheduler_tx: mpsc::Sender<SchedulerMessage>,
         cancel: CancellationToken,
     ) -> Monitor {
         let (tx, mut rx) = mpsc::channel::<(JobId, mpsc::Receiver<JobStatus>)>(1000);
@@ -58,7 +66,7 @@ impl Monitor {
             statuses: statuses_copy,
         };
         let monitor_copy = monitor.clone();
-        let span = tracing::info_span!("Monitor");
+        let span = tracing::info_span!("Monitor event loop");
         tokio::task::spawn(async move {
             let status_rxs = Vec::<futures::channel::mpsc::Receiver<JobStatusWithId>>::new();
             let mut any_status = futures::stream::select_all(status_rxs);
@@ -79,9 +87,10 @@ impl Monitor {
                         any_status.push(status_with_id_rx);
                     },
                     Some(status_with_id) = any_status.next() => {
-                        monitor_copy.on_status_received(status_with_id.id, status_with_id.status).await;
+                        monitor_copy.on_status_received(status_with_id.id, status_with_id.status).in_current_span().await;
                     }
                     Some(msg) = msg_rx.recv() => {
+                        debug!(%msg, "Received message");
                         match msg {
                             MonitorMessage::AddJob(job_handle) => {
                                 monitor_copy.add_job(job_handle).await;
@@ -94,14 +103,15 @@ impl Monitor {
         monitor
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "Status received", skip(self), level = "info")]
     async fn on_status_received(&self, job_id: JobId, status: JobStatus) {
         debug!("received status: {}, {:#?}", job_id, status);
         self.statuses.lock().await.insert(job_id, status.clone());
         match status {
             JobStatus::Complete => {
                 self.scheduler_tx
-                    .send(SchedulerEvent::JobComplete { id: job_id })
+                    .send(SchedulerMessage::JobComplete { id: job_id })
+                    .in_current_span()
                     .await
                     .unwrap();
             }
@@ -124,41 +134,37 @@ impl Monitor {
             .ok_or_else(|| eyre!("no job with this id"))
     }
 
-    #[instrument(skip(self, handle))]
+    #[instrument(
+        name = "Add job",
+        skip(self, handle),
+        fields(job_type=%handle))]
     pub async fn add_job(&self, handle: JobHandleType) -> JobId {
         let mut inner = self.inner.lock().await;
         inner.last_job_id = JobId(inner.last_job_id.0 + 1);
         let id = inner.last_job_id;
         let (job_info, status_rx) = match handle {
-            JobHandleType::Indexing(h) => {
-                debug!("Adding IndexingJob");
-                (
-                    JobInfo {
-                        id,
-                        cancel: h.cancel,
-                    },
-                    h.status_rx,
-                )
-            }
-            JobHandleType::Thumbnail(h) => {
-                debug!("Adding ThumbnailJob");
-                (
-                    JobInfo {
-                        id,
-                        cancel: h.cancel,
-                    },
-                    h.status_rx,
-                )
-            }
+            JobHandleType::Indexing(h) => (
+                JobInfo {
+                    id,
+                    cancel: h.cancel,
+                },
+                h.status_rx,
+            ),
+            JobHandleType::Thumbnail(h) => (
+                JobInfo {
+                    id,
+                    cancel: h.cancel,
+                },
+                h.status_rx,
+            ),
         };
         inner.jobs.insert(id, job_info);
         inner.new_status_tx.send((id, status_rx)).await.unwrap();
         id
     }
 
-    #[instrument(skip(self))]
+    #[instrument(name = "Cancel job", skip(self))]
     pub async fn cancel_job(&self, id: JobId) -> Result<()> {
-        debug!("Cancelling job");
         let inner = self.inner.lock().await;
         inner
             .jobs

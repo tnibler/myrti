@@ -25,6 +25,16 @@ pub enum JobHandleType {
     Thumbnail(JobHandle<ThumbnailJob>),
 }
 
+impl Display for JobHandleType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            JobHandleType::Indexing(_) => "Indexing",
+            JobHandleType::Thumbnail(_) => "Thumbnail",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JobProgress {
     pub percent: Option<i32>,

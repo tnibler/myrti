@@ -4,6 +4,7 @@ use crate::core::{
 };
 use axum::{
     extract::{Query, State},
+    http::HeaderValue,
     response::IntoResponse,
     routing::{get, post},
     Router,
@@ -18,9 +19,15 @@ use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 use tokio::{signal, sync::mpsc};
 use tokio_util::sync::CancellationToken;
-use tracing::info;
+use tower::ServiceBuilder;
+use tower_http::{
+    request_id::MakeRequestUuid,
+    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
+    ServiceBuilderExt,
+};
+use tracing::{info, instrument, subscriber::set_global_default, Instrument};
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{prelude::*, EnvFilter};
+use tracing_subscriber::{fmt::format::FmtSpan, prelude::*, EnvFilter};
 
 use crate::{
     app_state::{AppState, SharedState},
@@ -35,6 +42,7 @@ mod http_error;
 mod indexing;
 mod job;
 mod model;
+mod processing;
 mod routes;
 mod thumbnail;
 
@@ -93,18 +101,32 @@ async fn post_cancel(
     Ok(())
 }
 
+#[instrument(name = "Get Job status",
+    skip(app_state, query),
+    fields(job_id=query.id))]
 async fn get_status(
     query: Query<QueryCancel>,
     app_state: State<SharedState>,
 ) -> Result<impl IntoResponse, HttpError> {
-    let status = app_state.monitor.get_status(JobId(query.id)).await?;
+    let status = app_state
+        .monitor
+        .get_status(JobId(query.id))
+        .in_current_span()
+        .await?;
     Ok(format!("{:#?}", status))
+}
+
+fn processing_global_init() {
+    processing::image::vips_init();
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::var("RUST_LIB_BACKTRACE").is_err() {
         std::env::set_var("RUST_LIB_BACKTRACE", "1")
+    }
+    if std::env::var("RUST_SPANTRACE").is_err() {
+        std::env::set_var("RUST_SPANTRACE", "0");
     }
     color_eyre::install()?;
     if std::env::var("RUST_LOG").is_err() {
@@ -113,10 +135,15 @@ async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
         .with(ErrorLayer::default())
-        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
+        .with(
+            tracing_subscriber::fmt::layer()
+                // .with_span_events(FmtSpan::NEW)
+                .with_writer(std::io::stderr),
+        )
         .init();
 
     info!("Starting up...");
+    processing_global_init();
     let config = config::read_config(PathBuf::from_str("config.toml").unwrap().as_path())
         .await
         .unwrap();
@@ -136,6 +163,15 @@ async fn main() -> Result<()> {
         .nest("/api", routes::api_router())
         .route("/cancel", post(post_cancel))
         .route("/status", get(get_status))
+        .layer(
+            ServiceBuilder::new()
+                .set_x_request_id(MakeRequestUuid::default())
+                .layer(
+                    TraceLayer::new_for_http()
+                        .make_span_with(DefaultMakeSpan::new().include_headers(true))
+                        .on_response(DefaultOnResponse::new().include_headers(true)),
+                ),
+        )
         .with_state(shared_state);
     // .route("/api/assets", get(get_assets))
     // .route("/api/assetRoots", get(get_asset_roots))

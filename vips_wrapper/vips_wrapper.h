@@ -4,7 +4,7 @@
 typedef struct ThumbnailOptions {
   const char *in_path;
   const char *const *out_paths;
-  int num_out_paths;
+  unsigned long long num_out_paths;
   int width;
   int height;
 } ThumbnailParams;

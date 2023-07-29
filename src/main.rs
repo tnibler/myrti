@@ -36,6 +36,7 @@ mod indexing;
 mod job;
 mod model;
 mod routes;
+mod thumbnail;
 
 mod repository {
     pub mod asset;

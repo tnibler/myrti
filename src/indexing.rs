@@ -45,15 +45,15 @@ async fn index_file(
         Some(_) => Ok(None),
         None => {
             if let Some(extension) = path.extension().map(|s| s.to_string_lossy().to_string()) {
-                let (ty, full): (AssetType, Asset) = match extension.as_str() {
+                let (ty, full): (AssetType, AssetAll) = match extension.as_str() {
                     "mp4" => {
-                        let video_info = Asset::Video {
+                        let video_info = AssetAll::Video(Video {
                             dash_manifest_path: None,
-                        };
+                        });
                         (AssetType::Video, video_info)
                     }
                     "jpg" => {
-                        let image_info = Asset::Image {};
+                        let image_info = AssetAll::Image(Image {});
                         (AssetType::Image, image_info)
                     }
                     _ => {

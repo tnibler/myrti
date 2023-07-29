@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    model::{AssetBase, AssetType},
+    model::{AssetAll, AssetBase, AssetType},
     repository::{self, pool::DbPool},
 };
 use eyre::{eyre, Result};
@@ -62,7 +62,11 @@ pub async fn generate_thumbnails(assets: &Vec<AssetBase>, pool: &DbPool) -> Resu
                 let mut asset_with_thumbs = asset.clone();
                 asset_with_thumbs.thumb_path_jpg = Some(out_path_jpg);
                 asset_with_thumbs.thumb_path_webp = Some(out_path_webp);
-                repository::asset::update_asset(&pool, asset_with_thumbs).await?;
+                repository::asset::update_asset_base(
+                    &mut pool.acquire().await.unwrap(),
+                    &asset_with_thumbs,
+                )
+                .await?;
             }
             AssetType::Video => {}
         }

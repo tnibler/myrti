@@ -1,10 +1,9 @@
 use std::path::Path;
 
 use super::pool::DbPool;
-use crate::model::{entity::DbAssetRootDir, AssetRootDirId};
 use crate::{
     eyre::{eyre, Result},
-    model::AssetRootDir,
+    model::{db_entity::DbAssetRootDir, AssetRootDir, AssetRootDirId},
 };
 use eyre::{self, Context};
 
@@ -13,18 +12,20 @@ pub async fn get_asset_root(pool: &DbPool, id: AssetRootDirId) -> Result<AssetRo
         .fetch_optional(pool)
         .await
     {
-        Ok(Some(r)) => Ok(r.into()),
+        Ok(Some(r)) => r.try_into(),
         Ok(None) => Err(eyre!("no AssetRootDir with id {}", id)),
-        Err(e) => Err(e).wrap_err("failed to get AssetRootDir"),
+        Err(e) => Err(e).wrap_err("failed to query table AssetRootDirs"),
     }
 }
 
 pub async fn get_asset_roots(pool: &DbPool) -> Result<Vec<AssetRootDir>> {
     sqlx::query_as!(DbAssetRootDir, "SELECT * FROM AssetRootDirs;")
         .fetch_all(pool)
-        .await
-        .map(|ards| ards.into_iter().map(|ard| ard.into()).collect())
-        .wrap_err("failed to get AssetRootDirs")
+        .await?
+        .into_iter()
+        .map(|ard| ard.try_into())
+        .collect::<Result<Vec<_>>>()
+        .wrap_err("failed to query table AssetRootDirs")
 }
 
 pub async fn insert_asset_root(
@@ -40,18 +41,19 @@ pub async fn insert_asset_root(
     .execute(pool)
     .await
     .map(|query_result| AssetRootDirId(query_result.last_insert_rowid()))
-    .wrap_err("failed to insert AssetRootDir")
+    .wrap_err("failed to insert into table AssetRootDirs")
 }
 
 pub async fn get_asset_root_with_path(pool: &DbPool, path: &Path) -> Result<Option<AssetRootDir>> {
     let path = path.canonicalize().unwrap().to_str().unwrap().to_string();
-    Ok(sqlx::query_as!(
+    sqlx::query_as!(
         DbAssetRootDir,
         "SELECT * FROM AssetRootDirs WHERE path=?",
         path
     )
     .fetch_optional(pool)
     .await
-    .wrap_err("failed to get AssetRootDir")?
-    .map(|v| v.into()))
+    .wrap_err("failed to query table AssetRootDirs")?
+    .map(|v| v.try_into())
+    .transpose()
 }

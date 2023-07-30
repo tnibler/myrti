@@ -1,32 +1,37 @@
-use std::{collections::HashMap, fmt::Display, sync::Arc};
+use std::{cell::Cell, collections::HashMap, fmt::Display, sync::Arc};
 
 use super::{
-    job::{JobHandleType, JobId, JobStatus},
+    job::{JobHandle, JobId, JobResultType, JobStatus},
     scheduler::SchedulerMessage,
 };
 use eyre::eyre;
 use eyre::Result;
 use futures::{SinkExt, StreamExt};
-use tokio::{select, sync::mpsc};
+use tokio::{
+    select,
+    sync::mpsc,
+    task::{JoinError, JoinHandle},
+};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, instrument, Instrument};
+use tracing::{debug, error, info, info_span, instrument, Instrument};
 
 #[derive(Clone)]
 pub struct Monitor {
     inner: Arc<tokio::sync::Mutex<MonitorInner>>,
     statuses: Arc<tokio::sync::Mutex<HashMap<JobId, JobStatus>>>,
     scheduler_tx: mpsc::Sender<SchedulerMessage>,
+    job_result_tx: mpsc::Sender<Result<JobResultType, JoinError>>,
+    new_status_tx: mpsc::Sender<NewJobToWatch>,
 }
 
 struct MonitorInner {
     last_job_id: JobId,
     jobs: HashMap<JobId, JobInfo>,
-    new_status_tx: mpsc::Sender<(JobId, mpsc::Receiver<JobStatus>)>,
 }
 
 struct JobInfo {
     id: JobId,
-    cancel: CancellationToken, // join_handle: JoinHandle<T::Result>,
+    cancel: CancellationToken,
 }
 
 struct JobStatusWithId {
@@ -35,13 +40,18 @@ struct JobStatusWithId {
 }
 
 pub enum MonitorMessage {
-    AddJob(JobHandleType),
+    AddJob(JobHandle),
+}
+
+pub struct NewJobToWatch {
+    pub id: JobId,
+    pub status_rx: mpsc::Receiver<JobStatus>,
 }
 
 impl Display for MonitorMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MonitorMessage::AddJob(job_handle_type) => write!(f, "AddJob({})", job_handle_type),
+            MonitorMessage::AddJob(_) => write!(f, "AddJob"),
         }
     }
 }
@@ -52,21 +62,24 @@ impl Monitor {
         scheduler_tx: mpsc::Sender<SchedulerMessage>,
         cancel: CancellationToken,
     ) -> Monitor {
-        let (tx, mut rx) = mpsc::channel::<(JobId, mpsc::Receiver<JobStatus>)>(1000);
+        let (job_result_tx, mut job_result_rx) =
+            mpsc::channel::<Result<JobResultType, JoinError>>(1000);
+        let (add_job_tx, mut add_job_rx) = mpsc::channel::<NewJobToWatch>(1000);
         let statuses = Arc::new(tokio::sync::Mutex::new(HashMap::<JobId, JobStatus>::new()));
         let statuses_copy = statuses.clone();
         let monitor = Monitor {
+            new_status_tx: add_job_tx,
+            job_result_tx,
             inner: tokio::sync::Mutex::new(MonitorInner {
                 last_job_id: JobId(0),
                 jobs: Default::default(),
-                new_status_tx: tx,
             })
             .into(),
             scheduler_tx,
             statuses: statuses_copy,
         };
         let monitor_copy = monitor.clone();
-        let span = tracing::info_span!("Monitor event loop");
+        let event_loop_span = tracing::info_span!("Monitor event loop");
         tokio::task::spawn(async move {
             let status_rxs = Vec::<futures::channel::mpsc::Receiver<JobStatusWithId>>::new();
             let mut any_status = futures::stream::select_all(status_rxs);
@@ -76,8 +89,10 @@ impl Monitor {
                         info!("Monitor cancelled");
                         break;
                     },
-                    Some((id, mut status_rx)) = rx.recv() => {
-                        debug!("New job added to monitor ({})", id);
+                    // New job added with its corresponding channel to read incoming status updates
+                    // from
+                    Some(NewJobToWatch { id, mut status_rx }) = add_job_rx.recv() => {
+                        debug!(job_id=%id, "New job added to monitor");
                         let (mut status_with_id_tx, status_with_id_rx) = futures::channel::mpsc::channel::<JobStatusWithId>(1000);
                         tokio::task::spawn(async move {
                             while let Some(status) = status_rx.recv().await {
@@ -86,6 +101,7 @@ impl Monitor {
                         });
                         any_status.push(status_with_id_rx);
                     },
+                    // Some job sent a new status
                     Some(status_with_id) = any_status.next() => {
                         monitor_copy.on_status_received(status_with_id.id, status_with_id.status).in_current_span().await;
                     }
@@ -97,15 +113,17 @@ impl Monitor {
                             }
                         }
                     }
+                    Some(job_result) = job_result_rx.recv() => {
+                        info!(?job_result, "Received result from job");
+                    }
                 }
             }
-        }.instrument(span));
+        }.instrument(event_loop_span));
         monitor
     }
 
     #[instrument(name = "Status received", skip(self), level = "info")]
     async fn on_status_received(&self, job_id: JobId, status: JobStatus) {
-        debug!("received status: {}, {:#?}", job_id, status);
         self.statuses.lock().await.insert(job_id, status.clone());
         match status {
             JobStatus::Complete => {
@@ -134,32 +152,39 @@ impl Monitor {
             .ok_or_else(|| eyre!("no job with this id"))
     }
 
-    #[instrument(
-        name = "Add job",
-        skip(self, handle),
-        fields(job_type=%handle))]
-    pub async fn add_job(&self, handle: JobHandleType) -> JobId {
+    #[instrument(name = "Add job", skip(self, handle))]
+    pub async fn add_job(&self, handle: JobHandle) -> JobId {
         let mut inner = self.inner.lock().await;
         inner.last_job_id = JobId(inner.last_job_id.0 + 1);
         let id = inner.last_job_id;
-        let (job_info, status_rx) = match handle {
-            JobHandleType::Indexing(h) => (
-                JobInfo {
-                    id,
-                    cancel: h.cancel,
-                },
-                h.status_rx,
-            ),
-            JobHandleType::Thumbnail(h) => (
-                JobInfo {
-                    id,
-                    cancel: h.cancel,
-                },
-                h.status_rx,
-            ),
+        let job_info = JobInfo {
+            id,
+            cancel: handle.cancel,
         };
+        let status_rx = handle.status_rx;
         inner.jobs.insert(id, job_info);
-        inner.new_status_tx.send((id, status_rx)).await.unwrap();
+        self.new_status_tx
+            .send(NewJobToWatch { id, status_rx })
+            .await
+            .unwrap();
+        let job_result_tx = self.job_result_tx.clone();
+        // wait for job to return a result or panic
+        tokio::task::spawn(
+            async move {
+                let join_result: Result<JobResultType, JoinError> =
+                    handle.join_handle.in_current_span().await;
+                match join_result {
+                    Ok(ref job_result) => {
+                        debug!(result_type=%job_result, "Received result");
+                    }
+                    Err(ref join_error) => {
+                        debug!(%join_error, "Error joining job");
+                    }
+                };
+                job_result_tx.send(join_result).await.unwrap();
+            }
+            .instrument(info_span!("Waiting for job result")),
+        );
         id
     }
 

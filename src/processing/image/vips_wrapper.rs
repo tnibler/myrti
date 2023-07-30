@@ -32,6 +32,7 @@ pub fn teardown() {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThumbnailParams {
     pub in_path: PathBuf,
     pub out_paths: Vec<PathBuf>,

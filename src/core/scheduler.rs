@@ -10,6 +10,7 @@ use crate::{
         indexing_job::{IndexingJob, IndexingJobParams},
         thumbnail_job::ThumbnailJob,
     },
+    model::AssetType,
     repository,
 };
 use sqlx::SqlitePool;
@@ -108,10 +109,11 @@ impl SchedulerImpl {
 
     async fn queue_jobs_if_required(&mut self) {
         info!("checking if any jobs need to be run...");
-        if !repository::asset::get_assets_with_missing_thumbnail(&self.pool, Some(1))
+        if repository::asset::get_assets_with_missing_thumbnail(&self.pool, Some(1))
             .await
             .unwrap()
-            .is_empty()
+            .iter()
+            .any(|asset| asset.ty == AssetType::Image)
         {
             let job = ThumbnailJob::new(Vec::new(), self.pool.clone());
             let handle = job.start();

@@ -24,7 +24,7 @@ pub struct IndexingJobResult {
     pub failed: Vec<(AssetRootDirId, eyre::Report)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexingJobParams {
     pub asset_root: AssetRootDir,
     pub sub_paths: Option<Vec<PathBuf>>,

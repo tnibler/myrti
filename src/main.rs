@@ -35,6 +35,7 @@ use crate::{
     model::{AssetRootDir, AssetRootDirId},
 };
 
+mod api;
 mod app_state;
 mod config;
 mod core;
@@ -160,6 +161,8 @@ async fn main() -> Result<()> {
         monitor,
     });
     let app = Router::new()
+        .nest("/api/assetRoots", api::routes::asset_roots::router())
+        .nest("/api/jobs", api::routes::jobs::router())
         .nest("/api", routes::api_router())
         .route("/cancel", post(post_cancel))
         .route("/status", get(get_status))

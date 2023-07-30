@@ -14,8 +14,13 @@ use crate::{
 };
 
 pub struct ThumbnailJob {
-    asset_ids: Vec<AssetId>,
+    params: ThumbnailJobParams,
     pool: DbPool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThumbnailJobParams {
+    pub asset_ids: Vec<AssetId>,
 }
 
 #[derive(Debug)]
@@ -24,8 +29,8 @@ pub struct ThumbnailJobResult {
 }
 
 impl ThumbnailJob {
-    pub fn new(asset_ids: Vec<AssetId>, pool: DbPool) -> ThumbnailJob {
-        ThumbnailJob { asset_ids, pool }
+    pub fn new(params: ThumbnailJobParams, pool: DbPool) -> ThumbnailJob {
+        ThumbnailJob { params, pool }
     }
 
     #[instrument(skip(self, status_tx))]

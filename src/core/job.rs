@@ -1,6 +1,9 @@
-use crate::job::{
-    indexing_job::{IndexingJob, IndexingJobResult},
-    thumbnail_job::{ThumbnailJob, ThumbnailJobResult},
+use crate::{
+    job::{
+        indexing_job::{IndexingJob, IndexingJobParams, IndexingJobResult},
+        thumbnail_job::{ThumbnailJob, ThumbnailJobParams, ThumbnailJobResult},
+    },
+    model::AssetId,
 };
 use async_trait::async_trait;
 use eyre::Result;
@@ -21,6 +24,22 @@ impl Display for JobId {
 pub enum JobResultType {
     Indexing(<IndexingJob as Job>::Result),
     Thumbnail(<ThumbnailJob as Job>::Result),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JobType {
+    Indexing { params: IndexingJobParams },
+    Thumbnail { params: ThumbnailJobParams },
+}
+
+impl Display for JobType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            JobType::Indexing { params } => "Indexing",
+            JobType::Thumbnail { params } => "Thumbnail",
+        };
+        write!(f, "{}", s)
+    }
 }
 
 impl Display for JobResultType {

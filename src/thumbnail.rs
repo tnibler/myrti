@@ -46,7 +46,6 @@ pub async fn generate_thumbnails(
         pub id: AssetId,
         pub params: ThumbnailParams,
     }
-    panic!("wow it panicked how wild");
     let mut image_thumbnail_params = Vec::<ThumbnailJob>::new();
     let mut already_failed = Vec::<ThumbnailResult>::new();
     for asset in images.into_iter() {

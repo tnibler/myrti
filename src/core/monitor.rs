@@ -1,7 +1,7 @@
 use std::{cell::Cell, collections::HashMap, fmt::Display, sync::Arc};
 
 use super::{
-    job::{JobHandle, JobId, JobResultType, JobStatus},
+    job::{JobHandle, JobId, JobResultType, JobStatus, JobType},
     scheduler::SchedulerMessage,
 };
 use eyre::eyre;
@@ -13,7 +13,7 @@ use tokio::{
     task::{JoinError, JoinHandle},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, info_span, instrument, Instrument};
+use tracing::{debug, error, info, info_span, instrument, warn, Instrument};
 
 #[derive(Clone)]
 pub struct Monitor {
@@ -31,6 +31,7 @@ struct MonitorInner {
 
 struct JobInfo {
     id: JobId,
+    ty: JobType,
     cancel: CancellationToken,
 }
 
@@ -39,8 +40,15 @@ struct JobStatusWithId {
     pub status: JobStatus,
 }
 
+#[derive(Debug, Clone)]
+pub struct AJobInfo {
+    pub id: JobId,
+    pub ty: JobType,
+    pub status: Option<JobStatus>,
+}
+
 pub enum MonitorMessage {
-    AddJob(JobHandle),
+    AddJob { handle: JobHandle, ty: JobType },
 }
 
 pub struct NewJobToWatch {
@@ -51,7 +59,7 @@ pub struct NewJobToWatch {
 impl Display for MonitorMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MonitorMessage::AddJob(_) => write!(f, "AddJob"),
+            MonitorMessage::AddJob { handle, ty } => write!(f, "AddJob({})", ty),
         }
     }
 }
@@ -108,8 +116,8 @@ impl Monitor {
                     Some(msg) = msg_rx.recv() => {
                         debug!(%msg, "Received message");
                         match msg {
-                            MonitorMessage::AddJob(job_handle) => {
-                                monitor_copy.add_job(job_handle).await;
+                            MonitorMessage::AddJob{ handle, ty } => {
+                                monitor_copy.add_job(handle, ty).await;
                             }
                         }
                     }
@@ -153,12 +161,13 @@ impl Monitor {
     }
 
     #[instrument(name = "Add job", skip(self, handle))]
-    pub async fn add_job(&self, handle: JobHandle) -> JobId {
+    pub async fn add_job(&self, handle: JobHandle, ty: JobType) -> JobId {
         let mut inner = self.inner.lock().await;
         inner.last_job_id = JobId(inner.last_job_id.0 + 1);
         let id = inner.last_job_id;
         let job_info = JobInfo {
             id,
+            ty,
             cancel: handle.cancel,
         };
         let status_rx = handle.status_rx;
@@ -199,5 +208,29 @@ impl Monitor {
                 job_info.cancel.cancel();
                 Ok(())
             })
+    }
+
+    #[instrument(name = "Get all jobs", skip(self))]
+    pub async fn get_all_jobs(&self) -> Result<Vec<AJobInfo>> {
+        let inner = self.inner.lock().in_current_span().await;
+        let mut infos: Vec<AJobInfo> = Vec::new();
+        for job in inner.jobs.values() {
+            let status = self
+                .statuses
+                .lock()
+                .in_current_span()
+                .await
+                .get(&job.id)
+                .cloned();
+            if status.is_none() {
+                warn!(job_id=%job.id, "No status for job");
+            }
+            infos.push(AJobInfo {
+                id: job.id,
+                ty: job.ty.clone(),
+                status,
+            })
+        }
+        Ok(infos)
     }
 }

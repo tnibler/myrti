@@ -60,8 +60,5 @@ async fn post_index_asset_root(
 }
 
 pub fn api_router() -> Router<SharedState> {
-    Router::new()
-        .route("/assets", get(get_assets))
-        .route("/assetRoots", get(get_asset_roots))
-        .route("/indexAssetRoot", post(post_index_asset_root))
+    Router::new().route("/indexAssetRoot", post(post_index_asset_root))
 }

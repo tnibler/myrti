@@ -5,10 +5,11 @@ use super::{
     monitor::MonitorMessage,
 };
 use crate::{
+    core::job::JobType,
     eyre::Result,
     job::{
         indexing_job::{IndexingJob, IndexingJobParams},
-        thumbnail_job::ThumbnailJob,
+        thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
     },
     model::AssetType,
     repository,
@@ -115,42 +116,31 @@ impl SchedulerImpl {
             .iter()
             .any(|asset| asset.ty == AssetType::Image)
         {
-            let job = ThumbnailJob::new(Vec::new(), self.pool.clone());
+            let params = ThumbnailJobParams {
+                asset_ids: Vec::new(),
+            };
+            let job = ThumbnailJob::new(params.clone(), self.pool.clone());
             let handle = job.start();
-            self.monitor_tx.send(MonitorMessage::AddJob(handle)).await;
+            self.monitor_tx
+                .send(MonitorMessage::AddJob {
+                    handle,
+                    ty: JobType::Thumbnail { params },
+                })
+                .await
+                .unwrap();
         }
     }
 
     async fn queue_or_start_indexing(&mut self, params: IndexingJobParams) {
         // // always starting job, no queue yet
-        // let job = params.start();
-        let job = IndexingJob::new(params, self.pool.clone());
+        let job = IndexingJob::new(params.clone(), self.pool.clone());
         let handle = job.start();
-        self.monitor_tx.send(MonitorMessage::AddJob(handle)).await;
-        // info!("id {}", id.0);
-        // let mut status_rx = job.status_rx;
-        // let scheduler_event_tx = self.events_tx.clone();
-        // tokio::spawn(async move {
-        //     // move this into a JobMonitor service that receive the status_rx of every started job,
-        //     // receives events from all job, notifies the scheduler if required (e.g. Completed to
-        //     // check if anything else needs to run now)
-        //     // and saves the most recent status to be polled from the api.
-        //     // JobMonitor also holds the cancellation tokens for the jobs
-        //     while let Some(status) = status_rx.recv().await {
-        //         match status {
-        //             Job::Completed => {
-        //                 info!("Indexing job complete");
-        //                 scheduler_event_tx
-        //                     .send(SchedulerEvent::JobComplete { id })
-        //                     .await
-        //                     .unwrap();
-        //                 break;
-        //             }
-        //             _ => {
-        //                 // todo!()
-        //             }
-        //         }
-        //     }
-        // });
+        self.monitor_tx
+            .send(MonitorMessage::AddJob {
+                handle,
+                ty: JobType::Indexing { params },
+            })
+            .await
+            .unwrap();
     }
 }

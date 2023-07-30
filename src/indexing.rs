@@ -4,6 +4,7 @@ use crate::{
     model::*,
     repository::{self, pool::DbPool},
 };
+use chrono::{DateTime, Utc};
 use color_eyre::eyre::Result;
 use tokio::fs;
 use tracing::{debug, error};
@@ -67,10 +68,15 @@ async fn index_file(
                     ty,
                     root_dir_id: asset_root.id,
                     file_path: path.to_owned(),
+                    hash: None,
+                    added_at: Utc::now(),
                     file_created_at: metadata.created().ok().map(|t| t.into()),
                     file_modified_at: metadata.modified().ok().map(|t| t.into()),
-                    thumb_path_jpg: None,
-                    thumb_path_webp: None,
+                    canonical_date: None,
+                    thumb_path_small_square_jpg: None,
+                    thumb_path_small_square_webp: None,
+                    thumb_path_large_orig_jpg: None,
+                    thumb_path_large_orig_webp: None,
                 };
                 let full_asset = FullAsset {
                     base: asset_base,

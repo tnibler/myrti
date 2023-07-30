@@ -62,14 +62,27 @@ pub async fn update_asset(pool: &DbPool, asset: FullAsset) -> Result<()> {
 pub async fn get_asset_with_path(pool: &DbPool, path: &Path) -> Result<Option<AssetBase>> {
     let path = path.to_str().unwrap();
     let db_asset = sqlx::query_as!(
-            DbAsset,
-            r#"
-SELECT id, ty as "ty: _", root_dir_id, file_path, file_created_at, file_modified_at, thumb_path_jpg, thumb_path_webp FROM Assets WHERE file_path = ?;
+        DbAsset,
+        r#"
+SELECT id,
+ty as "ty: _",
+root_dir_id,
+file_path,
+hash,
+added_at,
+file_created_at,
+file_modified_at,
+canonical_date,
+thumb_path_small_square_jpg,
+thumb_path_small_square_webp,
+thumb_path_large_orig_jpg,
+thumb_path_large_orig_webp
+FROM Assets WHERE file_path = ?;
     "#,
-            path
-        )
-        .fetch_optional(pool)
-        .await?;
+        path
+    )
+    .fetch_optional(pool)
+    .await?;
     db_asset.map(|db_asset| db_asset.try_into()).transpose()
 }
 
@@ -78,14 +91,28 @@ pub async fn get_assets(pool: &DbPool) -> Result<Vec<AssetBase>> {
     sqlx::query_as!(
         DbAsset,
         r#"
-SELECT id, ty as "ty: _", root_dir_id, file_path, file_created_at, file_modified_at, thumb_path_jpg, thumb_path_webp FROM Assets;
-    "#)
-        // TODO don't collect into vec before mapping
-        .fetch_all(pool)
-        .await?
-        .into_iter()
-        .map(|r: DbAsset| AssetBase::try_from(r))
-        .collect::<Result<Vec<AssetBase>>>()
+SELECT id,
+ty as "ty: _",
+root_dir_id,
+file_path,
+hash,
+added_at,
+file_created_at,
+file_modified_at,
+canonical_date,
+thumb_path_small_square_jpg,
+thumb_path_small_square_webp,
+thumb_path_large_orig_jpg,
+thumb_path_large_orig_webp
+FROM Assets;
+    "#
+    )
+    // TODO don't collect into vec before mapping
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|r: DbAsset| AssetBase::try_from(r))
+    .collect::<Result<Vec<AssetBase>>>()
 }
 
 #[instrument(
@@ -98,26 +125,67 @@ pub async fn get_assets_with_missing_thumbnail(
     limit: Option<i32>,
 ) -> Result<Vec<AssetBase>> {
     if let Some(limit) = limit {
-        sqlx::query_as!(DbAsset,
+        sqlx::query_as!(
+            DbAsset,
             r#"
-SELECT id, ty as "ty: _", root_dir_id, file_path, file_created_at, file_modified_at, thumb_path_jpg, thumb_path_webp FROM Assets
-WHERE thumb_path_jpg IS NULL OR thumb_path_webp IS NULL
+SELECT id,
+ty as "ty: _",
+root_dir_id,
+file_path,
+hash,
+added_at,
+file_created_at,
+file_modified_at,
+canonical_date,
+thumb_path_small_square_jpg,
+thumb_path_small_square_webp,
+thumb_path_large_orig_jpg,
+thumb_path_large_orig_webp
+FROM Assets
+WHERE   
+    thumb_path_small_square_jpg IS NULL OR
+    thumb_path_small_square_webp IS NULL OR
+    thumb_path_large_orig_jpg IS NULL OR
+    thumb_path_large_orig_jpg IS NULL
 LIMIT ?;
-    "#, limit)
-            .fetch_all(pool)
-            .await?
-            .into_iter()
-            .map(|r| r.try_into()).collect()
+    "#,
+            limit
+        )
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|r| r.try_into())
+        .collect()
     } else {
-        sqlx::query_as!(DbAsset,
+        sqlx::query_as!(
+            DbAsset,
             r#"
-SELECT id, ty as "ty: _", root_dir_id, file_path, file_created_at, file_modified_at, thumb_path_jpg, thumb_path_webp FROM Assets
-WHERE thumb_path_jpg IS NULL OR thumb_path_webp IS NULL;
-    "#)
-            .fetch_all(pool)
-            .await?
-            .into_iter()
-            .map(|r| r.try_into()).collect()
+SELECT id,
+ty as "ty: _",
+root_dir_id,
+file_path,
+hash,
+added_at,
+file_created_at,
+file_modified_at,
+canonical_date,
+thumb_path_small_square_jpg,
+thumb_path_small_square_webp,
+thumb_path_large_orig_jpg,
+thumb_path_large_orig_webp
+FROM Assets
+WHERE   
+    thumb_path_small_square_jpg IS NULL OR
+    thumb_path_small_square_webp IS NULL OR
+    thumb_path_large_orig_jpg IS NULL OR
+    thumb_path_large_orig_jpg IS NULL;
+    "#
+        )
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|r| r.try_into())
+        .collect()
     }
 }
 
@@ -126,19 +194,39 @@ pub async fn update_asset_base(conn: &mut SqliteConnection, asset: &AssetBase) -
     debug_assert!(asset.id.0 != 0);
     let db_asset_base: DbAsset = asset.try_into()?;
     sqlx::query!(
-"
-UPDATE Assets SET ty=?, root_dir_id=?, file_path=?, file_created_at=?, file_modified_at=?, thumb_path_jpg=?, thumb_path_webp=? 
+        "
+UPDATE Assets SET 
+ty=?,
+root_dir_id=?,
+file_path=?,
+hash=?,
+added_at=?,
+file_created_at=?,
+file_modified_at=?,
+canonical_date=?,
+thumb_path_small_square_jpg=?,
+thumb_path_small_square_webp=?,
+thumb_path_large_orig_jpg=?,
+thumb_path_large_orig_webp=?
 WHERE id=?;
 ",
-            db_asset_base.ty,
-            db_asset_base.root_dir_id.0,
-            db_asset_base.file_path,
-            db_asset_base.file_created_at,
-            db_asset_base.file_modified_at,
-            db_asset_base.thumb_path_jpg,
-            db_asset_base.thumb_path_webp,
-                asset.id.0
-        ).execute(conn).await.wrap_err("could not update table Assets")?;
+        db_asset_base.ty,
+        db_asset_base.root_dir_id.0,
+        db_asset_base.file_path,
+        db_asset_base.hash,
+        db_asset_base.added_at,
+        db_asset_base.file_created_at,
+        db_asset_base.file_modified_at,
+        db_asset_base.canonical_date,
+        db_asset_base.thumb_path_small_square_jpg,
+        db_asset_base.thumb_path_small_square_webp,
+        db_asset_base.thumb_path_large_orig_jpg,
+        db_asset_base.thumb_path_large_orig_webp,
+        asset.id.0
+    )
+    .execute(conn)
+    .await
+    .wrap_err("could not update table Assets")?;
     Ok(())
 }
 
@@ -148,17 +236,39 @@ pub async fn insert_asset_base(conn: &mut SqliteConnection, asset: &AssetBase) -
     let db_asset_base: DbAsset = asset.try_into()?;
     let result = sqlx::query!(
         "
-INSERT INTO Assets (id, ty, root_dir_id, file_path, file_created_at, file_modified_at, thumb_path_jpg, thumb_path_webp) VALUES
-(null, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO Assets
+(id,
+ty,
+root_dir_id,
+file_path,
+hash,
+added_at,
+file_created_at,
+file_modified_at,
+canonical_date,
+thumb_path_small_square_jpg,
+thumb_path_small_square_webp,
+thumb_path_large_orig_jpg,
+thumb_path_large_orig_webp)
+VALUES
+(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 ",
         db_asset_base.ty,
-        db_asset_base.root_dir_id,
+        db_asset_base.root_dir_id.0,
         db_asset_base.file_path,
+        db_asset_base.hash,
+        db_asset_base.added_at,
         db_asset_base.file_created_at,
         db_asset_base.file_modified_at,
-        db_asset_base.thumb_path_jpg,
-        db_asset_base.thumb_path_webp,
-    ).execute(conn).await.wrap_err("could not insert into table Assets")?;
+        db_asset_base.canonical_date,
+        db_asset_base.thumb_path_small_square_jpg,
+        db_asset_base.thumb_path_small_square_webp,
+        db_asset_base.thumb_path_large_orig_jpg,
+        db_asset_base.thumb_path_large_orig_webp,
+    )
+    .execute(conn)
+    .await
+    .wrap_err("could not insert into table Assets")?;
     let rowid = result.last_insert_rowid();
     Ok(AssetId(rowid))
 }

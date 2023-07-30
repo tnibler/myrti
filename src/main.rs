@@ -1,6 +1,9 @@
-use crate::core::{
-    job::JobId,
-    monitor::{Monitor, MonitorMessage},
+use crate::{
+    core::{
+        job::JobId,
+        monitor::{Monitor, MonitorMessage},
+    },
+    model::{DataDir, DataDirId},
 };
 use axum::{
     extract::{Query, State},
@@ -13,11 +16,11 @@ use color_eyre::eyre::Context;
 use config::Config;
 use eyre::{self, Result};
 use http_error::HttpError;
-use repository::pool::DbPool;
+use model::repository::{self, pool::DbPool};
 use serde::Deserialize;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use std::{path::PathBuf, str::FromStr, sync::Arc};
-use tokio::{signal, sync::mpsc};
+use tokio::{fs, signal, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
 use tower_http::{
@@ -46,12 +49,6 @@ mod model;
 mod processing;
 mod routes;
 mod thumbnail;
-
-mod repository {
-    pub mod asset;
-    pub mod asset_root_dir;
-    pub mod pool;
-}
 
 async fn db_setup() -> Result<SqlitePool> {
     let db_url = "sqlite://mediathingy.db";
@@ -103,8 +100,8 @@ async fn post_cancel(
 }
 
 #[instrument(name = "Get Job status",
-    skip(app_state, query),
-    fields(job_id=query.id))]
+skip(app_state, query),
+fields(job_id=query.id))]
 async fn get_status(
     query: Query<QueryCancel>,
     app_state: State<SharedState>,
@@ -149,6 +146,24 @@ async fn main() -> Result<()> {
         .await
         .unwrap();
     let pool = db_setup().await.unwrap();
+    for data_dir in config.data_dirs.iter() {
+        if repository::data_dir::get_data_dir_with_path(&pool, data_dir.path.to_str().unwrap())
+            .await
+            .unwrap()
+            .is_none()
+        {
+            repository::data_dir::insert_data_dir(
+                &pool,
+                DataDir {
+                    id: DataDirId(0),
+                    path: data_dir.path.clone(),
+                },
+            )
+            .await
+            .unwrap();
+            fs::create_dir_all(&data_dir.path).await.unwrap();
+        }
+    }
     store_asset_roots_from_config(&config, &pool).await?;
     // run it with hyper on localhost:3000
     let (monitor_tx, monitor_rx) = mpsc::channel::<MonitorMessage>(1000);

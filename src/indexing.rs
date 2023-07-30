@@ -12,6 +12,7 @@ use walkdir::WalkDir;
 
 pub async fn index_asset_root(asset_root: &AssetRootDir, pool: &DbPool) -> Result<Vec<AssetId>> {
     let mut new_asset_ids: Vec<AssetId> = vec![];
+    // FIXME if a datadir is subdir of assetroot it should obviously not be indexed
     for entry in WalkDir::new(asset_root.path.as_path()).follow_links(true) {
         match entry {
             Ok(e) => {
@@ -73,10 +74,10 @@ async fn index_file(
                     file_created_at: metadata.created().ok().map(|t| t.into()),
                     file_modified_at: metadata.modified().ok().map(|t| t.into()),
                     canonical_date: None,
-                    thumb_path_small_square_jpg: None,
-                    thumb_path_small_square_webp: None,
-                    thumb_path_large_orig_jpg: None,
-                    thumb_path_large_orig_webp: None,
+                    thumb_small_square_jpg: None,
+                    thumb_small_square_webp: None,
+                    thumb_large_orig_jpg: None,
+                    thumb_large_orig_webp: None,
                 };
                 let full_asset = FullAsset {
                     base: asset_base,

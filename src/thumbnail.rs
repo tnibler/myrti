@@ -1,17 +1,16 @@
 use crate::{
-    model::{AssetAll, AssetBase, AssetId, AssetType},
-    processing::{self, image::ThumbnailParams},
-    repository::{self, pool::DbPool},
+    model::repository::{self, pool::DbPool},
+    model::{AssetAll, AssetBase, AssetId, AssetThumbnails, AssetType},
+    processing::{
+        self,
+        image::{OutDimension, ThumbnailParams},
+    },
 };
 use eyre::{eyre, Context, Result};
 use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::{error, info, info_span, instrument};
-
-pub async fn assets_without_thumbnails(pool: &DbPool) -> Result<Vec<AssetBase>> {
-    repository::asset::get_assets_with_missing_thumbnail(pool, None).await
-}
 
 #[derive(Debug)]
 pub struct ThumbnailResult {
@@ -63,16 +62,23 @@ pub async fn generate_thumbnails(
             }
         };
         let in_path = root_dir.path.join(&asset.file_path);
-        let out_path_jpg = out_dir.join(format!("{}.jpg", asset.id.0));
-        let out_path_webp = out_dir.join(format!("{}.webp", asset.id.0));
-        let out_paths = vec![out_path_jpg.clone(), out_path_webp.clone()];
+        let out_path_small_square_jpg = out_dir.join(format!("{}_sq.jpg", asset.id.0));
+        let out_path_small_square_webp = out_dir.join(format!("{}_sq.webp", asset.id.0));
+        let out_path_large_orig_jpg = out_dir.join(format!("{}.jpg", asset.id.0));
+        let out_path_large_orig_webp = out_dir.join(format!("{}.webp", asset.id.0));
+        let out_paths = vec![
+            out_path_small_square_jpg.clone(),
+            out_path_small_square_webp.clone(),
+        ];
         image_thumbnail_params.push(ThumbnailJob {
             id: asset.id,
             params: ThumbnailParams {
                 in_path,
                 out_paths,
-                width: 300,
-                height: 300,
+                out_dimension: OutDimension::Crop {
+                    width: 256,
+                    height: 256,
+                },
             },
         });
     }

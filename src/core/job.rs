@@ -1,7 +1,7 @@
 use crate::{
     job::{
         indexing_job::{IndexingJob, IndexingJobParams, IndexingJobResult},
-        thumbnail_job::{ThumbnailJob, ThumbnailJobParams, ThumbnailJobResult},
+        thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
     },
     model::AssetId,
 };
@@ -58,6 +58,9 @@ pub struct JobProgress {
     pub description: String,
 }
 
+// this doesnt actually need to exist in this way.
+// job sends progress updates,
+// monitor waits for result and can decide itself if the job failed or not
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JobStatus {
     NotStarted,

@@ -1,3 +1,11 @@
+GET /serverId
+
+probably useful for clients to keep track of multiple remotes
+
+GET /initialSetup
+
+true if no asset roots have been added yet -> let user pick from file tree in browser
+ 
 GET /stats
 
 GET /ping

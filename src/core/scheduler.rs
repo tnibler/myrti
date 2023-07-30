@@ -1,8 +1,9 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use super::{
     job::{Job, JobId},
     monitor::MonitorMessage,
+    DataDirManager,
 };
 use crate::{
     core::job::JobType,
@@ -11,8 +12,8 @@ use crate::{
         indexing_job::{IndexingJob, IndexingJobParams},
         thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
     },
-    model::AssetType,
-    repository,
+    model::repository,
+    model::{AssetId, AssetType},
 };
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
@@ -50,6 +51,7 @@ impl Scheduler {
                 events_tx: tx_copy,
                 events_rx: rx,
                 cancel,
+                data_dir_manager: Arc::new(DataDirManager::new(pool.clone())),
                 pool,
                 monitor_tx,
             };
@@ -73,6 +75,7 @@ struct SchedulerImpl {
     pub cancel: CancellationToken,
     pool: SqlitePool,
     monitor_tx: mpsc::Sender<MonitorMessage>,
+    data_dir_manager: Arc<DataDirManager>,
 }
 
 impl SchedulerImpl {
@@ -110,16 +113,27 @@ impl SchedulerImpl {
 
     async fn queue_jobs_if_required(&mut self) {
         info!("checking if any jobs need to be run...");
+        // TODO only image thumbnails for now
         if repository::asset::get_assets_with_missing_thumbnail(&self.pool, Some(1))
             .await
             .unwrap()
             .iter()
             .any(|asset| asset.ty == AssetType::Image)
         {
-            let params = ThumbnailJobParams {
-                asset_ids: Vec::new(),
-            };
-            let job = ThumbnailJob::new(params.clone(), self.pool.clone());
+            let asset_ids: Vec<AssetId> =
+                repository::asset::get_assets_with_missing_thumbnail(&self.pool, Some(1))
+                    .await
+                    .unwrap()
+                    .iter()
+                    .filter(|asset| asset.ty == AssetType::Image)
+                    .map(|asset| asset.id)
+                    .collect();
+            let params = ThumbnailJobParams { asset_ids };
+            let job = ThumbnailJob::new(
+                params.clone(),
+                self.data_dir_manager.clone(),
+                self.pool.clone(),
+            );
             let handle = job.start();
             self.monitor_tx
                 .send(MonitorMessage::AddJob {

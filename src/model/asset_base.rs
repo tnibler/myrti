@@ -1,4 +1,7 @@
-use super::{db_entity::DbAsset, AssetId, AssetRootDirId, AssetType};
+use super::{
+    db_entity::DbAsset, util::opt_path_to_string, AssetId, AssetRootDirId, AssetType,
+    ResourceFileId,
+};
 use chrono::{DateTime, Utc};
 use eyre::{eyre, Result};
 use serde::Serialize;
@@ -20,21 +23,10 @@ pub struct AssetBase {
     pub canonical_date: Option<DateTime<Utc>>,
     /// Seahash of the file, if already computed
     pub hash: Option<Vec<u8>>,
-    pub thumb_path_small_square_jpg: Option<PathBuf>,
-    pub thumb_path_small_square_webp: Option<PathBuf>,
-    pub thumb_path_large_orig_jpg: Option<PathBuf>,
-    pub thumb_path_large_orig_webp: Option<PathBuf>,
-}
-
-fn opt_path_to_string(path: &Option<PathBuf>) -> Result<Option<String>> {
-    match path.as_ref() {
-        None => Ok(None),
-        Some(p) => Ok(Some(
-            p.to_str()
-                .ok_or_else(|| eyre!("non unicode file path not supported"))?
-                .to_string(),
-        )),
-    }
+    pub thumb_small_square_jpg: Option<ResourceFileId>,
+    pub thumb_small_square_webp: Option<ResourceFileId>,
+    pub thumb_large_orig_jpg: Option<ResourceFileId>,
+    pub thumb_large_orig_webp: Option<ResourceFileId>,
 }
 
 impl TryFrom<&AssetBase> for DbAsset {
@@ -46,10 +38,6 @@ impl TryFrom<&AssetBase> for DbAsset {
             .to_str()
             .ok_or_else(|| eyre!("non unicode file path not supported"))?
             .to_string();
-        let thumb_path_small_square_jpg = opt_path_to_string(&value.thumb_path_small_square_jpg)?;
-        let thumb_path_small_square_webp = opt_path_to_string(&value.thumb_path_small_square_webp)?;
-        let thumb_path_large_orig_jpg = opt_path_to_string(&value.thumb_path_large_orig_jpg)?;
-        let thumb_path_large_orig_webp = opt_path_to_string(&value.thumb_path_large_orig_webp)?;
         Ok(DbAsset {
             id: value.id,
             ty: value.ty.into(),
@@ -60,10 +48,10 @@ impl TryFrom<&AssetBase> for DbAsset {
             file_created_at: value.file_created_at.map(|t| t.naive_utc()),
             file_modified_at: value.file_modified_at.map(|t| t.naive_utc()),
             canonical_date: value.canonical_date.map(|t| t.naive_utc()),
-            thumb_path_small_square_jpg,
-            thumb_path_small_square_webp,
-            thumb_path_large_orig_jpg,
-            thumb_path_large_orig_webp,
+            thumb_small_square_jpg: value.thumb_small_square_jpg,
+            thumb_small_square_webp: value.thumb_small_square_webp,
+            thumb_large_orig_jpg: value.thumb_large_orig_jpg,
+            thumb_large_orig_webp: value.thumb_large_orig_webp,
         })
     }
 }
@@ -90,16 +78,10 @@ impl TryFrom<&DbAsset> for AssetBase {
             file_modified_at: value.file_modified_at.map(|t| t.and_utc()),
             hash: value.hash.clone(),
             canonical_date: value.canonical_date.map(|t| t.and_utc()),
-            thumb_path_small_square_jpg: value
-                .thumb_path_small_square_jpg
-                .as_ref()
-                .map(|p| p.into()),
-            thumb_path_small_square_webp: value
-                .thumb_path_small_square_webp
-                .as_ref()
-                .map(|p| p.into()),
-            thumb_path_large_orig_jpg: value.thumb_path_large_orig_jpg.as_ref().map(|p| p.into()),
-            thumb_path_large_orig_webp: value.thumb_path_large_orig_webp.as_ref().map(|p| p.into()),
+            thumb_small_square_jpg: value.thumb_small_square_jpg,
+            thumb_small_square_webp: value.thumb_small_square_webp,
+            thumb_large_orig_jpg: value.thumb_large_orig_jpg,
+            thumb_large_orig_webp: value.thumb_large_orig_webp,
         })
     }
 }

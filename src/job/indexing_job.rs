@@ -7,8 +7,8 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     core::job::{Job, JobHandle, JobProgress, JobResultType, JobStatus},
     indexing,
+    model::repository::pool::DbPool,
     model::{AssetId, AssetRootDir, AssetRootDirId},
-    repository::pool::DbPool,
 };
 
 pub struct IndexingJob {

@@ -26,7 +26,9 @@ fn main() {
     let flags: Vec<&str> = out_str.split(' ').map(|part| part.trim()).collect();
 
     let mut wrapper_cc = cc::Build::new();
-    wrapper_cc.file("vips_wrapper/thumbnail.c");
+    wrapper_cc
+        .file("vips_wrapper/thumbnail.c")
+        .warnings_into_errors(true);
     for flag in flags {
         if !flag.is_empty() {
             wrapper_cc.flag(flag);

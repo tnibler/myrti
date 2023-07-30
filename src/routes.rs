@@ -4,8 +4,8 @@ use crate::{
     eyre::Result,
     http_error::HttpError,
     job::indexing_job::IndexingJobParams,
+    model::repository,
     model::AssetRootDirId,
-    repository,
 };
 use axum::{
     extract::{Query, State},

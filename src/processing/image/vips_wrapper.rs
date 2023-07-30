@@ -33,11 +33,16 @@ pub fn teardown() {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OutDimension {
+    KeepAspect { width: i32 },
+    Crop { width: i32, height: i32 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThumbnailParams {
     pub in_path: PathBuf,
     pub out_paths: Vec<PathBuf>,
-    pub width: i32,
-    pub height: i32,
+    pub out_dimension: OutDimension,
 }
 
 pub fn generate_thumbnail(params: ThumbnailParams) -> Result<()> {
@@ -62,8 +67,21 @@ pub fn generate_thumbnail(params: ThumbnailParams) -> Result<()> {
         in_path: c_path.as_ptr(),
         out_paths: c_out_path_ptrs.as_ptr(),
         num_out_paths: c_out_path_ptrs.len() as u64,
-        width: params.width,
-        height: params.height,
+        width: match params.out_dimension {
+            OutDimension::KeepAspect { width } => width,
+            OutDimension::Crop { width, height: _ } => width,
+        },
+        height: match params.out_dimension {
+            OutDimension::KeepAspect { width: _ } => 0,
+            OutDimension::Crop { width: _, height } => height,
+        },
+        keep_aspect: match params.out_dimension {
+            OutDimension::KeepAspect { width: _ } => 1,
+            OutDimension::Crop {
+                width: _,
+                height: _,
+            } => 0,
+        },
     };
     let ret = unsafe { wrapper::thumbnail(params) };
     if ret != 0 {

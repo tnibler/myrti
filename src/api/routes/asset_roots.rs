@@ -12,8 +12,8 @@ use crate::{
         ApiResult,
     },
     app_state::SharedState,
+    model::repository,
     model::AssetRootDirId,
-    repository,
 };
 
 pub fn router() -> Router<SharedState> {

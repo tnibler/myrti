@@ -123,6 +123,12 @@ impl Monitor {
                     }
                     Some(job_result) = job_result_rx.recv() => {
                         info!(?job_result, "Received result from job");
+                        if let Ok(job_result) = job_result {
+                            match job_result {
+                                JobResultType::Indexing(_) => {},
+                                JobResultType::Thumbnail(_) => {},
+                            }
+                        }
                     }
                 }
             }

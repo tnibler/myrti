@@ -1,8 +1,6 @@
-use chrono::NaiveDateTime;
-
-use crate::model::{AssetId, AssetRootDirId};
-
 use super::DbAssetType;
+use crate::model::{AssetId, AssetRootDirId, ResourceFileId};
+use chrono::NaiveDateTime;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DbAsset {
@@ -15,8 +13,24 @@ pub struct DbAsset {
     pub file_created_at: Option<NaiveDateTime>,
     pub file_modified_at: Option<NaiveDateTime>,
     pub canonical_date: Option<NaiveDateTime>,
-    pub thumb_path_small_square_jpg: Option<String>,
-    pub thumb_path_small_square_webp: Option<String>,
-    pub thumb_path_large_orig_jpg: Option<String>,
-    pub thumb_path_large_orig_webp: Option<String>,
+    pub thumb_small_square_jpg: Option<ResourceFileId>,
+    pub thumb_small_square_webp: Option<ResourceFileId>,
+    pub thumb_large_orig_jpg: Option<ResourceFileId>,
+    pub thumb_large_orig_webp: Option<ResourceFileId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DbAssetThumbnails {
+    pub id: AssetId,
+    pub ty: DbAssetType,
+    pub thumb_small_square_jpg: Option<ResourceFileId>,
+    pub thumb_small_square_webp: Option<ResourceFileId>,
+    pub thumb_large_orig_jpg: Option<ResourceFileId>,
+    pub thumb_large_orig_webp: Option<ResourceFileId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DbAssetPathOnDisk {
+    pub path_in_asset_root: String,
+    pub asset_root_path: String,
 }

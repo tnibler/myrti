@@ -23,6 +23,12 @@ pub struct AssetPathOnDisk {
     pub asset_root_path: PathBuf,
 }
 
+impl AssetPathOnDisk {
+    pub fn path_on_disk(&self) -> PathBuf {
+        self.asset_root_path.join(&self.path_in_asset_root)
+    }
+}
+
 impl TryFrom<&AssetThumbnails> for DbAssetThumbnails {
     type Error = eyre::Report;
 

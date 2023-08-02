@@ -17,6 +17,7 @@ static VIPS_INITIALIZED: Once = Once::new();
 pub fn init() {
     VIPS_INITIALIZED.call_once(|| unsafe {
         let span = info_span!("libvips initialization");
+        let _enter = span.enter();
         let ret = wrapper::init();
         if ret != 0 {
             error!("Could not initialize libvips");
@@ -28,6 +29,8 @@ pub fn init() {
 // maybe reinitialize everytime we use vips?
 pub fn teardown() {
     unsafe {
+        let span = info_span!("libvips teardown");
+        let _enter = span.enter();
         wrapper::teardown();
     }
 }

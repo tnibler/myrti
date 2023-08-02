@@ -1,5 +1,6 @@
 use chrono::Utc;
 use eyre::{eyre, Context, Result};
+use sqlx::{pool::PoolConnection, Sqlite, SqliteConnection};
 use tracing::Instrument;
 
 use crate::{
@@ -13,7 +14,7 @@ use crate::{
 use super::pool::DbPool;
 
 pub async fn insert_new_resource_file(
-    pool: &DbPool,
+    conn: &mut SqliteConnection,
     new_resource_file: NewResourceFile,
 ) -> Result<ResourceFileId> {
     let created_at = Utc::now().naive_utc();
@@ -28,7 +29,7 @@ VALUES (NULL, ?, ?, ?);
         path,
         created_at
     )
-    .execute(pool)
+    .execute(conn)
     .in_current_span()
     .await
     .wrap_err("could not insert into table ResourceFiles")?;

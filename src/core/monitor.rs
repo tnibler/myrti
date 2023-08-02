@@ -1,5 +1,3 @@
-use std::{cell::Cell, collections::HashMap, fmt::Display, sync::Arc};
-
 use super::{
     job::{JobHandle, JobId, JobProgress, JobResultType, JobStatus, JobType},
     scheduler::SchedulerMessage,
@@ -7,11 +5,8 @@ use super::{
 use eyre::eyre;
 use eyre::Result;
 use futures::{SinkExt, StreamExt};
-use tokio::{
-    select,
-    sync::mpsc,
-    task::{JoinError, JoinHandle},
-};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
+use tokio::{select, sync::mpsc, task::JoinError};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, info_span, instrument, warn, Instrument};
 
@@ -59,7 +54,7 @@ pub struct NewJobToWatch {
 impl Display for MonitorMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MonitorMessage::AddJob { handle, ty } => write!(f, "AddJob({})", ty),
+            MonitorMessage::AddJob { handle: _, ty } => write!(f, "AddJob({})", ty),
         }
     }
 }
@@ -133,6 +128,7 @@ impl Monitor {
 
     #[instrument(name = "Status received", skip(self), level = "info")]
     async fn on_status_received(&self, job_id: JobId, progress: JobProgress) {
+        debug!("received status");
         let mut statuses = self.statuses.lock().await;
         match statuses.get(&job_id) {
             None | Some(JobStatus::NotStarted) | Some(JobStatus::Running(_)) => {
@@ -144,20 +140,35 @@ impl Monitor {
         }
     }
 
-    #[instrument(name = "Result received", skip(self), level = "info")]
     async fn on_result_received(&self, job_id: JobId, result: Result<JobResultType, JoinError>) {
         match result {
             Ok(job_result) => {
-                self.set_status(job_id, JobStatus::Complete).await;
+                match job_result {
+                    JobResultType::Indexing(indexing_result) => {
+                        let status = if indexing_result.failed.is_empty() {
+                            JobStatus::CompleteWithErrors
+                        } else {
+                            JobStatus::Complete
+                        };
+                        self.set_status(job_id, status).await;
+                    }
+                    JobResultType::Thumbnail(thumbnail_results) => {
+                        let status = match thumbnail_results {
+                            Err(e) => JobStatus::Failed { msg: e.to_string() },
+                            Ok(r) if !r.failed.is_empty() => JobStatus::Failed {
+                                msg: format!("some thumbnail tasks failed: {:?}", r.failed),
+                            },
+                            Ok(results) => JobStatus::Complete,
+                        };
+                        self.set_status(job_id, status).await;
+                    }
+                    JobResultType::DashSegmenting(_) => todo!(),
+                }
                 self.scheduler_tx
                     .send(SchedulerMessage::JobComplete { id: job_id })
                     .in_current_span()
                     .await
                     .unwrap();
-                match job_result {
-                    JobResultType::Indexing(_) => {}
-                    JobResultType::Thumbnail(_) => {}
-                }
             }
             Err(join_error) => {
                 self.set_status(
@@ -177,6 +188,16 @@ impl Monitor {
     }
 
     async fn set_status(&self, job_id: JobId, status: JobStatus) {
+        // status must not be updated if the job has ended
+        if let Some(old_status) = self.statuses.lock().await.get(&job_id) {
+            debug_assert!(!matches!(
+                old_status,
+                JobStatus::Complete
+                    | JobStatus::CompleteWithErrors
+                    | JobStatus::Cancelled
+                    | JobStatus::Failed { msg: _ },
+            ));
+        }
         self.statuses.lock().await.insert(job_id, status);
     }
 

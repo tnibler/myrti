@@ -10,6 +10,7 @@ pub struct JobId(pub String);
 pub enum JobType {
     Indexing,
     Thumbnail,
+    DashSegmenting,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -17,6 +18,7 @@ pub enum JobStatus {
     NotStarted,
     Running,
     Complete,
+    CompleteWithErrors,
     Failed,
     Cancelled,
 }
@@ -47,8 +49,9 @@ impl TryFrom<JobId> for core::job::JobId {
 
 pub fn api_job_type(job_type: &core::job::JobType) -> JobType {
     match job_type {
-        core::job::JobType::Indexing { params } => JobType::Indexing,
-        core::job::JobType::Thumbnail { params } => JobType::Thumbnail,
+        core::job::JobType::Indexing { params: _ } => JobType::Indexing,
+        core::job::JobType::Thumbnail { params: _ } => JobType::Thumbnail,
+        core::job::JobType::DashSegmenting { params: _ } => JobType::DashSegmenting,
     }
 }
 
@@ -57,7 +60,8 @@ pub fn api_job_status(job_status: &core::job::JobStatus) -> JobStatus {
         core::job::JobStatus::NotStarted => JobStatus::NotStarted,
         core::job::JobStatus::Running(_) => JobStatus::Running,
         core::job::JobStatus::Complete => JobStatus::Complete,
-        core::job::JobStatus::Failed { msg } => JobStatus::Failed,
+        core::job::JobStatus::CompleteWithErrors => JobStatus::CompleteWithErrors,
+        core::job::JobStatus::Failed { msg: _ } => JobStatus::Failed,
         core::job::JobStatus::Cancelled => JobStatus::Cancelled,
     }
 }

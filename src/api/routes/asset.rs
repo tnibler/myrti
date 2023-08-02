@@ -66,7 +66,6 @@ async fn get_thumbnail(
     Path((id, size, format)): Path<(String, ThumbnailSize, ThumbnailFormat)>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Response> {
-    debug!("get thumbnail");
     let id: model::AssetId = AssetId(id).try_into()?;
     let asset_base = repository::asset::get_asset_base(&app_state.pool, id).await?;
     let (thumb_resource, content_type) = match (size, format) {

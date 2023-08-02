@@ -5,7 +5,7 @@ use std::path::Path;
 use tracing::{instrument, Instrument};
 
 use crate::model::{
-    db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbVideoInfo},
+    db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType, DbVideoInfo},
     AssetAll, AssetBase, AssetId, AssetPathOnDisk, AssetThumbnails, AssetType, FullAsset, Image,
     ResourceFileId, Video,
 };
@@ -62,6 +62,7 @@ pub async fn get_asset_path_on_disk(pool: &DbPool, id: AssetId) -> Result<AssetP
         DbAssetPathOnDisk,
         r#"
 SELECT 
+Assets.id AS id,
 Assets.file_path AS path_in_asset_root,
 AssetRootDirs.path AS asset_root_path
 FROM Assets INNER JOIN AssetRootDirs ON Assets.root_dir_id = AssetRootDirs.id
@@ -377,11 +378,11 @@ pub async fn insert_video_info(
     let db_video_info: DbVideoInfo = video.try_to_db_video_info(asset_id)?;
     sqlx::query!(
         "
-INSERT INTO VideoInfo (asset_id, dash_manifest_path) VALUES
+INSERT INTO VideoInfo (asset_id, dash_resource_dir) VALUES
 (?, ?);
 ",
         asset_id.0,
-        db_video_info.dash_manifest_path
+        db_video_info.dash_resource_dir
     )
     .execute(conn)
     .in_current_span()
@@ -400,10 +401,10 @@ pub async fn update_video_info(
     let db_video_info: DbVideoInfo = video.try_to_db_video_info(asset_id)?;
     sqlx::query!(
         "
-UPDATE VideoInfo SET dash_manifest_path=? 
+UPDATE VideoInfo SET dash_resource_dir=? 
 WHERE asset_id=?;
 ",
-        db_video_info.dash_manifest_path,
+        db_video_info.dash_resource_dir,
         asset_id.0
     )
     .execute(conn)
@@ -467,4 +468,32 @@ WHERE id=?;
     .await
     .wrap_err("could not update table Assets")?;
     Ok(())
+}
+
+#[instrument(
+    name = "Get video Assets with missing DASH manifest",
+    skip(pool),
+    level = "debug"
+)]
+pub async fn get_video_assets_without_dash(pool: &DbPool) -> Result<Vec<AssetPathOnDisk>> {
+    sqlx::query_as!(
+        DbAssetPathOnDisk,
+        r#"
+SELECT 
+Assets.id AS id,
+Assets.file_path AS path_in_asset_root,
+AssetRootDirs.path AS asset_root_path
+FROM Assets, VideoInfo, AssetRootDirs 
+WHERE Assets.id = VideoInfo.asset_id AND Assets.root_dir_id = AssetRootDirs.id
+AND Assets.ty = ? AND VideoInfo.dash_resource_dir IS NULL;
+    "#,
+        DbAssetType::Video
+    )
+    .fetch_all(pool)
+    .in_current_span()
+    .await
+    .wrap_err("could not fetch video assets without mpd manifest from db")?
+    .into_iter()
+    .map(|a| a.try_into())
+    .collect::<Result<Vec<_>>>()
 }

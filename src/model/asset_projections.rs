@@ -19,6 +19,7 @@ pub struct AssetThumbnails {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AssetPathOnDisk {
+    pub id: AssetId,
     pub path_in_asset_root: PathBuf,
     pub asset_root_path: PathBuf,
 }
@@ -80,6 +81,7 @@ impl TryFrom<DbAssetPathOnDisk> for AssetPathOnDisk {
 
     fn try_from(value: DbAssetPathOnDisk) -> Result<Self, Self::Error> {
         Ok(AssetPathOnDisk {
+            id: value.id,
             path_in_asset_root: PathBuf::from(value.path_in_asset_root),
             asset_root_path: PathBuf::from(value.asset_root_path),
         })

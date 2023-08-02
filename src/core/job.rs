@@ -1,5 +1,6 @@
 use crate::{
     job::{
+        dash_segmenting_job::{DashSegmentingJob, DashSegmentingJobParams},
         indexing_job::{IndexingJob, IndexingJobParams, IndexingJobResult},
         thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
     },
@@ -24,19 +25,22 @@ impl Display for JobId {
 pub enum JobResultType {
     Indexing(<IndexingJob as Job>::Result),
     Thumbnail(<ThumbnailJob as Job>::Result),
+    DashSegmenting(<DashSegmentingJob as Job>::Result),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JobType {
     Indexing { params: IndexingJobParams },
     Thumbnail { params: ThumbnailJobParams },
+    DashSegmenting { params: DashSegmentingJobParams },
 }
 
 impl Display for JobType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            JobType::Indexing { params } => "Indexing",
-            JobType::Thumbnail { params } => "Thumbnail",
+            JobType::Indexing { params: _ } => "Indexing",
+            JobType::Thumbnail { params: _ } => "Thumbnail",
+            JobType::DashSegmenting { params: _ } => "DashSegmenting",
         };
         write!(f, "{}", s)
     }
@@ -47,6 +51,7 @@ impl Display for JobResultType {
         let s = match self {
             JobResultType::Indexing(_) => "Indexing",
             JobResultType::Thumbnail(_) => "Thumbnail",
+            JobResultType::DashSegmenting(_) => "DashSegmenting",
         };
         write!(f, "{}Result", s)
     }
@@ -66,6 +71,7 @@ pub enum JobStatus {
     NotStarted,
     Running(JobProgress),
     Complete,
+    CompleteWithErrors,
     Failed { msg: String },
     Cancelled,
 }
@@ -82,5 +88,5 @@ pub trait Job {
 
     fn start(self) -> JobHandle
     where
-        Self: Sized;
+        Self: Sized + Send;
 }

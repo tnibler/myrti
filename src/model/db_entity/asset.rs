@@ -31,6 +31,7 @@ pub struct DbAssetThumbnails {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DbAssetPathOnDisk {
+    pub id: AssetId,
     pub path_in_asset_root: String,
     pub asset_root_path: String,
 }

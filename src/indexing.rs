@@ -50,7 +50,7 @@ async fn index_file(
                 let (ty, full): (AssetType, AssetAll) = match extension.as_str() {
                     "mp4" => {
                         let video_info = AssetAll::Video(Video {
-                            dash_manifest_path: None,
+                            dash_resource_dir: None,
                         });
                         (AssetType::Video, video_info)
                     }

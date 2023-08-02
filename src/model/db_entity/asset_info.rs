@@ -1,9 +1,9 @@
-use crate::model::AssetId;
+use crate::model::{AssetId, ResourceFileId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DbVideoInfo {
     pub asset_id: AssetId,
-    pub dash_manifest_path: Option<String>,
+    pub dash_resource_dir: Option<ResourceFileId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

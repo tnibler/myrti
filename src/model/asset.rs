@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use super::{
     db_entity::{DbImageInfo, DbVideoInfo},
-    AssetBase, AssetId,
+    AssetBase, AssetId, ResourceFileId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -11,7 +11,7 @@ pub struct Image {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Video {
-    pub dash_manifest_path: Option<PathBuf>,
+    pub dash_resource_dir: Option<ResourceFileId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,10 +51,7 @@ impl Video {
     pub fn try_to_db_video_info(&self, asset_id: AssetId) -> Result<DbVideoInfo> {
         Ok(DbVideoInfo {
             asset_id,
-            dash_manifest_path: self
-                .dash_manifest_path
-                .clone()
-                .map(|p| p.to_str().unwrap().to_string()),
+            dash_resource_dir: self.dash_resource_dir,
         })
     }
 }
@@ -64,7 +61,7 @@ impl TryFrom<&DbVideoInfo> for Video {
 
     fn try_from(value: &DbVideoInfo) -> std::result::Result<Self, Self::Error> {
         Ok(Video {
-            dash_manifest_path: value.dash_manifest_path.as_ref().map(|p| p.into()),
+            dash_resource_dir: value.dash_resource_dir,
         })
     }
 }

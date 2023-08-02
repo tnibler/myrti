@@ -228,6 +228,7 @@ async fn generate_thumbnails(
         let asset_path =
             match repository::asset::get_asset_path_on_disk(&pool, tasks.asset_id).await {
                 Ok(AssetPathOnDisk {
+                    id,
                     path_in_asset_root,
                     asset_root_path,
                 }) => asset_root_path.join(path_in_asset_root),
@@ -268,13 +269,13 @@ async fn generate_thumbnails(
             rx.await.unwrap();
             // TODO handle errors
             let jpg_id = repository::resource_file::insert_new_resource_file(
-                pool,
+                &mut pool.acquire().await.unwrap(),
                 task_for_asset.jpg_file.clone(),
             )
             .await
             .unwrap();
             let webp_id = repository::resource_file::insert_new_resource_file(
-                pool,
+                &mut pool.acquire().await.unwrap(),
                 task_for_asset.webp_file.clone(),
             )
             .await
@@ -325,6 +326,7 @@ pub async fn generate_video_thumbnails(
         let asset_path =
             match repository::asset::get_asset_path_on_disk(&pool, tasks.asset_id).await {
                 Ok(AssetPathOnDisk {
+                    id,
                     path_in_asset_root,
                     asset_root_path,
                 }) => asset_root_path.join(path_in_asset_root),
@@ -389,13 +391,13 @@ pub async fn generate_video_thumbnails(
             rx.await.unwrap();
             // TODO handle errors
             let jpg_id = repository::resource_file::insert_new_resource_file(
-                pool,
+                &mut pool.acquire().await.unwrap(),
                 task_for_asset.jpg_file.clone(),
             )
             .await
             .unwrap();
             let webp_id = repository::resource_file::insert_new_resource_file(
-                pool,
+                &mut pool.acquire().await.unwrap(),
                 task_for_asset.webp_file.clone(),
             )
             .await

@@ -39,7 +39,7 @@ impl IndexingJob {
         self,
         status_tx: mpsc::Sender<JobProgress>,
         _cancel: CancellationToken,
-    ) -> Result<IndexingJobResult> {
+    ) -> IndexingJobResult {
         // let span = info_span!("IndexingJob");
         // let _enter = span.enter();
         let asset_ids: Vec<AssetId> = Vec::new();
@@ -63,16 +63,16 @@ impl IndexingJob {
                 failed.push((self.params.asset_root.id, e));
             }
         };
-        Ok(IndexingJobResult {
+        IndexingJobResult {
             failed,
             new_asset_ids,
-        })
+        }
     }
 }
 
 #[async_trait]
 impl Job for IndexingJob {
-    type Result = Result<IndexingJobResult>;
+    type Result = IndexingJobResult;
 
     fn start(self) -> JobHandle {
         let (tx, rx) = mpsc::channel::<JobProgress>(1000);

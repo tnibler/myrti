@@ -41,9 +41,13 @@ end: date
 
 ### /asset/:id/video
 
-GET /asset/:id/video/representations
+GET /dash/:id/stream.mpd
 
-<!-- GET /asset/:id/video/dashManifest -->
+maybe special case? otherwise just serve files under /dash/:id/
+
+GET /dash/:id/:segment
+
+look for file with name :segment in DashResourceDir for asset
 
 ## /album
 

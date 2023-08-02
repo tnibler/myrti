@@ -48,7 +48,6 @@ mod job;
 mod model;
 mod processing;
 mod routes;
-mod thumbnail;
 
 async fn db_setup() -> Result<SqlitePool> {
     let db_url = "sqlite://mediathingy.db";

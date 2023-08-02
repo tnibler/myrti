@@ -45,8 +45,31 @@ CREATE TABLE ImageInfo (
 
 CREATE TABLE VideoInfo (
   asset_id INTEGER PRIMARY KEY NOT NULL,
-  dash_manifest_path TEXT,
-  FOREIGN KEY (asset_id) REFERENCES Assets(id) ON DELETE CASCADE
+  dash_resource_dir INTEGER,
+  FOREIGN KEY (asset_id) REFERENCES Assets(id) ON DELETE CASCADE,
+  FOREIGN KEY (dash_resource_dir) REFERENCES ResourceFiles(id) ON DELETE SET NULL
+);
+
+CREATE TABLE VideoRepresentation (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  asset_id INTEGER NOT NULL,
+  codec_name TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  bitrate INTEGER NOT NULL,
+  resource_file INTEGER NOT NULL,
+  FOREIGN KEY (asset_id) REFERENCES Assets(id) ON DELETE CASCADE,
+  FOREIGN KEY (resource_file) REFERENCES ResourceFiles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE AudioRepresentation (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  asset_id INTEGER NOT NULL,
+  codec_name TEXT NOT NULL,
+  bitrate INTEGER NOT NULL,
+  resource_file INTEGER NOT NULL,
+  FOREIGN KEY (asset_id) REFERENCES Assets(id) ON DELETE CASCADE,
+  FOREIGN KEY (resource_file) REFERENCES ResourceFiles(id) ON DELETE CASCADE
 );
 
 CREATE TABLE Albums (

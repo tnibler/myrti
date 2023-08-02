@@ -9,6 +9,7 @@ use crate::{
     core::job::JobType,
     eyre::Result,
     job::{
+        dash_segmenting_job::{DashSegmentingJob, DashSegmentingJobParams},
         indexing_job::{IndexingJob, IndexingJobParams},
         thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
     },
@@ -110,9 +111,36 @@ impl SchedulerImpl {
             }
         }
     }
+    async fn start_segmenting_job(&self) {
+        let asset = repository::asset::get_assets(&self.pool)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|a| a.ty == AssetType::Video);
+        if asset.is_none() {
+            return;
+        }
+        let asset_id = asset.unwrap().id;
+        let params = DashSegmentingJobParams { asset_id };
+        let job = DashSegmentingJob::new(
+            params.clone(),
+            self.data_dir_manager.clone(),
+            self.pool.clone(),
+        );
+        let handle = job.start();
+        self.monitor_tx
+            .send(MonitorMessage::AddJob {
+                handle,
+                ty: JobType::DashSegmenting { params },
+            })
+            .await
+            .unwrap();
+    }
 
     async fn queue_jobs_if_required(&mut self) {
         info!("checking if any jobs need to be run...");
+        // just here for testing
+        // self.start_segmenting_job().await;
         if !repository::asset::get_assets_with_missing_thumbnail(&self.pool, Some(1))
             .await
             .unwrap()

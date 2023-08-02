@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 async-trait = "0.1.72"
-axum = { version = "0.6.19", features = ["tracing"] }
+axum = { version = "0.6.19", features = ["tracing", "macros"] }
 chrono = { version = "0.4.26", features = ["serde"] }
 color-eyre = "0.6.2"
 eyre = "0.6.8"
@@ -19,8 +19,9 @@ parse-size = { version = "1.0.0", features = ["std"] }
 rayon = "1.7.0"
 serde = { version = "1.0.175", features = ["derive"] }
 sqlx = {version ="0.7.1", features = ["sqlite", "runtime-tokio", "chrono", "migrate"]}
+tempfile = "3.7.0"
 tokio = { version = "1.29.1", features = ["full"] }
-tokio-util = "0.7.8"
+tokio-util = {version = "0.7.8", features = ["io"]}
 toml = "0.7.6"
 tower = { version = "0.4.13", features = ["tracing"] }
 tower-http = { version = "0.4.3", features = ["trace", "request-id", "util"] }

@@ -113,19 +113,16 @@ impl SchedulerImpl {
 
     async fn queue_jobs_if_required(&mut self) {
         info!("checking if any jobs need to be run...");
-        // TODO only image thumbnails for now
-        if repository::asset::get_assets_with_missing_thumbnail(&self.pool, Some(1))
+        if !repository::asset::get_assets_with_missing_thumbnail(&self.pool, Some(1))
             .await
             .unwrap()
-            .iter()
-            .any(|asset| asset.ty == AssetType::Image)
+            .is_empty()
         {
             let asset_ids: Vec<AssetId> =
-                repository::asset::get_assets_with_missing_thumbnail(&self.pool, Some(1))
+                repository::asset::get_assets_with_missing_thumbnail(&self.pool, None)
                     .await
                     .unwrap()
                     .iter()
-                    .filter(|asset| asset.ty == AssetType::Image)
                     .map(|asset| asset.id)
                     .collect();
             let params = ThumbnailJobParams { asset_ids };

@@ -1,7 +1,7 @@
 use std::{cell::Cell, collections::HashMap, fmt::Display, sync::Arc};
 
 use super::{
-    job::{JobHandle, JobId, JobResultType, JobStatus, JobType},
+    job::{JobHandle, JobId, JobProgress, JobResultType, JobStatus, JobType},
     scheduler::SchedulerMessage,
 };
 use eyre::eyre;
@@ -20,7 +20,7 @@ pub struct Monitor {
     inner: Arc<tokio::sync::Mutex<MonitorInner>>,
     statuses: Arc<tokio::sync::Mutex<HashMap<JobId, JobStatus>>>,
     scheduler_tx: mpsc::Sender<SchedulerMessage>,
-    job_result_tx: mpsc::Sender<Result<JobResultType, JoinError>>,
+    job_result_tx: mpsc::Sender<(JobId, Result<JobResultType, JoinError>)>,
     new_status_tx: mpsc::Sender<NewJobToWatch>,
 }
 
@@ -37,7 +37,7 @@ struct JobInfo {
 
 struct JobStatusWithId {
     pub id: JobId,
-    pub status: JobStatus,
+    pub progress: JobProgress,
 }
 
 #[derive(Debug, Clone)]
@@ -53,7 +53,7 @@ pub enum MonitorMessage {
 
 pub struct NewJobToWatch {
     pub id: JobId,
-    pub status_rx: mpsc::Receiver<JobStatus>,
+    pub progress_rx: mpsc::Receiver<JobProgress>,
 }
 
 impl Display for MonitorMessage {
@@ -71,7 +71,7 @@ impl Monitor {
         cancel: CancellationToken,
     ) -> Monitor {
         let (job_result_tx, mut job_result_rx) =
-            mpsc::channel::<Result<JobResultType, JoinError>>(1000);
+            mpsc::channel::<(JobId, Result<JobResultType, JoinError>)>(1000);
         let (add_job_tx, mut add_job_rx) = mpsc::channel::<NewJobToWatch>(1000);
         let statuses = Arc::new(tokio::sync::Mutex::new(HashMap::<JobId, JobStatus>::new()));
         let statuses_copy = statuses.clone();
@@ -99,19 +99,19 @@ impl Monitor {
                     },
                     // New job added with its corresponding channel to read incoming status updates
                     // from
-                    Some(NewJobToWatch { id, mut status_rx }) = add_job_rx.recv() => {
+                    Some(NewJobToWatch { id, mut progress_rx }) = add_job_rx.recv() => {
                         debug!(job_id=%id, "New job added to monitor");
-                        let (mut status_with_id_tx, status_with_id_rx) = futures::channel::mpsc::channel::<JobStatusWithId>(1000);
+                        let (mut progress_with_id_tx, progress_with_id_rx) = futures::channel::mpsc::channel::<JobStatusWithId>(1000);
                         tokio::task::spawn(async move {
-                            while let Some(status) = status_rx.recv().await {
-                                status_with_id_tx.send(JobStatusWithId { id, status }).await.unwrap();
+                            while let Some(progress) = progress_rx.recv().await {
+                                progress_with_id_tx.send(JobStatusWithId { id, progress }).await.unwrap();
                             }
                         });
-                        any_status.push(status_with_id_rx);
+                        any_status.push(progress_with_id_rx);
                     },
                     // Some job sent a new status
                     Some(status_with_id) = any_status.next() => {
-                        monitor_copy.on_status_received(status_with_id.id, status_with_id.status).in_current_span().await;
+                        monitor_copy.on_status_received(status_with_id.id, status_with_id.progress).in_current_span().await;
                     }
                     Some(msg) = msg_rx.recv() => {
                         debug!(%msg, "Received message");
@@ -121,14 +121,9 @@ impl Monitor {
                             }
                         }
                     }
-                    Some(job_result) = job_result_rx.recv() => {
+                    Some((job_id, job_result)) = job_result_rx.recv() => {
                         info!(?job_result, "Received result from job");
-                        if let Ok(job_result) = job_result {
-                            match job_result {
-                                JobResultType::Indexing(_) => {},
-                                JobResultType::Thumbnail(_) => {},
-                            }
-                        }
+                            monitor_copy.on_result_received(job_id, job_result).await;
                     }
                 }
             }
@@ -137,24 +132,52 @@ impl Monitor {
     }
 
     #[instrument(name = "Status received", skip(self), level = "info")]
-    async fn on_status_received(&self, job_id: JobId, status: JobStatus) {
-        self.statuses.lock().await.insert(job_id, status.clone());
-        match status {
-            JobStatus::Complete => {
+    async fn on_status_received(&self, job_id: JobId, progress: JobProgress) {
+        let mut statuses = self.statuses.lock().await;
+        match statuses.get(&job_id) {
+            None | Some(JobStatus::NotStarted) | Some(JobStatus::Running(_)) => {
+                statuses.insert(job_id, JobStatus::Running(progress));
+            }
+            Some(status) => {
+                error!(%job_id, ?status, "Must not receive progress updates for job with this status");
+            }
+        }
+    }
+
+    #[instrument(name = "Result received", skip(self), level = "info")]
+    async fn on_result_received(&self, job_id: JobId, result: Result<JobResultType, JoinError>) {
+        match result {
+            Ok(job_result) => {
+                self.set_status(job_id, JobStatus::Complete).await;
+                self.scheduler_tx
+                    .send(SchedulerMessage::JobComplete { id: job_id })
+                    .in_current_span()
+                    .await
+                    .unwrap();
+                match job_result {
+                    JobResultType::Indexing(_) => {}
+                    JobResultType::Thumbnail(_) => {}
+                }
+            }
+            Err(join_error) => {
+                self.set_status(
+                    job_id,
+                    JobStatus::Failed {
+                        msg: join_error.to_string(),
+                    },
+                )
+                .await;
                 self.scheduler_tx
                     .send(SchedulerMessage::JobComplete { id: job_id })
                     .in_current_span()
                     .await
                     .unwrap();
             }
-            JobStatus::Failed { msg } => {
-                error!("Job failed: {}", msg);
-            }
-            JobStatus::Cancelled => {
-                info!("Job cancelled");
-            }
-            _ => {}
         }
+    }
+
+    async fn set_status(&self, job_id: JobId, status: JobStatus) {
+        self.statuses.lock().await.insert(job_id, status);
     }
 
     pub async fn get_status(&self, id: JobId) -> Result<JobStatus> {
@@ -176,10 +199,10 @@ impl Monitor {
             ty,
             cancel: handle.cancel,
         };
-        let status_rx = handle.status_rx;
+        let progress_rx = handle.progress_rx;
         inner.jobs.insert(id, job_info);
         self.new_status_tx
-            .send(NewJobToWatch { id, status_rx })
+            .send(NewJobToWatch { id, progress_rx })
             .await
             .unwrap();
         let job_result_tx = self.job_result_tx.clone();
@@ -196,7 +219,7 @@ impl Monitor {
                         debug!(%join_error, "Error joining job");
                     }
                 };
-                job_result_tx.send(join_result).await.unwrap();
+                job_result_tx.send((id, join_result)).await.unwrap();
             }
             .instrument(info_span!("Waiting for job result")),
         );
@@ -213,7 +236,10 @@ impl Monitor {
             .and_then(|job_info| {
                 job_info.cancel.cancel();
                 Ok(())
-            })
+            })?;
+        drop(inner);
+        self.statuses.lock().await.insert(id, JobStatus::Cancelled);
+        Ok(())
     }
 
     #[instrument(name = "Get all jobs", skip(self))]

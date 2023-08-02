@@ -29,10 +29,10 @@ impl ResourceFileResolved {
     }
 }
 
-impl TryFrom<&db_entity::ResourceFile> for ResourceFile {
+impl TryFrom<&db_entity::DbResourceFile> for ResourceFile {
     type Error = eyre::Report;
 
-    fn try_from(value: &db_entity::ResourceFile) -> Result<Self, Self::Error> {
+    fn try_from(value: &db_entity::DbResourceFile) -> Result<Self, Self::Error> {
         Ok(ResourceFile {
             id: value.id,
             data_dir_id: value.data_dir_id,
@@ -42,10 +42,10 @@ impl TryFrom<&db_entity::ResourceFile> for ResourceFile {
     }
 }
 
-impl TryFrom<&db_entity::ResourceFileResolved> for ResourceFileResolved {
+impl TryFrom<&db_entity::DbResourceFileResolved> for ResourceFileResolved {
     type Error = eyre::Report;
 
-    fn try_from(value: &db_entity::ResourceFileResolved) -> Result<Self, Self::Error> {
+    fn try_from(value: &db_entity::DbResourceFileResolved) -> Result<Self, Self::Error> {
         let path_in_data_dir = PathBuf::from(&value.path_in_data_dir);
         let data_dir_path = PathBuf::from(&value.data_dir_path);
         let path_on_disk = data_dir_path.join(&path_in_data_dir);
@@ -60,12 +60,20 @@ impl TryFrom<&db_entity::ResourceFileResolved> for ResourceFileResolved {
     }
 }
 
-impl TryFrom<ResourceFile> for db_entity::ResourceFile {
+impl TryFrom<db_entity::DbResourceFileResolved> for ResourceFileResolved {
+    type Error = eyre::Report;
+
+    fn try_from(value: db_entity::DbResourceFileResolved) -> Result<Self, Self::Error> {
+        (&value).try_into()
+    }
+}
+
+impl TryFrom<ResourceFile> for db_entity::DbResourceFile {
     type Error = eyre::Report;
 
     fn try_from(value: ResourceFile) -> Result<Self, Self::Error> {
         let path_in_data_dir = path_to_string(value.path_in_data_dir)?;
-        Ok(db_entity::ResourceFile {
+        Ok(db_entity::DbResourceFile {
             id: value.id,
             data_dir_id: value.data_dir_id,
             path_in_data_dir,
@@ -74,12 +82,12 @@ impl TryFrom<ResourceFile> for db_entity::ResourceFile {
     }
 }
 
-impl TryFrom<&ResourceFileResolved> for db_entity::ResourceFile {
+impl TryFrom<&ResourceFileResolved> for db_entity::DbResourceFile {
     type Error = eyre::Report;
 
     fn try_from(value: &ResourceFileResolved) -> Result<Self, Self::Error> {
         let path_in_data_dir = path_to_string(&value.path_in_data_dir)?;
-        Ok(db_entity::ResourceFile {
+        Ok(db_entity::DbResourceFile {
             id: value.id,
             data_dir_id: value.data_dir_id,
             path_in_data_dir,
@@ -88,7 +96,7 @@ impl TryFrom<&ResourceFileResolved> for db_entity::ResourceFile {
     }
 }
 
-impl TryFrom<ResourceFileResolved> for db_entity::ResourceFile {
+impl TryFrom<ResourceFileResolved> for db_entity::DbResourceFile {
     type Error = eyre::Report;
 
     fn try_from(value: ResourceFileResolved) -> Result<Self, Self::Error> {

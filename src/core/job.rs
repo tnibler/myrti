@@ -72,7 +72,7 @@ pub enum JobStatus {
 
 pub struct JobHandle {
     pub cancel: CancellationToken,
-    pub status_rx: mpsc::Receiver<JobStatus>,
+    pub progress_rx: mpsc::Receiver<JobProgress>,
     pub join_handle: JoinHandle<JobResultType>,
 }
 

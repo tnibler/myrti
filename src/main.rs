@@ -176,6 +176,7 @@ async fn main() -> Result<()> {
         monitor,
     });
     let app = Router::new()
+        .nest("/api/asset", api::routes::asset::router())
         .nest("/api/assetRoots", api::routes::asset_roots::router())
         .nest("/api/jobs", api::routes::jobs::router())
         .nest("/api", routes::api_router())

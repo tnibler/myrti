@@ -25,7 +25,7 @@ int thumbnail(ThumbnailParams params) {
     if (params.keep_aspect) {
        ret = vips_thumbnail(params.in_path, &out, params.width, NULL);
     } else {
-       ret = vips_thumbnail(params.in_path, &out, params.width, params.height, VIPS_INTERESTING_ATTENTION, NULL);
+       ret = vips_thumbnail(params.in_path, &out, params.width, "height", params.height, "crop", VIPS_INTERESTING_ATTENTION, NULL);
     }
     if (ret) {
       printf("libvips error: %s", vips_error_buffer());

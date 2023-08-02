@@ -27,6 +27,21 @@ pub struct Asset {
     pub metadata: Option<AssetMetadata>,
 }
 
+impl From<model::AssetBase> for Asset {
+    fn from(value: model::AssetBase) -> Self {
+        Asset {
+            id: value.id.into(),
+            asset_root_id: value.root_dir_id.into(),
+            path_in_root: value.file_path,
+            ty: value.ty.into(),
+            file_created_at: value.file_created_at,
+            file_modified_at: value.file_modified_at,
+            added_at: value.added_at,
+            metadata: None,
+        }
+    }
+}
+
 impl From<model::AssetId> for AssetId {
     fn from(value: model::AssetId) -> Self {
         AssetId(value.0.to_string())

@@ -7,7 +7,7 @@ use tracing::{instrument, Instrument};
 use crate::model::{
     db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbVideoInfo},
     AssetAll, AssetBase, AssetId, AssetPathOnDisk, AssetThumbnails, AssetType, FullAsset, Image,
-    Video,
+    ResourceFileId, Video,
 };
 
 use super::pool::DbPool;
@@ -410,5 +410,61 @@ WHERE asset_id=?;
     .in_current_span()
     .await
     .wrap_err("could not update table VideoInfo")?;
+    Ok(())
+}
+
+#[instrument(
+    name = "Update Asset, set small thumbnails",
+    skip(pool),
+    level = "debug"
+)]
+pub async fn set_asset_small_thumbnails(
+    pool: &DbPool,
+    asset_id: AssetId,
+    thumb_small_square_jpg: ResourceFileId,
+    thumb_small_square_webp: ResourceFileId,
+) -> Result<()> {
+    sqlx::query!(
+        r#"
+UPDATE Assets SET 
+thumb_small_square_jpg=?,
+thumb_small_square_webp=?
+WHERE id=?;
+    "#,
+        thumb_small_square_jpg,
+        thumb_small_square_webp,
+        asset_id
+    )
+    .execute(pool)
+    .await
+    .wrap_err("could not update table Assets")?;
+    Ok(())
+}
+
+#[instrument(
+    name = "Update Asset, set large thumbnails",
+    skip(pool),
+    level = "debug"
+)]
+pub async fn set_asset_large_thumbnails(
+    pool: &DbPool,
+    asset_id: AssetId,
+    thumb_large_orig_jpg: ResourceFileId,
+    thumb_large_orig_webp: ResourceFileId,
+) -> Result<()> {
+    sqlx::query!(
+        r#"
+UPDATE Assets SET 
+thumb_large_orig_jpg=?,
+thumb_large_orig_webp=?
+WHERE id=?;
+    "#,
+        thumb_large_orig_jpg,
+        thumb_large_orig_webp,
+        asset_id
+    )
+    .execute(pool)
+    .await
+    .wrap_err("could not update table Assets")?;
     Ok(())
 }

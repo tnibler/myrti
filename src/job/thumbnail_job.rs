@@ -1,11 +1,11 @@
+use async_trait::async_trait;
+use eyre::{Context, ErrReport, Result};
+use rayon::prelude::*;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-
-use async_trait::async_trait;
-use eyre::{Context, ErrReport, Result};
-use rayon::prelude::*;
+use tempfile::TempPath;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, instrument, Instrument};
@@ -22,6 +22,7 @@ use crate::{
     processing::{
         self,
         image::{generate_thumbnail, ThumbnailParams},
+        video::create_snapshot,
     },
 };
 
@@ -50,12 +51,16 @@ impl ThumbnailJob {
     }
 
     #[instrument(name = "Run ThumbnailJob", skip(self, status_tx))]
-    async fn run(self, status_tx: mpsc::Sender<JobStatus>) -> Result<ThumbnailResult> {
+    async fn run(
+        self,
+        status_tx: mpsc::Sender<JobProgress>,
+        cancel: CancellationToken,
+    ) -> Result<ThumbnailResult> {
         status_tx
-            .send(JobStatus::Running(JobProgress {
+            .send(JobProgress {
                 percent: None,
                 description: "".to_string(),
-            }))
+            })
             .await
             .unwrap();
         let assets: Result<Vec<AssetThumbnails>> =
@@ -68,7 +73,7 @@ impl ThumbnailJob {
             error!("failed to create some thumbnail tasks");
             // TODO
         }
-        let result = generate_thumbnails(tasks_to_do.tasks, &self.pool).await;
+        let result = generate_thumbnails(tasks_to_do.tasks, &self.pool, cancel).await;
         for failed in result.failed.iter() {
             error!(
                 "Failed to generate thumbnail for asset {}: {}",
@@ -85,15 +90,15 @@ impl Job for ThumbnailJob {
     type Result = Result<ThumbnailResult>;
 
     fn start(self) -> JobHandle {
-        let (tx, rx) = mpsc::channel::<JobStatus>(1000);
+        let (tx, rx) = mpsc::channel::<JobProgress>(1000);
         let cancel = CancellationToken::new();
-        let _cancel_copy = cancel.clone();
+        let cancel_copy = cancel.clone();
         let join_handle = tokio::spawn(async move {
-            let r = self.run(tx).await;
+            let r = self.run(tx, cancel_copy).await;
             JobResultType::Thumbnail(r)
         });
         let handle = JobHandle {
-            status_rx: rx,
+            progress_rx: rx,
             join_handle,
             cancel,
         };
@@ -125,6 +130,9 @@ struct GatherThumbnailTasksResult {
     pub tasks: Vec<ThumbnailTasksForAsset>,
     pub failed: Vec<(AssetId, eyre::Report)>,
 }
+
+// TODO this is all way too convoluted
+// TODO also probably parallelize to an extent, don't wait sequentially for every job to complete
 
 async fn gather_thumbnail_tasks(
     assets: &[AssetThumbnails],
@@ -193,23 +201,30 @@ pub struct FailedThumbnailTask {
     error: eyre::Report,
 }
 
-async fn generate_thumbnails(tasks: Vec<ThumbnailTasksForAsset>, pool: &DbPool) -> ThumbnailResult {
+async fn generate_thumbnails(
+    tasks: Vec<ThumbnailTasksForAsset>,
+    pool: &DbPool,
+    cancel: CancellationToken,
+) -> ThumbnailResult {
     let mut image_tasks = Vec::<ThumbnailTasksForAsset>::new();
-    let mut videos = Vec::<ThumbnailTasksForAsset>::new();
+    let mut video_tasks = Vec::<ThumbnailTasksForAsset>::new();
     for task in tasks.into_iter() {
         match task.asset_ty {
             AssetType::Image => image_tasks.push(task),
-            AssetType::Video => videos.push(task),
+            AssetType::Video => video_tasks.push(task),
         }
     }
     info!(
         "Generating thumbnails for {} images, {} videos",
         image_tasks.len(),
-        videos.len()
+        video_tasks.len()
     );
     let mut failed = Vec::<FailedThumbnailTask>::new();
     let mut succeeded: Vec<ThumbnailTasksForAsset> = vec![];
     for tasks in image_tasks.into_iter() {
+        if cancel.is_cancelled() {
+            break;
+        }
         let asset_path =
             match repository::asset::get_asset_path_on_disk(&pool, tasks.asset_id).await {
                 Ok(AssetPathOnDisk {
@@ -225,6 +240,9 @@ async fn generate_thumbnails(tasks: Vec<ThumbnailTasksForAsset>, pool: &DbPool) 
                 }
             };
         for task_for_asset in tasks.tasks.iter() {
+            if cancel.is_cancelled() {
+                break;
+            }
             let (tx, rx) = oneshot::channel();
             let params = ThumbnailParams {
                 in_path: (&asset_path).clone(),
@@ -242,27 +260,169 @@ async fn generate_thumbnails(tasks: Vec<ThumbnailTasksForAsset>, pool: &DbPool) 
                     }
                 },
             };
-            tokio::task::spawn_blocking(move || {
+            rayon::spawn(move || {
                 // TODO handle errors here
                 generate_thumbnail(params).unwrap();
                 tx.send(()).unwrap();
-            })
-            .await
-            .unwrap();
+            });
             rx.await.unwrap();
             // TODO handle errors
-            repository::resource_file::insert_new_resource_file(
+            let jpg_id = repository::resource_file::insert_new_resource_file(
                 pool,
                 task_for_asset.jpg_file.clone(),
             )
             .await
             .unwrap();
-            repository::resource_file::insert_new_resource_file(
+            let webp_id = repository::resource_file::insert_new_resource_file(
                 pool,
                 task_for_asset.webp_file.clone(),
             )
             .await
             .unwrap();
+            match task_for_asset.ty {
+                // TODO handle errors
+                ThumbnailType::SmallSquare => {
+                    repository::asset::set_asset_small_thumbnails(
+                        pool,
+                        tasks.asset_id,
+                        jpg_id,
+                        webp_id,
+                    )
+                    .await
+                    .unwrap();
+                }
+                ThumbnailType::LargeOrigAspect => {
+                    repository::asset::set_asset_large_thumbnails(
+                        pool,
+                        tasks.asset_id,
+                        jpg_id,
+                        webp_id,
+                    )
+                    .await
+                    .unwrap();
+                }
+            }
+        }
+        succeeded.push(tasks);
+    }
+    let mut video_result = generate_video_thumbnails(video_tasks, pool, cancel).await;
+    succeeded.append(&mut video_result.succeeded);
+    failed.append(&mut video_result.failed);
+    ThumbnailResult { succeeded, failed }
+}
+
+pub async fn generate_video_thumbnails(
+    tasks: Vec<ThumbnailTasksForAsset>,
+    pool: &DbPool,
+    cancel: CancellationToken,
+) -> ThumbnailResult {
+    let mut failed = Vec::<FailedThumbnailTask>::new();
+    let mut succeeded: Vec<ThumbnailTasksForAsset> = vec![];
+    for tasks in tasks.into_iter() {
+        if cancel.is_cancelled() {
+            break;
+        }
+        let asset_path =
+            match repository::asset::get_asset_path_on_disk(&pool, tasks.asset_id).await {
+                Ok(AssetPathOnDisk {
+                    path_in_asset_root,
+                    asset_root_path,
+                }) => asset_root_path.join(path_in_asset_root),
+                Err(e) => {
+                    failed.push(FailedThumbnailTask {
+                        task: tasks,
+                        error: e.wrap_err("could not get asset path on disk from db"),
+                    });
+                    continue;
+                }
+            };
+        let snapshot_dir = match tempfile::tempdir().wrap_err("could not create temp directory") {
+            Ok(d) => d,
+            Err(e) => {
+                failed.push(FailedThumbnailTask {
+                    task: tasks,
+                    error: e,
+                });
+                continue;
+            }
+        };
+        let snapshot_path = snapshot_dir
+            .path()
+            .join(format!("{}.webp", tasks.asset_id.0));
+        if let Err(e) = create_snapshot(&asset_path, &snapshot_path)
+            .await
+            .wrap_err("could not take video snapshot")
+        {
+            failed.push(FailedThumbnailTask {
+                task: tasks,
+                error: e,
+            });
+            continue;
+        }
+
+        for task_for_asset in tasks.tasks.iter() {
+            if cancel.is_cancelled() {
+                break;
+            }
+            let (tx, rx) = oneshot::channel();
+            let params = ThumbnailParams {
+                in_path: snapshot_path.to_path_buf(),
+                out_paths: vec![
+                    task_for_asset.jpg_file.path_on_disk(),
+                    task_for_asset.webp_file.path_on_disk(),
+                ],
+                out_dimension: match task_for_asset.ty {
+                    ThumbnailType::SmallSquare => processing::image::OutDimension::Crop {
+                        width: 200,
+                        height: 200,
+                    },
+                    ThumbnailType::LargeOrigAspect => {
+                        processing::image::OutDimension::KeepAspect { width: 300 }
+                    }
+                },
+            };
+            rayon::spawn(move || {
+                // TODO handle errors here
+                generate_thumbnail(params).unwrap();
+                tx.send(()).unwrap();
+            });
+            rx.await.unwrap();
+            // TODO handle errors
+            let jpg_id = repository::resource_file::insert_new_resource_file(
+                pool,
+                task_for_asset.jpg_file.clone(),
+            )
+            .await
+            .unwrap();
+            let webp_id = repository::resource_file::insert_new_resource_file(
+                pool,
+                task_for_asset.webp_file.clone(),
+            )
+            .await
+            .unwrap();
+            match task_for_asset.ty {
+                // TODO handle errors
+                ThumbnailType::SmallSquare => {
+                    repository::asset::set_asset_small_thumbnails(
+                        pool,
+                        tasks.asset_id,
+                        jpg_id,
+                        webp_id,
+                    )
+                    .await
+                    .unwrap();
+                }
+                ThumbnailType::LargeOrigAspect => {
+                    repository::asset::set_asset_large_thumbnails(
+                        pool,
+                        tasks.asset_id,
+                        jpg_id,
+                        webp_id,
+                    )
+                    .await
+                    .unwrap();
+                }
+            }
         }
         succeeded.push(tasks);
     }

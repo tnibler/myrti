@@ -34,7 +34,7 @@ impl Image {
 impl TryFrom<&DbImageInfo> for Image {
     type Error = eyre::Report;
 
-    fn try_from(_value: &DbImageInfo) -> std::result::Result<Self, Self::Error> {
+    fn try_from(_value: &DbImageInfo) -> Result<Self, Self::Error> {
         Ok(Image {})
     }
 }
@@ -42,7 +42,7 @@ impl TryFrom<&DbImageInfo> for Image {
 impl TryFrom<DbImageInfo> for Image {
     type Error = eyre::Report;
 
-    fn try_from(_value: DbImageInfo) -> std::result::Result<Self, Self::Error> {
+    fn try_from(_value: DbImageInfo) -> Result<Self, Self::Error> {
         Ok(Image {})
     }
 }
@@ -59,7 +59,7 @@ impl Video {
 impl TryFrom<&DbVideoInfo> for Video {
     type Error = eyre::Report;
 
-    fn try_from(value: &DbVideoInfo) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &DbVideoInfo) -> Result<Self, Self::Error> {
         Ok(Video {
             dash_resource_dir: value.dash_resource_dir,
         })
@@ -69,7 +69,7 @@ impl TryFrom<&DbVideoInfo> for Video {
 impl TryFrom<DbVideoInfo> for Video {
     type Error = eyre::Report;
 
-    fn try_from(value: DbVideoInfo) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: DbVideoInfo) -> Result<Self, Self::Error> {
         (&value).try_into()
     }
 }

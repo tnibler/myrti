@@ -177,6 +177,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .nest("/api/asset", api::routes::asset::router())
         .nest("/api/assetRoots", api::routes::asset_roots::router())
+        .nest("/api/dash", api::routes::dash::router())
         .nest("/api/jobs", api::routes::jobs::router())
         .nest("/api", routes::api_router())
         .route("/cancel", post(post_cancel))

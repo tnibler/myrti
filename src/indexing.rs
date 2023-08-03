@@ -68,7 +68,7 @@ async fn index_file(
                     id: AssetId(0),
                     ty,
                     root_dir_id: asset_root.id,
-                    file_path: path.to_owned(),
+                    file_path: path.strip_prefix(&asset_root.path)?.to_owned(),
                     hash: None,
                     added_at: Utc::now(),
                     file_created_at: metadata.created().ok().map(|t| t.into()),

@@ -497,3 +497,22 @@ AND Assets.ty = ? AND VideoInfo.dash_resource_dir IS NULL;
     .map(|a| a.try_into())
     .collect::<Result<Vec<_>>>()
 }
+
+#[instrument(name = "Get VideoInfo for asset", skip(pool), level = "debug")]
+pub async fn get_video_info(pool: &DbPool, asset_id: AssetId) -> Result<Video> {
+    sqlx::query_as!(
+        DbVideoInfo,
+        r#"
+SELECT 
+asset_id,
+dash_resource_dir as "dash_resource_dir: _"
+FROM VideoInfo WHERE asset_id=?;
+    "#,
+        asset_id
+    )
+    .fetch_one(pool)
+    .in_current_span()
+    .await
+    .wrap_err("no VideoInfo for this AssetId")?
+    .try_into()
+}

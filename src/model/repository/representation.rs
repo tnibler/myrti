@@ -17,7 +17,10 @@ pub async fn insert_video_representation(
     resource_file: NewResourceFile,
 ) -> Result<VideoRepresentationId> {
     debug_assert!(repr.id.0 == 0);
-    let mut tx = pool.begin().await?;
+    let mut tx = pool
+        .begin()
+        .await
+        .wrap_err("could not begin db transaction")?;
     let resource_file_id = resource_file::insert_new_resource_file(&mut tx, resource_file).await?;
     let result = sqlx::query!(
         r#"
@@ -32,6 +35,8 @@ INSERT INTO VideoRepresentation VALUES(NULL, ?, ?, ?, ?, ?, ?);
     )
     .execute(tx.deref_mut())
     .await?;
-    tx.commit();
+    tx.commit()
+        .await
+        .wrap_err("could not commit db transaction")?;
     Ok(VideoRepresentationId(result.last_insert_rowid()))
 }

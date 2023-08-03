@@ -49,6 +49,8 @@ pub struct ThumbnailParams {
 }
 
 pub fn generate_thumbnail(params: ThumbnailParams) -> Result<()> {
+    let span = info_span!("Generate image thumbnail (libvips)");
+    let _enter = span.enter();
     let c_path = CString::new(params.in_path.as_os_str().as_bytes()).wrap_err(format!(
         "Could not convert path {} to bytes",
         params.in_path.display()

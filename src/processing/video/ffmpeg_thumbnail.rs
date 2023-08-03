@@ -3,15 +3,20 @@ use eyre::{bail, eyre, Context, Result};
 use std::{
     ffi::{OsStr, OsString},
     path::{Path, PathBuf},
+    process::Stdio,
 };
 use tokio::process::Command;
+use tracing::{debug, instrument};
 
+#[instrument("Take video snapshot")]
 pub async fn create_snapshot(video_path: &Path, out_path: &Path) -> Result<()> {
     let exit_status = Command::new("ffmpeg")
         .arg("-i")
         .arg(video_path)
-        .args(&["-ss", "00:00:00.00", "-vframes", "1"])
+        .args(&["-ss", "00:00:00.00", "-frames:v", "1"])
         .arg(out_path)
+        // .stdout(Stdio::piped())
+        // .stderr(Stdio::piped())
         .spawn()
         .wrap_err("failed to call ffmpeg")?
         .wait()

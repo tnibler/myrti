@@ -2,7 +2,7 @@ use color_eyre::eyre;
 use eyre::{bail, Context, Result};
 use sqlx::{Executor, Sqlite, SqliteConnection, SqliteExecutor, Transaction};
 use std::path::Path;
-use tracing::{instrument, Instrument};
+use tracing::{debug, instrument, Instrument};
 
 use crate::model::{
     db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType, DbVideoInfo},
@@ -104,35 +104,35 @@ pub async fn insert_asset(pool: &DbPool, asset: FullAsset) -> Result<AssetId> {
     Ok(id)
 }
 
-#[instrument(name = "Update FullAsset", skip(pool, asset), fields(id=%asset.base.id), level = "debug")]
-pub async fn update_asset(pool: &DbPool, asset: FullAsset) -> Result<()> {
-    debug_assert!(
-        asset.base.ty
-            == match asset.asset {
-                AssetAll::Image(_) => AssetType::Image,
-                AssetAll::Video(_) => AssetType::Video,
-            }
-    );
-    let mut tx = pool.begin().in_current_span().await?;
-    update_asset_base(&mut tx, &asset.base)
-        .in_current_span()
-        .await?;
-    let id = asset.base.id;
-    match &asset.asset {
-        AssetAll::Image(image) => {
-            update_image_info(&mut tx, id, image)
-                .in_current_span()
-                .await?;
-        }
-        AssetAll::Video(video) => {
-            update_video_info(&mut tx, id, video)
-                .in_current_span()
-                .await?;
-        }
-    };
-    tx.commit().in_current_span().await?;
-    Ok(())
-}
+// #[instrument(name = "Update FullAsset", skip(pool, asset), fields(id=%asset.base.id), level = "debug")]
+// pub async fn update_asset(pool: &DbPool, asset: FullAsset) -> Result<()> {
+//     debug_assert!(
+//         asset.base.ty
+//             == match asset.asset {
+//                 AssetAll::Image(_) => AssetType::Image,
+//                 AssetAll::Video(_) => AssetType::Video,
+//             }
+//     );
+//     let mut tx = pool.begin().in_current_span().await?;
+//     update_asset_base(&mut tx, &asset.base)
+//         .in_current_span()
+//         .await?;
+//     let id = asset.base.id;
+//     match &asset.asset {
+//         AssetAll::Image(image) => {
+//             update_image_info(&mut tx, id, image)
+//                 .in_current_span()
+//                 .await?;
+//         }
+//         AssetAll::Video(video) => {
+//             update_video_info(&mut tx, id, video)
+//                 .in_current_span()
+//                 .await?;
+//         }
+//     };
+//     tx.commit().in_current_span().await?;
+//     Ok(())
+// }
 
 #[instrument(name = "Get AssetBase with path", skip(pool), level = "debug")]
 pub async fn get_asset_with_path(pool: &DbPool, path: &Path) -> Result<Option<AssetBase>> {
@@ -357,16 +357,16 @@ pub async fn insert_image_info(
     Ok(())
 }
 
-#[instrument(name = "Update ImageInfo", skip(conn, image), level = "debug")]
-pub async fn update_image_info(
-    conn: &mut SqliteConnection,
-    asset_id: AssetId,
-    image: &Image,
-) -> Result<()> {
-    debug_assert!(asset_id.0 != 0);
-    let db_image_info = image.try_to_db_image_info(asset_id)?;
-    Ok(())
-}
+// #[instrument(name = "Update ImageInfo", skip(conn, image), level = "debug")]
+// pub async fn update_image_info(
+//     conn: &mut SqliteConnection,
+//     asset_id: AssetId,
+//     image: &Image,
+// ) -> Result<()> {
+//     debug_assert!(asset_id.0 != 0);
+//     let db_image_info = image.try_to_db_image_info(asset_id)?;
+//     Ok(())
+// }
 
 #[instrument(name = "Insert VideoInfo", skip(conn, video), level = "debug")]
 pub async fn insert_video_info(
@@ -416,11 +416,11 @@ WHERE asset_id=?;
 
 #[instrument(
     name = "Update Asset, set small thumbnails",
-    skip(pool),
+    skip(conn),
     level = "debug"
 )]
 pub async fn set_asset_small_thumbnails(
-    pool: &DbPool,
+    conn: &mut SqliteConnection,
     asset_id: AssetId,
     thumb_small_square_jpg: ResourceFileId,
     thumb_small_square_webp: ResourceFileId,
@@ -436,7 +436,7 @@ WHERE id=?;
         thumb_small_square_webp,
         asset_id
     )
-    .execute(pool)
+    .execute(conn)
     .await
     .wrap_err("could not update table Assets")?;
     Ok(())
@@ -444,11 +444,11 @@ WHERE id=?;
 
 #[instrument(
     name = "Update Asset, set large thumbnails",
-    skip(pool),
+    skip(conn),
     level = "debug"
 )]
 pub async fn set_asset_large_thumbnails(
-    pool: &DbPool,
+    conn: &mut SqliteConnection,
     asset_id: AssetId,
     thumb_large_orig_jpg: ResourceFileId,
     thumb_large_orig_webp: ResourceFileId,
@@ -464,7 +464,7 @@ WHERE id=?;
         thumb_large_orig_webp,
         asset_id
     )
-    .execute(pool)
+    .execute(conn)
     .await
     .wrap_err("could not update table Assets")?;
     Ok(())
@@ -475,16 +475,26 @@ WHERE id=?;
     skip(pool),
     level = "debug"
 )]
-pub async fn get_video_assets_without_dash(pool: &DbPool) -> Result<Vec<AssetPathOnDisk>> {
+pub async fn get_video_assets_without_dash(pool: &DbPool) -> Result<Vec<AssetBase>> {
     sqlx::query_as!(
-        DbAssetPathOnDisk,
+        DbAsset,
         r#"
 SELECT 
-Assets.id AS id,
-Assets.file_path AS path_in_asset_root,
-AssetRootDirs.path AS asset_root_path
-FROM Assets, VideoInfo, AssetRootDirs 
-WHERE Assets.id = VideoInfo.asset_id AND Assets.root_dir_id = AssetRootDirs.id
+id,
+ty as "ty: _",
+root_dir_id,
+file_path,
+hash,
+added_at,
+file_created_at,
+file_modified_at,
+canonical_date,
+thumb_small_square_jpg as "thumb_small_square_jpg: _",
+thumb_small_square_webp as "thumb_small_square_webp: _",
+thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
+thumb_large_orig_webp as "thumb_large_orig_webp: _"
+FROM Assets, VideoInfo 
+WHERE Assets.id = VideoInfo.asset_id 
 AND Assets.ty = ? AND VideoInfo.dash_resource_dir IS NULL;
     "#,
         DbAssetType::Video

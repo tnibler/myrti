@@ -162,7 +162,18 @@ impl Monitor {
                         };
                         self.set_status(job_id, status).await;
                     }
-                    JobResultType::DashSegmenting(_) => todo!(),
+                    JobResultType::DashSegmenting(segmenting_results) => {
+                        let status = if segmenting_results.failed.is_empty() {
+                            JobStatus::Complete
+                        } else if segmenting_results.completed.is_empty() {
+                            JobStatus::Failed {
+                                msg: format!("all tasks failed"),
+                            }
+                        } else {
+                            JobStatus::CompleteWithErrors
+                        };
+                        self.set_status(job_id, status).await;
+                    }
                 }
                 self.scheduler_tx
                     .send(SchedulerMessage::JobComplete { id: job_id })

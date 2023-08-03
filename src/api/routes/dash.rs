@@ -8,6 +8,7 @@ use axum::{
     routing::{get, options},
     Router,
 };
+use eyre::Context;
 use serde::Deserialize;
 use tower::ServiceExt;
 use tracing::{debug, instrument, Instrument};
@@ -62,12 +63,6 @@ async fn get_dash_file(
         .oneshot(request)
         .in_current_span()
         .await
-        .unwrap()
-        .into_response();
-    let headers = ([
-        (header::ACCESS_CONTROL_ALLOW_ORIGIN, "*"),
-        (header::ACCESS_CONTROL_ALLOW_HEADERS, "*"),
-        (header::ACCESS_CONTROL_ALLOW_METHODS, "*"),
-    ]);
-    Ok((headers, serve_file).into_response())
+        .wrap_err("error serving file")?;
+    Ok(serve_file.into_response())
 }

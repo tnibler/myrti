@@ -6,8 +6,9 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use color_eyre::eyre::Result;
+use eyre::Context;
 use tokio::fs;
-use tracing::{debug, error};
+use tracing::{debug, error, instrument};
 use walkdir::WalkDir;
 
 pub async fn index_asset_root(asset_root: &AssetRootDir, pool: &DbPool) -> Result<Vec<AssetId>> {
@@ -37,13 +38,16 @@ pub async fn index_asset_root(asset_root: &AssetRootDir, pool: &DbPool) -> Resul
     Ok(new_asset_ids)
 }
 
+#[instrument(name = "Index file", skip(pool))]
 async fn index_file(
     path: &Path,
     asset_root: &AssetRootDir,
     pool: &DbPool,
 ) -> Result<Option<AssetId>> {
-    assert!(path.starts_with(&asset_root.path));
-    match repository::asset::get_asset_with_path(pool, path).await? {
+    let path_in_asset_root = path
+        .strip_prefix(&asset_root.path)
+        .wrap_err("file to index is not in provided asset root")?;
+    match repository::asset::get_asset_with_path(pool, path_in_asset_root).await? {
         Some(_) => Ok(None),
         None => {
             if let Some(extension) = path.extension().map(|s| s.to_string_lossy().to_string()) {

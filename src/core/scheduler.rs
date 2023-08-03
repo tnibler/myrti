@@ -15,6 +15,7 @@ use crate::{
     },
     model::repository,
     model::{AssetId, AssetType},
+    processing::video,
 };
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
@@ -111,36 +112,11 @@ impl SchedulerImpl {
             }
         }
     }
-    async fn start_segmenting_job(&self) {
-        let asset = repository::asset::get_assets(&self.pool)
-            .await
-            .unwrap()
-            .into_iter()
-            .find(|a| a.ty == AssetType::Video);
-        if asset.is_none() {
-            return;
-        }
-        let asset_id = asset.unwrap().id;
-        let params = DashSegmentingJobParams { asset_id };
-        let job = DashSegmentingJob::new(
-            params.clone(),
-            self.data_dir_manager.clone(),
-            self.pool.clone(),
-        );
-        let handle = job.start();
-        self.monitor_tx
-            .send(MonitorMessage::AddJob {
-                handle,
-                ty: JobType::DashSegmenting { params },
-            })
-            .await
-            .unwrap();
-    }
+
+    async fn start_segmenting_job(&self) {}
 
     async fn queue_jobs_if_required(&mut self) {
         info!("checking if any jobs need to be run...");
-        // just here for testing
-        // self.start_segmenting_job().await;
         if !repository::asset::get_assets_with_missing_thumbnail(&self.pool, Some(1))
             .await
             .unwrap()
@@ -153,6 +129,7 @@ impl SchedulerImpl {
                     .iter()
                     .map(|asset| asset.id)
                     .collect();
+            debug!(?asset_ids);
             let params = ThumbnailJobParams { asset_ids };
             let job = ThumbnailJob::new(
                 params.clone(),
@@ -164,6 +141,29 @@ impl SchedulerImpl {
                 .send(MonitorMessage::AddJob {
                     handle,
                     ty: JobType::Thumbnail { params },
+                })
+                .await
+                .unwrap();
+        }
+        let videos_without_dash = repository::asset::get_video_assets_without_dash(&self.pool)
+            .await
+            .unwrap();
+        debug!(?videos_without_dash);
+        if !videos_without_dash.is_empty() {
+            let params = DashSegmentingJobParams {
+                asset_ids: videos_without_dash.iter().map(|a| a.id).collect(),
+            };
+
+            let job = DashSegmentingJob::new(
+                params.clone(),
+                self.data_dir_manager.clone(),
+                self.pool.clone(),
+            );
+            let handle = job.start();
+            self.monitor_tx
+                .send(MonitorMessage::AddJob {
+                    handle,
+                    ty: JobType::DashSegmenting { params },
                 })
                 .await
                 .unwrap();

@@ -8,7 +8,7 @@ use std::{
 use tempfile::TempPath;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, instrument, Instrument};
+use tracing::{debug, error, info, instrument, Instrument};
 
 use crate::{
     core::{
@@ -50,7 +50,7 @@ impl ThumbnailJob {
         }
     }
 
-    #[instrument(name = "Run ThumbnailJob", skip(self, status_tx))]
+    #[instrument(name = "ThumbnailJob", skip(self, status_tx))]
     async fn run(
         self,
         status_tx: mpsc::Sender<JobProgress>,
@@ -134,6 +134,7 @@ struct GatherThumbnailTasksResult {
 // TODO this is all way too convoluted
 // TODO also probably parallelize to an extent, don't wait sequentially for every job to complete
 
+#[instrument("Gather thumbnail tasks", skip(assets, data_dir_manager))]
 async fn gather_thumbnail_tasks(
     assets: &[AssetThumbnails],
     data_dir_manager: &DataDirManager,
@@ -201,6 +202,7 @@ pub struct FailedThumbnailTask {
     error: eyre::Report,
 }
 
+#[instrument(name = "Generate Thumbnails", skip(tasks, pool, cancel))]
 async fn generate_thumbnails(
     tasks: Vec<ThumbnailTasksForAsset>,
     pool: &DbPool,
@@ -267,15 +269,20 @@ async fn generate_thumbnails(
                 tx.send(()).unwrap();
             });
             rx.await.unwrap();
+            let mut tx = pool
+                .begin()
+                .await
+                .wrap_err("could not begin db transaction")
+                .unwrap();
             // TODO handle errors
             let jpg_id = repository::resource_file::insert_new_resource_file(
-                &mut pool.acquire().await.unwrap(),
+                &mut tx,
                 task_for_asset.jpg_file.clone(),
             )
             .await
             .unwrap();
             let webp_id = repository::resource_file::insert_new_resource_file(
-                &mut pool.acquire().await.unwrap(),
+                &mut tx,
                 task_for_asset.webp_file.clone(),
             )
             .await
@@ -284,7 +291,7 @@ async fn generate_thumbnails(
                 // TODO handle errors
                 ThumbnailType::SmallSquare => {
                     repository::asset::set_asset_small_thumbnails(
-                        pool,
+                        tx.as_mut(),
                         tasks.asset_id,
                         jpg_id,
                         webp_id,
@@ -294,7 +301,7 @@ async fn generate_thumbnails(
                 }
                 ThumbnailType::LargeOrigAspect => {
                     repository::asset::set_asset_large_thumbnails(
-                        pool,
+                        tx.as_mut(),
                         tasks.asset_id,
                         jpg_id,
                         webp_id,
@@ -303,15 +310,22 @@ async fn generate_thumbnails(
                     .unwrap();
                 }
             }
+            tx.commit()
+                .await
+                .wrap_err("could not commit db transaction")
+                .unwrap();
         }
         succeeded.push(tasks);
     }
-    let mut video_result = generate_video_thumbnails(video_tasks, pool, cancel).await;
+    let mut video_result = generate_video_thumbnails(video_tasks, pool, cancel)
+        .in_current_span()
+        .await;
     succeeded.append(&mut video_result.succeeded);
     failed.append(&mut video_result.failed);
     ThumbnailResult { succeeded, failed }
 }
 
+#[instrument(name = "Generate video thumbnails", skip(tasks, pool, cancel))]
 pub async fn generate_video_thumbnails(
     tasks: Vec<ThumbnailTasksForAsset>,
     pool: &DbPool,
@@ -323,21 +337,26 @@ pub async fn generate_video_thumbnails(
         if cancel.is_cancelled() {
             break;
         }
-        let asset_path =
-            match repository::asset::get_asset_path_on_disk(&pool, tasks.asset_id).await {
-                Ok(AssetPathOnDisk {
-                    id,
-                    path_in_asset_root,
-                    asset_root_path,
-                }) => asset_root_path.join(path_in_asset_root),
-                Err(e) => {
-                    failed.push(FailedThumbnailTask {
-                        task: tasks,
-                        error: e.wrap_err("could not get asset path on disk from db"),
-                    });
-                    continue;
-                }
-            };
+        let asset_path = match repository::asset::get_asset_path_on_disk(&pool, tasks.asset_id)
+            .in_current_span()
+            .await
+        {
+            Ok(AssetPathOnDisk {
+                id,
+                path_in_asset_root,
+                asset_root_path,
+            }) => asset_root_path.join(path_in_asset_root),
+            Err(e) => {
+                failed.push(FailedThumbnailTask {
+                    task: tasks,
+                    error: e.wrap_err("could not get asset path on disk from db"),
+                });
+                continue;
+            }
+        };
+        let snapshot_dir = PathBuf::from("/tmp/mediathingy");
+        // tokio::fs::remove_dir_all(&snapshot_dir).await.unwrap();
+        // tokio::fs::create_dir_all(&snapshot_dir).await.unwrap();
         let snapshot_dir = match tempfile::tempdir().wrap_err("could not create temp directory") {
             Ok(d) => d,
             Err(e) => {
@@ -352,6 +371,7 @@ pub async fn generate_video_thumbnails(
             .path()
             .join(format!("{}.webp", tasks.asset_id.0));
         if let Err(e) = create_snapshot(&asset_path, &snapshot_path)
+            .in_current_span()
             .await
             .wrap_err("could not take video snapshot")
         {
@@ -388,43 +408,58 @@ pub async fn generate_video_thumbnails(
                 generate_thumbnail(params).unwrap();
                 tx.send(()).unwrap();
             });
-            rx.await.unwrap();
+            rx.in_current_span().await.unwrap();
+            let mut tx = pool
+                .begin()
+                .in_current_span()
+                .await
+                .wrap_err("could not begin db transaction")
+                .unwrap();
             // TODO handle errors
             let jpg_id = repository::resource_file::insert_new_resource_file(
-                &mut pool.acquire().await.unwrap(),
+                &mut tx.as_mut(),
                 task_for_asset.jpg_file.clone(),
             )
+            .in_current_span()
             .await
             .unwrap();
             let webp_id = repository::resource_file::insert_new_resource_file(
-                &mut pool.acquire().await.unwrap(),
+                &mut tx.as_mut(),
                 task_for_asset.webp_file.clone(),
             )
+            .in_current_span()
             .await
             .unwrap();
             match task_for_asset.ty {
                 // TODO handle errors
                 ThumbnailType::SmallSquare => {
                     repository::asset::set_asset_small_thumbnails(
-                        pool,
+                        &mut tx.as_mut(),
                         tasks.asset_id,
                         jpg_id,
                         webp_id,
                     )
+                    .in_current_span()
                     .await
                     .unwrap();
                 }
                 ThumbnailType::LargeOrigAspect => {
                     repository::asset::set_asset_large_thumbnails(
-                        pool,
+                        &mut tx.as_mut(),
                         tasks.asset_id,
                         jpg_id,
                         webp_id,
                     )
+                    .in_current_span()
                     .await
                     .unwrap();
                 }
             }
+            tx.commit()
+                .in_current_span()
+                .await
+                .wrap_err("could not commit db transaction")
+                .unwrap();
         }
         succeeded.push(tasks);
     }

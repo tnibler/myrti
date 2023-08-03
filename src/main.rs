@@ -18,7 +18,7 @@ use eyre::{self, Result};
 use http_error::HttpError;
 use model::repository::{self, pool::DbPool};
 use serde::Deserialize;
-use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
+use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePoolOptions, Sqlite, SqlitePool};
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 use tokio::{fs, signal, sync::mpsc};
 use tokio_util::sync::CancellationToken;
@@ -61,7 +61,10 @@ async fn db_setup() -> Result<SqlitePool> {
     //     Sqlite::create_database(db_url).await?;
     // }
 
-    let pool = SqlitePool::connect(db_url).await?;
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect(db_url)
+        .await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     Ok(pool)
 }

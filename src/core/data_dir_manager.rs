@@ -31,6 +31,18 @@ impl DataDirManager {
             path_in_data_dir: thumbnail_path.join(file_name),
         })
     }
+
+    pub async fn new_dash_dir(&self, dir_name: &str) -> Result<NewResourceFile> {
+        let dash_path = PathBuf::from("dash");
+        let data_dir = repository::data_dir::get_random_data_dir(&self.pool).await?;
+        let complete_path = data_dir.path.join(&dash_path);
+        tokio::fs::create_dir_all(&complete_path).await.unwrap();
+        Ok(NewResourceFile {
+            data_dir_id: data_dir.id,
+            data_dir_path: data_dir.path,
+            path_in_data_dir: dash_path.join(dir_name),
+        })
+    }
 }
 
 /// Result of calls to DataDirManager, represents a not yet created

@@ -1,7 +1,8 @@
 use chrono::Utc;
 use eyre::{eyre, Context, Result};
 use sqlx::{pool::PoolConnection, Sqlite, SqliteConnection};
-use tracing::Instrument;
+use tracing::{debug, instrument, Instrument};
+use tracing_error::SpanTrace;
 
 use crate::{
     core::NewResourceFile,
@@ -13,10 +14,12 @@ use crate::{
 
 use super::pool::DbPool;
 
+#[instrument(name = "Insert new resource file", skip(conn))]
 pub async fn insert_new_resource_file(
     conn: &mut SqliteConnection,
     new_resource_file: NewResourceFile,
 ) -> Result<ResourceFileId> {
+    debug!("insert");
     let created_at = Utc::now().naive_utc();
     let path = path_to_string(new_resource_file.path_in_data_dir)
         .wrap_err("failed to insert new ResourceFile, couldn't convert path to String")?;

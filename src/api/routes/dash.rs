@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use axum::{
     body::Body,
-    extract::{Path, Query, State},
-    http::{header, Request, StatusCode, Uri},
+    extract::{Path, State},
+    http::{Request, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, options},
     Router,
@@ -15,7 +15,7 @@ use tracing::{debug, instrument, Instrument};
 
 use crate::{
     api::{schema::AssetId, ApiResult},
-    app_state::{self, SharedState},
+    app_state::{SharedState},
     model::{self, repository, AssetType},
 };
 

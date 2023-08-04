@@ -3,15 +3,15 @@ use std::{collections::HashMap, ffi::OsString, os::unix::prelude::OsStrExt};
 use axum::{
     body::StreamBody,
     extract::{Path, Query, State},
-    http::{header, HeaderMap, HeaderValue, StatusCode},
+    http::{header, HeaderMap, HeaderValue},
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
 };
-use eyre::{bail, eyre, Context};
+use eyre::{eyre, Context};
 use serde::Deserialize;
 use tokio_util::io::ReaderStream;
-use tracing::{debug, instrument, warn};
+use tracing::{instrument, warn};
 
 use crate::{
     api::{
@@ -41,8 +41,8 @@ async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<
 }
 
 async fn get_asset(
-    Path(id): Path<String>,
-    State(app_state): State<SharedState>,
+    Path(_id): Path<String>,
+    State(_app_state): State<SharedState>,
 ) -> ApiResult<Json<Asset>> {
     Err(eyre!("not implemented"))?
 }

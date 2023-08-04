@@ -1,5 +1,5 @@
 use super::{
-    db_entity::DbAsset, util::opt_path_to_string, AssetId, AssetRootDirId, AssetType,
+    db_entity::DbAsset, AssetId, AssetRootDirId, AssetType,
     ResourceFileId,
 };
 use chrono::{DateTime, Utc};

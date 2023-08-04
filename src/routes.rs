@@ -10,7 +10,7 @@ use crate::{
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{post},
     Json, Router,
 };
 use eyre::Context;

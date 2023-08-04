@@ -2,13 +2,13 @@ use std::ops::DerefMut;
 
 use crate::{
     core::NewResourceFile,
-    model::{repository::resource_file, ResourceFile, VideoRepresentation, VideoRepresentationId},
+    model::{repository::resource_file, VideoRepresentation, VideoRepresentationId},
 };
 
 use super::pool::DbPool;
 use eyre::{Context, Result};
-use sqlx::{Executor, Sqlite, SqliteConnection, SqliteExecutor, Transaction};
-use tracing::{field::debug, instrument};
+use sqlx::{Executor};
+use tracing::{instrument};
 
 #[instrument(name = "Insert VideoRepresentation", skip(pool,))]
 pub async fn insert_video_representation(

@@ -1,6 +1,5 @@
-use eyre::{bail, eyre, Context, Report, Result};
+use eyre::{bail, Context, Report, Result};
 use std::{
-    path::{Path, PathBuf},
     sync::Arc,
 };
 use tokio::sync::mpsc;
@@ -18,7 +17,6 @@ use crate::{
     },
     processing::video::{
         dash_package::{shaka_package, RepresentationInput, RepresentationType},
-        probe_video,
     },
 };
 

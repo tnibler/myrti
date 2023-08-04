@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use eyre::Result;
+
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    core::job::{Job, JobHandle, JobProgress, JobResultType, JobStatus},
+    core::job::{Job, JobHandle, JobProgress, JobResultType},
     indexing,
     model::repository::pool::DbPool,
     model::{AssetId, AssetRootDir, AssetRootDirId},
@@ -42,7 +42,7 @@ impl IndexingJob {
     ) -> IndexingJobResult {
         // let span = info_span!("IndexingJob");
         // let _enter = span.enter();
-        let asset_ids: Vec<AssetId> = Vec::new();
+        let _asset_ids: Vec<AssetId> = Vec::new();
         status_tx
             .send(JobProgress {
                 percent: None,

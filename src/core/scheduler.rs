@@ -14,13 +14,12 @@ use crate::{
         thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
     },
     model::repository,
-    model::{AssetId, AssetType},
-    processing::video,
+    model::{AssetId},
 };
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, info_span, instrument, Instrument};
+use tracing::{debug, info, instrument};
 
 #[derive(Debug)]
 pub enum SchedulerMessage {
@@ -117,7 +116,7 @@ impl SchedulerImpl {
         }
     }
 
-    async fn on_job_complete(&self, job_id: JobId, result: JobResultType) {
+    async fn on_job_complete(&self, _job_id: JobId, result: JobResultType) {
         match result {
             JobResultType::Indexing(_) => {
                 self.thumbnail_if_required().await;

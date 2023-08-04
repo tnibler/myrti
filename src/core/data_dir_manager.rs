@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use crate::{
-    model::{repository, DataDirId, ResourceFileId, ResourceFileResolved},
+    model::{repository, DataDirId},
     repository::pool::DbPool,
 };
-use eyre::{eyre, Result};
+use eyre::{Result};
 
 /// Decides where to put new resource files (thumbnails, transcoded media etc..).
 ///

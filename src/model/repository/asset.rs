@@ -1,8 +1,8 @@
 use color_eyre::eyre;
 use eyre::{bail, Context, Result};
-use sqlx::{Executor, Sqlite, SqliteConnection, SqliteExecutor, Transaction};
+use sqlx::{Executor, SqliteConnection};
 use std::path::Path;
-use tracing::{debug, instrument, Instrument};
+use tracing::{instrument, Instrument};
 
 use crate::model::{
     db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType, DbVideoInfo},
@@ -348,7 +348,7 @@ pub async fn insert_image_info(
     image: &Image,
 ) -> Result<()> {
     debug_assert!(asset_id.0 != 0);
-    let db_image_info = image.try_to_db_image_info(asset_id)?;
+    let _db_image_info = image.try_to_db_image_info(asset_id)?;
     sqlx::query!("INSERT INTO ImageInfo (asset_id) VALUES(?);", asset_id.0,)
         .execute(conn)
         .in_current_span()

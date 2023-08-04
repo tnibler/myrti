@@ -1,7 +1,7 @@
 use super::{AssetMetadata, AssetRootId};
 use crate::model;
 use chrono::{DateTime, Utc};
-use eyre::{bail, eyre};
+use eyre::{bail};
 use serde::Serialize;
 use std::path::PathBuf;
 

@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use super::{
-    db_entity::{DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType},
+    db_entity::{DbAssetPathOnDisk, DbAssetThumbnails},
     AssetId, AssetType, ResourceFileId,
 };
-use eyre::eyre;
+
 use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

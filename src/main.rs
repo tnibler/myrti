@@ -7,7 +7,6 @@ use crate::{
 };
 use axum::{
     extract::{Query, State},
-    http::HeaderValue,
     response::IntoResponse,
     routing::{get, post},
     Router,
@@ -28,9 +27,9 @@ use tower_http::{
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     ServiceBuilderExt,
 };
-use tracing::{info, instrument, subscriber::set_global_default, Instrument};
+use tracing::{info, instrument, Instrument};
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{fmt::format::FmtSpan, prelude::*, EnvFilter};
+use tracing_subscriber::{prelude::*, EnvFilter};
 
 use crate::{
     app_state::{AppState, SharedState},

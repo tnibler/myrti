@@ -1,13 +1,12 @@
 use crate::{
     job::{
         dash_segmenting_job::{DashSegmentingJob, DashSegmentingJobParams},
-        indexing_job::{IndexingJob, IndexingJobParams, IndexingJobResult},
+        indexing_job::{IndexingJob, IndexingJobParams},
         thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
     },
-    model::AssetId,
 };
 use async_trait::async_trait;
-use eyre::Result;
+
 use std::fmt::{Debug, Display};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_util::sync::CancellationToken;

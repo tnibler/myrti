@@ -1,23 +1,23 @@
 use async_trait::async_trait;
-use eyre::{Context, ErrReport, Result};
+use eyre::{Context, Result};
 use rayon::prelude::*;
 use std::{
-    path::{Path, PathBuf},
+    path::{PathBuf},
     sync::Arc,
 };
-use tempfile::TempPath;
+
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, instrument, Instrument};
+use tracing::{error, info, instrument, Instrument};
 
 use crate::{
     core::{
-        job::{Job, JobHandle, JobProgress, JobResultType, JobStatus},
+        job::{Job, JobHandle, JobProgress, JobResultType},
         DataDirManager, NewResourceFile,
     },
     model::repository::{self, pool::DbPool},
     model::{
-        AssetBase, AssetId, AssetPathOnDisk, AssetThumbnails, AssetType, ResourceFileResolved,
+        AssetId, AssetPathOnDisk, AssetThumbnails, AssetType,
     },
     processing::{
         self,
@@ -230,7 +230,7 @@ async fn generate_thumbnails(
         let asset_path =
             match repository::asset::get_asset_path_on_disk(&pool, tasks.asset_id).await {
                 Ok(AssetPathOnDisk {
-                    id,
+                    id: _,
                     path_in_asset_root,
                     asset_root_path,
                 }) => asset_root_path.join(path_in_asset_root),
@@ -342,7 +342,7 @@ pub async fn generate_video_thumbnails(
             .await
         {
             Ok(AssetPathOnDisk {
-                id,
+                id: _,
                 path_in_asset_root,
                 asset_root_path,
             }) => asset_root_path.join(path_in_asset_root),
@@ -354,7 +354,7 @@ pub async fn generate_video_thumbnails(
                 continue;
             }
         };
-        let snapshot_dir = PathBuf::from("/tmp/mediathingy");
+        let _snapshot_dir = PathBuf::from("/tmp/mediathingy");
         // tokio::fs::remove_dir_all(&snapshot_dir).await.unwrap();
         // tokio::fs::create_dir_all(&snapshot_dir).await.unwrap();
         let snapshot_dir = match tempfile::tempdir().wrap_err("could not create temp directory") {

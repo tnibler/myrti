@@ -158,7 +158,7 @@ impl Monitor {
                             Ok(r) if !r.failed.is_empty() => JobStatus::Failed {
                                 msg: format!("some thumbnail tasks failed: {:?}", r.failed),
                             },
-                            Ok(results) => JobStatus::Complete,
+                            Ok(_results) => JobStatus::Complete,
                         };
                         self.set_status(job_id, status).await;
                     }

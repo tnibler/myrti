@@ -1,12 +1,10 @@
-use crate::processing::image::{self, OutDimension};
-use eyre::{bail, eyre, Context, Result};
+
+use eyre::{bail, Context, Result};
 use std::{
-    ffi::{OsStr, OsString},
-    path::{Path, PathBuf},
-    process::Stdio,
+    path::{Path},
 };
 use tokio::process::Command;
-use tracing::{debug, instrument};
+use tracing::{instrument};
 
 #[instrument("Take video snapshot")]
 pub async fn create_snapshot(video_path: &Path, out_path: &Path) -> Result<()> {

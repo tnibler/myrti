@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+
 
 use super::pool::DbPool;
-use crate::model::{data_dir, db_entity::DbDataDir};
+use crate::model::{db_entity::DbDataDir};
 use crate::model::{DataDir, DataDirId};
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result};
 use tracing::{instrument, Instrument};
 
 #[instrument(name = "Get random DataDir", skip(pool))]

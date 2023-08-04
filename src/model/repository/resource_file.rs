@@ -1,8 +1,8 @@
 use chrono::Utc;
-use eyre::{eyre, Context, Result};
-use sqlx::{pool::PoolConnection, Sqlite, SqliteConnection};
+use eyre::{Context, Result};
+use sqlx::{SqliteConnection};
 use tracing::{debug, instrument, Instrument};
-use tracing_error::SpanTrace;
+
 
 use crate::{
     core::NewResourceFile,

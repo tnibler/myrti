@@ -1,10 +1,9 @@
 use axum::{
     extract::{Path, State},
-    response::IntoResponse,
     routing::get,
     Json, Router,
 };
-use eyre::eyre;
+
 
 use crate::{
     api::{

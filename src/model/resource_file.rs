@@ -1,6 +1,6 @@
 use crate::model::{DataDirId, ResourceFileId};
 use chrono::{DateTime, Utc};
-use eyre::{eyre, Report};
+
 use std::path::PathBuf;
 
 use super::{db_entity, util::path_to_string};

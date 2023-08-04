@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Stdio,
-};
+use std::path::{Path, PathBuf};
 
 use eyre::{bail, Context, Result};
 use tokio::{fs, process::Command};
@@ -63,7 +60,6 @@ pub async fn shaka_package(
         .wait()
         .await?;
     if !matches!(result.code(), Some(0)) {
-        panic!();
         bail!("shaka packager exited with error");
     }
     Ok(())

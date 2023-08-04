@@ -144,7 +144,7 @@ impl Monitor {
         match result {
             Ok(job_result) => {
                 match job_result {
-                    JobResultType::Indexing(indexing_result) => {
+                    JobResultType::Indexing(ref indexing_result) => {
                         let status = if indexing_result.failed.is_empty() {
                             JobStatus::CompleteWithErrors
                         } else {
@@ -152,7 +152,7 @@ impl Monitor {
                         };
                         self.set_status(job_id, status).await;
                     }
-                    JobResultType::Thumbnail(thumbnail_results) => {
+                    JobResultType::Thumbnail(ref thumbnail_results) => {
                         let status = match thumbnail_results {
                             Err(e) => JobStatus::Failed { msg: e.to_string() },
                             Ok(r) if !r.failed.is_empty() => JobStatus::Failed {
@@ -162,7 +162,7 @@ impl Monitor {
                         };
                         self.set_status(job_id, status).await;
                     }
-                    JobResultType::DashSegmenting(segmenting_results) => {
+                    JobResultType::DashSegmenting(ref segmenting_results) => {
                         let status = if segmenting_results.failed.is_empty() {
                             JobStatus::Complete
                         } else if segmenting_results.completed.is_empty() {
@@ -176,7 +176,10 @@ impl Monitor {
                     }
                 }
                 self.scheduler_tx
-                    .send(SchedulerMessage::JobComplete { id: job_id })
+                    .send(SchedulerMessage::JobComplete {
+                        id: job_id,
+                        result: job_result,
+                    })
                     .in_current_span()
                     .await
                     .unwrap();
@@ -190,7 +193,7 @@ impl Monitor {
                 )
                 .await;
                 self.scheduler_tx
-                    .send(SchedulerMessage::JobComplete { id: job_id })
+                    .send(SchedulerMessage::JobFailed { id: job_id })
                     .in_current_span()
                     .await
                     .unwrap();

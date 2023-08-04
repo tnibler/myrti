@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use super::{
-    job::{Job, JobId},
+    job::{Job, JobId, JobResultType},
     monitor::MonitorMessage,
     DataDirManager,
 };
@@ -27,7 +27,8 @@ pub enum SchedulerMessage {
     Timer,
     FileSystemChange { changed_files: Vec<PathBuf> },
     UserRequest(UserRequest),
-    JobComplete { id: JobId },
+    JobComplete { id: JobId, result: JobResultType },
+    JobFailed { id: JobId },
     ConfigChange,
 }
 
@@ -103,9 +104,12 @@ impl SchedulerImpl {
                                 _ => todo!()
                             }
                         },
-                        SchedulerMessage::JobComplete { id }=> {
-                            self.queue_jobs_if_required().await;
+                        SchedulerMessage::JobComplete {id, result }=> {
+                            self.on_job_complete(id, result).await;
                         },
+                        SchedulerMessage::JobFailed { id: _ } => {
+
+                        }
                         SchedulerMessage::ConfigChange => todo!(),
                     }
                 }
@@ -113,10 +117,18 @@ impl SchedulerImpl {
         }
     }
 
-    async fn start_segmenting_job(&self) {}
+    async fn on_job_complete(&self, job_id: JobId, result: JobResultType) {
+        match result {
+            JobResultType::Indexing(_) => {
+                self.thumbnail_if_required().await;
+                self.dash_package_if_required().await;
+            }
+            JobResultType::Thumbnail(_) => {}
+            JobResultType::DashSegmenting(_) => {}
+        }
+    }
 
-    async fn queue_jobs_if_required(&mut self) {
-        info!("checking if any jobs need to be run...");
+    async fn thumbnail_if_required(&self) {
         if !repository::asset::get_assets_with_missing_thumbnail(&self.pool, Some(1))
             .await
             .unwrap()
@@ -145,6 +157,9 @@ impl SchedulerImpl {
                 .await
                 .unwrap();
         }
+    }
+
+    async fn dash_package_if_required(&self) {
         let videos_without_dash = repository::asset::get_video_assets_without_dash(&self.pool)
             .await
             .unwrap();

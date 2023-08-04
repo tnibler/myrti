@@ -31,13 +31,12 @@ struct DashFilePath {
     pub file_name: String,
 }
 
-#[instrument(name = "Get Dash file", skip(app_state))]
+#[instrument(skip(app_state))]
 async fn get_dash_file(
     Path(path): Path<DashFilePath>,
     State(app_state): State<SharedState>,
     request: Request<Body>,
 ) -> ApiResult<Response> {
-    debug!("dash get");
     let asset_id: model::AssetId = AssetId(path.id).try_into()?;
     let asset = repository::asset::get_asset_base(&app_state.pool, asset_id).await?;
     if asset.ty != AssetType::Video {

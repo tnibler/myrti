@@ -28,6 +28,7 @@ fn main() {
     let mut wrapper_cc = cc::Build::new();
     wrapper_cc
         .file("vips_wrapper/thumbnail.c")
+        .file("vips_wrapper/image_info.c")
         .warnings_into_errors(true);
     for flag in flags {
         if !flag.is_empty() {

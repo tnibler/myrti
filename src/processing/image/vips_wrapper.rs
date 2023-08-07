@@ -2,7 +2,7 @@ use eyre::{eyre, Context, Result};
 use std::{
     ffi::{c_char, CString},
     os::unix::prelude::OsStrExt,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Once,
 };
 use tracing::{error, info_span};
@@ -95,4 +95,29 @@ pub fn generate_thumbnail(params: ThumbnailParams) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct Size {
+    pub width: i32,
+    pub height: i32,
+}
+
+pub fn get_image_size(path: &Path) -> Result<Size> {
+    let c_path = CString::new(path.as_os_str().as_bytes()).wrap_err(format!(
+        "Could not convert path {} to bytes",
+        path.display()
+    ))?;
+    let mut out = wrapper::ImageInfo {
+        width: 0,
+        height: 0,
+    };
+    let ret = unsafe { wrapper::read_image_info(c_path.as_ptr(), &mut out as *mut _) };
+    match ret {
+        0 => Ok(Size {
+            width: out.width,
+            height: out.height,
+        }),
+        _ => Err(eyre!("Error getting image info with libvips")),
+    }
 }

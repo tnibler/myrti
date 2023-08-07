@@ -2,9 +2,10 @@ use std::path::Path;
 
 use crate::{
     model::*,
+    processing,
     repository::{self, pool::DbPool},
 };
-use chrono::{Utc};
+use chrono::Utc;
 use color_eyre::eyre::Result;
 use eyre::Context;
 use tokio::fs;
@@ -68,20 +69,46 @@ async fn index_file(
                     }
                 };
                 let metadata = fs::metadata(path).await?;
+                let size: Size = match ty {
+                    AssetType::Image => {
+                        let p = path.to_owned();
+                        let s = tokio::task::spawn_blocking(move || {
+                            processing::image::get_image_size(&p)
+                                .wrap_err("could not read image size")
+                        })
+                        .await??;
+                        Size {
+                            width: s.width.into(),
+                            height: s.height.into(),
+                        }
+                    }
+                    AssetType::Video => {
+                        let probe = processing::video::probe_video(path)
+                            .await
+                            .wrap_err("could not read video info using ffprobe")?;
+                        Size {
+                            width: probe.width.into(),
+                            height: probe.height.into(),
+                        }
+                    }
+                };
                 let asset_base = AssetBase {
                     id: AssetId(0),
                     ty,
                     root_dir_id: asset_root.id,
                     file_path: path.strip_prefix(&asset_root.path)?.to_owned(),
-                    hash: None,
-                    added_at: Utc::now(),
                     file_created_at: metadata.created().ok().map(|t| t.into()),
                     file_modified_at: metadata.modified().ok().map(|t| t.into()),
+                    added_at: Utc::now(),
                     canonical_date: None,
+                    size,
+                    hash: None,
                     thumb_small_square_jpg: None,
                     thumb_small_square_webp: None,
                     thumb_large_orig_jpg: None,
                     thumb_large_orig_webp: None,
+                    thumb_small_square_size: None,
+                    thumb_large_orig_size: None,
                 };
                 let full_asset = FullAsset {
                     base: asset_base,

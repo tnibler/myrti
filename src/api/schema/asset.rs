@@ -1,7 +1,7 @@
 use super::{AssetMetadata, AssetRootId};
 use crate::model;
 use chrono::{DateTime, Utc};
-use eyre::{bail};
+use eyre::bail;
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -9,18 +9,22 @@ use std::path::PathBuf;
 pub struct AssetId(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum AssetType {
     Image,
     Video,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Asset {
     pub id: AssetId,
     pub asset_root_id: AssetRootId,
     pub path_in_root: PathBuf,
     #[serde(rename = "type")]
     pub ty: AssetType,
+    pub width: i32,
+    pub height: i32,
     pub file_created_at: Option<DateTime<Utc>>,
     pub file_modified_at: Option<DateTime<Utc>>,
     pub added_at: DateTime<Utc>,
@@ -34,6 +38,8 @@ impl From<model::AssetBase> for Asset {
             asset_root_id: value.root_dir_id.into(),
             path_in_root: value.file_path,
             ty: value.ty.into(),
+            width: value.size.width as i32,
+            height: value.size.height as i32,
             file_created_at: value.file_created_at,
             file_modified_at: value.file_modified_at,
             added_at: value.added_at,

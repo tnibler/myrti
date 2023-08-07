@@ -8,18 +8,19 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use chrono::{DateTime, Utc};
 use eyre::{eyre, Context};
 use serde::Deserialize;
 use tokio_util::io::ReaderStream;
-use tracing::{instrument, warn};
+use tracing::{debug, instrument, warn, Instrument};
 
 use crate::{
     api::{
         self,
-        schema::{Asset, AssetId},
+        schema::{Asset, AssetId, TimelineChunk, TimelineRequest},
         ApiResult,
     },
-    app_state::SharedState,
+    app_state::{self, SharedState},
     model::{self, repository},
 };
 
@@ -29,6 +30,7 @@ pub fn router() -> Router<SharedState> {
         .route("/:id", get(get_asset))
         .route("/thumbnail/:id/:size/:format", get(get_thumbnail))
         .route("/file/:id", get(get_asset_file))
+        .route("/timeline", get(get_timeline))
 }
 
 async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Asset>>> {
@@ -137,6 +139,29 @@ async fn get_asset_file(
         );
     }
     Ok((headers, body).into_response())
+}
+
+#[instrument(skip(app_state))]
+async fn get_timeline(
+    State(app_state): State<SharedState>,
+    Query(req_body): Query<TimelineRequest>,
+) -> ApiResult<Json<TimelineChunk>> {
+    // ignore last_fetch for now
+    let start: DateTime<Utc> = match req_body.start {
+        None => Utc::now(),
+        Some(ref d) => DateTime::parse_from_rfc3339(d)
+            .wrap_err("bad datetime format")?
+            .into(),
+    };
+    let results =
+        repository::asset::get_asset_timeline_chunk(&app_state.pool, &start, req_body.max_count)
+            .in_current_span()
+            .await?;
+    Ok(Json(TimelineChunk {
+        date: Utc::now(),
+        changed_since_last_fetch: false,
+        assets: results.into_iter().map(|a| a.into()).collect(),
+    }))
 }
 
 fn guess_mime_type(path: &std::path::Path) -> Option<&'static str> {

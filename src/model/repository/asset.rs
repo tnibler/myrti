@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use color_eyre::eyre;
 use eyre::{bail, Context, Result};
 use sqlx::{Executor, SqliteConnection};
@@ -28,10 +29,16 @@ added_at,
 file_created_at,
 file_modified_at,
 canonical_date,
+width,
+height,
 thumb_small_square_jpg as "thumb_small_square_jpg: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
 thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
-thumb_large_orig_webp as "thumb_large_orig_webp: _"
+thumb_large_orig_webp as "thumb_large_orig_webp: _",
+thumb_small_square_width,
+thumb_small_square_height,
+thumb_large_orig_width,
+thumb_large_orig_height
 FROM Assets
 WHERE id=?;
 "#,
@@ -149,10 +156,16 @@ added_at,
 file_created_at,
 file_modified_at,
 canonical_date,
+width,
+height,
 thumb_small_square_jpg as "thumb_small_square_jpg: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
 thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
-thumb_large_orig_webp as "thumb_large_orig_webp: _"
+thumb_large_orig_webp as "thumb_large_orig_webp: _",
+thumb_small_square_width,
+thumb_small_square_height,
+thumb_large_orig_width,
+thumb_large_orig_height
 FROM Assets WHERE file_path = ?;
     "#,
         path
@@ -177,10 +190,16 @@ added_at,
 file_created_at,
 file_modified_at,
 canonical_date,
+width,
+height,
 thumb_small_square_jpg as "thumb_small_square_jpg: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
 thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
-thumb_large_orig_webp as "thumb_large_orig_webp: _"
+thumb_large_orig_webp as "thumb_large_orig_webp: _",
+thumb_small_square_width,
+thumb_small_square_height,
+thumb_large_orig_width,
+thumb_large_orig_height
 FROM Assets;
     "#
     )
@@ -313,12 +332,19 @@ added_at,
 file_created_at,
 file_modified_at,
 canonical_date,
+width,
+height,
 thumb_small_square_jpg,
 thumb_small_square_webp,
 thumb_large_orig_jpg,
-thumb_large_orig_webp)
+thumb_large_orig_webp,
+thumb_small_square_width,
+thumb_small_square_height,
+thumb_large_orig_width,
+thumb_large_orig_height
+)
 VALUES
-(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 ",
         db_asset_base.ty,
         db_asset_base.root_dir_id.0,
@@ -328,10 +354,16 @@ VALUES
         db_asset_base.file_created_at,
         db_asset_base.file_modified_at,
         db_asset_base.canonical_date,
+        db_asset_base.width,
+        db_asset_base.height,
         db_asset_base.thumb_small_square_jpg,
         db_asset_base.thumb_small_square_webp,
         db_asset_base.thumb_large_orig_jpg,
         db_asset_base.thumb_large_orig_webp,
+        db_asset_base.thumb_small_square_width,
+        db_asset_base.thumb_small_square_height,
+        db_asset_base.thumb_large_orig_width,
+        db_asset_base.thumb_large_orig_height,
     )
     .execute(conn)
     .in_current_span()
@@ -489,10 +521,16 @@ added_at,
 file_created_at,
 file_modified_at,
 canonical_date,
+width,
+height,
 thumb_small_square_jpg as "thumb_small_square_jpg: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
 thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
-thumb_large_orig_webp as "thumb_large_orig_webp: _"
+thumb_large_orig_webp as "thumb_large_orig_webp: _",
+thumb_small_square_width,
+thumb_small_square_height,
+thumb_large_orig_width,
+thumb_large_orig_height
 FROM Assets, VideoInfo 
 WHERE Assets.id = VideoInfo.asset_id 
 AND Assets.ty = ? AND VideoInfo.dash_resource_dir IS NULL;
@@ -525,4 +563,53 @@ FROM VideoInfo WHERE asset_id=?;
     .await
     .wrap_err("no VideoInfo for this AssetId")?
     .try_into()
+}
+
+#[instrument(skip(pool))]
+pub async fn get_asset_timeline_chunk(
+    pool: &DbPool,
+    start: &DateTime<Utc>,
+    count: i32,
+) -> Result<Vec<AssetBase>> {
+    let start_naive = start.naive_utc();
+    sqlx::query_as!(
+        DbAsset,
+        r#"
+SELECT
+id,
+ty as "ty: _",
+root_dir_id,
+file_path,
+hash,
+added_at,
+file_created_at,
+file_modified_at,
+canonical_date,
+width,
+height,
+thumb_small_square_jpg as "thumb_small_square_jpg: _",
+thumb_small_square_webp as "thumb_small_square_webp: _",
+thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
+thumb_large_orig_webp as "thumb_large_orig_webp: _",
+thumb_small_square_width,
+thumb_small_square_height,
+thumb_large_orig_width,
+thumb_large_orig_height
+FROM Assets 
+WHERE (file_modified_at IS NOT NULL AND file_modified_at < ?) 
+OR (canonical_date IS NOT NULL AND canonical_date < ?)
+ORDER BY canonical_date DESC, file_modified_at DESC
+LIMIT ?;
+    "#,
+        start_naive,
+        start_naive,
+        count
+    )
+    .fetch_all(pool)
+    .in_current_span()
+    .await
+    .wrap_err("could not query for timeline chunk")?
+    .into_iter()
+    .map(|a| a.try_into())
+    .collect::<Result<Vec<_>>>()
 }

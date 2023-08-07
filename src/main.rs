@@ -7,6 +7,7 @@ use crate::{
 };
 use axum::{
     extract::{Query, State},
+    http::Method,
     response::IntoResponse,
     routing::{get, post},
     Router,
@@ -23,6 +24,7 @@ use tokio::{fs, signal, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
 use tower_http::{
+    cors::{self, Any, CorsLayer},
     request_id::MakeRequestUuid,
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     ServiceBuilderExt,
@@ -176,6 +178,11 @@ async fn main() -> Result<()> {
         scheduler,
         monitor,
     });
+    let cors = CorsLayer::new()
+        // allow `GET` and `POST` when accessing the resource
+        .allow_methods([Method::GET, Method::POST])
+        // allow requests from any origin
+        .allow_origin(Any);
     let app = Router::new()
         .nest("/api/asset", api::routes::asset::router())
         .nest("/api/assetRoots", api::routes::asset_roots::router())
@@ -193,6 +200,7 @@ async fn main() -> Result<()> {
                         .on_response(DefaultOnResponse::new().include_headers(true)),
                 ),
         )
+        .layer(cors)
         .with_state(shared_state);
     // .route("/api/assets", get(get_assets))
     // .route("/api/assetRoots", get(get_asset_roots))

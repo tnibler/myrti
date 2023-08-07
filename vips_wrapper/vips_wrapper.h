@@ -14,4 +14,11 @@ int init();
 void teardown();
 int thumbnail(ThumbnailParams);
 
+typedef struct ImageInfo {
+  int width;
+  int height;
+} ImageInfo;
+
+int read_image_info(const char *path, ImageInfo *out);
+
 #endif // __VIPS_WRAPPER_H

@@ -13,10 +13,16 @@ pub struct DbAsset {
     pub file_created_at: Option<NaiveDateTime>,
     pub file_modified_at: Option<NaiveDateTime>,
     pub canonical_date: Option<NaiveDateTime>,
+    pub width: i64,
+    pub height: i64,
     pub thumb_small_square_jpg: Option<ResourceFileId>,
     pub thumb_small_square_webp: Option<ResourceFileId>,
     pub thumb_large_orig_jpg: Option<ResourceFileId>,
     pub thumb_large_orig_webp: Option<ResourceFileId>,
+    pub thumb_small_square_width: Option<i64>,
+    pub thumb_small_square_height: Option<i64>,
+    pub thumb_large_orig_width: Option<i64>,
+    pub thumb_large_orig_height: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -39,6 +39,15 @@ GET /asset/byTimeSlice
 start: date
 end: date
 
+GET /asset/timeline
+startId: string 
+count: number
+lastFetch: datetime (if new assets since then, we have to refetch/update those)
+
+response:
+changedSinceLastFetch: bool
+assets: {[]}
+
 ### /asset/:id/video
 
 GET /dash/:id/stream.mpd

@@ -1,8 +1,7 @@
 use eyre::Result;
 
-
 use super::{
-    db_entity::{DbImageInfo, DbVideoInfo},
+    repository::db_entity::{DbImageInfo, DbVideoInfo},
     AssetBase, AssetId, ResourceFileId,
 };
 

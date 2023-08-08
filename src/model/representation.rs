@@ -1,5 +1,5 @@
 use super::{
-    db_entity::{DbAudioRepresentation, DbVideoRepresentation},
+    repository::db_entity::{DbAudioRepresentation, DbVideoRepresentation},
     AssetId, AudioRepresentationId, ResourceFileId, VideoRepresentationId,
 };
 

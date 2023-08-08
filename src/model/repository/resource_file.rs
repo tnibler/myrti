@@ -1,13 +1,12 @@
 use chrono::Utc;
 use eyre::{Context, Result};
-use sqlx::{SqliteConnection};
+use sqlx::SqliteConnection;
 use tracing::{debug, instrument, Instrument};
-
 
 use crate::{
     core::NewResourceFile,
     model::{
-        db_entity::DbResourceFileResolved, util::path_to_string, ResourceFileId,
+        repository::db_entity::DbResourceFileResolved, util::path_to_string, ResourceFileId,
         ResourceFileResolved,
     },
 };

@@ -1,4 +1,4 @@
-use super::{db_entity::DbAssetRootDir, AssetRootDirId};
+use super::{repository::db_entity::DbAssetRootDir, AssetRootDirId};
 use eyre::eyre;
 use serde::Serialize;
 use std::path::PathBuf;

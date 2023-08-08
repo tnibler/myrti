@@ -1,8 +1,5 @@
-
-
 use super::pool::DbPool;
-use crate::model::{db_entity::DbDataDir};
-use crate::model::{DataDir, DataDirId};
+use crate::model::{repository::db_entity::DbDataDir, DataDir, DataDirId};
 use eyre::{Context, Result};
 use tracing::{instrument, Instrument};
 

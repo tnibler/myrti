@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use super::db_entity::DbAssetType;
+use super::repository::db_entity::DbAssetType;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Copy)]
 pub enum AssetType {

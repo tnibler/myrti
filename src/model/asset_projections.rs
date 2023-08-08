@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::{
-    db_entity::{DbAssetPathOnDisk, DbAssetThumbnails},
+    repository::db_entity::{DbAssetPathOnDisk, DbAssetThumbnails},
     AssetId, AssetType, ResourceFileId,
 };
 

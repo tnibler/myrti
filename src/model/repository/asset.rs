@@ -5,8 +5,8 @@ use sqlx::{Executor, SqliteConnection};
 use std::path::Path;
 use tracing::{instrument, Instrument};
 
+use super::db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType, DbVideoInfo};
 use crate::model::{
-    db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType, DbVideoInfo},
     AssetAll, AssetBase, AssetId, AssetPathOnDisk, AssetThumbnails, AssetType, FullAsset, Image,
     ResourceFileId, Video,
 };

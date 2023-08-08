@@ -40,7 +40,8 @@ start: date
 end: date
 
 GET /asset/timeline
-startId: string 
+start: string 
+startId: string
 count: number
 lastFetch: datetime (if new assets since then, we have to refetch/update those)
 

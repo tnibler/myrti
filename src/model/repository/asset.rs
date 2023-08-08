@@ -596,11 +596,13 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height
 FROM Assets 
-WHERE (file_modified_at IS NOT NULL AND file_modified_at < ?) 
+WHERE
+(file_modified_at IS NOT NULL AND file_modified_at < ?) 
 OR (canonical_date IS NOT NULL AND canonical_date < ?)
-ORDER BY canonical_date DESC, file_modified_at DESC
+ORDER BY canonical_date DESC, file_modified_at DESC, id DESC
 LIMIT ?;
     "#,
+        // TODO only sort by canonical_date and id when canonical is actually computed during indexing
         start_naive,
         start_naive,
         count

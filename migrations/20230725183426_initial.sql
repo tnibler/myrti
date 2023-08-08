@@ -27,8 +27,11 @@ CREATE TABLE Assets (
   file_created_at DATETIME,
   file_modified_at DATETIME,
   canonical_date DATETIME,
+  -- width and height of the image/video as it is displayed, all metadata taken into account
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
+  -- rotation correction applied after exif/metadata rotation if that's still wrong
+  -- rotation_correction INTEGER,
   thumb_small_square_jpg INTEGER,
   thumb_small_square_webp INTEGER,
   thumb_large_orig_jpg INTEGER,

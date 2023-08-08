@@ -11,9 +11,14 @@ pub struct VideoProbeResult {
     pub width: i32,
     pub height: i32,
     pub bitrate: i32,
+    pub rotation: Option<i32>,
 }
 
 pub async fn probe_video(path: &Path) -> Result<VideoProbeResult> {
+    #[derive(Debug, Clone, Deserialize)]
+    struct SideData {
+        pub rotation: Option<i32>,
+    }
     #[derive(Debug, Clone, Deserialize)]
     struct Stream {
         pub codec_name: String,
@@ -21,6 +26,7 @@ pub async fn probe_video(path: &Path) -> Result<VideoProbeResult> {
         pub width: i32,
         pub height: i32,
         pub bit_rate: String,
+        pub side_data_list: Option<Vec<SideData>>,
     }
     #[derive(Debug, Clone, Deserialize)]
     struct FFProbeOutput {
@@ -33,7 +39,7 @@ pub async fn probe_video(path: &Path) -> Result<VideoProbeResult> {
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=codec_name,width,height,duration,bit_rate",
+            "stream=codec_name,width,height,duration,bit_rate:stream_side_data=rotation",
             "-of",
             "json",
         ])
@@ -57,12 +63,17 @@ pub async fn probe_video(path: &Path) -> Result<VideoProbeResult> {
                 .get(0)
                 .cloned()
                 .ok_or_else(|| eyre!("error parsing ffprobe output"))?;
+            let rotation: Option<i32> = match stream.side_data_list {
+                Some(side_datas) => side_datas.get(0).map(|sd| sd.rotation).flatten(),
+                _ => None,
+            };
             Ok(VideoProbeResult {
                 codec_name: stream.codec_name,
                 duration_seconds: stream.duration.parse()?,
                 width: stream.width,
                 height: stream.height,
                 bitrate: stream.bit_rate.parse()?,
+                rotation,
             })
         })
         .wrap_err("error parsing ffprobe output")?

@@ -98,30 +98,31 @@ pub async fn read_media_metadata(path: &Path) -> Result<exiftool::Output> {
         .instrument(info_span!("exiftool"))
         .await
         .wrap_err("exiftool error")?;
-    // let json = serde_json::from_slice(&output.stdout);
-    todo!()
+    let mut json_out: Vec<exiftool::Output> =
+        serde_json::from_slice(&output.stdout).wrap_err("failed to parse exiftool output")?;
+    json_out
+        .pop()
+        .ok_or(eyre!("failed to parse exiftool output"))
 }
 
-enum TimestampGuess {
-    Certain(DateTime<Utc>),
-    Puzzled {
-        original_local: NaiveDateTime,
-        guess: DateTime<Utc>,
-    },
-    OriginalOnly(NaiveDateTime),
+#[derive(Debug, Clone)]
+pub enum TimestampGuess {
+    Utc(DateTime<Utc>),
+    LocalOnly(NaiveDateTime),
+    None,
 }
 
 /// Per spec, EXIF and QuickTime timestamps should be written either as UTC
 /// or completed with timezone information in OffsetTime.
 /// Some/many camera manufacturers don't do that correctly, so this tries to
 /// puzzle together a good guess at the correct timezone
-fn figure_out_utc_timestamp(et: &exiftool::Output) -> TimestampGuess {
+pub fn figure_out_utc_timestamp(et: &exiftool::Output) -> TimestampGuess {
     // maybe we're super lucky and there's a timestamp with timezone right there
     if let Some(ref composite) = et.composite {
         if let Some(ref subsec_date_time_original) = composite.subsec_date_time_original {
             let parsed = parse_exiftool_subsecond_timestamp_with_offset(subsec_date_time_original);
             if let Ok(timestamp) = parsed {
-                return TimestampGuess::Certain(timestamp.with_timezone(&Utc));
+                return TimestampGuess::Utc(timestamp.with_timezone(&Utc));
             }
         }
     }
@@ -135,7 +136,7 @@ fn figure_out_utc_timestamp(et: &exiftool::Output) -> TimestampGuess {
             if let Some(ref create_time) = exif.create_time {
                 let parsed = parse_exiftool_timestamp_with_offset_time(create_time, offset);
                 if let Ok(timestamp) = parsed {
-                    return TimestampGuess::Certain(timestamp.with_timezone(&Utc));
+                    return TimestampGuess::Utc(timestamp.with_timezone(&Utc));
                 }
             }
         }
@@ -149,7 +150,7 @@ fn figure_out_utc_timestamp(et: &exiftool::Output) -> TimestampGuess {
                     if let Some(serde_json::Value::String(ts)) = json_val {
                         let parsed = parse_exiftool_subsecond_timestamp_with_offset(ts);
                         if let Ok(timestamp) = parsed {
-                            return TimestampGuess::Certain(timestamp.with_timezone(&Utc));
+                            return TimestampGuess::Utc(timestamp.with_timezone(&Utc));
                         }
                     }
                 }
@@ -157,9 +158,32 @@ fn figure_out_utc_timestamp(et: &exiftool::Output) -> TimestampGuess {
             }
         }
     }
-    // try with gps timestamps
+    // TODO try with gps timestamps
     // QuickTime, which should be UTC
-    todo!()
+    if let Some(ref quicktime) = et.quicktime {
+        if let Some(ref timestamp) = quicktime.create_date {
+            let parsed = parse_exiftool_timestamp_no_offset(timestamp);
+            if let Ok(timestamp) = parsed {
+                return TimestampGuess::Utc(timestamp.and_utc());
+            }
+        }
+    }
+    // No choice but to assume utc unless we know otherwise
+    if let Some(ref exif) = et.exif {
+        if let Some(ref create_time) = exif.create_time {
+            let parsed = parse_exiftool_timestamp_no_offset(create_time);
+            if let Ok(timestamp) = parsed {
+                return TimestampGuess::Utc(timestamp.and_utc());
+            }
+        }
+    }
+    if let Some(ref file_modify_date) = et.file.file_modify_date {
+        let parsed = parse_exiftool_timestamp_with_offset(file_modify_date);
+        if let Ok(timestamp) = parsed {
+            return TimestampGuess::Utc(timestamp.with_timezone(&Utc));
+        }
+    }
+    return TimestampGuess::None;
 }
 
 fn parse_exiftool_timestamp_with_offset_time(
@@ -178,6 +202,10 @@ fn parse_exiftool_subsecond_timestamp_with_offset(s: &str) -> ParseResult<DateTi
 }
 
 fn parse_exiftool_subsecond_timestamp_no_offset(s: &str) -> ParseResult<NaiveDateTime> {
+    NaiveDateTime::parse_from_str(s, "%Y:%m:%d %H:%M:%S%.f")
+}
+
+fn parse_exiftool_timestamp_no_offset(s: &str) -> ParseResult<NaiveDateTime> {
     NaiveDateTime::parse_from_str(s, "%Y:%m:%d %H:%M:%S")
 }
 

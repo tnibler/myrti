@@ -24,9 +24,9 @@ CREATE TABLE Assets (
   file_path TEXT NOT NULL UNIQUE,
   hash BLOB,
   added_at DATETIME NOT NULL,
-  file_created_at DATETIME,
-  file_modified_at DATETIME,
-  canonical_date DATETIME,
+  -- with zone offset if we know it, otherwise no offset and just assume local time
+  taken_date DATETIME,
+  taken_date_local_fallback DATETIME,
   -- width and height of the image/video as it is displayed, all metadata taken into account
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
@@ -44,7 +44,8 @@ CREATE TABLE Assets (
   FOREIGN KEY (thumb_small_square_webp) REFERENCES ResourceFiles(id) ON DELETE SET NULL,
   FOREIGN KEY (thumb_large_orig_jpg) REFERENCES ResourceFiles(id) ON DELETE SET NULL,
   FOREIGN KEY (thumb_large_orig_webp) REFERENCES ResourceFiles(id) ON DELETE SET NULL,
-  FOREIGN KEY (root_dir_id) REFERENCES AssetRootDirs(id) ON DELETE CASCADE
+  FOREIGN KEY (root_dir_id) REFERENCES AssetRootDirs(id) ON DELETE CASCADE,
+  CHECK(taken_date IS NOT NULL OR taken_date_local_fallback IS NOT NULL)
 );
 
 CREATE TABLE ImageInfo (

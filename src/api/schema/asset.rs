@@ -25,9 +25,8 @@ pub struct Asset {
     pub ty: AssetType,
     pub width: i32,
     pub height: i32,
-    pub file_created_at: Option<DateTime<Utc>>,
-    pub file_modified_at: Option<DateTime<Utc>>,
     pub added_at: DateTime<Utc>,
+    pub taken_date: DateTime<Utc>,
     pub metadata: Option<AssetMetadata>,
 }
 
@@ -40,9 +39,11 @@ impl From<model::AssetBase> for Asset {
             ty: value.ty.into(),
             width: value.size.width as i32,
             height: value.size.height as i32,
-            file_created_at: value.file_created_at,
-            file_modified_at: value.file_modified_at,
             added_at: value.added_at,
+            taken_date: match value.taken_date {
+                model::MediaTimestamp::Utc(utc) => utc,
+                model::MediaTimestamp::LocalFallback(local) => local.and_utc(),
+            },
             metadata: None,
         }
     }

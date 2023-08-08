@@ -26,9 +26,8 @@ root_dir_id,
 file_path,
 hash,
 added_at,
-file_created_at,
-file_modified_at,
-canonical_date,
+taken_date as "taken_date: _",
+taken_date_local_fallback as "taken_date_local_fallback: _",
 width,
 height,
 thumb_small_square_jpg as "thumb_small_square_jpg: _",
@@ -153,9 +152,8 @@ root_dir_id,
 file_path,
 hash,
 added_at,
-file_created_at,
-file_modified_at,
-canonical_date,
+taken_date as "taken_date: _",
+taken_date_local_fallback as "taken_date_local_fallback: _",
 width,
 height,
 thumb_small_square_jpg as "thumb_small_square_jpg: _",
@@ -187,9 +185,8 @@ root_dir_id,
 file_path,
 hash,
 added_at,
-file_created_at,
-file_modified_at,
-canonical_date,
+taken_date as "taken_date: _",
+taken_date_local_fallback as "taken_date_local_fallback: _",
 width,
 height,
 thumb_small_square_jpg as "thumb_small_square_jpg: _",
@@ -286,9 +283,8 @@ root_dir_id=?,
 file_path=?,
 hash=?,
 added_at=?,
-file_created_at=?,
-file_modified_at=?,
-canonical_date=?,
+taken_date=?,
+taken_date_local_fallback=?,
 thumb_small_square_jpg=?,
 thumb_small_square_webp=?,
 thumb_large_orig_jpg=?,
@@ -300,9 +296,8 @@ WHERE id=?;
         db_asset_base.file_path,
         db_asset_base.hash,
         db_asset_base.added_at,
-        db_asset_base.file_created_at,
-        db_asset_base.file_modified_at,
-        db_asset_base.canonical_date,
+        db_asset_base.taken_date,
+        db_asset_base.taken_date_local_fallback,
         db_asset_base.thumb_small_square_jpg,
         db_asset_base.thumb_small_square_webp,
         db_asset_base.thumb_large_orig_jpg,
@@ -329,9 +324,8 @@ root_dir_id,
 file_path,
 hash,
 added_at,
-file_created_at,
-file_modified_at,
-canonical_date,
+taken_date,
+taken_date_local_fallback,
 width,
 height,
 thumb_small_square_jpg,
@@ -344,16 +338,15 @@ thumb_large_orig_width,
 thumb_large_orig_height
 )
 VALUES
-(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 ",
         db_asset_base.ty,
         db_asset_base.root_dir_id.0,
         db_asset_base.file_path,
         db_asset_base.hash,
         db_asset_base.added_at,
-        db_asset_base.file_created_at,
-        db_asset_base.file_modified_at,
-        db_asset_base.canonical_date,
+        db_asset_base.taken_date,
+        db_asset_base.taken_date_local_fallback,
         db_asset_base.width,
         db_asset_base.height,
         db_asset_base.thumb_small_square_jpg,
@@ -502,11 +495,7 @@ WHERE id=?;
     Ok(())
 }
 
-#[instrument(
-    name = "Get video Assets with missing DASH manifest",
-    skip(pool),
-    level = "debug"
-)]
+#[instrument(skip(pool), level = "debug")]
 pub async fn get_video_assets_without_dash(pool: &DbPool) -> Result<Vec<AssetBase>> {
     sqlx::query_as!(
         DbAsset,
@@ -518,9 +507,8 @@ root_dir_id,
 file_path,
 hash,
 added_at,
-file_created_at,
-file_modified_at,
-canonical_date,
+taken_date as "taken_date: _",
+taken_date_local_fallback as "taken_date_local_fallback: _",
 width,
 height,
 thumb_small_square_jpg as "thumb_small_square_jpg: _",
@@ -582,9 +570,8 @@ root_dir_id,
 file_path,
 hash,
 added_at,
-file_created_at,
-file_modified_at,
-canonical_date,
+taken_date,
+taken_date_local_fallback,
 width,
 height,
 thumb_small_square_jpg as "thumb_small_square_jpg: _",
@@ -597,9 +584,12 @@ thumb_large_orig_width,
 thumb_large_orig_height
 FROM Assets 
 WHERE
-(file_modified_at IS NOT NULL AND file_modified_at < ?) 
-OR (canonical_date IS NOT NULL AND canonical_date < ?)
-ORDER BY canonical_date DESC, file_modified_at DESC, id DESC
+(taken_date IS NOT NULL AND taken_date < ?) 
+OR 
+-- TODO can we even lexicographically compare local fallback and DateTime<Utc>
+-- no we can't fix this
+(taken_date_local_fallback IS NOT NULL AND taken_date_local_fallback < ?)
+ORDER BY taken_date DESC, taken_date_local_fallback DESC, id DESC
 LIMIT ?;
     "#,
         // TODO only sort by canonical_date and id when canonical is actually computed during indexing

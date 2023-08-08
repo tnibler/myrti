@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
-use eyre::{eyre, Result};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
+use eyre::{bail, eyre, Result};
 use serde::Serialize;
 use std::path::PathBuf;
 
@@ -11,20 +11,24 @@ pub struct Size {
     pub height: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MediaTimestamp {
+    Utc(DateTime<Utc>),
+    LocalFallback(NaiveDateTime),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssetBase {
     pub id: AssetId,
     pub ty: AssetType,
     pub root_dir_id: AssetRootDirId,
     pub file_path: PathBuf,
-    pub file_created_at: Option<DateTime<Utc>>,
-    pub file_modified_at: Option<DateTime<Utc>>,
     pub added_at: DateTime<Utc>,
     /// The date under which this asset is displayed in the timeline
     /// None: exif data not yet processed
     /// Some: set after processing exif data, either there is a date in there
     /// or we use file_created_at, file_modified_at or added_at in that order
-    pub canonical_date: Option<DateTime<Utc>>,
+    pub taken_date: MediaTimestamp,
     pub size: Size,
     /// Seahash of the file, if already computed
     pub hash: Option<Vec<u8>>,
@@ -45,6 +49,10 @@ impl TryFrom<&AssetBase> for DbAsset {
             .to_str()
             .ok_or_else(|| eyre!("non unicode file path not supported"))?
             .to_string();
+        let (taken_date, taken_date_local_fallback) = match value.taken_date {
+            MediaTimestamp::Utc(with_offset) => (Some(with_offset.naive_utc()), None),
+            MediaTimestamp::LocalFallback(naive) => (None, Some(naive)),
+        };
         Ok(DbAsset {
             id: value.id,
             ty: value.ty.into(),
@@ -52,9 +60,8 @@ impl TryFrom<&AssetBase> for DbAsset {
             file_path,
             hash: value.hash.clone(),
             added_at: value.added_at.naive_utc(),
-            file_created_at: value.file_created_at.map(|t| t.naive_utc()),
-            file_modified_at: value.file_modified_at.map(|t| t.naive_utc()),
-            canonical_date: value.canonical_date.map(|t| t.naive_utc()),
+            taken_date,
+            taken_date_local_fallback,
             width: value.size.width,
             height: value.size.height,
             thumb_small_square_jpg: value.thumb_small_square_jpg,
@@ -81,16 +88,21 @@ impl TryFrom<&DbAsset> for AssetBase {
     type Error = eyre::Report;
 
     fn try_from(value: &DbAsset) -> Result<Self, Self::Error> {
+        let taken_date = match (value.taken_date, value.taken_date_local_fallback) {
+            (Some(naive_utc), _) => MediaTimestamp::Utc(naive_utc.and_utc()),
+            (None, Some(local)) => MediaTimestamp::LocalFallback(local),
+            (None, None) => {
+                bail!("one of taken_date or taken_date_local_fallback must be set in Assets row")
+            }
+        };
         Ok(AssetBase {
             id: value.id,
             ty: value.ty.into(),
             root_dir_id: value.root_dir_id,
             file_path: value.file_path.as_str().into(),
             added_at: value.added_at.and_utc(),
-            file_created_at: value.file_created_at.map(|t| t.and_utc()),
-            file_modified_at: value.file_modified_at.map(|t| t.and_utc()),
             hash: value.hash.clone(),
-            canonical_date: value.canonical_date.map(|t| t.and_utc()),
+            taken_date,
             size: Size {
                 width: value.width,
                 height: value.height,

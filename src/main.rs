@@ -44,7 +44,6 @@ mod app_state;
 mod config;
 mod core;
 mod http_error;
-mod indexing;
 mod job;
 mod model;
 mod processing;
@@ -127,7 +126,7 @@ async fn main() -> Result<()> {
         std::env::set_var("RUST_LIB_BACKTRACE", "1")
     }
     if std::env::var("RUST_SPANTRACE").is_err() {
-        std::env::set_var("RUST_SPANTRACE", "0");
+        std::env::set_var("RUST_SPANTRACE", "1");
     }
     color_eyre::install()?;
     if std::env::var("RUST_LOG").is_err() {

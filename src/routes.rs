@@ -10,24 +10,12 @@ use crate::{
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
-    routing::{post},
+    routing::post,
     Json, Router,
 };
 use eyre::Context;
 use serde::Deserialize;
 use tracing::info;
-
-async fn get_assets(app_state: State<SharedState>) -> Result<impl IntoResponse, HttpError> {
-    repository::asset::get_assets(&app_state.pool)
-        .await
-        .map_err(|e| e.into())
-        .map(|v| Json(v))
-}
-
-async fn get_asset_roots(app_state: State<SharedState>) -> Result<impl IntoResponse, HttpError> {
-    let values = repository::asset_root_dir::get_asset_roots(&app_state.pool).await?;
-    Ok(Json(values))
-}
 
 #[derive(Deserialize)]
 struct QueryIndexAssetRoot {

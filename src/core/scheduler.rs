@@ -14,7 +14,7 @@ use crate::{
         thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
     },
     model::repository,
-    model::{AssetId},
+    model::AssetId,
 };
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
@@ -81,7 +81,7 @@ struct SchedulerImpl {
 }
 
 impl SchedulerImpl {
-    #[instrument(name = "Scheduler event loop", skip(self))]
+    #[instrument(name = "event_loop", skip(self))]
     async fn run(&mut self) {
         info!("Scheduler starting");
         loop {

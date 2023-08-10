@@ -393,7 +393,7 @@ pub async fn insert_image_info(
 //     Ok(())
 // }
 
-#[instrument(name = "Insert VideoInfo", skip(conn, video), level = "debug")]
+#[instrument(skip(conn, video), level = "debug")]
 pub async fn insert_video_info(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
@@ -403,10 +403,11 @@ pub async fn insert_video_info(
     let db_video_info: DbVideoInfo = video.try_to_db_video_info(asset_id)?;
     sqlx::query!(
         "
-INSERT INTO VideoInfo (asset_id, dash_resource_dir) VALUES
-(?, ?);
+INSERT INTO VideoInfo (asset_id, codec_name, dash_resource_dir) VALUES
+(?, ?, ?);
 ",
         asset_id.0,
+        db_video_info.codec_name,
         db_video_info.dash_resource_dir
     )
     .execute(conn)
@@ -416,7 +417,7 @@ INSERT INTO VideoInfo (asset_id, dash_resource_dir) VALUES
     Ok(())
 }
 
-#[instrument(name = "Update VideoInfo", skip(conn, video), level = "debug")]
+#[instrument(skip(conn, video), level = "debug")]
 pub async fn update_video_info(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
@@ -426,9 +427,12 @@ pub async fn update_video_info(
     let db_video_info: DbVideoInfo = video.try_to_db_video_info(asset_id)?;
     sqlx::query!(
         "
-UPDATE VideoInfo SET dash_resource_dir=? 
+UPDATE VideoInfo SET 
+codec_name=? ,
+dash_resource_dir=?
 WHERE asset_id=?;
 ",
+        db_video_info.codec_name,
         db_video_info.dash_resource_dir,
         asset_id.0
     )
@@ -439,11 +443,7 @@ WHERE asset_id=?;
     Ok(())
 }
 
-#[instrument(
-    name = "Update Asset, set small thumbnails",
-    skip(conn),
-    level = "debug"
-)]
+#[instrument(skip(conn), level = "debug")]
 pub async fn set_asset_small_thumbnails(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
@@ -541,6 +541,7 @@ pub async fn get_video_info(pool: &DbPool, asset_id: AssetId) -> Result<Video> {
         r#"
 SELECT 
 asset_id,
+codec_name,
 dash_resource_dir as "dash_resource_dir: _"
 FROM VideoInfo WHERE asset_id=?;
     "#,

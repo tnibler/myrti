@@ -10,6 +10,7 @@ pub struct Image {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Video {
+    pub codec_name: String,
     pub dash_resource_dir: Option<ResourceFileId>,
 }
 
@@ -50,6 +51,7 @@ impl Video {
     pub fn try_to_db_video_info(&self, asset_id: AssetId) -> Result<DbVideoInfo> {
         Ok(DbVideoInfo {
             asset_id,
+            codec_name: self.codec_name.clone(),
             dash_resource_dir: self.dash_resource_dir,
         })
     }
@@ -60,6 +62,7 @@ impl TryFrom<&DbVideoInfo> for Video {
 
     fn try_from(value: &DbVideoInfo) -> Result<Self, Self::Error> {
         Ok(Video {
+            codec_name: value.codec_name.clone(),
             dash_resource_dir: value.dash_resource_dir,
         })
     }

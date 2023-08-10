@@ -1,7 +1,5 @@
 use eyre::{bail, Context, Report, Result};
-use std::{
-    sync::Arc,
-};
+use std::{path::PathBuf, sync::Arc};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, instrument, Instrument};
@@ -15,9 +13,7 @@ use crate::{
         repository::{self, pool::DbPool},
         AssetId, AssetType, Video,
     },
-    processing::video::{
-        dash_package::{shaka_package, RepresentationInput, RepresentationType},
-    },
+    processing::video::dash_package::{shaka_package, RepresentationInput, RepresentationType},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +75,7 @@ impl DashSegmentingJob {
         DashSegmentingJobResult { completed, failed }
     }
 
+    #[instrument(skip(self))]
     async fn process_single_asset(&self, asset_id: AssetId) -> Result<()> {
         let asset_base = repository::asset::get_asset_base(&self.pool, asset_id)
             .in_current_span()
@@ -86,6 +83,10 @@ impl DashSegmentingJob {
         if asset_base.ty != AssetType::Video {
             bail!("not a video")
         }
+        let video_info = repository::asset::get_video_info(&self.pool, asset_id)
+            .in_current_span()
+            .await
+            .wrap_err("no VideoInfo for asset")?;
         let asset_path = repository::asset::get_asset_path_on_disk(&self.pool, asset_id)
             .await
             .unwrap();
@@ -94,17 +95,37 @@ impl DashSegmentingJob {
             .new_dash_dir(format!("{}", asset_id.0).as_str())
             .await
             .wrap_err("could not create DASH output directory")?;
+        // Final directory structure:
+        // dash/:id
+        //       | audio.mp4
+        //       | h264
+        //          | 1920x1080.mp4
+        let video_out_dir = resource_dir
+            .path_on_disk()
+            .join(format!("{}", video_info.codec_name));
+        let video_out_filename = PathBuf::from("original.mp4");
+        let audio_out_dir = resource_dir.path_on_disk();
+        let audio_out_filename = PathBuf::from("audio.mp4");
+        let mpd_out_path = resource_dir.path_on_disk().join("stream.mpd");
+        tokio::fs::create_dir_all(&video_out_dir)
+            .await
+            .wrap_err("could not create video output directory")?;
+        tokio::fs::create_dir_all(&audio_out_dir)
+            .await
+            .wrap_err("could not create audio output directory")?;
         let reprs = [
             RepresentationInput {
                 path: asset_path.path_on_disk(),
                 ty: RepresentationType::Video,
+                out_path: video_out_dir.join(video_out_filename),
             },
             RepresentationInput {
                 path: asset_path.path_on_disk(),
                 ty: RepresentationType::Audio,
+                out_path: audio_out_dir.join(audio_out_filename),
             },
         ];
-        shaka_package(&reprs, &resource_dir.path_on_disk(), "stream.mpd")
+        shaka_package(&reprs, &mpd_out_path)
             .in_current_span()
             .await
             .wrap_err("error packaging video for DASH")?;
@@ -117,10 +138,11 @@ impl DashSegmentingJob {
             repository::resource_file::insert_new_resource_file(&mut tx, resource_dir)
                 .in_current_span()
                 .await?;
-        let video_info = Video {
+        let updated_video_info = Video {
             dash_resource_dir: Some(resource_dir_id),
+            ..video_info
         };
-        repository::asset::update_video_info(&mut tx, asset_id, &video_info).await?;
+        repository::asset::update_video_info(&mut tx, asset_id, &updated_video_info).await?;
         tx.commit().await?;
         Ok(())
     }

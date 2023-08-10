@@ -12,7 +12,10 @@ use tokio::fs;
 use tracing::{debug, error, instrument, Instrument};
 use walkdir::WalkDir;
 
-use super::media_metadata::{figure_out_utc_timestamp, read_media_metadata, TimestampGuess};
+use super::{
+    media_metadata::{figure_out_utc_timestamp, read_media_metadata, TimestampGuess},
+    video::probe_video,
+};
 
 pub async fn index_asset_root(asset_root: &AssetRootDir, pool: &DbPool) -> Result<Vec<AssetId>> {
     let mut new_asset_ids: Vec<AssetId> = vec![];
@@ -59,7 +62,11 @@ async fn index_file(
         .wrap_err("could not read file metadata")?;
     let (ty, full): (AssetType, AssetAll) = match metadata.file.mime_type.as_ref() {
         Some(mime) if mime.starts_with("video") => {
+            let probe = probe_video(path)
+                .await
+                .wrap_err(format!("file has mimetype {}, but ffprobe failed", mime))?;
             let video_info = AssetAll::Video(Video {
+                codec_name: probe.codec_name,
                 dash_resource_dir: None,
             });
             (AssetType::Video, video_info)

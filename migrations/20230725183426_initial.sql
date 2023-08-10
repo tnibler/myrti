@@ -55,6 +55,7 @@ CREATE TABLE ImageInfo (
 
 CREATE TABLE VideoInfo (
   asset_id INTEGER PRIMARY KEY NOT NULL,
+  codec_name TEXT NOT NULL,
   dash_resource_dir INTEGER,
   FOREIGN KEY (asset_id) REFERENCES Assets(id) ON DELETE CASCADE,
   FOREIGN KEY (dash_resource_dir) REFERENCES ResourceFiles(id) ON DELETE SET NULL

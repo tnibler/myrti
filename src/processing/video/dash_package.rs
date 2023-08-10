@@ -14,16 +14,12 @@ pub enum RepresentationType {
 pub struct RepresentationInput {
     pub path: PathBuf,
     pub ty: RepresentationType,
+    pub out_path: PathBuf,
 }
 
 // FIXME this doesn't work for video files with no audio/video streams
 // it assumes one video and one audio stream
-pub async fn shaka_package(
-    reprs: &[RepresentationInput],
-    out_dir: &Path,
-    mpd_name: &str,
-) -> Result<()> {
-    fs::create_dir_all(out_dir).await?;
+pub async fn shaka_package(reprs: &[RepresentationInput], mpd_out_path: &Path) -> Result<()> {
     let mut command = Command::new("packager");
     for repr in reprs {
         if !repr.path.is_file() {
@@ -34,23 +30,13 @@ pub async fn shaka_package(
             RepresentationType::Video => "video",
             RepresentationType::Audio => "audio",
         };
-        let filename = match repr.ty {
-            RepresentationType::Video => {
-                repr.path.file_name().unwrap().to_str().unwrap().to_string()
-            }
-            RepresentationType::Audio => format!(
-                "{}_audio.{}",
-                repr.path.file_stem().unwrap().to_str().unwrap(),
-                repr.path.extension().unwrap().to_str().unwrap()
-            ),
-        };
-        let out_path = out_dir.join(&filename).to_str().unwrap().to_owned();
+        let out_path = repr.out_path.to_str().unwrap().to_owned();
         command.arg(format!(
             "in={},stream={},output={}",
             path_str, stream, out_path
         ));
     }
-    let mpd_out_path = out_dir.join(mpd_name).to_str().unwrap().to_owned();
+    let mpd_out_path = mpd_out_path.to_str().unwrap().to_owned();
     command.arg(format!("--mpd_output={}", mpd_out_path));
     debug!(?command, "Invoking shaka-packager");
     let result = command

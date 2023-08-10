@@ -17,12 +17,25 @@ use crate::{
     processing::video::{
         dash_package::{shaka_package, RepresentationInput, RepresentationType},
         probe_video,
+        transcode::EncodingTarget,
     },
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
+pub enum VideoProcessingTask {
+    DashPackageOnly {
+        asset_id: AssetId,
+    },
+    // transcode, gather all representations and package them together
+    TranscodeAndPackage {
+        asset_id: AssetId,
+        encoding_target: EncodingTarget,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub struct DashSegmentingJobParams {
-    pub asset_ids: Vec<AssetId>,
+    pub tasks: Vec<VideoProcessingTask>,
 }
 
 pub struct DashSegmentingJob {
@@ -56,31 +69,33 @@ impl DashSegmentingJob {
         status_tx: mpsc::Sender<JobProgress>,
         cancel: CancellationToken,
     ) -> DashSegmentingJobResult {
-        info!("Packaging {} videos for DASH", self.params.asset_ids.len());
         let mut failed: Vec<(AssetId, Report)> = vec![];
         let mut completed: Vec<AssetId> = vec![];
-        let asset_count = self.params.asset_ids.len();
-        for (index, asset_id) in self.params.asset_ids.iter().enumerate() {
+        for task in self.params.tasks.iter() {
             if cancel.is_cancelled() {
                 break;
             }
-            status_tx
-                .send(JobProgress {
-                    percent: Some((index as f32 / asset_count as f32) as i32),
-                    description: format!("Processing {}", asset_id.0),
-                })
-                .await
-                .unwrap();
-            match self.process_single_asset(*asset_id).in_current_span().await {
-                Ok(()) => completed.push(*asset_id),
-                Err(e) => failed.push((*asset_id, e.wrap_err("error packaging video"))),
+            match task {
+                VideoProcessingTask::DashPackageOnly { asset_id } => {
+                    let _ = status_tx
+                        .send(JobProgress {
+                            percent: None,
+                            description: format!("Processing {}", asset_id.0),
+                        })
+                        .await;
+                    match self.dash_package_asset(*asset_id).in_current_span().await {
+                        Ok(()) => completed.push(*asset_id),
+                        Err(e) => failed.push((*asset_id, e.wrap_err("error packaging video"))),
+                    }
+                }
+                _ => todo!(),
             }
         }
         DashSegmentingJobResult { completed, failed }
     }
 
     #[instrument(skip(self))]
-    async fn process_single_asset(&self, asset_id: AssetId) -> Result<()> {
+    async fn dash_package_asset(&self, asset_id: AssetId) -> Result<()> {
         let asset_base = repository::asset::get_asset_base(&self.pool, asset_id)
             .in_current_span()
             .await?;

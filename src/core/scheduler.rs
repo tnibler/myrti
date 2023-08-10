@@ -9,7 +9,7 @@ use crate::{
     core::job::JobType,
     eyre::Result,
     job::{
-        dash_segmenting_job::{DashSegmentingJob, DashSegmentingJobParams},
+        dash_segmenting_job::{DashSegmentingJob, DashSegmentingJobParams, VideoProcessingTask},
         indexing_job::{IndexingJob, IndexingJobParams},
         thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
     },
@@ -165,10 +165,11 @@ impl SchedulerImpl {
             .unwrap();
         debug!(?videos_without_dash);
         if !videos_without_dash.is_empty() {
-            let params = DashSegmentingJobParams {
-                asset_ids: videos_without_dash.iter().map(|a| a.id).collect(),
-            };
-
+            let tasks: Vec<VideoProcessingTask> = videos_without_dash
+                .iter()
+                .map(|asset| VideoProcessingTask::DashPackageOnly { asset_id: asset.id })
+                .collect();
+            let params = DashSegmentingJobParams { tasks };
             let job = DashSegmentingJob::new(
                 params.clone(),
                 self.data_dir_manager.clone(),
@@ -190,18 +191,27 @@ impl SchedulerImpl {
         //  - videos with no representation in acceptable codec
         //  - videos with any representation from their quality ladder missing
         //    (hightest qualities come first)
-        // For now, iterate through all videos to check.
+        // For now, scan through all videos to check.
         // Later, set a flag if all required transcoding has been done
         // and clear the flag when the config (quality ladder, acceptable codecs)
         // change and recheck
+
         let acceptable_codecs = ["h264", "av1", "vp9"];
-        let r = repository::asset::get_video_assets_with_no_acceptable_repr(
+        let no_good_reprs = repository::asset::get_video_assets_with_no_acceptable_repr(
             &self.pool,
             acceptable_codecs.into_iter(),
         )
         .await
         .unwrap();
-        dbg!(&r);
+        // transcode no_good_reprs into target codec first
+        // we want DashPackagingJob to either only package, or transcode and then package
+        // by adding an Option<EncodingTarget> to every param
+
+        // if all videos have at least one good repr:
+        //   for every rung in quality_levels starting from the highest
+        //     for every video, ql = quality_ladder(video):
+        //       if rung in ql and no repr for video at that rung:
+        //         transcode to that rung
     }
 
     async fn queue_or_start_indexing(&mut self, params: IndexingJobParams) {

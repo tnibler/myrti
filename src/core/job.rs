@@ -1,9 +1,7 @@
-use crate::{
-    job::{
-        dash_segmenting_job::{DashSegmentingJob, DashSegmentingJobParams},
-        indexing_job::{IndexingJob, IndexingJobParams},
-        thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
-    },
+use crate::job::{
+    dash_segmenting_job::{DashSegmentingJob, DashSegmentingJobParams},
+    indexing_job::{IndexingJob, IndexingJobParams},
+    thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
 };
 use async_trait::async_trait;
 
@@ -27,7 +25,7 @@ pub enum JobResultType {
     DashSegmenting(<DashSegmentingJob as Job>::Result),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum JobType {
     Indexing { params: IndexingJobParams },
     Thumbnail { params: ThumbnailJobParams },

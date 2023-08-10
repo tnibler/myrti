@@ -263,7 +263,7 @@ fn ffmpeg_flags(encoding_target: &EncodingTarget) -> Vec<String> {
     flags
 }
 
-fn ffmpeg_command(input: &Path, output: &Path, target: EncodingTarget) -> Command {
+pub fn ffmpeg_command(input: &Path, output: &Path, target: EncodingTarget) -> Command {
     let mut command = Command::new("ffmpeg");
     command.arg("-i").arg(input);
     let flags = ffmpeg_flags(&target);

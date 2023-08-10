@@ -3,6 +3,7 @@ use std::{path::Path, process::Stdio};
 use eyre::{eyre, Context, Result};
 use serde::Deserialize;
 use tokio::process::Command;
+use tracing::{debug, instrument};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct VideoProbeResult {
@@ -14,6 +15,7 @@ pub struct VideoProbeResult {
     pub rotation: Option<i32>,
 }
 
+#[instrument()]
 pub async fn probe_video(path: &Path) -> Result<VideoProbeResult> {
     #[derive(Debug, Clone, Deserialize)]
     struct SideData {
@@ -51,10 +53,7 @@ pub async fn probe_video(path: &Path) -> Result<VideoProbeResult> {
         .wait_with_output()
         .await
         .wrap_err("ffprobe error")?;
-    println!(
-        "probe output: '{}'",
-        String::from_utf8(output.stdout.clone()).unwrap()
-    );
+    debug!(ffprobe_output = String::from_utf8(output.stdout.clone()).unwrap());
     serde_json::from_slice::<FFProbeOutput>(&output.stdout)
         .wrap_err("error parsing ffprobe output")
         .map(|probe_json| {

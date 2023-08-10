@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
 use color_eyre::eyre;
 use eyre::{bail, Context, Result};
-use sqlx::{Executor, SqliteConnection};
+use sqlx::{query, QueryBuilder, Sqlite, SqliteConnection};
 use std::path::Path;
-use tracing::{instrument, Instrument};
+use tracing::{debug, instrument, Instrument};
 
 use super::db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType, DbVideoInfo};
 use crate::model::{
@@ -38,7 +38,7 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height
-FROM Assets
+FROM Asset
 WHERE id=?;
 "#,
         asset_id
@@ -68,11 +68,11 @@ pub async fn get_asset_path_on_disk(pool: &DbPool, id: AssetId) -> Result<AssetP
         DbAssetPathOnDisk,
         r#"
 SELECT 
-Assets.id AS id,
-Assets.file_path AS path_in_asset_root,
-AssetRootDirs.path AS asset_root_path
-FROM Assets INNER JOIN AssetRootDirs ON Assets.root_dir_id = AssetRootDirs.id
-WHERE Assets.id = ?;
+Asset.id AS id,
+Asset.file_path AS path_in_asset_root,
+AssetRootDir.path AS asset_root_path
+FROM Asset INNER JOIN AssetRootDir ON Asset.root_dir_id = AssetRootDir.id
+WHERE Asset.id = ?;
         "#,
         id.0
     )
@@ -164,7 +164,7 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height
-FROM Assets WHERE file_path = ?;
+FROM Asset WHERE file_path = ?;
     "#,
         path
     )
@@ -197,7 +197,7 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height
-FROM Assets;
+FROM Asset;
     "#
     )
     // TODO don't collect into vec before mapping
@@ -228,7 +228,7 @@ thumb_small_square_jpg as "thumb_small_square_jpg: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
 thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
 thumb_large_orig_webp as "thumb_large_orig_webp: _"
-FROM Assets
+FROM Asset
 WHERE   
     thumb_small_square_jpg IS NULL OR
     thumb_small_square_webp IS NULL OR
@@ -254,7 +254,7 @@ thumb_small_square_jpg as "thumb_small_square_jpg: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
 thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
 thumb_large_orig_webp as "thumb_large_orig_webp: _"
-FROM Assets
+FROM Asset
 WHERE   
     thumb_small_square_jpg IS NULL OR
     thumb_small_square_webp IS NULL OR
@@ -277,7 +277,7 @@ pub async fn update_asset_base(conn: &mut SqliteConnection, asset: &AssetBase) -
     let db_asset_base: DbAsset = asset.try_into()?;
     sqlx::query!(
         "
-UPDATE Assets SET 
+UPDATE Asset SET 
 ty=?,
 root_dir_id=?,
 file_path=?,
@@ -317,7 +317,7 @@ pub async fn insert_asset_base(conn: &mut SqliteConnection, asset: &AssetBase) -
     let db_asset_base: DbAsset = asset.try_into()?;
     let result = sqlx::query!(
         "
-INSERT INTO Assets
+INSERT INTO Asset
 (id,
 ty,
 root_dir_id,
@@ -452,7 +452,7 @@ pub async fn set_asset_small_thumbnails(
 ) -> Result<()> {
     sqlx::query!(
         r#"
-UPDATE Assets SET 
+UPDATE Asset SET 
 thumb_small_square_jpg=?,
 thumb_small_square_webp=?
 WHERE id=?;
@@ -480,7 +480,7 @@ pub async fn set_asset_large_thumbnails(
 ) -> Result<()> {
     sqlx::query!(
         r#"
-UPDATE Assets SET 
+UPDATE Asset SET 
 thumb_large_orig_jpg=?,
 thumb_large_orig_webp=?
 WHERE id=?;
@@ -519,9 +519,9 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height
-FROM Assets, VideoInfo 
-WHERE Assets.id = VideoInfo.asset_id 
-AND Assets.ty = ? AND VideoInfo.dash_resource_dir IS NULL;
+FROM Asset, VideoInfo 
+WHERE Asset.id = VideoInfo.asset_id 
+AND Asset.ty = ? AND VideoInfo.dash_resource_dir IS NULL;
     "#,
         DbAssetType::Video
     )
@@ -583,12 +583,12 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height
-FROM Assets 
+FROM Asset 
 WHERE
 (taken_date IS NOT NULL AND taken_date < ?) 
 OR 
 -- TODO can we even lexicographically compare local fallback and DateTime<Utc>
--- no we can't fix this
+-- no we can't FIXME
 (taken_date_local_fallback IS NOT NULL AND taken_date_local_fallback < ?)
 ORDER BY taken_date DESC, taken_date_local_fallback DESC, id DESC
 LIMIT ?;
@@ -605,4 +605,79 @@ LIMIT ?;
     .into_iter()
     .map(|a| a.try_into())
     .collect::<Result<Vec<_>>>()
+}
+
+#[instrument(skip(pool, acceptable_codecs))]
+pub async fn get_video_assets_with_no_acceptable_repr(
+    pool: &DbPool,
+    acceptable_codecs: impl Iterator<Item = &str>,
+) -> Result<Vec<AssetBase>> {
+    // WITH codecs AS
+    // (SELECT Asset.id as id, codec_name
+    // FROM Asset, VideoInfo
+    // WHERE Asset.ty=2 AND Asset.id=VideoInfo.asset_id
+    // UNION
+    // SELECT Asset.id as id, vr.codec_name
+    // FROM Asset, VideoRepresentation vr
+    // WHERE Asset.id=vr.asset_id)
+    // SELECT * FROM Asset
+    // WHERE Asset.ty=2
+    // AND id NOT IN
+    // (SELECT id FROM codecs WHERE codec_name IN ("h264", "av1"));
+    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new(
+        r#"
+WITH codecs AS 
+(
+    SELECT Asset.id as id, codec_name 
+    FROM Asset, VideoInfo 
+    WHERE Asset.ty=2 AND Asset.id=VideoInfo.asset_id 
+    UNION 
+    SELECT Asset.id as id, vr.codec_name 
+    FROM Asset, VideoRepresentation vr 
+    WHERE Asset.id=vr.asset_id
+) 
+
+SELECT 
+Asset.id as id,
+Asset.ty as ty,
+Asset.root_dir_id as root_dir_id,
+Asset.file_path as file_path,
+Asset.hash as hash,
+Asset.added_at as added_at,
+Asset.taken_date as taken_date,
+Asset.taken_date_local_fallback as taken_date_local_fallback,
+Asset.width as width,
+Asset.height as height,
+Asset.thumb_small_square_jpg as thumb_small_square_jpg,
+Asset.thumb_small_square_webp as thumb_small_square_webp,
+Asset.thumb_large_orig_jpg as thumb_large_orig_jpg,
+Asset.thumb_large_orig_webp as thumb_large_orig_webp,
+Asset.thumb_small_square_width as thumb_small_square_width,
+Asset.thumb_small_square_height as thumb_small_square_height,
+Asset.thumb_large_orig_width as thumb_large_orig_width,
+Asset.thumb_large_orig_height as thumb_large_orig_height
+FROM Asset
+WHERE Asset.ty = "#,
+    );
+    query_builder.push_bind(DbAssetType::Video);
+    query_builder.push(
+        r#"
+AND id NOT IN
+    (SELECT id FROM codecs WHERE codec_name IN 
+    "#,
+    );
+    query_builder.push_tuples(acceptable_codecs, |mut b, s| {
+        b.push_bind(s);
+    });
+    query_builder.push(");");
+    debug!(query = query_builder.sql());
+    query_builder
+        .build_query_as::<DbAsset>()
+        .fetch_all(pool)
+        .in_current_span()
+        .await
+        .wrap_err("could not query for Video Assets with no acceptable representations")?
+        .into_iter()
+        .map(|a| a.try_into())
+        .collect::<Result<Vec<_>>>()
 }

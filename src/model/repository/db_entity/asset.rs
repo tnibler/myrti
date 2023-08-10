@@ -2,7 +2,7 @@ use super::DbAssetType;
 use crate::model::{AssetId, AssetRootDirId, ResourceFileId};
 use chrono::{DateTime, NaiveDateTime, Utc};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct DbAsset {
     pub id: AssetId,
     pub ty: DbAssetType,

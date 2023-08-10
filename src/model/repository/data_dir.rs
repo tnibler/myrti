@@ -8,7 +8,7 @@ pub async fn get_random_data_dir(pool: &DbPool) -> Result<DataDir> {
     sqlx::query_as!(
         DbDataDir,
         r#"
-SELECT id, path FROM DataDirs ORDER BY RANDOM() LIMIT 1;
+SELECT id, path FROM DataDir ORDER BY RANDOM() LIMIT 1;
     "#
     )
     .fetch_one(pool)
@@ -25,7 +25,7 @@ pub async fn insert_data_dir(pool: &DbPool, data_dir: DataDir) -> Result<DataDir
         .wrap_err("could not insert into table DataDirs: path is not valid unicode")?;
     let result = sqlx::query!(
         r#"
-INSERT INTO DataDirs
+INSERT INTO DataDir
 VALUES (NULL, ?);
     "#,
         data_dir.path
@@ -42,7 +42,7 @@ pub async fn get_data_dir_with_path(pool: &DbPool, path: &str) -> Result<Option<
     sqlx::query_as!(
         DbDataDir,
         r#"
-SELECT id, path FROM DataDirs WHERE path=?;
+SELECT id, path FROM DataDir WHERE path=?;
     "#,
         path
     )

@@ -96,6 +96,7 @@ impl SchedulerImpl {
                         SchedulerMessage::Timer => todo!(),
                         SchedulerMessage::FileSystemChange { changed_files: _ } => todo!(),
                         SchedulerMessage::UserRequest(request) => {
+                            self.transcode_and_package_if_required().await;
                             match request {
                                 UserRequest::ReindexAssetRoots { params } => {
                                     self.queue_or_start_indexing(params).await;
@@ -182,6 +183,25 @@ impl SchedulerImpl {
                 .await
                 .unwrap();
         }
+    }
+
+    async fn transcode_and_package_if_required(&self) {
+        // priority:
+        //  - videos with no representation in acceptable codec
+        //  - videos with any representation from their quality ladder missing
+        //    (hightest qualities come first)
+        // For now, iterate through all videos to check.
+        // Later, set a flag if all required transcoding has been done
+        // and clear the flag when the config (quality ladder, acceptable codecs)
+        // change and recheck
+        let acceptable_codecs = ["h264", "av1", "vp9"];
+        let r = repository::asset::get_video_assets_with_no_acceptable_repr(
+            &self.pool,
+            acceptable_codecs.into_iter(),
+        )
+        .await
+        .unwrap();
+        dbg!(&r);
     }
 
     async fn queue_or_start_indexing(&mut self, params: IndexingJobParams) {

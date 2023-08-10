@@ -24,7 +24,7 @@ pub async fn insert_new_resource_file(
         .wrap_err("failed to insert new ResourceFile, couldn't convert path to String")?;
     let result = sqlx::query!(
         r#"
-INSERT INTO ResourceFiles
+INSERT INTO ResourceFile
 VALUES (NULL, ?, ?, ?); 
 "#,
         new_resource_file.data_dir_id,
@@ -46,15 +46,21 @@ pub async fn get_resource_file_resolved(
     let result: ResourceFileResolved = sqlx::query_as!(
         DbResourceFileResolved,
         r#"
-    SELECT ResourceFiles.id, data_dir_id, path_in_data_dir, DataDirs.path as data_dir_path, ResourceFiles.created_at
-FROM ResourceFiles INNER JOIN DataDirs ON ResourceFiles.data_dir_id=DataDirs.id 
-WHERE ResourceFiles.id=?;
+SELECT
+ResourceFile.id,
+data_dir_id,
+path_in_data_dir,
+DataDir.path as data_dir_path,
+ResourceFile.created_at
+FROM ResourceFile INNER JOIN DataDir 
+ON ResourceFile.data_dir_id=DataDir.id 
+WHERE ResourceFile.id=?;
     "#,
         id
     )
-        .fetch_one(pool)
-        .await
-        .wrap_err("could not get ResourceFileResolved from db")?
-        .try_into()?;
+    .fetch_one(pool)
+    .await
+    .wrap_err("could not get ResourceFileResolved from db")?
+    .try_into()?;
     Ok(result)
 }

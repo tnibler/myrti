@@ -11,9 +11,13 @@ use crate::{
     },
     model::{
         repository::{self, pool::DbPool},
-        AssetId, AssetType, Video,
+        AssetId, AssetType, AudioRepresentation, AudioRepresentationId, Video, VideoRepresentation,
+        VideoRepresentationId,
     },
-    processing::video::dash_package::{shaka_package, RepresentationInput, RepresentationType},
+    processing::video::{
+        dash_package::{shaka_package, RepresentationInput, RepresentationType},
+        probe_video,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,8 +108,10 @@ impl DashSegmentingJob {
             .path_on_disk()
             .join(format!("{}", video_info.codec_name));
         let video_out_filename = PathBuf::from("original.mp4");
+        let video_out_path = video_out_dir.join(video_out_filename);
         let audio_out_dir = resource_dir.path_on_disk();
         let audio_out_filename = PathBuf::from("audio.mp4");
+        let audio_out_path = audio_out_dir.join(audio_out_filename);
         let mpd_out_path = resource_dir.path_on_disk().join("stream.mpd");
         tokio::fs::create_dir_all(&video_out_dir)
             .await
@@ -117,18 +123,35 @@ impl DashSegmentingJob {
             RepresentationInput {
                 path: asset_path.path_on_disk(),
                 ty: RepresentationType::Video,
-                out_path: video_out_dir.join(video_out_filename),
+                out_path: video_out_path.clone(),
             },
             RepresentationInput {
                 path: asset_path.path_on_disk(),
                 ty: RepresentationType::Audio,
-                out_path: audio_out_dir.join(audio_out_filename),
+                out_path: audio_out_path.clone(),
             },
         ];
         shaka_package(&reprs, &mpd_out_path)
             .in_current_span()
             .await
             .wrap_err("error packaging video for DASH")?;
+        // little annoying to call ffprobe again here
+        // if one day we store all the metadata in db we can save the call
+        let probe_result = probe_video(&asset_path.path_on_disk()).await?;
+        let video_representation = VideoRepresentation {
+            id: VideoRepresentationId(0),
+            asset_id,
+            codec_name: video_info.codec_name.clone(),
+            width: asset_base.size.width,
+            height: asset_base.size.height,
+            bitrate: probe_result.bitrate,
+            path_in_resource_dir: video_out_path,
+        };
+        let audio_representation = AudioRepresentation {
+            id: AudioRepresentationId(0),
+            asset_id,
+            path_in_resource_dir: audio_out_path,
+        };
         let mut tx = self
             .pool
             .begin()
@@ -137,6 +160,12 @@ impl DashSegmentingJob {
         let resource_dir_id =
             repository::resource_file::insert_new_resource_file(&mut tx, resource_dir)
                 .in_current_span()
+                .await?;
+        let _ =
+            repository::representation::insert_video_representation(&mut tx, video_representation)
+                .await?;
+        let _ =
+            repository::representation::insert_audio_representation(&mut tx, audio_representation)
                 .await?;
         let updated_video_info = Video {
             dash_resource_dir: Some(resource_dir_id),

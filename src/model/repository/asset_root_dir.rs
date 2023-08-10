@@ -6,7 +6,7 @@ use crate::model::{AssetRootDir, AssetRootDirId};
 use eyre::{eyre, Context, Result};
 
 pub async fn get_asset_root(pool: &DbPool, id: AssetRootDirId) -> Result<AssetRootDir> {
-    match sqlx::query_as!(DbAssetRootDir, "SELECT * FROM AssetRootDirs WHERE id=?", id)
+    match sqlx::query_as!(DbAssetRootDir, "SELECT * FROM AssetRootDir WHERE id=?", id)
         .fetch_optional(pool)
         .await
     {
@@ -17,7 +17,7 @@ pub async fn get_asset_root(pool: &DbPool, id: AssetRootDirId) -> Result<AssetRo
 }
 
 pub async fn get_asset_roots(pool: &DbPool) -> Result<Vec<AssetRootDir>> {
-    sqlx::query_as!(DbAssetRootDir, "SELECT * FROM AssetRootDirs;")
+    sqlx::query_as!(DbAssetRootDir, "SELECT * FROM AssetRootDir;")
         .fetch_all(pool)
         .await?
         .into_iter()
@@ -33,7 +33,7 @@ pub async fn insert_asset_root(
     let canonical_path = asset_root_dir.path.canonicalize().unwrap();
     let path = canonical_path.to_str().unwrap();
     sqlx::query!(
-        "INSERT INTO AssetRootDirs (id, path) VALUES (null, ?);",
+        "INSERT INTO AssetRootDir (id, path) VALUES (null, ?);",
         path
     )
     .execute(pool)
@@ -47,7 +47,7 @@ pub async fn get_asset_root_with_path(pool: &DbPool, path: &Path) -> Result<Opti
     let path = path.canonicalize().unwrap().to_str().unwrap().to_string();
     sqlx::query_as!(
         DbAssetRootDir,
-        "SELECT * FROM AssetRootDirs WHERE path=?",
+        "SELECT * FROM AssetRootDir WHERE path=?",
         path
     )
     .fetch_optional(pool)

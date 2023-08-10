@@ -2,41 +2,59 @@ use std::ops::DerefMut;
 
 use crate::{
     core::NewResourceFile,
-    model::{repository::resource_file, VideoRepresentation, VideoRepresentationId},
+    model::{
+        repository::{
+            db_entity::{DbAudioRepresentation, DbVideoRepresentation},
+            resource_file,
+        },
+        AudioRepresentation, AudioRepresentationId, VideoRepresentation, VideoRepresentationId,
+    },
 };
 
-use super::pool::DbPool;
 use eyre::{Context, Result};
-use sqlx::{Executor};
-use tracing::{instrument};
+use sqlx::{Executor, SqliteConnection};
+use tracing::instrument;
 
-#[instrument(name = "Insert VideoRepresentation", skip(pool,))]
+#[instrument(skip(conn))]
 pub async fn insert_video_representation(
-    pool: &DbPool,
+    conn: &mut SqliteConnection,
     repr: VideoRepresentation,
-    resource_file: NewResourceFile,
 ) -> Result<VideoRepresentationId> {
-    debug_assert!(repr.id.0 == 0);
-    let mut tx = pool
-        .begin()
-        .await
-        .wrap_err("could not begin db transaction")?;
-    let resource_file_id = resource_file::insert_new_resource_file(&mut tx, resource_file).await?;
+    assert!(repr.id.0 == 0);
+    let db_val: DbVideoRepresentation = repr.try_into()?;
     let result = sqlx::query!(
         r#"
 INSERT INTO VideoRepresentation VALUES(NULL, ?, ?, ?, ?, ?, ?);
     "#,
-        repr.asset_id,
-        repr.codec_name,
-        repr.width,
-        repr.height,
-        repr.bitrate,
-        resource_file_id
+        db_val.asset_id,
+        db_val.codec_name,
+        db_val.width,
+        db_val.height,
+        db_val.bitrate,
+        db_val.path_in_resource_dir
     )
-    .execute(tx.deref_mut())
-    .await?;
-    tx.commit()
-        .await
-        .wrap_err("could not commit db transaction")?;
+    .execute(conn)
+    .await
+    .wrap_err("could not insert into table VideoRepresentation")?;
     Ok(VideoRepresentationId(result.last_insert_rowid()))
+}
+
+#[instrument(skip(conn))]
+pub async fn insert_audio_representation(
+    conn: &mut SqliteConnection,
+    repr: AudioRepresentation,
+) -> Result<AudioRepresentationId> {
+    assert!(repr.id.0 == 0);
+    let db_val: DbAudioRepresentation = repr.try_into()?;
+    let result = sqlx::query!(
+        r#"
+INSERT INTO AudioRepresentation VALUES(NULL, ?, ?);
+    "#,
+        db_val.asset_id,
+        db_val.path_in_resource_dir
+    )
+    .execute(conn)
+    .await
+    .wrap_err("could not insert into table AudioRepresentation")?;
+    Ok(AudioRepresentationId(result.last_insert_rowid()))
 }

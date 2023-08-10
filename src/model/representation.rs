@@ -1,6 +1,9 @@
+use std::path::PathBuf;
+
 use super::{
     repository::db_entity::{DbAudioRepresentation, DbVideoRepresentation},
-    AssetId, AudioRepresentationId, ResourceFileId, VideoRepresentationId,
+    util::path_to_string,
+    AssetId, AudioRepresentationId, VideoRepresentationId,
 };
 
 #[derive(Debug, Clone)]
@@ -8,19 +11,17 @@ pub struct VideoRepresentation {
     pub id: VideoRepresentationId,
     pub asset_id: AssetId,
     pub codec_name: String,
-    pub width: i32,
-    pub height: i32,
+    pub width: i64,
+    pub height: i64,
     pub bitrate: i32,
-    pub resource_file_id: ResourceFileId,
+    pub path_in_resource_dir: PathBuf,
 }
 
 #[derive(Debug, Clone)]
 pub struct AudioRepresentation {
     pub id: AudioRepresentationId,
     pub asset_id: AssetId,
-    pub codec_name: String,
-    pub bitrate: i32,
-    pub resource_file_id: ResourceFileId,
+    pub path_in_resource_dir: PathBuf,
 }
 
 impl TryFrom<&DbVideoRepresentation> for VideoRepresentation {
@@ -34,7 +35,7 @@ impl TryFrom<&DbVideoRepresentation> for VideoRepresentation {
             width: value.width,
             height: value.height,
             bitrate: value.bitrate,
-            resource_file_id: value.resource_file_id,
+            path_in_resource_dir: PathBuf::from(&value.path_in_resource_dir),
         })
     }
 }
@@ -54,9 +55,7 @@ impl TryFrom<&DbAudioRepresentation> for AudioRepresentation {
         Ok(AudioRepresentation {
             id: value.id,
             asset_id: value.asset_id,
-            codec_name: value.codec_name.clone(),
-            bitrate: value.bitrate,
-            resource_file_id: value.resource_file_id,
+            path_in_resource_dir: PathBuf::from(&value.path_in_resource_dir),
         })
     }
 }
@@ -80,7 +79,7 @@ impl TryFrom<&VideoRepresentation> for DbVideoRepresentation {
             width: value.width,
             height: value.height,
             bitrate: value.bitrate,
-            resource_file_id: value.resource_file_id,
+            path_in_resource_dir: path_to_string(&value.path_in_resource_dir)?,
         })
     }
 }
@@ -100,9 +99,7 @@ impl TryFrom<&AudioRepresentation> for DbAudioRepresentation {
         Ok(DbAudioRepresentation {
             id: value.id,
             asset_id: value.asset_id,
-            codec_name: value.codec_name.clone(),
-            bitrate: value.bitrate,
-            resource_file_id: value.resource_file_id,
+            path_in_resource_dir: path_to_string(&value.path_in_resource_dir)?,
         })
     }
 }

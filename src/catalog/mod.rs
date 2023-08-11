@@ -19,11 +19,10 @@ pub mod rules;
 
 use std::path::PathBuf;
 
-use crate::model::{AssetId, DataDirId, ResourceFileId, ThumbnailType};
-
-use encoding_target::EncodingTarget;
+use crate::model::{DataDirId, ResourceFileId};
 
 use self::operation::create_thumbnail::CreateThumbnail;
+use self::operation::package_video::PackageVideo;
 
 /// An operation that alters the catalog state
 ///
@@ -74,90 +73,8 @@ pub trait ResourcePath {}
 impl ResourcePath for ResolvedResourcePath {}
 impl ResourcePath for PathInResourceDir {}
 
-/// Package video asset for DASH.
-/// If transcode is set, ffmpeg to target codec.
-/// Then gather existing representations and pass it all to shaka-packager.
-#[derive(Debug, Clone)]
-pub struct PackageVideo<P: ResourcePath> {
-    pub asset_id: AssetId,
-    pub transcode: Option<Transcode<P>>,
-    pub mpd_output: P,
-}
-
-#[derive(Debug, Clone)]
-pub struct Transcode<P: ResourcePath> {
-    target: EncodingTarget,
-    /// output path where the final transcoded and shaka remuxed video file should be
-    output: P,
-}
-
 impl From<PathBuf> for PathInResourceDir {
     fn from(value: PathBuf) -> Self {
         Self(value)
     }
 }
-
-//
-// fn thumbnails_todo() -> CreateThumbnail<PathInResourceDir> {
-//     todo!()
-// }
-//
-// fn resolve_action_dirs(action: Action<PathInResourceDir>) -> Action<ResolvedResourcePath> {
-//     match action {
-//         Action::CreateThumbnail(CreateThumbnail {
-//             asset_id,
-//             thumbnails,
-//         }) => {
-//             let t: Vec<ThumbnailToCreate<ResolvedResourcePath>> = thumbnails
-//                 .into_iter()
-//                 .map(|thumb| ThumbnailToCreate {
-//                     ty: thumb.ty,
-//                     wepb_file: ResolvedResourcePath::New(ResolvedNewResourcePath {
-//                         data_dir_id: DataDirId(2),
-//                         path_in_data_dir: PathBuf::from("thumbnails").join(thumb.wepb_file.0),
-//                     }),
-//                     avif_file: ResolvedResourcePath::New(ResolvedNewResourcePath {
-//                         data_dir_id: DataDirId(2),
-//                         path_in_data_dir: PathBuf::from("thumbnails").join(thumb.avif_file.0),
-//                     }),
-//                 })
-//                 .collect();
-//             Action::CreateThumbnail(CreateThumbnail {
-//                 asset_id,
-//                 thumbnails: t,
-//             })
-//         }
-//         Action::PackageVideo => todo!(),
-//     }
-// }
-//
-// fn apply_action(action: Action<ResolvedResourcePath>) {
-//     match action {
-//         Action::CreateThumbnail(CreateThumbnail {
-//             asset_id,
-//             thumbnails,
-//         }) => {
-//             for t in thumbnails {
-//                 match t.wepb_file {
-//                     ResolvedResourcePath::Existing(ResolvedExistingResourcePath {
-//                         resource_dir_id,
-//                         path_in_resource_dir,
-//                     }) => {
-//                         // write resource_dir_id to Asset(thumbnail_resource_file)
-//                     }
-//                     ResolvedResourcePath::New(ResolvedNewResourcePath {
-//                         data_dir_id,
-//                         path_in_data_dir,
-//                     }) => {
-//                         // begin transaction
-//                         // Insert ResourceFile
-//                         // set thumbnail resource file to newly created id
-//                         // commit transaction
-//                     }
-//                 }
-//             }
-//         }
-//         _ => {}
-//     }
-// }
-//

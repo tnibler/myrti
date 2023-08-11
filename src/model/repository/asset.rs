@@ -1,7 +1,10 @@
 use chrono::{DateTime, Utc};
 use color_eyre::eyre;
 use eyre::{bail, Context, Result};
-use sqlx::{query, QueryBuilder, Sqlite, SqliteConnection};
+use sqlx::{
+    query::{self, Query},
+    QueryBuilder, Sqlite, SqliteConnection,
+};
 use std::path::Path;
 use tracing::{debug, instrument, Instrument};
 
@@ -720,6 +723,54 @@ AND id NOT IN
         .in_current_span()
         .await
         .wrap_err("could not query for Video Assets with no acceptable representations")?
+        .into_iter()
+        .map(|a| a.try_into())
+        .collect::<Result<Vec<_>>>()
+}
+
+#[instrument(skip(pool, acceptable_codecs))]
+pub async fn get_videos_in_acceptable_codec_without_dash(
+    pool: &DbPool,
+    acceptable_codecs: impl Iterator<Item = &str>,
+) -> Result<Vec<AssetBase>> {
+    let mut query_builder = QueryBuilder::new(
+        r#"
+SELECT 
+id,
+ty as "ty: _",
+root_dir_id,
+file_path,
+hash,
+added_at,
+taken_date as "taken_date: _",
+taken_date_local_fallback as "taken_date_local_fallback: _",
+width,
+height,
+thumb_small_square_avif as "thumb_small_square_avif: _",
+thumb_small_square_webp as "thumb_small_square_webp: _",
+thumb_large_orig_avif as "thumb_large_orig_avif: _",
+thumb_large_orig_webp as "thumb_large_orig_webp: _",
+thumb_small_square_width,
+thumb_small_square_height,
+thumb_large_orig_width,
+thumb_large_orig_height
+FROM Asset, VideoInfo 
+WHERE 
+Asset.id = VideoInfo.asset_id 
+AND VideoInfo.dash_resource_dir IS NULL
+AND Asset.ty = ?
+AND VideoInfo.codec_name IN
+        "#,
+    );
+    query_builder.push_tuples(acceptable_codecs, |mut b, s| {
+        b.push_bind(s);
+    });
+    query_builder
+        .build_query_as::<DbAsset>()
+        .fetch_all(pool)
+        .in_current_span()
+        .await
+        .wrap_err("could not query for Video Assets with no DASH version")?
         .into_iter()
         .map(|a| a.try_into())
         .collect::<Result<Vec<_>>>()

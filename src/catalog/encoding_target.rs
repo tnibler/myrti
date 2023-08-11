@@ -15,7 +15,7 @@ pub enum Scale {
     WidthKeepAspect { width: u32 },
 }
 
-mod avc {
+pub mod avc {
     use std::fmt::Display;
 
     use eyre::{eyre, Report};
@@ -128,7 +128,7 @@ mod avc {
     }
 }
 
-mod av1 {
+pub mod av1 {
     use eyre::{eyre, Report};
 
     /// For libsvtav1 only

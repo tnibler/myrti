@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use chrono::Utc;
 use eyre::{Context, Result};
 use sqlx::SqliteConnection;
@@ -6,8 +8,8 @@ use tracing::{debug, instrument, Instrument};
 use crate::{
     core::NewResourceFile,
     model::{
-        repository::db_entity::DbResourceFileResolved, util::path_to_string, ResourceFileId,
-        ResourceFileResolved,
+        repository::db_entity::DbResourceFileResolved, util::path_to_string, DataDirId,
+        ResourceFileId, ResourceFileResolved,
     },
 };
 
@@ -18,7 +20,6 @@ pub async fn insert_new_resource_file(
     conn: &mut SqliteConnection,
     new_resource_file: NewResourceFile,
 ) -> Result<ResourceFileId> {
-    debug!("insert");
     let created_at = Utc::now().naive_utc();
     let path = path_to_string(new_resource_file.path_in_data_dir)
         .wrap_err("failed to insert new ResourceFile, couldn't convert path to String")?;
@@ -28,6 +29,32 @@ INSERT INTO ResourceFile
 VALUES (NULL, ?, ?, ?); 
 "#,
         new_resource_file.data_dir_id,
+        path,
+        created_at
+    )
+    .execute(conn)
+    .in_current_span()
+    .await
+    .wrap_err("could not insert into table ResourceFiles")?;
+    let rowid = result.last_insert_rowid();
+    Ok(ResourceFileId(rowid))
+}
+
+#[instrument(skip(conn))]
+pub async fn insert_new_resource_file2(
+    conn: &mut SqliteConnection,
+    data_dir_id: DataDirId,
+    path_in_data_dir: &Path,
+) -> Result<ResourceFileId> {
+    let created_at = Utc::now().naive_utc();
+    let path = path_to_string(path_in_data_dir)
+        .wrap_err("failed to insert new ResourceFile, couldn't convert path to String")?;
+    let result = sqlx::query!(
+        r#"
+INSERT INTO ResourceFile
+VALUES (NULL, ?, ?, ?); 
+"#,
+        data_dir_id,
         path,
         created_at
     )

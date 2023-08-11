@@ -14,14 +14,15 @@
 //! compute.
 
 pub mod encoding_target;
+pub mod rules;
 
 pub mod operation {
+
     use std::path::PathBuf;
 
-    use crate::{
-        model::{AssetId, DataDirId, ResourceFileId},
-        processing::video::transcode::EncodingTarget,
-    };
+    use crate::model::{AssetId, DataDirId, ResourceFileId, ThumbnailType};
+
+    use super::encoding_target::EncodingTarget;
 
     /// An operation that alters the catalog state
     ///
@@ -42,8 +43,8 @@ pub mod operation {
     /// an asset record to point to it must be done in the same transaction).
     #[derive(Debug, Clone)]
     pub enum Operation<P: ResourcePath> {
-        CreateThumbnail(CreateThumbnail<P>),
-        PackageVideo,
+        CreateThumbnail(Vec<CreateThumbnail<P>>),
+        PackageVideo(Vec<PackageVideo<P>>),
     }
 
     #[derive(Debug, Clone)]
@@ -72,25 +73,6 @@ pub mod operation {
     impl ResourcePath for ResolvedResourcePath {}
     impl ResourcePath for PathInResourceDir {}
 
-    #[derive(Debug, Clone)]
-    pub struct CreateThumbnail<P: ResourcePath> {
-        pub asset_id: AssetId,
-        pub thumbnails: Vec<ThumbnailToCreate<P>>,
-    }
-
-    #[derive(Debug, Clone)]
-    pub struct ThumbnailToCreate<P: ResourcePath> {
-        pub ty: ThumbnailType,
-        pub wepb_file: P,
-        pub avif_file: P,
-    }
-
-    #[derive(Debug, Clone, Copy)]
-    pub enum ThumbnailType {
-        SmallSquare,
-        LargeOrigAspect,
-    }
-
     /// Package video asset for DASH.
     /// If transcode is set, ffmpeg to target codec.
     /// Then gather existing representations and pass it all to shaka-packager.
@@ -106,6 +88,12 @@ pub mod operation {
         target: EncodingTarget,
         /// output path where the final transcoded and shaka remuxed video file should be
         output: P,
+    }
+
+    impl From<PathBuf> for PathInResourceDir {
+        fn from(value: PathBuf) -> Self {
+            Self(value)
+        }
     }
 }
 

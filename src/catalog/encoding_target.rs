@@ -71,16 +71,17 @@ mod avc {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
+                "{}",
                 match self {
-                    Ultrafast => "ultrafast",
-                    Superfast => "superfast",
-                    Veryfast => "veryfast",
-                    Faster => faster,
-                    Fast => "fast",
-                    Medium => "medium",
-                    Slow => "slow",
-                    Slower => "slower",
-                    Veryslow => "veryslow",
+                    Self::Ultrafast => "ultrafast",
+                    Self::Superfast => "superfast",
+                    Self::Veryfast => "veryfast",
+                    Self::Faster => "faster",
+                    Self::Fast => "fast",
+                    Self::Medium => "medium",
+                    Self::Slow => "slow",
+                    Self::Slower => "slower",
+                    Self::Veryslow => "veryslow",
                 }
             )
         }
@@ -90,13 +91,14 @@ mod avc {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(
                 f,
+                "{}",
                 match self {
-                    Film => "film",
-                    Animation => "animation",
-                    Grain => "grain",
-                    Stillimage => "stillimage",
-                    Fastdecode => "fastdecode",
-                    Zerolatency => "zerolatency",
+                    Self::Film => "film",
+                    Self::Animation => "animation",
+                    Self::Grain => "grain",
+                    Self::Stillimage => "stillimage",
+                    Self::Fastdecode => "fastdecode",
+                    Self::Zerolatency => "zerolatency",
                 }
             )
         }

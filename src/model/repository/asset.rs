@@ -8,7 +8,7 @@ use tracing::{debug, instrument, Instrument};
 use super::db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType, DbVideoInfo};
 use crate::model::{
     AssetAll, AssetBase, AssetId, AssetPathOnDisk, AssetThumbnails, AssetType, FullAsset, Image,
-    ResourceFileId, Video,
+    ResourceFileId, ThumbnailType, Video,
 };
 
 use super::pool::DbPool;
@@ -492,6 +492,49 @@ WHERE id=?;
     .execute(conn)
     .await
     .wrap_err("could not update table Assets")?;
+    Ok(())
+}
+
+#[instrument(skip(conn))]
+pub async fn set_asset_thumbnail(
+    conn: &mut SqliteConnection,
+    asset_id: AssetId,
+    thumbnail_type: ThumbnailType,
+    avif: ResourceFileId,
+    webp: ResourceFileId,
+) -> Result<()> {
+    let query = match thumbnail_type {
+        ThumbnailType::SmallSquare => {
+            sqlx::query!(
+                r#"
+UPDATE Asset SET 
+thumb_small_square_jpg=?,
+thumb_small_square_webp=?
+WHERE id=?;
+    "#,
+                avif,
+                webp,
+                asset_id
+            )
+        }
+        ThumbnailType::LargeOrigAspect => {
+            sqlx::query!(
+                r#"
+UPDATE Asset SET 
+thumb_large_orig_jpg=?,
+thumb_large_orig_webp=?
+WHERE id=?;
+    "#,
+                avif,
+                webp,
+                asset_id
+            )
+        }
+    };
+    query
+        .execute(conn)
+        .await
+        .wrap_err("could not update table Assets")?;
     Ok(())
 }
 

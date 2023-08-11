@@ -40,6 +40,18 @@ pub struct AssetBase {
     pub thumb_large_orig_size: Option<Size>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ThumbnailType {
+    SmallSquare,
+    LargeOrigAspect,
+}
+
+#[derive(Debug, Clone)]
+pub enum ThumbnailFormat {
+    WEBP,
+    AVIF,
+}
+
 impl TryFrom<&AssetBase> for DbAsset {
     type Error = eyre::Report;
 

@@ -14,9 +14,9 @@ pub struct DbAsset {
     pub taken_date_local_fallback: Option<NaiveDateTime>,
     pub width: i64,
     pub height: i64,
-    pub thumb_small_square_jpg: Option<ResourceFileId>,
+    pub thumb_small_square_avif: Option<ResourceFileId>,
     pub thumb_small_square_webp: Option<ResourceFileId>,
-    pub thumb_large_orig_jpg: Option<ResourceFileId>,
+    pub thumb_large_orig_avif: Option<ResourceFileId>,
     pub thumb_large_orig_webp: Option<ResourceFileId>,
     pub thumb_small_square_width: Option<i64>,
     pub thumb_small_square_height: Option<i64>,
@@ -28,9 +28,9 @@ pub struct DbAsset {
 pub struct DbAssetThumbnails {
     pub id: AssetId,
     pub ty: DbAssetType,
-    pub thumb_small_square_jpg: Option<ResourceFileId>,
+    pub thumb_small_square_avif: Option<ResourceFileId>,
     pub thumb_small_square_webp: Option<ResourceFileId>,
-    pub thumb_large_orig_jpg: Option<ResourceFileId>,
+    pub thumb_large_orig_avif: Option<ResourceFileId>,
     pub thumb_large_orig_webp: Option<ResourceFileId>,
 }
 

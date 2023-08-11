@@ -20,7 +20,7 @@ void teardown() { vips_shutdown(); }
 
 int thumbnail(ThumbnailParams params) {
   for (unsigned long long i = 0; i < params.num_out_paths; ++i) {
-    VipsImage* out;
+    VipsImage* out = NULL;
     int ret;
     if (params.keep_aspect) {
        ret = vips_thumbnail(params.in_path, &out, params.width, NULL);
@@ -29,11 +29,15 @@ int thumbnail(ThumbnailParams params) {
     }
     if (ret) {
       printf("libvips error: %s", vips_error_buffer());
-      g_object_unref(out);
+      if (out != NULL) {
+        g_object_unref(out);
+      }
       return ret;
     }
     ret = vips_image_write_to_file(out, params.out_paths[i], NULL);
-    g_object_unref(out);
+    if (out != NULL) {
+      g_object_unref(out);
+    }
     if (ret) {
       printf("libvips error: %s", vips_error_buffer());
       return ret;

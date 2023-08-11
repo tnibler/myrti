@@ -14,86 +14,86 @@
 //! compute.
 
 pub mod encoding_target;
+pub mod operation;
 pub mod rules;
 
-pub mod operation {
+use std::path::PathBuf;
 
-    use std::path::PathBuf;
+use crate::model::{AssetId, DataDirId, ResourceFileId, ThumbnailType};
 
-    use crate::model::{AssetId, DataDirId, ResourceFileId, ThumbnailType};
+use encoding_target::EncodingTarget;
 
-    use super::encoding_target::EncodingTarget;
+use self::operation::create_thumbnail::CreateThumbnail;
 
-    /// An operation that alters the catalog state
-    ///
-    /// Generic over the type of resource path it refers to,
-    /// because the rules determining operations to perform are not concerned with
-    /// where the resulting file resources are actually stored.
-    /// Resource files/directories may be located in any data directory,
-    /// so rules emit Operations with paths relative to an unspecified resource directory.
-    ///
-    /// When applying and especially running the side effects of an Operation,
-    /// these relative paths are resolved to be relative to a specific resource directory (with an
-    /// actual path on disk).
-    /// For example, for the PackageVideo operation, the transcoding output path
-    /// will be resolved relative to the video asset's dash_resource_dir column.
-    /// This resolved path may be in an already existing resource directory
-    /// or a newly created one, which have to be handled separately
-    /// (when creating a new resource file/directory, inserting it and then altering
-    /// an asset record to point to it must be done in the same transaction).
-    #[derive(Debug, Clone)]
-    pub enum Operation<P: ResourcePath> {
-        CreateThumbnail(Vec<CreateThumbnail<P>>),
-        PackageVideo(Vec<PackageVideo<P>>),
-    }
+/// An operation that alters the catalog state
+///
+/// Generic over the type of resource path it refers to,
+/// because the rules determining operations to perform are not concerned with
+/// where the resulting file resources are actually stored.
+/// Resource files/directories may be located in any data directory,
+/// so rules emit Operations with paths relative to an unspecified resource directory.
+///
+/// When applying and especially running the side effects of an Operation,
+/// these relative paths are resolved to be relative to a specific resource directory (with an
+/// actual path on disk).
+/// For example, for the PackageVideo operation, the transcoding output path
+/// will be resolved relative to the video asset's dash_resource_dir column.
+/// This resolved path may be in an already existing resource directory
+/// or a newly created one, which have to be handled separately
+/// (when creating a new resource file/directory, inserting it and then altering
+/// an asset record to point to it must be done in the same transaction).
+#[derive(Debug, Clone)]
+pub enum Operation<P: ResourcePath> {
+    CreateThumbnail(Vec<CreateThumbnail<P>>),
+    PackageVideo(Vec<PackageVideo<P>>),
+}
 
-    #[derive(Debug, Clone)]
-    pub enum ResolvedResourcePath {
-        Existing(ResolvedExistingResourcePath),
-        New(ResolvedNewResourcePath),
-    }
+#[derive(Debug, Clone)]
+pub enum ResolvedResourcePath {
+    Existing(ResolvedExistingResourcePath),
+    New(ResolvedNewResourcePath),
+}
 
-    #[derive(Debug, Clone)]
-    pub struct PathInResourceDir(pub PathBuf);
+#[derive(Debug, Clone)]
+pub struct PathInResourceDir(pub PathBuf);
 
-    #[derive(Debug, Clone)]
-    pub struct ResolvedExistingResourcePath {
-        pub resource_dir_id: ResourceFileId,
-        pub path_in_resource_dir: PathBuf,
-    }
+#[derive(Debug, Clone)]
+pub struct ResolvedExistingResourcePath {
+    pub resource_dir_id: ResourceFileId,
+    pub path_in_resource_dir: PathBuf,
+}
 
-    #[derive(Debug, Clone)]
-    pub struct ResolvedNewResourcePath {
-        pub data_dir_id: DataDirId,
-        pub path_in_data_dir: PathBuf,
-    }
+#[derive(Debug, Clone)]
+pub struct ResolvedNewResourcePath {
+    pub data_dir_id: DataDirId,
+    pub path_in_data_dir: PathBuf,
+}
 
-    pub trait ResourcePath {}
+pub trait ResourcePath {}
 
-    impl ResourcePath for ResolvedResourcePath {}
-    impl ResourcePath for PathInResourceDir {}
+impl ResourcePath for ResolvedResourcePath {}
+impl ResourcePath for PathInResourceDir {}
 
-    /// Package video asset for DASH.
-    /// If transcode is set, ffmpeg to target codec.
-    /// Then gather existing representations and pass it all to shaka-packager.
-    #[derive(Debug, Clone)]
-    pub struct PackageVideo<P: ResourcePath> {
-        pub asset_id: AssetId,
-        pub transcode: Option<Transcode<P>>,
-        pub mpd_output: P,
-    }
+/// Package video asset for DASH.
+/// If transcode is set, ffmpeg to target codec.
+/// Then gather existing representations and pass it all to shaka-packager.
+#[derive(Debug, Clone)]
+pub struct PackageVideo<P: ResourcePath> {
+    pub asset_id: AssetId,
+    pub transcode: Option<Transcode<P>>,
+    pub mpd_output: P,
+}
 
-    #[derive(Debug, Clone)]
-    pub struct Transcode<P: ResourcePath> {
-        target: EncodingTarget,
-        /// output path where the final transcoded and shaka remuxed video file should be
-        output: P,
-    }
+#[derive(Debug, Clone)]
+pub struct Transcode<P: ResourcePath> {
+    target: EncodingTarget,
+    /// output path where the final transcoded and shaka remuxed video file should be
+    output: P,
+}
 
-    impl From<PathBuf> for PathInResourceDir {
-        fn from(value: PathBuf) -> Self {
-            Self(value)
-        }
+impl From<PathBuf> for PathInResourceDir {
+    fn from(value: PathBuf) -> Self {
+        Self(value)
     }
 }
 

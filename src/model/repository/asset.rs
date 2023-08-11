@@ -30,9 +30,9 @@ taken_date as "taken_date: _",
 taken_date_local_fallback as "taken_date_local_fallback: _",
 width,
 height,
-thumb_small_square_jpg as "thumb_small_square_jpg: _",
+thumb_small_square_avif as "thumb_small_square_avif: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
-thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
+thumb_large_orig_avif as "thumb_large_orig_avif: _",
 thumb_large_orig_webp as "thumb_large_orig_webp: _",
 thumb_small_square_width,
 thumb_small_square_height,
@@ -156,9 +156,9 @@ taken_date as "taken_date: _",
 taken_date_local_fallback as "taken_date_local_fallback: _",
 width,
 height,
-thumb_small_square_jpg as "thumb_small_square_jpg: _",
+thumb_small_square_avif as "thumb_small_square_avif: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
-thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
+thumb_large_orig_avif as "thumb_large_orig_avif: _",
 thumb_large_orig_webp as "thumb_large_orig_webp: _",
 thumb_small_square_width,
 thumb_small_square_height,
@@ -189,9 +189,9 @@ taken_date as "taken_date: _",
 taken_date_local_fallback as "taken_date_local_fallback: _",
 width,
 height,
-thumb_small_square_jpg as "thumb_small_square_jpg: _",
+thumb_small_square_avif as "thumb_small_square_avif: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
-thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
+thumb_large_orig_avif as "thumb_large_orig_avif: _",
 thumb_large_orig_webp as "thumb_large_orig_webp: _",
 thumb_small_square_width,
 thumb_small_square_height,
@@ -224,16 +224,16 @@ pub async fn get_assets_with_missing_thumbnail(
             r#"
 SELECT id,
 ty as "ty: _",
-thumb_small_square_jpg as "thumb_small_square_jpg: _",
+thumb_small_square_avif as "thumb_small_square_avif: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
-thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
+thumb_large_orig_avif as "thumb_large_orig_avif: _",
 thumb_large_orig_webp as "thumb_large_orig_webp: _"
 FROM Asset
 WHERE   
-    thumb_small_square_jpg IS NULL OR
+    thumb_small_square_avif IS NULL OR
     thumb_small_square_webp IS NULL OR
-    thumb_large_orig_jpg IS NULL OR
-    thumb_large_orig_jpg IS NULL
+    thumb_large_orig_avif IS NULL OR
+    thumb_large_orig_avif IS NULL
 LIMIT ?;
     "#,
             limit
@@ -250,16 +250,16 @@ LIMIT ?;
             r#"
 SELECT id,
 ty as "ty: _",
-thumb_small_square_jpg as "thumb_small_square_jpg: _",
+thumb_small_square_avif as "thumb_small_square_avif: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
-thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
+thumb_large_orig_avif as "thumb_large_orig_avif: _",
 thumb_large_orig_webp as "thumb_large_orig_webp: _"
 FROM Asset
 WHERE   
-    thumb_small_square_jpg IS NULL OR
+    thumb_small_square_avif IS NULL OR
     thumb_small_square_webp IS NULL OR
-    thumb_large_orig_jpg IS NULL OR
-    thumb_large_orig_jpg IS NULL;
+    thumb_large_orig_avif IS NULL OR
+    thumb_large_orig_avif IS NULL;
     "#
         )
         .fetch_all(pool)
@@ -285,9 +285,9 @@ hash=?,
 added_at=?,
 taken_date=?,
 taken_date_local_fallback=?,
-thumb_small_square_jpg=?,
+thumb_small_square_avif=?,
 thumb_small_square_webp=?,
-thumb_large_orig_jpg=?,
+thumb_large_orig_avif=?,
 thumb_large_orig_webp=?
 WHERE id=?;
 ",
@@ -298,9 +298,9 @@ WHERE id=?;
         db_asset_base.added_at,
         db_asset_base.taken_date,
         db_asset_base.taken_date_local_fallback,
-        db_asset_base.thumb_small_square_jpg,
+        db_asset_base.thumb_small_square_avif,
         db_asset_base.thumb_small_square_webp,
-        db_asset_base.thumb_large_orig_jpg,
+        db_asset_base.thumb_large_orig_avif,
         db_asset_base.thumb_large_orig_webp,
         asset.id.0
     )
@@ -328,9 +328,9 @@ taken_date,
 taken_date_local_fallback,
 width,
 height,
-thumb_small_square_jpg,
+thumb_small_square_avif,
 thumb_small_square_webp,
-thumb_large_orig_jpg,
+thumb_large_orig_avif,
 thumb_large_orig_webp,
 thumb_small_square_width,
 thumb_small_square_height,
@@ -349,9 +349,9 @@ VALUES
         db_asset_base.taken_date_local_fallback,
         db_asset_base.width,
         db_asset_base.height,
-        db_asset_base.thumb_small_square_jpg,
+        db_asset_base.thumb_small_square_avif,
         db_asset_base.thumb_small_square_webp,
-        db_asset_base.thumb_large_orig_jpg,
+        db_asset_base.thumb_large_orig_avif,
         db_asset_base.thumb_large_orig_webp,
         db_asset_base.thumb_small_square_width,
         db_asset_base.thumb_small_square_height,
@@ -447,17 +447,17 @@ WHERE asset_id=?;
 pub async fn set_asset_small_thumbnails(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
-    thumb_small_square_jpg: ResourceFileId,
+    thumb_small_square_avif: ResourceFileId,
     thumb_small_square_webp: ResourceFileId,
 ) -> Result<()> {
     sqlx::query!(
         r#"
 UPDATE Asset SET 
-thumb_small_square_jpg=?,
+thumb_small_square_avif=?,
 thumb_small_square_webp=?
 WHERE id=?;
     "#,
-        thumb_small_square_jpg,
+        thumb_small_square_avif,
         thumb_small_square_webp,
         asset_id
     )
@@ -475,17 +475,17 @@ WHERE id=?;
 pub async fn set_asset_large_thumbnails(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
-    thumb_large_orig_jpg: ResourceFileId,
+    thumb_large_orig_avif: ResourceFileId,
     thumb_large_orig_webp: ResourceFileId,
 ) -> Result<()> {
     sqlx::query!(
         r#"
 UPDATE Asset SET 
-thumb_large_orig_jpg=?,
+thumb_large_orig_avif=?,
 thumb_large_orig_webp=?
 WHERE id=?;
     "#,
-        thumb_large_orig_jpg,
+        thumb_large_orig_avif,
         thumb_large_orig_webp,
         asset_id
     )
@@ -508,7 +508,7 @@ pub async fn set_asset_thumbnail(
             sqlx::query!(
                 r#"
 UPDATE Asset SET 
-thumb_small_square_jpg=?,
+thumb_small_square_avif=?,
 thumb_small_square_webp=?
 WHERE id=?;
     "#,
@@ -521,7 +521,7 @@ WHERE id=?;
             sqlx::query!(
                 r#"
 UPDATE Asset SET 
-thumb_large_orig_jpg=?,
+thumb_large_orig_avif=?,
 thumb_large_orig_webp=?
 WHERE id=?;
     "#,
@@ -554,9 +554,9 @@ taken_date as "taken_date: _",
 taken_date_local_fallback as "taken_date_local_fallback: _",
 width,
 height,
-thumb_small_square_jpg as "thumb_small_square_jpg: _",
+thumb_small_square_avif as "thumb_small_square_avif: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
-thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
+thumb_large_orig_avif as "thumb_large_orig_avif: _",
 thumb_large_orig_webp as "thumb_large_orig_webp: _",
 thumb_small_square_width,
 thumb_small_square_height,
@@ -618,9 +618,9 @@ taken_date,
 taken_date_local_fallback,
 width,
 height,
-thumb_small_square_jpg as "thumb_small_square_jpg: _",
+thumb_small_square_avif as "thumb_small_square_avif: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
-thumb_large_orig_jpg as "thumb_large_orig_jpg: _",
+thumb_large_orig_avif as "thumb_large_orig_avif: _",
 thumb_large_orig_webp as "thumb_large_orig_webp: _",
 thumb_small_square_width,
 thumb_small_square_height,
@@ -691,9 +691,9 @@ Asset.taken_date as taken_date,
 Asset.taken_date_local_fallback as taken_date_local_fallback,
 Asset.width as width,
 Asset.height as height,
-Asset.thumb_small_square_jpg as thumb_small_square_jpg,
+Asset.thumb_small_square_avif as thumb_small_square_avif,
 Asset.thumb_small_square_webp as thumb_small_square_webp,
-Asset.thumb_large_orig_jpg as thumb_large_orig_jpg,
+Asset.thumb_large_orig_avif as thumb_large_orig_avif,
 Asset.thumb_large_orig_webp as thumb_large_orig_webp,
 Asset.thumb_small_square_width as thumb_small_square_width,
 Asset.thumb_small_square_height as thumb_small_square_height,

@@ -4,19 +4,18 @@ use eyre::{Context, Report, Result};
 use tracing::{instrument, Instrument};
 
 use crate::{
+    catalog::{
+        ResolvedExistingResourcePath, ResolvedNewResourcePath, ResolvedResourcePath, ResourcePath,
+    },
     model::{
         repository::{self, pool::DbPool},
-        AssetBase, AssetType, ResourceFileId, ThumbnailType,
+        AssetBase, AssetId, AssetType, ResourceFileId, ThumbnailType,
     },
     processing::{
         self,
         image::{generate_thumbnail, ThumbnailParams},
         video::create_snapshot,
     },
-};
-
-use super::operation::{
-    ResolvedExistingResourcePath, ResolvedNewResourcePath, ResolvedResourcePath,
 };
 
 #[derive(Debug, Clone)]
@@ -35,9 +34,9 @@ pub struct ThumbnailToCreate<P: ResourcePath> {
 #[instrument(skip(pool))]
 pub async fn apply_create_thumbnail(
     pool: &DbPool,
-    op: CreateThumbnail<ResolvedResourcePath>,
+    op: &CreateThumbnail<ResolvedResourcePath>,
 ) -> Result<()> {
-    for created_thumb in op.thumbnails {
+    for created_thumb in op.thumbnails.iter() {
         let mut tx = pool
             .begin()
             .await
@@ -59,7 +58,7 @@ pub async fn apply_create_thumbnail(
                 path_in_resource_dir,
             }) => todo!("thumbnails normally always create new resource files"),
         };
-        let webp_resource_id: ResourceFileId = match &created_thumb.avif_file {
+        let webp_resource_id: ResourceFileId = match &created_thumb.webp_file {
             ResolvedResourcePath::New(ResolvedNewResourcePath {
                 data_dir_id,
                 path_in_data_dir,
@@ -96,14 +95,15 @@ pub struct ThumbnailSideEffectResult {
     failed: Vec<(ThumbnailToCreate<ResolvedResourcePath>, Report)>,
 }
 
+#[instrument(skip(pool))]
 pub async fn perform_side_effects_create_thumbnail(
     pool: &DbPool,
     op: &CreateThumbnail<ResolvedResourcePath>,
-    asset: &AssetBase,
 ) -> Result<ThumbnailSideEffectResult> {
     let in_path = repository::asset::get_asset_path_on_disk(pool, op.asset_id)
         .await?
         .path_on_disk();
+    let asset = repository::asset::get_asset_base(pool, op.asset_id).await?;
     let mut result = ThumbnailSideEffectResult {
         failed: Vec::default(),
     };
@@ -145,6 +145,7 @@ pub async fn perform_side_effects_create_thumbnail(
     Ok(result)
 }
 
+#[instrument(skip(pool))]
 async fn create_thumbnail_from_image(
     pool: &DbPool,
     image_path: PathBuf,
@@ -178,6 +179,7 @@ async fn create_thumbnail_from_image(
         .wrap_err("thumbnail task died or something")?
 }
 
+#[instrument(skip(pool))]
 async fn resource_path_on_disk(
     pool: &DbPool,
     resolved_resource_path: &ResolvedResourcePath,

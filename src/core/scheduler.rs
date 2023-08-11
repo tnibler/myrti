@@ -6,6 +6,7 @@ use super::{
     DataDirManager,
 };
 use crate::{
+    catalog::rules,
     core::job::JobType,
     eyre::Result,
     job::{
@@ -129,34 +130,23 @@ impl SchedulerImpl {
     }
 
     async fn thumbnail_if_required(&self) {
-        if !repository::asset::get_assets_with_missing_thumbnail(&self.pool, Some(1))
+        let thumbnails_to_create = rules::thumbnails_to_create(&self.pool).await.unwrap();
+        let params = ThumbnailJobParams {
+            thumbnails: thumbnails_to_create,
+        };
+        let job = ThumbnailJob::new(
+            params.clone(),
+            self.data_dir_manager.clone(),
+            self.pool.clone(),
+        );
+        let handle = job.start();
+        self.monitor_tx
+            .send(MonitorMessage::AddJob {
+                handle,
+                ty: JobType::Thumbnail { params },
+            })
             .await
-            .unwrap()
-            .is_empty()
-        {
-            let asset_ids: Vec<AssetId> =
-                repository::asset::get_assets_with_missing_thumbnail(&self.pool, None)
-                    .await
-                    .unwrap()
-                    .iter()
-                    .map(|asset| asset.id)
-                    .collect();
-            debug!(?asset_ids);
-            let params = ThumbnailJobParams { asset_ids };
-            let job = ThumbnailJob::new(
-                params.clone(),
-                self.data_dir_manager.clone(),
-                self.pool.clone(),
-            );
-            let handle = job.start();
-            self.monitor_tx
-                .send(MonitorMessage::AddJob {
-                    handle,
-                    ty: JobType::Thumbnail { params },
-                })
-                .await
-                .unwrap();
-        }
+            .unwrap();
     }
 
     async fn dash_package_if_required(&self) {

@@ -1,10 +1,10 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{
     model::{repository, DataDirId},
     repository::pool::DbPool,
 };
-use eyre::{Result};
+use eyre::Result;
 
 /// Decides where to put new resource files (thumbnails, transcoded media etc..).
 ///
@@ -19,7 +19,7 @@ impl DataDirManager {
         DataDirManager { pool }
     }
 
-    pub async fn new_thumbnail_file(&self, file_name: &str) -> Result<NewResourceFile> {
+    pub async fn new_thumbnail_file(&self, file_name: &Path) -> Result<NewResourceFile> {
         let thumbnail_path = PathBuf::from("thumbnails");
         let data_dir = repository::data_dir::get_random_data_dir(&self.pool).await?;
         let complete_path = data_dir.path.join(&thumbnail_path);

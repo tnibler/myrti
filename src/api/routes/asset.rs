@@ -59,7 +59,7 @@ enum ThumbnailSize {
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum ThumbnailFormat {
-    Jpg,
+    Avif,
     Webp,
 }
 
@@ -71,14 +71,14 @@ async fn get_thumbnail(
     let id: model::AssetId = AssetId(id).try_into()?;
     let asset_base = repository::asset::get_asset_base(&app_state.pool, id).await?;
     let (thumb_resource, content_type) = match (size, format) {
-        (ThumbnailSize::Small, ThumbnailFormat::Jpg) => {
-            (asset_base.thumb_small_square_jpg, "image/jpeg")
+        (ThumbnailSize::Small, ThumbnailFormat::Avif) => {
+            (asset_base.thumb_small_square_avif, "image/jpeg")
         }
         (ThumbnailSize::Small, ThumbnailFormat::Webp) => {
             (asset_base.thumb_small_square_webp, "image/webp")
         }
-        (ThumbnailSize::Large, ThumbnailFormat::Jpg) => {
-            (asset_base.thumb_large_orig_jpg, "image/jpeg")
+        (ThumbnailSize::Large, ThumbnailFormat::Avif) => {
+            (asset_base.thumb_large_orig_avif, "image/jpeg")
         }
         (ThumbnailSize::Large, ThumbnailFormat::Webp) => {
             (asset_base.thumb_large_orig_webp, "image/webp")
@@ -168,6 +168,8 @@ fn guess_mime_type(path: &std::path::Path) -> Option<&'static str> {
     let ext = path.extension()?.to_ascii_lowercase().to_str()?.to_string();
     match ext.as_str() {
         "mp4" => Some("video/mp4"),
+        "avif" => Some("image/avif"),
+        "webp" => Some("image/webp"),
         "jpg" | "jpeg" => Some("image/jpeg"),
         "png" => Some("image/png"),
         _ => {

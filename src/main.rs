@@ -41,6 +41,7 @@ use crate::{
 
 mod api;
 mod app_state;
+mod catalog;
 mod config;
 mod core;
 mod http_error;

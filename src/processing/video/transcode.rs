@@ -1,4 +1,7 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 use eyre::Result;
 use tokio::process::Command;
@@ -264,11 +267,15 @@ fn ffmpeg_flags(encoding_target: &EncodingTarget) -> Vec<String> {
 }
 
 pub fn ffmpeg_command(input: &Path, output: &Path, target: EncodingTarget) -> Command {
-    let mut command = Command::new("ffmpeg");
-    command.arg("-i").arg(input);
     let flags = ffmpeg_flags(&target);
-    command.args(flags.as_slice());
-    command.arg(output);
+    let mut command = Command::new("ffmpeg");
+    command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .arg("-i")
+        .arg(input)
+        .args(flags.as_slice())
+        .arg(output);
     command
 }
 

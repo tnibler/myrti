@@ -3,13 +3,14 @@ use std::path::PathBuf;
 use eyre::{Context, Report, Result};
 use tracing::{instrument, Instrument};
 
+use crate::model::AssetBase;
 use crate::{
     catalog::{
         ResolvedExistingResourcePath, ResolvedNewResourcePath, ResolvedResourcePath, ResourcePath,
     },
     model::{
         repository::{self, pool::DbPool},
-        AssetBase, AssetId, AssetType, ResourceFileId, ThumbnailType,
+        AssetId, AssetType, ResourceFileId, ThumbnailType,
     },
     processing::{
         self,
@@ -103,12 +104,12 @@ pub async fn perform_side_effects_create_thumbnail(
     let in_path = repository::asset::get_asset_path_on_disk(pool, op.asset_id)
         .await?
         .path_on_disk();
-    let asset = repository::asset::get_asset_base(pool, op.asset_id).await?;
+    let asset = repository::asset::get_asset(pool, op.asset_id).await?;
     let mut result = ThumbnailSideEffectResult {
         failed: Vec::default(),
     };
     // TODO don't await sequentially. Not super bad because op.thumbnails is small but still
-    match asset.ty {
+    match asset.base.ty {
         AssetType::Image => {
             for thumb in &op.thumbnails {
                 match create_thumbnail_from_image(pool, in_path.clone(), thumb)
@@ -130,12 +131,15 @@ pub async fn perform_side_effects_create_thumbnail(
                 .await
                 .wrap_err("could not take video snapshot")?;
             for thumb in &op.thumbnails {
-                match create_thumbnail_from_image(pool, in_path.clone(), thumb)
+                match create_thumbnail_from_image(pool, snapshot_path.clone(), thumb)
                     .in_current_span()
                     .await
                 {
-                    Ok(_) => (),
+                    Ok(_) => {
+                        tracing::info!("done")
+                    }
                     Err(err) => {
+                        tracing::error!(%err);
                         result.failed.push((thumb.clone(), err));
                     }
                 }
@@ -172,7 +176,7 @@ async fn create_thumbnail_from_image(
     let (tx, rx) = tokio::sync::oneshot::channel();
     rayon::spawn(move || {
         let res = generate_thumbnail(thumbnail_params);
-        tx.send(res);
+        tx.send(res).unwrap();
     });
     rx.in_current_span()
         .await

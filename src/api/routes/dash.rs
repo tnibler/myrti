@@ -1,31 +1,24 @@
-use std::path::PathBuf;
-
 use axum::{
     body::Body,
     extract::{Path, State},
-    http::{uri::PathAndQuery, Request, StatusCode, Uri},
+    http::{Request, StatusCode, Uri},
     response::{IntoResponse, Response},
-    routing::{get, options},
+    routing::get,
     Router,
 };
-use eyre::{bail, eyre, Context};
+use eyre::Context;
 use serde::Deserialize;
-use tower::{service_fn, MakeService, Service, ServiceExt};
-use tower_http::services::ServeDir;
-use tracing::{debug, instrument, Instrument};
+use tower::ServiceExt;
+use tracing::{instrument, Instrument};
 
 use crate::{
     api::{schema::AssetId, ApiResult},
     app_state::SharedState,
-    model::{self, repository, AssetType},
+    model::{self, repository, VideoAsset},
 };
 
 pub fn router() -> Router<SharedState> {
-    Router::new()
-        // .nest_service("/:id", get(serve_dash_dir))
-        // .nest_service("/:id", options(serve_dash_dir))
-        .route("/:id/*path", get(get_dash_file))
-        .route("/:id/*path", options(get_dash_file))
+    Router::new().route("/:id/*path", get(get_dash_file).options(get_dash_file))
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -41,17 +34,19 @@ async fn get_dash_file(
     request: Request<Body>,
 ) -> ApiResult<Response> {
     let asset_id: model::AssetId = AssetId(path.id).try_into()?;
-    let asset = repository::asset::get_asset_base(&app_state.pool, asset_id).await?;
-    if asset.ty != AssetType::Video {
-        return Ok(StatusCode::BAD_REQUEST.into_response());
-    }
-    let video_info = repository::asset::get_video_info(&app_state.pool, asset_id).await?;
-    if video_info.dash_resource_dir.is_none() {
+    let asset = repository::asset::get_asset(&app_state.pool, asset_id).await?;
+    let asset: VideoAsset = match asset.try_into() {
+        Ok(v) => v,
+        Err(_) => {
+            return Ok(StatusCode::BAD_REQUEST.into_response());
+        }
+    };
+    if asset.video.dash_resource_dir.is_none() {
         return Ok(StatusCode::NO_CONTENT.into_response());
     }
     let dash_dir = repository::resource_file::get_resource_file_resolved(
         &app_state.pool,
-        video_info.dash_resource_dir.unwrap(),
+        asset.video.dash_resource_dir.unwrap(),
     )
     .await?;
     let (mut parts, body) = request.into_parts();

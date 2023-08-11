@@ -10,7 +10,7 @@ use crate::{
     },
     model::{
         repository::{self, pool::DbPool},
-        AssetBase, AssetThumbnails, ThumbnailType,
+        AssetBase, AssetThumbnails, ThumbnailType, VideoAsset,
     },
 };
 
@@ -59,20 +59,15 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo<PathI
     )
     .await?;
     if !acceptable_codecs_no_dash.is_empty() {
-        // let mut ops: Vec<PackageVideo<PathInResourceDir>> = Vec::default();
-        // for asset in acceptable_codecs_no_dash.into_iter() {
-        //     // let video_info = repository::asset::get
-        // }
-        // return Ok(ops);
-        // return Ok(acceptable_codecs_no_dash
-        //     .into_iter()
-        //     .map(|asset| PackageVideo {
-        //         asset_id: asset.id,
-        //         mpd_output: PathInResourceDir(PathBuf::from("stream.mpd")),
-        //         transcode: None,
-        //         output: PathInResourceDir(PathBuf::from("av1/original.mp4")),
-        //     })
-        //     .collect());
+        let mut ops: Vec<PackageVideo<PathInResourceDir>> = Vec::default();
+        return Ok(acceptable_codecs_no_dash
+            .into_iter()
+            .map(|asset| PackageVideo {
+                asset_id: asset.base.id,
+                mpd_output: PathInResourceDir(PathBuf::from("stream.mpd")),
+                transcode: None,
+            })
+            .collect());
     }
     // priority:
     //  - videos with original in acceptable codec and no DASH packaged
@@ -83,20 +78,19 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo<PathI
     // Later, set a flag if all required transcoding has been done
     // and clear the flag when the config (quality ladder, acceptable codecs)
     // change and recheck
-    let no_good_reprs: Vec<AssetBase> =
+    let no_good_reprs: Vec<VideoAsset> =
         repository::asset::get_video_assets_with_no_acceptable_repr(
             pool,
             acceptable_codecs.into_iter(),
         )
         .await
         .unwrap();
-    // let target_codec =
     if !no_good_reprs.is_empty() {
         use crate::catalog::encoding_target::av1;
         return Ok(no_good_reprs
             .into_iter()
             .map(|asset| PackageVideo {
-                asset_id: asset.id,
+                asset_id: asset.base.id,
                 mpd_output: PathInResourceDir(PathBuf::from("stream.mpd")),
                 transcode: Some(Transcode {
                     target: EncodingTarget {

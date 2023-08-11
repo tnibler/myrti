@@ -1,18 +1,10 @@
-use std::ops::DerefMut;
-
-use crate::{
-    core::NewResourceFile,
-    model::{
-        repository::{
-            db_entity::{DbAudioRepresentation, DbVideoRepresentation},
-            resource_file,
-        },
-        AudioRepresentation, AudioRepresentationId, VideoRepresentation, VideoRepresentationId,
-    },
+use crate::model::{
+    repository::db_entity::{DbAudioRepresentation, DbVideoRepresentation},
+    AudioRepresentation, AudioRepresentationId, VideoRepresentation, VideoRepresentationId,
 };
 
 use eyre::{Context, Result};
-use sqlx::{Executor, SqliteConnection};
+use sqlx::SqliteConnection;
 use tracing::instrument;
 
 #[instrument(skip(conn))]

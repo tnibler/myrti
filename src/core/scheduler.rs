@@ -15,7 +15,6 @@ use crate::{
         thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
     },
     model::repository,
-    model::AssetId,
 };
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
@@ -157,7 +156,9 @@ impl SchedulerImpl {
         if !videos_without_dash.is_empty() {
             let tasks: Vec<VideoProcessingTask> = videos_without_dash
                 .iter()
-                .map(|asset| VideoProcessingTask::DashPackageOnly { asset_id: asset.id })
+                .map(|asset| VideoProcessingTask::DashPackageOnly {
+                    asset_id: asset.base.id,
+                })
                 .collect();
             let params = DashSegmentingJobParams { tasks };
             let job = DashSegmentingJob::new(

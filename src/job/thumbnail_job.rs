@@ -87,9 +87,11 @@ impl ThumbnailJob {
                 perform_side_effects_create_thumbnail(&self.pool, &op_resolved)
                     .await
                     .unwrap();
+            // TODO fill failed with side effect errors
             apply_create_thumbnail(&self.pool, &op_resolved)
                 .await
                 .unwrap();
+            // TODO fill failed with side apply errors
         }
         return Ok(ThumbnailJobResult { failed });
 

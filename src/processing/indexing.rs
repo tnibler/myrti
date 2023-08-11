@@ -8,7 +8,6 @@ use crate::{
 use chrono::Utc;
 use color_eyre::eyre::Result;
 use eyre::Context;
-use tokio::fs;
 use tracing::{debug, error, instrument, Instrument};
 use walkdir::WalkDir;
 
@@ -52,27 +51,27 @@ async fn index_file(
     let path_in_asset_root = path
         .strip_prefix(&asset_root.path)
         .wrap_err("file to index is not in provided asset root")?;
-    let existing = repository::asset::get_asset_with_path(pool, path_in_asset_root).await?;
-    if existing.is_some() {
+    let existing = repository::asset::asset_with_path_exists(pool, path_in_asset_root).await?;
+    if existing {
         return Ok(None);
     }
     let metadata = read_media_metadata(path)
         .in_current_span()
         .await
         .wrap_err("could not read file metadata")?;
-    let (ty, full): (AssetType, AssetAll) = match metadata.file.mime_type.as_ref() {
+    let (ty, full): (AssetType, AssetSpe) = match metadata.file.mime_type.as_ref() {
         Some(mime) if mime.starts_with("video") => {
             let probe = probe_video(path)
                 .await
                 .wrap_err(format!("file has mimetype {}, but ffprobe failed", mime))?;
-            let video_info = AssetAll::Video(Video {
+            let video_info = AssetSpe::Video(Video {
                 codec_name: probe.codec_name,
                 dash_resource_dir: None,
             });
             (AssetType::Video, video_info)
         }
         Some(mime) if mime.starts_with("image") => {
-            let image_info = AssetAll::Image(Image {});
+            let image_info = AssetSpe::Image(Image {});
             (AssetType::Image, image_info)
         }
         None | Some(_) => {
@@ -128,6 +127,7 @@ async fn index_file(
         added_at: Utc::now(),
         taken_date: timestamp,
         size,
+        rotation_correction: None,
         hash: None,
         thumb_small_square_avif: None,
         thumb_small_square_webp: None,
@@ -136,10 +136,10 @@ async fn index_file(
         thumb_small_square_size: None,
         thumb_large_orig_size: None,
     };
-    let full_asset = FullAsset {
+    let full_asset = Asset {
         base: asset_base,
-        asset: full,
+        sp: full,
     };
-    let id = repository::asset::insert_asset(pool, full_asset).await?;
+    let id = repository::asset::insert_asset(pool, &full_asset).await?;
     Ok(Some(id))
 }

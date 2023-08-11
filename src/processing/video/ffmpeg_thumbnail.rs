@@ -1,14 +1,13 @@
-
 use eyre::{bail, Context, Result};
-use std::{
-    path::{Path},
-};
+use std::{path::Path, process::Stdio};
 use tokio::process::Command;
-use tracing::{instrument};
+use tracing::instrument;
 
 #[instrument("Take video snapshot")]
 pub async fn create_snapshot(video_path: &Path, out_path: &Path) -> Result<()> {
     let exit_status = Command::new("ffmpeg")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .arg("-i")
         .arg(video_path)
         .args(&["-ss", "00:00:00.00", "-frames:v", "1"])

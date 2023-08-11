@@ -69,16 +69,18 @@ async fn get_thumbnail(
     State(app_state): State<SharedState>,
 ) -> ApiResult<Response> {
     let id: model::AssetId = AssetId(id).try_into()?;
-    let asset_base = repository::asset::get_asset_base(&app_state.pool, id).await?;
+    let asset_base = repository::asset::get_asset(&app_state.pool, id)
+        .await?
+        .base;
     let (thumb_resource, content_type) = match (size, format) {
         (ThumbnailSize::Small, ThumbnailFormat::Avif) => {
-            (asset_base.thumb_small_square_avif, "image/jpeg")
+            (asset_base.thumb_small_square_avif, "image/avif")
         }
         (ThumbnailSize::Small, ThumbnailFormat::Webp) => {
             (asset_base.thumb_small_square_webp, "image/webp")
         }
         (ThumbnailSize::Large, ThumbnailFormat::Avif) => {
-            (asset_base.thumb_large_orig_avif, "image/jpeg")
+            (asset_base.thumb_large_orig_avif, "image/avif")
         }
         (ThumbnailSize::Large, ThumbnailFormat::Webp) => {
             (asset_base.thumb_large_orig_webp, "image/webp")

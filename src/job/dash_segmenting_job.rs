@@ -11,8 +11,8 @@ use crate::{
     },
     model::{
         repository::{self, pool::DbPool},
-        AssetId, AssetType, AudioRepresentation, AudioRepresentationId, Video, VideoRepresentation,
-        VideoRepresentationId,
+        AssetId, AssetType, AudioRepresentation, AudioRepresentationId, Video, VideoAsset,
+        VideoRepresentation, VideoRepresentationId,
     },
     processing::video::{
         dash_package::{shaka_package, RepresentationInput, RepresentationType},
@@ -96,16 +96,10 @@ impl DashSegmentingJob {
 
     #[instrument(skip(self))]
     async fn dash_package_asset(&self, asset_id: AssetId) -> Result<()> {
-        let asset_base = repository::asset::get_asset_base(&self.pool, asset_id)
+        let asset = repository::asset::get_asset(&self.pool, asset_id)
             .in_current_span()
             .await?;
-        if asset_base.ty != AssetType::Video {
-            bail!("not a video")
-        }
-        let video_info = repository::asset::get_video_info(&self.pool, asset_id)
-            .in_current_span()
-            .await
-            .wrap_err("no VideoInfo for asset")?;
+        let asset: VideoAsset = asset.try_into()?;
         let asset_path = repository::asset::get_asset_path_on_disk(&self.pool, asset_id)
             .await
             .unwrap();
@@ -121,7 +115,7 @@ impl DashSegmentingJob {
         //          | 1920x1080.mp4
         let video_out_dir = resource_dir
             .path_on_disk()
-            .join(format!("{}", video_info.codec_name));
+            .join(format!("{}", asset.video.codec_name));
         let video_out_filename = PathBuf::from("original.mp4");
         let video_out_path = video_out_dir.join(video_out_filename);
         let audio_out_dir = resource_dir.path_on_disk();
@@ -156,9 +150,9 @@ impl DashSegmentingJob {
         let video_representation = VideoRepresentation {
             id: VideoRepresentationId(0),
             asset_id,
-            codec_name: video_info.codec_name.clone(),
-            width: asset_base.size.width,
-            height: asset_base.size.height,
+            codec_name: asset.video.codec_name.clone(),
+            width: asset.base.size.width,
+            height: asset.base.size.height,
             bitrate: probe_result.bitrate,
             path_in_resource_dir: video_out_path,
         };
@@ -182,11 +176,14 @@ impl DashSegmentingJob {
         let _ =
             repository::representation::insert_audio_representation(&mut tx, audio_representation)
                 .await?;
-        let updated_video_info = Video {
-            dash_resource_dir: Some(resource_dir_id),
-            ..video_info
+        let updated_asset = VideoAsset {
+            video: Video {
+                dash_resource_dir: Some(resource_dir_id),
+                ..asset.video
+            },
+            base: asset.base,
         };
-        repository::asset::update_video_info(&mut tx, asset_id, &updated_video_info).await?;
+        repository::asset::update_asset(&mut tx, &updated_asset.into()).await?;
         tx.commit().await?;
         Ok(())
     }

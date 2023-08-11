@@ -19,6 +19,7 @@ CREATE TABLE ResourceFile (
 
 CREATE TABLE Asset (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  -- 1=Image, 2=Video
   ty INTEGER NOT NULL CHECK(ty IN (1, 2)),
   root_dir_id INTEGER NOT NULL,
   file_path TEXT NOT NULL UNIQUE,
@@ -31,7 +32,7 @@ CREATE TABLE Asset (
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
   -- rotation correction applied after exif/metadata rotation if that's still wrong
-  -- rotation_correction INTEGER,
+  rotation_correction INTEGER,
   thumb_small_square_avif INTEGER,
   thumb_small_square_webp INTEGER,
   thumb_large_orig_avif INTEGER,
@@ -40,25 +41,20 @@ CREATE TABLE Asset (
   thumb_small_square_height INTEGER,
   thumb_large_orig_width INTEGER,
   thumb_large_orig_height INTEGER,
+
+  -- columns for videos only
+  codec_name TEXT,
+  resource_dir_id INTEGER,
+
   FOREIGN KEY (thumb_small_square_avif) REFERENCES ResourceFile(id) ON DELETE SET NULL,
   FOREIGN KEY (thumb_small_square_webp) REFERENCES ResourceFile(id) ON DELETE SET NULL,
   FOREIGN KEY (thumb_large_orig_avif) REFERENCES ResourceFile(id) ON DELETE SET NULL,
   FOREIGN KEY (thumb_large_orig_webp) REFERENCES ResourceFile(id) ON DELETE SET NULL,
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(id) ON DELETE CASCADE,
+
+  FOREIGN KEY (resource_dir_id) REFERENCES ResourceFile(id) ON DELETE SET NULL,
+  CHECK(ty = 1 OR codec_name IS NOT NULL),
   CHECK(taken_date IS NOT NULL OR taken_date_local_fallback IS NOT NULL)
-);
-
-CREATE TABLE ImageInfo (
-  asset_id INTEGER PRIMARY KEY NOT NULL,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id) ON DELETE CASCADE
-);
-
-CREATE TABLE VideoInfo (
-  asset_id INTEGER PRIMARY KEY NOT NULL,
-  codec_name TEXT NOT NULL,
-  dash_resource_dir INTEGER,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id) ON DELETE CASCADE,
-  FOREIGN KEY (dash_resource_dir) REFERENCES ResourceFile(id) ON DELETE SET NULL
 );
 
 CREATE TABLE VideoRepresentation (

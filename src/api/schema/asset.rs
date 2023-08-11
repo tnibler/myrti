@@ -30,17 +30,17 @@ pub struct Asset {
     pub metadata: Option<AssetMetadata>,
 }
 
-impl From<model::AssetBase> for Asset {
-    fn from(value: model::AssetBase) -> Self {
+impl From<model::Asset> for Asset {
+    fn from(value: model::Asset) -> Self {
         Asset {
-            id: value.id.into(),
-            asset_root_id: value.root_dir_id.into(),
-            path_in_root: value.file_path,
-            ty: value.ty.into(),
-            width: value.size.width as i32,
-            height: value.size.height as i32,
-            added_at: value.added_at,
-            taken_date: match value.taken_date {
+            id: value.base.id.into(),
+            asset_root_id: value.base.root_dir_id.into(),
+            path_in_root: value.base.file_path,
+            ty: value.base.ty.into(),
+            width: value.base.size.width as i32,
+            height: value.base.size.height as i32,
+            added_at: value.base.added_at,
+            taken_date: match value.base.taken_date {
                 model::MediaTimestamp::Utc(utc) => utc,
                 model::MediaTimestamp::LocalFallback(local) => local.and_utc(),
             },

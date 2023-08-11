@@ -1,6 +1,6 @@
 use super::DbAssetType;
 use crate::model::{AssetId, AssetRootDirId, ResourceFileId};
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::NaiveDateTime;
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct DbAsset {
@@ -14,6 +14,7 @@ pub struct DbAsset {
     pub taken_date_local_fallback: Option<NaiveDateTime>,
     pub width: i64,
     pub height: i64,
+    pub rotation_correction: Option<i32>,
     pub thumb_small_square_avif: Option<ResourceFileId>,
     pub thumb_small_square_webp: Option<ResourceFileId>,
     pub thumb_large_orig_avif: Option<ResourceFileId>,
@@ -22,6 +23,8 @@ pub struct DbAsset {
     pub thumb_small_square_height: Option<i64>,
     pub thumb_large_orig_width: Option<i64>,
     pub thumb_large_orig_height: Option<i64>,
+    pub codec_name: Option<String>,
+    pub resource_dir_id: Option<ResourceFileId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

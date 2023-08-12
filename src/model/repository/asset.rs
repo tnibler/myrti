@@ -2,9 +2,9 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use color_eyre::eyre;
-use eyre::{Context, Result};
+use eyre::{eyre, Context, Result};
 use sqlx::{QueryBuilder, Sqlite, SqliteConnection};
-use tracing::{debug, instrument, Instrument};
+use tracing::{debug, error, instrument, Instrument};
 
 use crate::model::{
     Asset, AssetId, AssetPathOnDisk, AssetSpe, AssetThumbnails, AssetType, ResourceFileId,
@@ -244,14 +244,21 @@ WHERE id=?;
 
 #[instrument(skip(pool))]
 pub async fn insert_asset(pool: &DbPool, asset: &Asset) -> Result<AssetId> {
-    assert!(asset.base.id.0 == 0);
-    assert!(
-        asset.base.ty
-            == match asset.sp {
-                AssetSpe::Image(_) => AssetType::Image,
-                AssetSpe::Video(_) => AssetType::Video,
-            }
-    );
+    if asset.base.id.0 != 0 {
+        error!("attempting to insert Asset with non-zero id");
+        return Err(eyre!("attempting to insert Asset with non-zero id"));
+    }
+    if asset.base.ty
+        != match asset.sp {
+            AssetSpe::Image(_) => AssetType::Image,
+            AssetSpe::Video(_) => AssetType::Video,
+        }
+    {
+        error!("attempting to insert Asset with mismatching type and sp fields");
+        return Err(eyre!(
+            "attempting to insert Asset with mismatching type and sp fields"
+        ));
+    }
     let db_asset: DbAsset = asset.try_into()?;
     let result = sqlx::query!(
         "

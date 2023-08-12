@@ -2,34 +2,34 @@ use eyre::{eyre, Report};
 
 use super::{repository::db_entity::DbAsset, AssetBase, ResourceFileId};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Video {
     pub codec_name: String,
     pub dash_resource_dir: Option<ResourceFileId>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AssetSpe {
     Image(Image),
     Video(Video),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Asset {
     pub base: AssetBase,
     pub sp: AssetSpe,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VideoAsset {
     pub base: AssetBase,
     pub video: Video,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageAsset {
     pub base: AssetBase,
     pub image: Image,

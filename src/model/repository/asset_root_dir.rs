@@ -2,7 +2,7 @@ use std::path::Path;
 
 use super::db_entity::DbAssetRootDir;
 use super::pool::DbPool;
-use crate::model::{AssetRootDir, AssetRootDirId};
+use crate::model::{util::path_to_string, AssetRootDir, AssetRootDirId};
 use eyre::{eyre, Context, Result};
 
 pub async fn get_asset_root(pool: &DbPool, id: AssetRootDirId) -> Result<AssetRootDir> {
@@ -30,8 +30,7 @@ pub async fn insert_asset_root(
     pool: &DbPool,
     asset_root_dir: AssetRootDir,
 ) -> Result<AssetRootDirId> {
-    let canonical_path = asset_root_dir.path.canonicalize().unwrap();
-    let path = canonical_path.to_str().unwrap();
+    let path = path_to_string(&asset_root_dir.path)?;
     sqlx::query!(
         "INSERT INTO AssetRootDir (id, path) VALUES (null, ?);",
         path

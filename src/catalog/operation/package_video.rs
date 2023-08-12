@@ -1,6 +1,10 @@
+use eyre::{Report, Result};
+
 use crate::{
-    catalog::{encoding_target::EncodingTarget, ResourcePath},
-    model::AssetId,
+    catalog::{
+        encoding_target::EncodingTarget, PathInResourceDir, ResolvedResourcePath, ResourcePath,
+    },
+    model::{repository::pool::DbPool, AssetId},
 };
 
 /// Package video asset for DASH.
@@ -18,4 +22,22 @@ pub struct Transcode<P: ResourcePath> {
     pub target: EncodingTarget,
     /// output path where the final transcoded and shaka remuxed video file should be
     pub output: P,
+}
+
+pub async fn apply_package_video(
+    pool: &DbPool,
+    op: &PackageVideo<ResolvedResourcePath>,
+) -> Result<()> {
+    todo!()
+}
+
+pub struct PackageVideoSideEffectResult {
+    failed: Vec<(PackageVideo<PathInResourceDir>, Report)>,
+}
+
+pub async fn perform_side_effects_package_video(
+    pool: &DbPool,
+    op: &PackageVideo<ResolvedResourcePath>,
+) -> Result<PackageVideoSideEffectResult> {
+    todo!()
 }

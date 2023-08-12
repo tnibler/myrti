@@ -5,3 +5,5 @@ pub mod db_entity;
 pub mod pool;
 pub mod representation;
 pub mod resource_file;
+#[cfg(test)]
+mod test;

@@ -62,10 +62,7 @@ async fn db_setup() -> Result<SqlitePool> {
     //     Sqlite::create_database(db_url).await?;
     // }
 
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect(db_url)
-        .await?;
+    let pool = SqlitePool::connect(db_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     Ok(pool)
 }

@@ -10,7 +10,7 @@ use crate::{
     },
     model::{
         repository::{self, pool::DbPool},
-        AssetBase, AssetThumbnails, ThumbnailType, VideoAsset,
+        AssetThumbnails, ThumbnailType, VideoAsset,
     },
 };
 
@@ -52,23 +52,6 @@ pub async fn thumbnails_to_create(
 }
 
 pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo<PathInResourceDir>>> {
-    let acceptable_codecs = ["h264", "av1", "vp9"];
-    let acceptable_codecs_no_dash = repository::asset::get_videos_in_acceptable_codec_without_dash(
-        pool,
-        acceptable_codecs.into_iter(),
-    )
-    .await?;
-    if !acceptable_codecs_no_dash.is_empty() {
-        let mut ops: Vec<PackageVideo<PathInResourceDir>> = Vec::default();
-        return Ok(acceptable_codecs_no_dash
-            .into_iter()
-            .map(|asset| PackageVideo {
-                asset_id: asset.base.id,
-                mpd_output: PathInResourceDir(PathBuf::from("stream.mpd")),
-                transcode: None,
-            })
-            .collect());
-    }
     // priority:
     //  - videos with original in acceptable codec and no DASH packaged
     //  - videos with no representation in acceptable codec
@@ -78,6 +61,26 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo<PathI
     // Later, set a flag if all required transcoding has been done
     // and clear the flag when the config (quality ladder, acceptable codecs)
     // change and recheck
+    //
+    // If we have a lot of video at the same time (e.g. initial index), we might not want to do this
+    // if disk space is limited and prefer transcoding to a more efficient codec first.
+    let acceptable_codecs = ["h264", "av1", "vp9"];
+    let acceptable_codecs_no_dash = repository::asset::get_videos_in_acceptable_codec_without_dash(
+        pool,
+        acceptable_codecs.into_iter(),
+    )
+    .await?;
+    if !acceptable_codecs_no_dash.is_empty() {
+        return Ok(acceptable_codecs_no_dash
+            .into_iter()
+            .map(|asset| PackageVideo {
+                asset_id: asset.base.id,
+                mpd_output: PathInResourceDir(PathBuf::from("stream.mpd")),
+                transcode: None,
+            })
+            .collect());
+    }
+
     let no_good_reprs: Vec<VideoAsset> =
         repository::asset::get_video_assets_with_no_acceptable_repr(
             pool,

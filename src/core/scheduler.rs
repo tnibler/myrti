@@ -6,7 +6,7 @@ use super::{
     DataDirManager,
 };
 use crate::{
-    catalog::rules,
+    catalog::{operation::package_video::PackageVideo, rules},
     core::job::JobType,
     eyre::Result,
     job::{
@@ -149,6 +149,8 @@ impl SchedulerImpl {
     }
 
     async fn dash_package_if_required(&self) {
+        let videos_to_package: Vec<PackageVideo<_>> =
+            rules::video_packaging_due(&self.pool).await.unwrap();
         let videos_without_dash = repository::asset::get_video_assets_without_dash(&self.pool)
             .await
             .unwrap();

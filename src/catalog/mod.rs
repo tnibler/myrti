@@ -45,30 +45,31 @@ use self::operation::package_video::PackageVideo;
 pub enum Operation<P: ResourcePath> {
     CreateThumbnail(Vec<CreateThumbnail<P>>),
     PackageVideo(Vec<PackageVideo<P>>),
+    // TranscodeVideo(Vec<>)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedResourcePath {
     Existing(ResolvedExistingResourcePath),
     New(ResolvedNewResourcePath),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PathInResourceDir(pub PathBuf);
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedExistingResourcePath {
     pub resource_dir_id: ResourceFileId,
     pub path_in_resource_dir: PathBuf,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedNewResourcePath {
     pub data_dir_id: DataDirId,
     pub path_in_data_dir: PathBuf,
 }
 
-pub trait ResourcePath {}
+pub trait ResourcePath: Eq {}
 
 impl ResourcePath for ResolvedResourcePath {}
 impl ResourcePath for PathInResourceDir {}

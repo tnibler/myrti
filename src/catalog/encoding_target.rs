@@ -1,15 +1,15 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncodingTarget {
     pub codec: CodecTarget,
     pub scale: Option<Scale>,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CodecTarget {
     AVC(avc::AVCTarget),
     AV1(av1::AV1Target),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scale {
     HeightKeepAspect { height: u32 },
     WidthKeepAspect { width: u32 },
@@ -20,7 +20,7 @@ pub mod avc {
 
     use eyre::{eyre, Report};
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct AVCTarget {
         pub preset: Preset,
         pub tune: Option<Tune>,
@@ -28,7 +28,7 @@ pub mod avc {
         pub max_bitrate: Option<u32>,
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Preset {
         Ultrafast,
         Superfast,
@@ -41,7 +41,7 @@ pub mod avc {
         Veryslow,
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Tune {
         Film,
         Animation,
@@ -56,7 +56,7 @@ pub mod avc {
     /// A lower value generally leads to higher quality, and a subjectively sane range is 17–28.
     /// Consider 17 or 18 to be visually lossless or nearly so; it should look the same or nearly the same as the input but it isn't technically lossless.
     /// The range is exponential, so increasing the CRF value +6 results in roughly half the bitrate / file size, while -6 leads to roughly twice the bitrate.
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Crf {
         crf: i32,
     }
@@ -132,7 +132,7 @@ pub mod av1 {
     use eyre::{eyre, Report};
 
     /// For libsvtav1 only
-    #[derive(Debug, Clone)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct AV1Target {
         pub crf: Crf,
         pub fast_decode: Option<FastDecode>,
@@ -143,7 +143,7 @@ pub mod av1 {
     /// https://trac.ffmpeg.org/wiki/Encode/AV1#CRF
     /// The valid CRF value range is 0-63, with the default being 50.
     /// Lower values correspond to higher quality and greater file size.
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Crf {
         crf: i32,
     }
@@ -152,12 +152,12 @@ pub mod av1 {
     /// Since SVT-AV1 0.9.0, supported presets range from 0 to 13, with higher numbers providing a higher encoding speed.
     /// Note that preset 13 is only meant for debugging and running fast convex-hull encoding.
     /// In versions prior to 0.9.0, valid presets are 0 to 8.
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Preset {
         preset: i32,
     }
 
-    #[derive(Debug, Clone, Copy)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct FastDecode {
         fast_decode: i32,
     }
@@ -219,7 +219,7 @@ pub mod av1 {
 }
 
 /// name used by ffmpeg
-pub fn codec_name(target: CodecTarget) -> String {
+pub fn codec_name(target: &CodecTarget) -> String {
     match target {
         CodecTarget::AVC(_) => "h264",
         CodecTarget::AV1(_) => "av1",

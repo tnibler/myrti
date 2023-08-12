@@ -9,9 +9,9 @@ use tracing::{debug, instrument};
 pub struct VideoProbeResult {
     pub codec_name: String,
     pub duration_seconds: f32,
-    pub width: i32,
-    pub height: i32,
-    pub bitrate: i32,
+    pub width: i64,
+    pub height: i64,
+    pub bitrate: i64,
     pub rotation: Option<i32>,
 }
 

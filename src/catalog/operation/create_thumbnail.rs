@@ -19,6 +19,8 @@ use crate::{
     },
 };
 
+use super::resource_path_on_disk;
+
 #[derive(Debug, Clone)]
 pub struct CreateThumbnail<P: ResourcePath> {
     pub asset_id: AssetId,
@@ -181,29 +183,4 @@ async fn create_thumbnail_from_image(
     rx.in_current_span()
         .await
         .wrap_err("thumbnail task died or something")?
-}
-
-#[instrument(skip(pool))]
-async fn resource_path_on_disk(
-    pool: &DbPool,
-    resolved_resource_path: &ResolvedResourcePath,
-) -> Result<PathBuf> {
-    match resolved_resource_path {
-        ResolvedResourcePath::Existing(ResolvedExistingResourcePath {
-            resource_dir_id,
-            path_in_resource_dir,
-        }) => {
-            let resource_dir_path =
-                repository::resource_file::get_resource_file_resolved(pool, *resource_dir_id)
-                    .await?;
-            Ok(resource_dir_path.path_on_disk().join(path_in_resource_dir))
-        }
-        ResolvedResourcePath::New(ResolvedNewResourcePath {
-            data_dir_id,
-            path_in_data_dir,
-        }) => {
-            let data_dir_path = repository::data_dir::get_data_dir(pool, *data_dir_id).await?;
-            Ok(data_dir_path.path.join(path_in_data_dir))
-        }
-    }
 }

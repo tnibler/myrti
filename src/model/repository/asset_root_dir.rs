@@ -42,8 +42,7 @@ pub async fn insert_asset_root(
 }
 
 pub async fn get_asset_root_with_path(pool: &DbPool, path: &Path) -> Result<Option<AssetRootDir>> {
-    // TODO handle errors or better dont canonicalize
-    let path = path.canonicalize().unwrap().to_str().unwrap().to_string();
+    let path = path_to_string(path)?;
     sqlx::query_as!(
         DbAssetRootDir,
         "SELECT * FROM AssetRootDir WHERE path=?",

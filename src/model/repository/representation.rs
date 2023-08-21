@@ -1,11 +1,67 @@
 use crate::model::{
     repository::db_entity::{DbAudioRepresentation, DbVideoRepresentation},
-    AudioRepresentation, AudioRepresentationId, VideoRepresentation, VideoRepresentationId,
+    AssetId, AudioRepresentation, AudioRepresentationId, VideoRepresentation,
+    VideoRepresentationId,
 };
 
 use eyre::{Context, Result};
 use sqlx::SqliteConnection;
 use tracing::instrument;
+
+use super::pool::DbPool;
+
+#[instrument(skip(pool))]
+pub async fn get_video_representations(
+    pool: &DbPool,
+    asset_id: AssetId,
+) -> Result<Vec<VideoRepresentation>> {
+    sqlx::query_as!(
+        DbVideoRepresentation,
+        r#"
+SELECT
+id,
+asset_id,
+codec_name,
+width,
+height,
+bitrate,
+path
+FROM VideoRepresentation 
+WHERE asset_id=?;
+    "#,
+        asset_id
+    )
+    .fetch_all(pool)
+    .await
+    .wrap_err("could not query table VideoRepresentation")?
+    .into_iter()
+    .map(|r| r.try_into())
+    .collect::<Result<Vec<_>>>()
+}
+
+#[instrument(skip(pool))]
+pub async fn get_audio_representation(
+    pool: &DbPool,
+    asset_id: AssetId,
+) -> Result<Option<AudioRepresentation>> {
+    sqlx::query_as!(
+        DbAudioRepresentation,
+        r#"
+SELECT
+id,
+asset_id,
+path
+FROM AudioRepresentation 
+WHERE asset_id=?;
+    "#,
+        asset_id
+    )
+    .fetch_optional(pool)
+    .await
+    .wrap_err("could not query table AudioRepresentation")?
+    .map(|r| r.try_into())
+    .transpose()
+}
 
 #[instrument(skip(conn))]
 pub async fn insert_video_representation(

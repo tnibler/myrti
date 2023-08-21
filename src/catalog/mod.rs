@@ -17,33 +17,12 @@ pub mod encoding_target;
 pub mod operation;
 pub mod rules;
 
-use std::path::PathBuf;
-
-use crate::model::DataDirId;
-
 use self::operation::create_thumbnail::CreateThumbnail;
 use self::operation::package_video::PackageVideo;
 
 /// An operation that alters the catalog state
-///
-/// Generic over the type of resource path it refers to,
-/// because the rules determining operations to perform are not concerned with
-/// where the resulting file resources are actually stored.
-/// Resource files/directories may be located in any data directory,
-/// so rules emit Operations with paths relative to an unspecified resource directory.
-///
-/// When applying and especially running the side effects of an Operation,
-/// these relative paths are resolved to be relative to a specific resource directory (with an
-/// actual path on disk).
-/// For example, for the PackageVideo operation, the transcoding output path
-/// will be resolved relative to the video asset's dash_resource_dir column.
-/// This resolved path may be in an already existing resource directory
-/// or a newly created one, which have to be handled separately
-/// (when creating a new resource file/directory, inserting it and then altering
-/// an asset record to point to it must be done in the same transaction).
 #[derive(Debug, Clone)]
 pub enum Operation {
     CreateThumbnail(Vec<CreateThumbnail>),
     PackageVideo(Vec<PackageVideo>),
-    // TranscodeVideo(Vec<>)
 }

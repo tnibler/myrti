@@ -6,7 +6,7 @@ use super::{
     AssetId, AudioRepresentationId, VideoRepresentationId,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VideoRepresentation {
     pub id: VideoRepresentationId,
     pub asset_id: AssetId,
@@ -17,7 +17,7 @@ pub struct VideoRepresentation {
     pub path: PathBuf,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioRepresentation {
     pub id: AudioRepresentationId,
     pub asset_id: AssetId,

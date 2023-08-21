@@ -40,6 +40,7 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 codec_name,
+bitrate,
 resource_dir
 FROM Asset
 WHERE id=?;
@@ -113,6 +114,7 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 codec_name,
+bitrate,
 resource_dir
 FROM Asset;
     "#
@@ -210,6 +212,7 @@ thumb_small_square_height=?,
 thumb_large_orig_width=?,
 thumb_large_orig_height=?,
 codec_name=?,
+bitrate=?,
 resource_dir=?
 WHERE id=?;
 ",
@@ -232,6 +235,7 @@ WHERE id=?;
         db_asset.thumb_large_orig_width,
         db_asset.thumb_large_orig_height,
         db_asset.codec_name,
+        db_asset.bitrate,
         db_asset.resource_dir,
         asset.base.id.0
     )
@@ -283,10 +287,11 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 codec_name,
+bitrate,
 resource_dir
 )
 VALUES
-(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 ",
         db_asset.ty,
         db_asset.root_dir_id.0,
@@ -307,6 +312,7 @@ VALUES
         db_asset.thumb_large_orig_width,
         db_asset.thumb_large_orig_height,
         db_asset.codec_name,
+        db_asset.bitrate,
         db_asset.resource_dir
     )
     .execute(pool)
@@ -395,6 +401,7 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 codec_name,
+bitrate,
 resource_dir
 FROM Asset 
 WHERE
@@ -443,6 +450,7 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 codec_name,
+bitrate,
 resource_dir
 FROM Asset 
 WHERE
@@ -507,6 +515,7 @@ Asset.thumb_small_square_height as thumb_small_square_height,
 Asset.thumb_large_orig_width as thumb_large_orig_width,
 Asset.thumb_large_orig_height as thumb_large_orig_height,
 Asset.codec_name as codec_name,
+Asset.bitrate as bitrate,
 Asset.resource_dir as resource_dir
 FROM Asset
 WHERE Asset.ty = "#,
@@ -543,31 +552,36 @@ pub async fn get_videos_in_acceptable_codec_without_dash(
         r#"
 SELECT 
 id,
-ty as "ty: _",
+ty,
 root_dir_id,
 file_path,
 hash,
 added_at,
-taken_date as "taken_date: _",
-taken_date_local_fallback as "taken_date_local_fallback: _",
+taken_date,
+taken_date_local_fallback,
 width,
 height,
-rotation_correction as "rotation_correction: _",
-thumb_small_square_avif as "thumb_small_square_avif: _",
-thumb_small_square_webp as "thumb_small_square_webp: _",
-thumb_large_orig_avif as "thumb_large_orig_avif: _",
-thumb_large_orig_webp as "thumb_large_orig_webp: _",
+rotation_correction ,
+thumb_small_square_avif ,
+thumb_small_square_webp ,
+thumb_large_orig_avif ,
+thumb_large_orig_webp ,
 thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 codec_name,
+bitrate,
 resource_dir
 FROM Asset 
 WHERE resource_dir IS NULL
-AND ty = ?
+AND Asset.ty ="#,
+    );
+    query_builder.push_bind(DbAssetType::Video);
+    query_builder.push(
+        r#"
 AND codec_name IN
-        "#,
+    "#,
     );
     query_builder.push_tuples(acceptable_codecs, |mut b, s| {
         b.push_bind(s);

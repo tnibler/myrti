@@ -37,11 +37,15 @@ CREATE TABLE Asset (
 
   -- columns for videos only
   codec_name TEXT,
+  bitrate INTEGER,
   resource_dir TEXT,
 
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(id) ON DELETE CASCADE,
 
-  CHECK(ty = 1 OR codec_name IS NOT NULL),
+  CHECK(ty = 1 OR (
+      codec_name IS NOT NULL AND
+      bitrate IS NOT NULL
+  )),
   CHECK(taken_date IS NOT NULL OR taken_date_local_fallback IS NOT NULL)
 );
 

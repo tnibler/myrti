@@ -10,6 +10,7 @@ pub struct Image {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Video {
     pub codec_name: String,
+    pub bitrate: i64,
     pub dash_resource_dir: Option<PathBuf>,
 }
 

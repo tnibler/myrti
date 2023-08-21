@@ -10,7 +10,7 @@ use crate::{
     core::job::JobType,
     eyre::Result,
     job::{
-        dash_segmenting_job::{DashSegmentingJob, DashSegmentingJobParams, VideoProcessingTask},
+        dash_segmenting_job::{DashSegmentingJob, DashSegmentingJobParams},
         indexing_job::{IndexingJob, IndexingJobParams},
         thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
     },
@@ -130,39 +130,34 @@ impl SchedulerImpl {
 
     async fn thumbnail_if_required(&self) {
         let thumbnails_to_create = rules::thumbnails_to_create(&self.pool).await.unwrap();
-        let params = ThumbnailJobParams {
-            thumbnails: thumbnails_to_create,
-        };
-        let job = ThumbnailJob::new(
-            params.clone(),
-            self.data_dir_manager.clone(),
-            self.pool.clone(),
-        );
-        let handle = job.start();
-        self.monitor_tx
-            .send(MonitorMessage::AddJob {
-                handle,
-                ty: JobType::Thumbnail { params },
-            })
-            .await
-            .unwrap();
+        if !thumbnails_to_create.is_empty() {
+            let params = ThumbnailJobParams {
+                thumbnails: thumbnails_to_create,
+            };
+            let job = ThumbnailJob::new(
+                params.clone(),
+                self.data_dir_manager.clone(),
+                self.pool.clone(),
+            );
+            let handle = job.start();
+            self.monitor_tx
+                .send(MonitorMessage::AddJob {
+                    handle,
+                    ty: JobType::Thumbnail { params },
+                })
+                .await
+                .unwrap();
+        }
     }
 
     async fn dash_package_if_required(&self) {
         let videos_to_package: Vec<PackageVideo> =
             rules::video_packaging_due(&self.pool).await.unwrap();
-        let videos_without_dash = repository::asset::get_video_assets_without_dash(&self.pool)
-            .await
-            .unwrap();
-        debug!(?videos_without_dash);
-        if !videos_without_dash.is_empty() {
-            let tasks: Vec<VideoProcessingTask> = videos_without_dash
-                .iter()
-                .map(|asset| VideoProcessingTask::DashPackageOnly {
-                    asset_id: asset.base.id,
-                })
-                .collect();
-            let params = DashSegmentingJobParams { tasks };
+        debug!(?videos_to_package);
+        if !videos_to_package.is_empty() {
+            let params = DashSegmentingJobParams {
+                tasks: videos_to_package,
+            };
             let job = DashSegmentingJob::new(
                 params.clone(),
                 self.data_dir_manager.clone(),

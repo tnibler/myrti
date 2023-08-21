@@ -66,6 +66,7 @@ async fn index_file(
                 .wrap_err(format!("file has mimetype {}, but ffprobe failed", mime))?;
             let video_info = AssetSpe::Video(Video {
                 codec_name: probe.codec_name,
+                bitrate: probe.bitrate,
                 dash_resource_dir: None,
             });
             (AssetType::Video, video_info)

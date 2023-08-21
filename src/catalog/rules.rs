@@ -6,7 +6,7 @@ use tracing::instrument;
 use crate::{
     catalog::{
         encoding_target::{CodecTarget, EncodingTarget},
-        operation::package_video::Transcode,
+        operation::package_video::{CreateAudioRepr, CreateVideoRepr, Transcode},
     },
     model::{
         repository::{self, pool::DbPool},
@@ -56,6 +56,7 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
     //
     // If we have a lot of video at the same time (e.g. initial index), we might not want to do this
     // if disk space is limited and prefer transcoding to a more efficient codec first.
+
     let acceptable_codecs = ["h264", "av1", "vp9"];
     let acceptable_codecs_no_dash = repository::asset::get_videos_in_acceptable_codec_without_dash(
         pool,
@@ -65,13 +66,27 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
     if !acceptable_codecs_no_dash.is_empty() {
         return Ok(acceptable_codecs_no_dash
             .into_iter()
-            .map(|asset| PackageVideo {
-                asset_id: asset.base.id,
-                mpd_output: PathBuf::from("stream.mpd"),
-                transcode: None,
+            .map(|asset| {
+                let video_out_path = PathBuf::from(asset.video.codec_name).join(format!(
+                    "{}x{}.mp4",
+                    asset.base.size.width, asset.base.size.height
+                ));
+                // if there is no dash resource directory then there can not already be an audio
+                // representation
+                let create_audio_repr = CreateAudioRepr::CreateNew(PathBuf::from("audio.mp4"));
+                // likewise for video representations
+                let existing_video_reprs = Vec::default();
+                PackageVideo {
+                    asset_id: asset.base.id,
+                    create_video_repr: CreateVideoRepr::PackageOriginalFile(video_out_path),
+                    create_audio_repr,
+                    existing_video_reprs,
+                    mpd_output: PathBuf::from("stream.mpd"),
+                }
             })
             .collect());
     }
+    return Ok(vec![]);
 
     let no_good_reprs: Vec<VideoAsset> =
         repository::asset::get_video_assets_with_no_acceptable_repr(
@@ -80,28 +95,28 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
         )
         .await
         .unwrap();
-    if !no_good_reprs.is_empty() {
-        use crate::catalog::encoding_target::av1;
-        return Ok(no_good_reprs
-            .into_iter()
-            .map(|asset| PackageVideo {
-                asset_id: asset.base.id,
-                mpd_output: PathBuf::from("stream.mpd"),
-                transcode: Some(Transcode {
-                    target: EncodingTarget {
-                        codec: CodecTarget::AV1(av1::AV1Target {
-                            crf: av1::Crf::default(),
-                            fast_decode: None,
-                            preset: None,
-                            max_bitrate: None,
-                        }),
-                        scale: None,
-                    },
-                    output: PathBuf::from("av1/original.mp4"),
-                }),
-            })
-            .collect());
-    }
+    // if !no_good_reprs.is_empty() {
+    //     use crate::catalog::encoding_target::av1;
+    //     return Ok(no_good_reprs
+    //         .into_iter()
+    //         .map(|asset| PackageVideoOld {
+    //             asset_id: asset.base.id,
+    //             mpd_output: PathBuf::from("stream.mpd"),
+    //             transcode: Some(Transcode {
+    //                 target: EncodingTarget {
+    //                     codec: CodecTarget::AV1(av1::AV1Target {
+    //                         crf: av1::Crf::default(),
+    //                         fast_decode: None,
+    //                         preset: None,
+    //                         max_bitrate: None,
+    //                     }),
+    //                     scale: None,
+    //                 },
+    //                 output: PathBuf::from("av1/original.mp4"),
+    //             }),
+    //         })
+    //         .collect());
+    // }
     // transcode no_good_reprs into target codec first
     // we want DashPackagingJob to either only package, or transcode and then package
     // by adding an Option<EncodingTarget> to every param

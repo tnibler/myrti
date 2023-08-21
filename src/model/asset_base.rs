@@ -90,6 +90,7 @@ impl TryFrom<&Asset> for DbAsset {
             thumb_large_orig_width: value.base.thumb_large_orig_size.as_ref().map(|s| s.width),
             thumb_large_orig_height: value.base.thumb_large_orig_size.as_ref().map(|s| s.height),
             codec_name: video.map(|v| v.codec_name.clone()),
+            bitrate: video.map(|v| v.bitrate),
             resource_dir: video
                 .map(|v| v.dash_resource_dir.as_ref().map(|p| path_to_string(p)))
                 .flatten()
@@ -124,6 +125,9 @@ impl TryFrom<&DbAsset> for Asset {
                     .codec_name
                     .clone()
                     .ok_or(eyre!("video DbAsset must have codec_name set"))?,
+                bitrate: value
+                    .bitrate
+                    .ok_or(eyre!("video DbAsset must have bitrate set"))?,
                 dash_resource_dir: value.resource_dir.as_ref().map(|p| PathBuf::from(p)),
             }),
         };

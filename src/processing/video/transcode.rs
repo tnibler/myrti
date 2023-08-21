@@ -85,7 +85,7 @@ pub fn ffmpeg_command(input: &Path, output: &Path, target: &EncodingTarget) -> C
 
 #[test]
 fn ffmpeg_avc_command_assembled_correctly() {
-    use avc::*;
+    use crate::catalog::encoding_target::avc::*;
     let input = PathBuf::from("/path/to/input.mp4");
     let output = PathBuf::from("out.mp4");
     let codec = CodecTarget::AVC(AVCTarget {
@@ -95,7 +95,7 @@ fn ffmpeg_avc_command_assembled_correctly() {
         max_bitrate: Some(10_000_000),
     });
     let scale = Some(Scale::WidthKeepAspect { width: 1280 });
-    let command = ffmpeg_command(&input, &output, EncodingTarget { codec, scale });
+    let command = ffmpeg_command(&input, &output, &EncodingTarget { codec, scale });
     let expected = "ffmpeg -i /path/to/input.mp4 -c:v libx264 -crf 24 -preset medium -tune zerolatency -maxrate 10000000 -vf scale=1280:-2 out.mp4";
     let actual = format!("{:?}", command.as_std()).replace("\"", "");
     assert_eq!(expected, actual);
@@ -103,7 +103,7 @@ fn ffmpeg_avc_command_assembled_correctly() {
 
 #[test]
 fn ffmpeg_av1_command_assembled_correctly() {
-    use av1::*;
+    use crate::catalog::encoding_target::av1::*;
     let input = PathBuf::from("/path/to/input.mp4");
     let output = PathBuf::from("out.mp4");
     let codec = CodecTarget::AV1(AV1Target {
@@ -113,7 +113,7 @@ fn ffmpeg_av1_command_assembled_correctly() {
         fast_decode: Some(FastDecode::try_from(1).unwrap()),
     });
     let scale: Option<Scale> = Some(Scale::HeightKeepAspect { height: 500 });
-    let command = ffmpeg_command(&input, &output, EncodingTarget { codec, scale });
+    let command = ffmpeg_command(&input, &output, &EncodingTarget { codec, scale });
     let expected = "ffmpeg -i /path/to/input.mp4 -c:v libsvtav1 -crf 45 -preset 8 -maxrate 4000000 -svtav1-params fast-decode=1 -vf scale=-2:500 out.mp4";
     let actual = format!("{:?}", command.as_std()).replace("\"", "");
     assert_eq!(expected, actual);

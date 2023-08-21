@@ -4,21 +4,18 @@ use async_trait::async_trait;
 use eyre::{Context, Report, Result};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, instrument, Instrument};
+use tracing::{error, info, instrument};
 
 use crate::{
-    catalog::{
-        operation::create_thumbnail::{
-            apply_create_thumbnail, perform_side_effects_create_thumbnail, CreateThumbnail,
-            ThumbnailToCreate,
-        },
-        PathInResourceDir, ResolvedNewResourcePath, ResolvedResourcePath,
+    catalog::operation::create_thumbnail::{
+        apply_create_thumbnail, perform_side_effects_create_thumbnail, CreateThumbnail,
+        CreateThumbnailWithPaths, ThumbnailToCreate, ThumbnailToCreateWithPaths,
     },
     core::{
         job::{Job, JobHandle, JobProgress, JobResultType},
         DataDirManager,
     },
-    model::repository::pool::DbPool,
+    model::{repository::pool::DbPool, ThumbnailType},
 };
 
 pub struct ThumbnailJob {
@@ -29,12 +26,12 @@ pub struct ThumbnailJob {
 
 #[derive(Debug, Clone)]
 pub struct ThumbnailJobParams {
-    pub thumbnails: Vec<CreateThumbnail<PathInResourceDir>>,
+    pub thumbnails: Vec<CreateThumbnail>,
 }
 
 #[derive(Debug)]
 pub struct FailedThumbnail {
-    pub thumbnail: CreateThumbnail<PathInResourceDir>,
+    pub thumbnail: CreateThumbnail,
     pub err: Report,
 }
 
@@ -71,64 +68,75 @@ impl ThumbnailJob {
             .await
             .unwrap();
         let mut failed: Vec<FailedThumbnail> = Vec::default();
-        for op in self.params.thumbnails {
-            let thumbs_resolved = match resolve(&op.thumbnails, &self.data_dir_manager).await {
+        for op in &self.params.thumbnails {
+            let op_resolved = match resolve(&op, &self.data_dir_manager).await {
                 Ok(t) => t,
                 Err(err) => {
-                    failed.push(FailedThumbnail { thumbnail: op, err });
+                    failed.push(FailedThumbnail {
+                        thumbnail: op.clone(),
+                        err,
+                    });
                     continue;
                 }
-            };
-            let op_resolved = CreateThumbnail {
-                asset_id: op.asset_id,
-                thumbnails: thumbs_resolved,
             };
             let side_effect_results =
                 perform_side_effects_create_thumbnail(&self.pool, &op_resolved)
                     .await
                     .unwrap();
-            // TODO fill failed with side effect errors
-            apply_create_thumbnail(&self.pool, &op_resolved)
-                .await
-                .unwrap();
-            // TODO fill failed with side apply errors
+            // if one thumbnail of op fails we discard the whole thing for now
+            if !side_effect_results.failed.is_empty() {
+                for (_thumbnail, report) in side_effect_results.failed {
+                    failed.push(FailedThumbnail {
+                        thumbnail: op.clone(),
+                        err: report,
+                    });
+                }
+                continue;
+            }
+            let apply_result = apply_create_thumbnail(&self.pool, &op_resolved).await;
+            if let Err(err) = apply_result {
+                failed.push(FailedThumbnail {
+                    thumbnail: op.clone(),
+                    err,
+                });
+                continue;
+            }
         }
         return Ok(ThumbnailJobResult { failed });
 
         async fn resolve(
-            thumbs: &[ThumbnailToCreate<PathInResourceDir>],
+            op: &CreateThumbnail,
             data_dir_manager: &DataDirManager,
-        ) -> Result<Vec<ThumbnailToCreate<ResolvedResourcePath>>> {
-            let mut thumbnails_to_create: Vec<ThumbnailToCreate<ResolvedResourcePath>> =
-                Vec::default();
-            for thumb in thumbs {
-                let avif_file = data_dir_manager
-                    .new_thumbnail_file(&thumb.avif_file.0)
+        ) -> Result<CreateThumbnailWithPaths> {
+            let mut thumbnails_to_create: Vec<ThumbnailToCreateWithPaths> = Vec::default();
+            for thumb in &op.thumbnails {
+                let stem = match thumb.ty {
+                    ThumbnailType::SmallSquare => {
+                        format!("{}_sm", op.asset_id.0)
+                    }
+                    ThumbnailType::LargeOrigAspect => {
+                        format!("{}", op.asset_id.0)
+                    }
+                };
+                let avif_path = data_dir_manager
+                    .new_thumbnail_file(&PathBuf::from(format!("{}.avif", &stem)))
                     .await
                     .wrap_err("could not create new thumbnail resource file")?;
-                let avif_path: ResolvedResourcePath =
-                    ResolvedResourcePath::New(ResolvedNewResourcePath {
-                        data_dir_id: avif_file.data_dir_id,
-                        path_in_data_dir: avif_file.path_in_data_dir,
-                    });
-                let webp_file = data_dir_manager
-                    .new_thumbnail_file(&thumb.webp_file.0)
+                let webp_path = data_dir_manager
+                    .new_thumbnail_file(&PathBuf::from(format!("{}.webp", &stem)))
                     .await
                     .wrap_err("could not create new thumbnail resource file")?;
-                let webp_path: ResolvedResourcePath =
-                    ResolvedResourcePath::New(ResolvedNewResourcePath {
-                        data_dir_id: webp_file.data_dir_id,
-                        path_in_data_dir: webp_file.path_in_data_dir,
-                    });
-                let thumbnail_to_create: ThumbnailToCreate<ResolvedResourcePath> =
-                    ThumbnailToCreate {
-                        ty: thumb.ty,
-                        webp_file: webp_path,
-                        avif_file: avif_path,
-                    };
+                let thumbnail_to_create = ThumbnailToCreateWithPaths {
+                    ty: thumb.ty,
+                    webp_path,
+                    avif_path,
+                };
                 thumbnails_to_create.push(thumbnail_to_create);
             }
-            Ok(thumbnails_to_create)
+            Ok(CreateThumbnailWithPaths {
+                asset_id: op.asset_id,
+                thumbnails: thumbnails_to_create,
+            })
         }
     }
 }

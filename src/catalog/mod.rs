@@ -19,7 +19,7 @@ pub mod rules;
 
 use std::path::PathBuf;
 
-use crate::model::{DataDirId, ResourceFileId};
+use crate::model::DataDirId;
 
 use self::operation::create_thumbnail::CreateThumbnail;
 use self::operation::package_video::PackageVideo;
@@ -42,40 +42,8 @@ use self::operation::package_video::PackageVideo;
 /// (when creating a new resource file/directory, inserting it and then altering
 /// an asset record to point to it must be done in the same transaction).
 #[derive(Debug, Clone)]
-pub enum Operation<P: ResourcePath> {
-    CreateThumbnail(Vec<CreateThumbnail<P>>),
-    PackageVideo(Vec<PackageVideo<P>>),
+pub enum Operation {
+    CreateThumbnail(Vec<CreateThumbnail>),
+    PackageVideo(Vec<PackageVideo>),
     // TranscodeVideo(Vec<>)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ResolvedResourcePath {
-    Existing(ResolvedExistingResourcePath),
-    New(ResolvedNewResourcePath),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PathInResourceDir(pub PathBuf);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedExistingResourcePath {
-    pub resource_dir_id: ResourceFileId,
-    pub path_in_resource_dir: PathBuf,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedNewResourcePath {
-    pub data_dir_id: DataDirId,
-    pub path_in_data_dir: PathBuf,
-}
-
-pub trait ResourcePath: Eq {}
-
-impl ResourcePath for ResolvedResourcePath {}
-impl ResourcePath for PathInResourceDir {}
-
-impl From<PathBuf> for PathInResourceDir {
-    fn from(value: PathBuf) -> Self {
-        Self(value)
-    }
 }

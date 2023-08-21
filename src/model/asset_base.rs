@@ -5,8 +5,8 @@ use std::path::PathBuf;
 
 use super::{
     repository::db_entity::{DbAsset, DbAssetType},
-    util::path_to_string,
-    Asset, AssetId, AssetRootDirId, AssetSpe, AssetType, Image, ResourceFileId, Video,
+    util::{opt_path_to_string, path_to_string},
+    Asset, AssetId, AssetRootDirId, AssetSpe, AssetType, Image, Video,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,10 +26,10 @@ pub struct AssetBase {
     pub rotation_correction: Option<i32>,
     /// Seahash of the file, if already computed
     pub hash: Option<Vec<u8>>,
-    pub thumb_small_square_avif: Option<ResourceFileId>,
-    pub thumb_small_square_webp: Option<ResourceFileId>,
-    pub thumb_large_orig_avif: Option<ResourceFileId>,
-    pub thumb_large_orig_webp: Option<ResourceFileId>,
+    pub thumb_small_square_avif: Option<PathBuf>,
+    pub thumb_small_square_webp: Option<PathBuf>,
+    pub thumb_large_orig_avif: Option<PathBuf>,
+    pub thumb_large_orig_webp: Option<PathBuf>,
     pub thumb_small_square_size: Option<Size>,
     pub thumb_large_orig_size: Option<Size>,
 }
@@ -46,7 +46,7 @@ pub enum MediaTimestamp {
     LocalFallback(NaiveDateTime),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThumbnailType {
     SmallSquare,
     LargeOrigAspect,
@@ -77,10 +77,10 @@ impl TryFrom<&Asset> for DbAsset {
             width: value.base.size.width,
             height: value.base.size.height,
             rotation_correction: value.base.rotation_correction,
-            thumb_small_square_avif: value.base.thumb_small_square_avif,
-            thumb_small_square_webp: value.base.thumb_small_square_webp,
-            thumb_large_orig_avif: value.base.thumb_large_orig_avif,
-            thumb_large_orig_webp: value.base.thumb_large_orig_webp,
+            thumb_small_square_avif: opt_path_to_string(&value.base.thumb_small_square_avif)?,
+            thumb_small_square_webp: opt_path_to_string(&value.base.thumb_small_square_webp)?,
+            thumb_large_orig_avif: opt_path_to_string(&value.base.thumb_large_orig_avif)?,
+            thumb_large_orig_webp: opt_path_to_string(&value.base.thumb_large_orig_webp)?,
             thumb_small_square_width: value.base.thumb_small_square_size.as_ref().map(|s| s.width),
             thumb_small_square_height: value
                 .base
@@ -90,7 +90,10 @@ impl TryFrom<&Asset> for DbAsset {
             thumb_large_orig_width: value.base.thumb_large_orig_size.as_ref().map(|s| s.width),
             thumb_large_orig_height: value.base.thumb_large_orig_size.as_ref().map(|s| s.height),
             codec_name: video.map(|v| v.codec_name.clone()),
-            resource_dir_id: video.map(|v| v.dash_resource_dir).flatten(),
+            resource_dir: video
+                .map(|v| v.dash_resource_dir.as_ref().map(|p| path_to_string(p)))
+                .flatten()
+                .transpose()?,
         })
     }
 }
@@ -121,7 +124,7 @@ impl TryFrom<&DbAsset> for Asset {
                     .codec_name
                     .clone()
                     .ok_or(eyre!("video DbAsset must have codec_name set"))?,
-                dash_resource_dir: value.resource_dir_id,
+                dash_resource_dir: value.resource_dir.as_ref().map(|p| PathBuf::from(p)),
             }),
         };
         Ok(Asset {
@@ -139,10 +142,10 @@ impl TryFrom<&DbAsset> for Asset {
                     height: value.height,
                 },
                 rotation_correction: value.rotation_correction,
-                thumb_small_square_avif: value.thumb_small_square_avif,
-                thumb_small_square_webp: value.thumb_small_square_webp,
-                thumb_large_orig_avif: value.thumb_large_orig_avif,
-                thumb_large_orig_webp: value.thumb_large_orig_webp,
+                thumb_small_square_avif: value.thumb_small_square_avif.as_ref().map(|p| p.into()),
+                thumb_small_square_webp: value.thumb_small_square_webp.as_ref().map(|p| p.into()),
+                thumb_large_orig_avif: value.thumb_large_orig_avif.as_ref().map(|p| p.into()),
+                thumb_large_orig_webp: value.thumb_large_orig_webp.as_ref().map(|p| p.into()),
                 thumb_small_square_size: value
                     .thumb_small_square_width
                     .zip(value.thumb_small_square_height)

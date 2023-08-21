@@ -1,5 +1,5 @@
 use super::DbAssetType;
-use crate::model::{AssetId, AssetRootDirId, ResourceFileId};
+use crate::model::{AssetId, AssetRootDirId};
 use chrono::NaiveDateTime;
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
@@ -15,26 +15,26 @@ pub struct DbAsset {
     pub width: i64,
     pub height: i64,
     pub rotation_correction: Option<i32>,
-    pub thumb_small_square_avif: Option<ResourceFileId>,
-    pub thumb_small_square_webp: Option<ResourceFileId>,
-    pub thumb_large_orig_avif: Option<ResourceFileId>,
-    pub thumb_large_orig_webp: Option<ResourceFileId>,
+    pub thumb_small_square_avif: Option<String>,
+    pub thumb_small_square_webp: Option<String>,
+    pub thumb_large_orig_avif: Option<String>,
+    pub thumb_large_orig_webp: Option<String>,
     pub thumb_small_square_width: Option<i64>,
     pub thumb_small_square_height: Option<i64>,
     pub thumb_large_orig_width: Option<i64>,
     pub thumb_large_orig_height: Option<i64>,
     pub codec_name: Option<String>,
-    pub resource_dir_id: Option<ResourceFileId>,
+    pub resource_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DbAssetThumbnails {
     pub id: AssetId,
     pub ty: DbAssetType,
-    pub thumb_small_square_avif: Option<ResourceFileId>,
-    pub thumb_small_square_webp: Option<ResourceFileId>,
-    pub thumb_large_orig_avif: Option<ResourceFileId>,
-    pub thumb_large_orig_webp: Option<ResourceFileId>,
+    pub thumb_small_square_avif: Option<String>,
+    pub thumb_small_square_webp: Option<String>,
+    pub thumb_large_orig_avif: Option<String>,
+    pub thumb_large_orig_webp: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

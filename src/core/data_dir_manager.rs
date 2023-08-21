@@ -19,29 +19,21 @@ impl DataDirManager {
         DataDirManager { pool }
     }
 
-    pub async fn new_thumbnail_file(&self, file_name: &Path) -> Result<NewResourceFile> {
+    pub async fn new_thumbnail_file(&self, file_name: &Path) -> Result<PathBuf> {
         let thumbnail_path = PathBuf::from("thumbnails");
         let data_dir = repository::data_dir::get_random_data_dir(&self.pool).await?;
-        let complete_path = data_dir.path.join(&thumbnail_path);
+        let complete_dir_path = data_dir.path.join(&thumbnail_path);
         // FIXME this might belong somewhere else
-        tokio::fs::create_dir_all(&complete_path).await.unwrap();
-        Ok(NewResourceFile {
-            data_dir_id: data_dir.id,
-            data_dir_path: data_dir.path,
-            path_in_data_dir: thumbnail_path.join(file_name),
-        })
+        tokio::fs::create_dir_all(&complete_dir_path).await.unwrap();
+        Ok(complete_dir_path.join(file_name))
     }
 
-    pub async fn new_dash_dir(&self, dir_name: &str) -> Result<NewResourceFile> {
+    pub async fn new_dash_dir(&self, dir_name: &str) -> Result<PathBuf> {
         let dash_path = PathBuf::from("dash");
         let data_dir = repository::data_dir::get_random_data_dir(&self.pool).await?;
-        let complete_path = data_dir.path.join(&dash_path);
+        let complete_path = data_dir.path.join(&dash_path).join(dir_name);
         tokio::fs::create_dir_all(&complete_path).await.unwrap();
-        Ok(NewResourceFile {
-            data_dir_id: data_dir.id,
-            data_dir_path: data_dir.path,
-            path_in_data_dir: dash_path.join(dir_name),
-        })
+        Ok(complete_path)
     }
 }
 

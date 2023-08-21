@@ -5,11 +5,7 @@ use eyre::{eyre, Context, Report, Result};
 use crate::processing::video::dash_package::RepresentationInput;
 use crate::processing::video::probe_video;
 use crate::{
-    catalog::{
-        encoding_target::{codec_name, EncodingTarget},
-        operation::resource_path_on_disk,
-        PathInResourceDir, ResolvedResourcePath, ResourcePath,
-    },
+    catalog::encoding_target::{codec_name, EncodingTarget},
     model::{
         repository::{self, pool::DbPool},
         AssetId, AudioRepresentation, AudioRepresentationId, Size, Video, VideoAsset,
@@ -22,9 +18,16 @@ use crate::{
 /// If transcode is set, ffmpeg to target codec.
 /// Then gather existing representations and pass it all to shaka-packager.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PackageVideo<P: ResourcePath> {
+pub struct PackageVideo {
     pub asset_id: AssetId,
-    pub output_dir: P,
+    pub transcode: Option<Transcode>,
+    pub mpd_output: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageVideoWithPath {
+    pub asset_id: AssetId,
+    pub output_dir: PathBuf,
     pub transcode: Option<Transcode>,
     pub mpd_output: PathBuf,
 }
@@ -36,7 +39,7 @@ pub struct PackageVideo<P: ResourcePath> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompletedPackageVideo {
     pub asset_id: AssetId,
-    pub output_dir: ResolvedResourcePath,
+    pub output_dir: PathBuf,
     /// relative to output_dir
     pub mpd_output: PathBuf,
     pub transcode_result: Option<TranscodeResult>,
@@ -47,7 +50,7 @@ pub struct CompletedPackageVideo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Transcode {
     pub target: EncodingTarget,
-    /// output path where the final transcoded and shaka remuxed video file should be
+    /// path where the final transcoded and shaka remuxed video file should be
     /// relative to PackageVideo::output_dir
     pub output: PathBuf,
 }
@@ -69,33 +72,19 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
         .begin()
         .await
         .wrap_err("could not begin db transaction")?;
-    let asset = match &op.output_dir {
-        ResolvedResourcePath::Existing(resource_dir) => {
-            assert!(asset.video.dash_resource_dir.unwrap() == resource_dir.resource_dir_id);
-            asset
-        }
-        ResolvedResourcePath::New(resource_dir) => {
-            assert!(asset.video.dash_resource_dir.is_none());
-            let resource_dir_id = repository::resource_file::insert_new_resource_file2(
-                tx.as_mut(),
-                resource_dir.data_dir_id,
-                &resource_dir.path_in_data_dir,
-            )
-            .await?;
-            VideoAsset {
-                video: Video {
-                    dash_resource_dir: Some(resource_dir_id),
-                    ..asset.video
-                },
-                ..asset
-            }
-        }
+    let asset = VideoAsset {
+        video: Video {
+            dash_resource_dir: Some(op.output_dir.clone()),
+            ..asset.video
+        },
+        ..asset
     };
+    repository::asset::update_asset(tx.as_mut(), &(&asset).into()).await?;
     if let Some(audio_output) = &op.audio_output {
         let audio_representation = AudioRepresentation {
             id: AudioRepresentationId(0),
             asset_id: op.asset_id,
-            path_in_resource_dir: audio_output.clone(),
+            path: op.output_dir.join(audio_output),
         };
         let _audio_representation_id = repository::representation::insert_audio_representation(
             tx.as_mut(),
@@ -115,7 +104,7 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
             width: transcode.final_size.width,
             height: transcode.final_size.height,
             bitrate: transcode.bitrate,
-            path_in_resource_dir: transcode.output.clone(),
+            path: op.output_dir.join(&transcode.output),
         };
         let _representation_id = repository::representation::insert_video_representation(
             tx.as_mut(),
@@ -126,20 +115,19 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
     tx.commit()
         .await
         .wrap_err("could not commit db transaction")?;
-    todo!()
+    Ok(())
 }
 
 pub struct PackageVideoSideEffectResult {
-    failed: Vec<(PackageVideo<PathInResourceDir>, Report)>,
+    failed: Vec<(PackageVideo, Report)>,
 }
 
 pub async fn perform_side_effects_package_video(
     pool: &DbPool,
-    op: &PackageVideo<ResolvedResourcePath>,
+    op: &PackageVideoWithPath,
 ) -> Result<CompletedPackageVideo> {
     // create directories
-    let output_dir = resource_path_on_disk(pool, &op.output_dir).await?;
-    tokio::fs::create_dir_all(&output_dir)
+    tokio::fs::create_dir_all(&op.output_dir)
         .await
         .wrap_err("could not create output directory")?;
     let asset: VideoAsset = repository::asset::get_asset(pool, op.asset_id)
@@ -150,7 +138,7 @@ pub async fn perform_side_effects_package_video(
     // ouput path in transcode_result needs to be the shaka remuxed file
     let transcode_result: Option<TranscodeResult> = match &op.transcode {
         Some(transcode) => {
-            let output_path = output_dir.join(&transcode.output);
+            let output_path = op.output_dir.join(&transcode.output);
             let mut command =
                 ffmpeg_command(&asset_path.path_on_disk(), &output_path, &transcode.target);
             let ffmpeg_result = command.spawn()?.wait().await?;
@@ -170,8 +158,7 @@ pub async fn perform_side_effects_package_video(
         }
         None => None,
     };
-    // if transcode: ffmpeg
-    // shaka-packager
-    let reprs: [RepresentationInput] = [];
+    // call shaka-packager
+    // let reprs: [RepresentationInput] = [];
     todo!()
 }

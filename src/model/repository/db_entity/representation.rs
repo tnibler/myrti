@@ -1,4 +1,4 @@
-use crate::model::{AssetId, AudioRepresentationId, ResourceFileId, VideoRepresentationId};
+use crate::model::{AssetId, AudioRepresentationId, VideoRepresentationId};
 
 #[derive(Debug, Clone)]
 pub struct DbVideoRepresentation {
@@ -7,13 +7,13 @@ pub struct DbVideoRepresentation {
     pub codec_name: String,
     pub width: i64,
     pub height: i64,
-    pub bitrate: i32,
-    pub path_in_resource_dir: String,
+    pub bitrate: i64,
+    pub path: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct DbAudioRepresentation {
     pub id: AudioRepresentationId,
     pub asset_id: AssetId,
-    pub path_in_resource_dir: String,
+    pub path: String,
 }

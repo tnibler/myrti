@@ -41,19 +41,17 @@ async fn get_dash_file(
             return Ok(StatusCode::BAD_REQUEST.into_response());
         }
     };
-    if asset.video.dash_resource_dir.is_none() {
-        return Ok(StatusCode::NO_CONTENT.into_response());
-    }
-    let dash_dir = repository::resource_file::get_resource_file_resolved(
-        &app_state.pool,
-        asset.video.dash_resource_dir.unwrap(),
-    )
-    .await?;
+    let dash_dir = match asset.video.dash_resource_dir {
+        Some(p) => p,
+        None => {
+            return Ok(StatusCode::NO_CONTENT.into_response());
+        }
+    };
     let (mut parts, body) = request.into_parts();
     let mut uri_parts = parts.uri.clone().into_parts();
     uri_parts.path_and_query = Some(path.path.as_str().try_into().wrap_err("bad path")?);
     parts.uri = Uri::from_parts(uri_parts).wrap_err("bad uri")?;
-    let serve_dir = tower_http::services::ServeDir::new(dash_dir.path_on_disk())
+    let serve_dir = tower_http::services::ServeDir::new(&dash_dir)
         .oneshot(Request::from_parts(parts, body))
         .in_current_span()
         .await

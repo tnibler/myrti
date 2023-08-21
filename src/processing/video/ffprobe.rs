@@ -69,8 +69,8 @@ pub async fn probe_video(path: &Path) -> Result<VideoProbeResult> {
             Ok(VideoProbeResult {
                 codec_name: stream.codec_name,
                 duration_seconds: stream.duration.parse()?,
-                width: stream.width,
-                height: stream.height,
+                width: stream.width as i64,
+                height: stream.height as i64,
                 bitrate: stream.bit_rate.parse()?,
                 rotation,
             })

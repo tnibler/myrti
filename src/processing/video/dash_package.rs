@@ -7,7 +7,8 @@ use eyre::{bail, Context, Result};
 use tokio::{fs, process::Command};
 use tracing::{debug, instrument};
 
-use super::transcode::{ffmpeg_command, EncodingTarget};
+use super::transcode::ffmpeg_command;
+pub use crate::catalog::encoding_target::EncodingTarget;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RepresentationType {
@@ -74,7 +75,7 @@ pub async fn transcode_and_package(
     // my superficial testing. See: https://shaka-project.github.io/shaka-packager/html/tutorials/ffmpeg_piping.html
     let ffmpeg_out_dir = tempfile::tempdir().wrap_err("could not create temp directory")?;
     let ffmpeg_out_path = ffmpeg_out_dir.path().join("out.mp4");
-    let mut ffmpeg_command = ffmpeg_command(input, &ffmpeg_out_path, encoding_target);
+    let mut ffmpeg_command = ffmpeg_command(input, &ffmpeg_out_path, &encoding_target);
     let result = ffmpeg_command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

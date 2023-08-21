@@ -14,18 +14,14 @@ use crate::{
     },
 };
 
-use super::{
-    operation::{
-        create_thumbnail::{CreateThumbnail, ThumbnailToCreate},
-        package_video::PackageVideo,
-    },
-    PathInResourceDir,
+use super::operation::{
+    create_thumbnail::{CreateThumbnail, ThumbnailToCreate},
+    package_video::PackageVideo,
 };
 
 #[instrument(skip(pool))]
-pub async fn thumbnails_to_create(
-    pool: &DbPool,
-) -> Result<Vec<CreateThumbnail<PathInResourceDir>>> {
+pub async fn thumbnails_to_create(pool: &DbPool) -> Result<Vec<CreateThumbnail>> {
+    // always create all thumbnails if any are missing for now
     let limit: Option<i32> = None;
     let assets: Vec<AssetThumbnails> =
         repository::asset::get_assets_with_missing_thumbnail(pool, limit)
@@ -38,20 +34,16 @@ pub async fn thumbnails_to_create(
             thumbnails: vec![
                 ThumbnailToCreate {
                     ty: ThumbnailType::SmallSquare,
-                    webp_file: PathBuf::from(format!("{}_sm.webp", asset.id.0)).into(),
-                    avif_file: PathBuf::from(format!("{}_sm.avif", asset.id.0)).into(),
                 },
                 ThumbnailToCreate {
                     ty: ThumbnailType::LargeOrigAspect,
-                    webp_file: PathBuf::from(format!("{}.webp", asset.id.0)).into(),
-                    avif_file: PathBuf::from(format!("{}.avif", asset.id.0)).into(),
                 },
             ],
         })
         .collect())
 }
 
-pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo<PathInResourceDir>>> {
+pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
     // priority:
     //  - videos with original in acceptable codec and no DASH packaged
     //  - videos with no representation in acceptable codec
@@ -75,7 +67,7 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo<PathI
             .into_iter()
             .map(|asset| PackageVideo {
                 asset_id: asset.base.id,
-                mpd_output: PathInResourceDir(PathBuf::from("stream.mpd")),
+                mpd_output: PathBuf::from("stream.mpd"),
                 transcode: None,
             })
             .collect());
@@ -94,7 +86,7 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo<PathI
             .into_iter()
             .map(|asset| PackageVideo {
                 asset_id: asset.base.id,
-                mpd_output: PathInResourceDir(PathBuf::from("stream.mpd")),
+                mpd_output: PathBuf::from("stream.mpd"),
                 transcode: Some(Transcode {
                     target: EncodingTarget {
                         codec: CodecTarget::AV1(av1::AV1Target {
@@ -105,7 +97,7 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo<PathI
                         }),
                         scale: None,
                     },
-                    output: PathInResourceDir(PathBuf::from("av1/original.mp4")),
+                    output: PathBuf::from("av1/original.mp4"),
                 }),
             })
             .collect());

@@ -13,15 +13,15 @@ pub struct VideoRepresentation {
     pub codec_name: String,
     pub width: i64,
     pub height: i64,
-    pub bitrate: i32,
-    pub path_in_resource_dir: PathBuf,
+    pub bitrate: i64,
+    pub path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
 pub struct AudioRepresentation {
     pub id: AudioRepresentationId,
     pub asset_id: AssetId,
-    pub path_in_resource_dir: PathBuf,
+    pub path: PathBuf,
 }
 
 impl TryFrom<&DbVideoRepresentation> for VideoRepresentation {
@@ -35,7 +35,7 @@ impl TryFrom<&DbVideoRepresentation> for VideoRepresentation {
             width: value.width,
             height: value.height,
             bitrate: value.bitrate,
-            path_in_resource_dir: PathBuf::from(&value.path_in_resource_dir),
+            path: PathBuf::from(&value.path),
         })
     }
 }
@@ -55,7 +55,7 @@ impl TryFrom<&DbAudioRepresentation> for AudioRepresentation {
         Ok(AudioRepresentation {
             id: value.id,
             asset_id: value.asset_id,
-            path_in_resource_dir: PathBuf::from(&value.path_in_resource_dir),
+            path: PathBuf::from(&value.path),
         })
     }
 }
@@ -79,7 +79,7 @@ impl TryFrom<&VideoRepresentation> for DbVideoRepresentation {
             width: value.width,
             height: value.height,
             bitrate: value.bitrate,
-            path_in_resource_dir: path_to_string(&value.path_in_resource_dir)?,
+            path: path_to_string(&value.path)?,
         })
     }
 }
@@ -99,7 +99,7 @@ impl TryFrom<&AudioRepresentation> for DbAudioRepresentation {
         Ok(DbAudioRepresentation {
             id: value.id,
             asset_id: value.asset_id,
-            path_in_resource_dir: path_to_string(&value.path_in_resource_dir)?,
+            path: path_to_string(&value.path)?,
         })
     }
 }

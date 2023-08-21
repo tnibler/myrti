@@ -8,7 +8,6 @@ mod asset_type;
 mod data_dir;
 mod id_types;
 mod representation;
-mod resource_file;
 pub use asset::*;
 pub use asset_base::*;
 pub use asset_projections::*;
@@ -17,6 +16,5 @@ pub use asset_type::*;
 pub use data_dir::*;
 pub use id_types::*;
 pub use representation::*;
-pub use resource_file::*;
 
 mod util;

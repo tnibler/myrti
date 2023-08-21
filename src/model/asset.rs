@@ -1,6 +1,8 @@
+use std::path::PathBuf;
+
 use eyre::{eyre, Report};
 
-use super::{repository::db_entity::DbAsset, AssetBase, ResourceFileId};
+use super::{repository::db_entity::DbAsset, AssetBase};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Image {}
@@ -8,7 +10,7 @@ pub struct Image {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Video {
     pub codec_name: String,
-    pub dash_resource_dir: Option<ResourceFileId>,
+    pub dash_resource_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

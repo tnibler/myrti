@@ -6,9 +6,9 @@ use eyre::{eyre, Context, Result};
 use sqlx::{QueryBuilder, Sqlite, SqliteConnection};
 use tracing::{debug, error, instrument, Instrument};
 
+use crate::model::util::path_to_string;
 use crate::model::{
-    Asset, AssetId, AssetPathOnDisk, AssetSpe, AssetThumbnails, AssetType, ResourceFileId,
-    ThumbnailType, VideoAsset,
+    Asset, AssetId, AssetPathOnDisk, AssetSpe, AssetThumbnails, AssetType, VideoAsset,
 };
 
 use super::db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType};
@@ -40,7 +40,7 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 codec_name,
-resource_dir_id as "resource_dir_id: _"
+resource_dir
 FROM Asset
 WHERE id=?;
     "#,
@@ -113,7 +113,7 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 codec_name,
-resource_dir_id as "resource_dir_id: _"
+resource_dir
 FROM Asset;
     "#
     )
@@ -210,7 +210,7 @@ thumb_small_square_height=?,
 thumb_large_orig_width=?,
 thumb_large_orig_height=?,
 codec_name=?,
-resource_dir_id=?
+resource_dir=?
 WHERE id=?;
 ",
         db_asset.ty,
@@ -232,7 +232,7 @@ WHERE id=?;
         db_asset.thumb_large_orig_width,
         db_asset.thumb_large_orig_height,
         db_asset.codec_name,
-        db_asset.resource_dir_id,
+        db_asset.resource_dir,
         asset.base.id.0
     )
     .execute(conn)
@@ -283,7 +283,7 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 codec_name,
-resource_dir_id
+resource_dir
 )
 VALUES
 (null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
@@ -307,7 +307,7 @@ VALUES
         db_asset.thumb_large_orig_width,
         db_asset.thumb_large_orig_height,
         db_asset.codec_name,
-        db_asset.resource_dir_id
+        db_asset.resource_dir
     )
     .execute(pool)
     .in_current_span()
@@ -321,9 +321,11 @@ VALUES
 pub async fn set_asset_small_thumbnails(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
-    thumb_small_square_avif: ResourceFileId,
-    thumb_small_square_webp: ResourceFileId,
+    thumb_small_square_avif: &Path,
+    thumb_small_square_webp: &Path,
 ) -> Result<()> {
+    let thumb_small_square_avif = path_to_string(thumb_small_square_avif)?;
+    let thumb_small_square_webp = path_to_string(thumb_small_square_webp)?;
     sqlx::query!(
         r#"
 UPDATE Asset SET 
@@ -345,9 +347,11 @@ WHERE id=?;
 pub async fn set_asset_large_thumbnails(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
-    thumb_large_orig_avif: ResourceFileId,
-    thumb_large_orig_webp: ResourceFileId,
+    thumb_large_orig_avif: &Path,
+    thumb_large_orig_webp: &Path,
 ) -> Result<()> {
+    let thumb_large_orig_avif = path_to_string(thumb_large_orig_avif)?;
+    let thumb_large_orig_webp = path_to_string(thumb_large_orig_webp)?;
     sqlx::query!(
         r#"
 UPDATE Asset SET 
@@ -362,49 +366,6 @@ WHERE id=?;
     .execute(conn)
     .await
     .wrap_err("could not update table Assets")?;
-    Ok(())
-}
-
-#[instrument(skip(conn))]
-pub async fn set_asset_thumbnail(
-    conn: &mut SqliteConnection,
-    asset_id: AssetId,
-    thumbnail_type: ThumbnailType,
-    avif: ResourceFileId,
-    webp: ResourceFileId,
-) -> Result<()> {
-    let query = match thumbnail_type {
-        ThumbnailType::SmallSquare => {
-            sqlx::query!(
-                r#"
-UPDATE Asset SET 
-thumb_small_square_avif=?,
-thumb_small_square_webp=?
-WHERE id=?;
-    "#,
-                avif,
-                webp,
-                asset_id
-            )
-        }
-        ThumbnailType::LargeOrigAspect => {
-            sqlx::query!(
-                r#"
-UPDATE Asset SET 
-thumb_large_orig_avif=?,
-thumb_large_orig_webp=?
-WHERE id=?;
-    "#,
-                avif,
-                webp,
-                asset_id
-            )
-        }
-    };
-    query
-        .execute(conn)
-        .await
-        .wrap_err("could not update table Assets")?;
     Ok(())
 }
 
@@ -434,11 +395,11 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 codec_name,
-resource_dir_id as "resource_dir_id: _"
+resource_dir
 FROM Asset 
 WHERE
 Asset.ty = ?
-AND resource_dir_id IS NULL;
+AND resource_dir IS NULL;
     "#,
         DbAssetType::Video
     )
@@ -482,7 +443,7 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 codec_name,
-resource_dir_id as "resource_dir_id: _"
+resource_dir
 FROM Asset 
 WHERE
 (taken_date IS NOT NULL AND taken_date < ?) 
@@ -546,7 +507,7 @@ Asset.thumb_small_square_height as thumb_small_square_height,
 Asset.thumb_large_orig_width as thumb_large_orig_width,
 Asset.thumb_large_orig_height as thumb_large_orig_height,
 Asset.codec_name as codec_name,
-Asset.resource_dir_id as resource_dir_id
+Asset.resource_dir as resource_dir
 FROM Asset
 WHERE Asset.ty = "#,
     );
@@ -601,9 +562,9 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 codec_name,
-resource_dir_id as "resource_dir_id: _"
+resource_dir
 FROM Asset 
-WHERE resource_dir_id IS NULL
+WHERE resource_dir IS NULL
 AND ty = ?
 AND codec_name IN
         "#,

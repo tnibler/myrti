@@ -149,7 +149,7 @@ impl SchedulerImpl {
     }
 
     async fn dash_package_if_required(&self) {
-        let videos_to_package: Vec<PackageVideo<_>> =
+        let videos_to_package: Vec<PackageVideo> =
             rules::video_packaging_due(&self.pool).await.unwrap();
         let videos_without_dash = repository::asset::get_video_assets_without_dash(&self.pool)
             .await

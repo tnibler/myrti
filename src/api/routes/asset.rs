@@ -72,7 +72,7 @@ async fn get_thumbnail(
     let asset_base = repository::asset::get_asset(&app_state.pool, id)
         .await?
         .base;
-    let (thumb_resource, content_type) = match (size, format) {
+    let (thumb_path, content_type) = match (size, format) {
         (ThumbnailSize::Small, ThumbnailFormat::Avif) => {
             (asset_base.thumb_small_square_avif, "image/avif")
         }
@@ -86,13 +86,10 @@ async fn get_thumbnail(
             (asset_base.thumb_large_orig_webp, "image/webp")
         }
     };
-    match thumb_resource {
+    match thumb_path {
         None => Ok(().into_response()),
-        Some(resource_id) => {
-            let resource_resolved =
-                repository::resource_file::get_resource_file_resolved(&app_state.pool, resource_id)
-                    .await?;
-            let file = tokio::fs::File::open(resource_resolved.path_on_disk()).await?;
+        Some(path) => {
+            let file = tokio::fs::File::open(path).await?;
             let stream = ReaderStream::new(file);
             let body = StreamBody::new(stream);
             Ok(([(header::CONTENT_TYPE, content_type)], body).into_response())

@@ -3,14 +3,10 @@ use std::path::PathBuf;
 use eyre::{Context, Report, Result};
 use tracing::{instrument, Instrument};
 
-use crate::model::AssetBase;
 use crate::{
-    catalog::{
-        ResolvedExistingResourcePath, ResolvedNewResourcePath, ResolvedResourcePath, ResourcePath,
-    },
     model::{
         repository::{self, pool::DbPool},
-        AssetId, AssetType, ResourceFileId, ThumbnailType,
+        AssetId, AssetType, ThumbnailType,
     },
     processing::{
         self,
@@ -19,73 +15,58 @@ use crate::{
     },
 };
 
-use super::resource_path_on_disk;
-
-#[derive(Debug, Clone)]
-pub struct CreateThumbnail<P: ResourcePath> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateThumbnail {
     pub asset_id: AssetId,
-    pub thumbnails: Vec<ThumbnailToCreate<P>>,
+    pub thumbnails: Vec<ThumbnailToCreate>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ThumbnailToCreate<P: ResourcePath> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThumbnailToCreate {
     pub ty: ThumbnailType,
-    pub webp_file: P,
-    pub avif_file: P,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateThumbnailWithPaths {
+    pub asset_id: AssetId,
+    pub thumbnails: Vec<ThumbnailToCreateWithPaths>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThumbnailToCreateWithPaths {
+    pub ty: ThumbnailType,
+    pub avif_path: PathBuf,
+    pub webp_path: PathBuf,
 }
 
 #[instrument(skip(pool))]
-pub async fn apply_create_thumbnail(
-    pool: &DbPool,
-    op: &CreateThumbnail<ResolvedResourcePath>,
-) -> Result<()> {
-    for created_thumb in op.thumbnails.iter() {
+pub async fn apply_create_thumbnail(pool: &DbPool, op: &CreateThumbnailWithPaths) -> Result<()> {
+    for thumb in &op.thumbnails {
+        // TODO unnecessary transaction
         let mut tx = pool
             .begin()
             .await
             .wrap_err("could not begin db transaction")?;
-        let avif_resource_id: ResourceFileId = match &created_thumb.avif_file {
-            ResolvedResourcePath::New(ResolvedNewResourcePath {
-                data_dir_id,
-                path_in_data_dir,
-            }) => {
-                repository::resource_file::insert_new_resource_file2(
+        match thumb.ty {
+            ThumbnailType::SmallSquare => {
+                repository::asset::set_asset_small_thumbnails(
                     tx.as_mut(),
-                    *data_dir_id,
-                    &path_in_data_dir,
+                    op.asset_id,
+                    &thumb.avif_path,
+                    &thumb.webp_path,
                 )
-                .await?
+                .await
             }
-            ResolvedResourcePath::Existing(ResolvedExistingResourcePath {
-                resource_dir_id,
-                path_in_resource_dir,
-            }) => todo!("thumbnails normally always create new resource files"),
-        };
-        let webp_resource_id: ResourceFileId = match &created_thumb.webp_file {
-            ResolvedResourcePath::New(ResolvedNewResourcePath {
-                data_dir_id,
-                path_in_data_dir,
-            }) => {
-                repository::resource_file::insert_new_resource_file2(
+            ThumbnailType::LargeOrigAspect => {
+                repository::asset::set_asset_large_thumbnails(
                     tx.as_mut(),
-                    *data_dir_id,
-                    &path_in_data_dir,
+                    op.asset_id,
+                    &thumb.avif_path,
+                    &thumb.webp_path,
                 )
-                .await?
+                .await
             }
-            ResolvedResourcePath::Existing(ResolvedExistingResourcePath {
-                resource_dir_id,
-                path_in_resource_dir,
-            }) => todo!("thumbnails normally always create new resource files"),
-        };
-        repository::asset::set_asset_thumbnail(
-            tx.as_mut(),
-            op.asset_id,
-            created_thumb.ty,
-            avif_resource_id,
-            webp_resource_id,
-        )
-        .await
+        }
         .wrap_err("could not set asset thumbnails")?;
         tx.commit()
             .await
@@ -95,13 +76,13 @@ pub async fn apply_create_thumbnail(
 }
 
 pub struct ThumbnailSideEffectResult {
-    failed: Vec<(ThumbnailToCreate<ResolvedResourcePath>, Report)>,
+    pub failed: Vec<(ThumbnailToCreateWithPaths, Report)>,
 }
 
 #[instrument(skip(pool))]
 pub async fn perform_side_effects_create_thumbnail(
     pool: &DbPool,
-    op: &CreateThumbnail<ResolvedResourcePath>,
+    op: &CreateThumbnailWithPaths,
 ) -> Result<ThumbnailSideEffectResult> {
     let in_path = repository::asset::get_asset_path_on_disk(pool, op.asset_id)
         .await?
@@ -141,7 +122,6 @@ pub async fn perform_side_effects_create_thumbnail(
                         tracing::info!("done")
                     }
                     Err(err) => {
-                        tracing::error!(%err);
                         result.failed.push((thumb.clone(), err));
                     }
                 }
@@ -155,12 +135,9 @@ pub async fn perform_side_effects_create_thumbnail(
 async fn create_thumbnail_from_image(
     pool: &DbPool,
     image_path: PathBuf,
-    thumb: &ThumbnailToCreate<ResolvedResourcePath>,
+    thumb: &ThumbnailToCreateWithPaths,
 ) -> Result<()> {
-    let out_paths = vec![
-        resource_path_on_disk(pool, &thumb.avif_file).await?,
-        resource_path_on_disk(pool, &thumb.webp_file).await?,
-    ];
+    let out_paths = vec![thumb.avif_path.clone(), thumb.webp_path.clone()];
     let out_dimension = match thumb.ty {
         ThumbnailType::SmallSquare => processing::image::OutDimension::Crop {
             width: 200,

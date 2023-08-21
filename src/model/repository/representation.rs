@@ -23,7 +23,7 @@ INSERT INTO VideoRepresentation VALUES(NULL, ?, ?, ?, ?, ?, ?);
         db_val.width,
         db_val.height,
         db_val.bitrate,
-        db_val.path_in_resource_dir
+        db_val.path
     )
     .execute(conn)
     .await
@@ -43,7 +43,7 @@ pub async fn insert_audio_representation(
 INSERT INTO AudioRepresentation VALUES(NULL, ?, ?);
     "#,
         db_val.asset_id,
-        db_val.path_in_resource_dir
+        db_val.path
     )
     .execute(conn)
     .await

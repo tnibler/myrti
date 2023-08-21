@@ -88,6 +88,7 @@ async fn insert_mismatching_asset_ty_and_spe_fails() {
     let asset2 = Asset {
         sp: AssetSpe::Video(Video {
             codec_name: String::from("h264"),
+            bitrate: 1234,
             dash_resource_dir: None,
         }),
         base: AssetBase {

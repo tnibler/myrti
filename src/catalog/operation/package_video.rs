@@ -17,11 +17,6 @@ use crate::{
     processing::video::transcode::ffmpeg_command,
 };
 
-// things that may be necessary to do:
-// package audio stream
-// create video repr by packaging original asset file
-// create video repr by transcoding and packaging video
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CreateAudioRepr {
     Existing(AudioRepresentation),

@@ -96,7 +96,6 @@ impl SchedulerImpl {
                         SchedulerMessage::Timer => todo!(),
                         SchedulerMessage::FileSystemChange { changed_files: _ } => todo!(),
                         SchedulerMessage::UserRequest(request) => {
-                            self.transcode_and_package_if_required().await;
                             match request {
                                 UserRequest::ReindexAssetRoots { params } => {
                                     self.queue_or_start_indexing(params).await;
@@ -172,34 +171,6 @@ impl SchedulerImpl {
                 .await
                 .unwrap();
         }
-    }
-
-    async fn transcode_and_package_if_required(&self) {
-        // priority:
-        //  - videos with no representation in acceptable codec
-        //  - videos with any representation from their quality ladder missing
-        //    (hightest qualities come first)
-        // For now, scan through all videos to check.
-        // Later, set a flag if all required transcoding has been done
-        // and clear the flag when the config (quality ladder, acceptable codecs)
-        // change and recheck
-
-        let acceptable_codecs = ["h264", "av1", "vp9"];
-        let no_good_reprs = repository::asset::get_video_assets_with_no_acceptable_repr(
-            &self.pool,
-            acceptable_codecs.into_iter(),
-        )
-        .await
-        .unwrap();
-        // transcode no_good_reprs into target codec first
-        // we want DashPackagingJob to either only package, or transcode and then package
-        // by adding an Option<EncodingTarget> to every param
-
-        // if all videos have at least one good repr:
-        //   for every rung in quality_levels starting from the highest
-        //     for every video, ql = quality_ladder(video):
-        //       if rung in ql and no repr for video at that rung:
-        //         transcode to that rung
     }
 
     async fn queue_or_start_indexing(&mut self, params: IndexingJobParams) {

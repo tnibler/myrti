@@ -2,7 +2,7 @@ use sqlx::SqlitePool;
 
 use super::pool::DbPool;
 
-pub mod crud;
+pub mod asset;
 
 pub async fn create_db() -> DbPool {
     let db_url = "sqlite::memory:";

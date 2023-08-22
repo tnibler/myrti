@@ -13,7 +13,7 @@ CREATE TABLE Asset (
   -- 1=Image, 2=Video
   ty INTEGER NOT NULL CHECK(ty IN (1, 2)),
   root_dir_id INTEGER NOT NULL,
-  file_path TEXT NOT NULL UNIQUE,
+  file_path TEXT NOT NULL,
   hash BLOB,
   added_at DATETIME NOT NULL,
   -- with zone offset if we know it, otherwise no offset and just assume local time
@@ -41,6 +41,7 @@ CREATE TABLE Asset (
   resource_dir TEXT,
 
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(id) ON DELETE CASCADE,
+  UNIQUE(root_dir_id, file_path),
 
   CHECK(ty = 1 OR (
       codec_name IS NOT NULL AND

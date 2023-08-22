@@ -109,7 +109,7 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
             };
             let _audio_representation_id = repository::representation::insert_audio_representation(
                 tx.as_mut(),
-                audio_representation,
+                &audio_representation,
             )
             .await?;
         }
@@ -136,7 +136,7 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
         },
     };
     let _representation_id =
-        repository::representation::insert_video_representation(tx.as_mut(), video_represention)
+        repository::representation::insert_video_representation(tx.as_mut(), &video_represention)
             .await?;
     tx.commit()
         .await

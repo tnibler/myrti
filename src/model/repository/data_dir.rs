@@ -33,7 +33,7 @@ SELECT id, path FROM DataDir ORDER BY RANDOM() LIMIT 1;
 }
 
 #[instrument(skip(pool))]
-pub async fn insert_data_dir(pool: &DbPool, data_dir: DataDir) -> Result<DataDirId> {
+pub async fn insert_data_dir(pool: &DbPool, data_dir: &DataDir) -> Result<DataDirId> {
     debug_assert!(data_dir.id.0 == 0);
     let data_dir: DbDataDir = data_dir
         .try_into()

@@ -17,7 +17,7 @@ async fn insert_retrieve_asset() {
         id: AssetRootDirId(0),
         path: PathBuf::from("/path/to/assets"),
     };
-    let root_dir_id = repository::asset_root_dir::insert_asset_root(&pool, asset_root_dir).await;
+    let root_dir_id = repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await;
     assert_ok!(root_dir_id);
     let asset = Asset {
         sp: AssetSpe::Image(Image {}),
@@ -66,7 +66,7 @@ async fn insert_mismatching_asset_ty_and_spe_fails() {
         path: PathBuf::from("/path/to/assets"),
     };
     let root_dir_id =
-        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, asset_root_dir).await);
+        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
     let asset = Asset {
         sp: AssetSpe::Image(Image {}),
         base: AssetBase {
@@ -119,9 +119,9 @@ async fn insert_update_asset() {
         path: PathBuf::from("/path/to/more/assets"),
     };
     let root_dir_id =
-        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, asset_root_dir).await);
+        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
     let root_dir2_id =
-        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, asset_root_dir2).await);
+        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir2).await);
     let asset = Asset {
         sp: AssetSpe::Image(Image {}),
         base: AssetBase {
@@ -227,9 +227,9 @@ async fn get_assets_with_missing_thumbnails() {
         path: PathBuf::from("/path/to/more/assets"),
     };
     let root_dir_id =
-        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, asset_root_dir).await);
+        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
     let root_dir2_id =
-        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, asset_root_dir2).await);
+        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir2).await);
     let asset = Asset {
         sp: AssetSpe::Image(Image {}),
         base: AssetBase {

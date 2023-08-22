@@ -18,13 +18,13 @@ use eyre::{self, Result};
 use http_error::HttpError;
 use model::repository::{self, pool::DbPool};
 use serde::Deserialize;
-use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePoolOptions, Sqlite, SqlitePool};
+use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use std::{path::PathBuf, str::FromStr, sync::Arc};
 use tokio::{fs, signal, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
 use tower_http::{
-    cors::{self, Any, CorsLayer},
+    cors::{Any, CorsLayer},
     request_id::MakeRequestUuid,
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     ServiceBuilderExt,
@@ -75,7 +75,7 @@ async fn store_asset_roots_from_config(config: &Config, pool: &DbPool) -> Result
         if existing.is_none() {
             repository::asset_root_dir::insert_asset_root(
                 &pool,
-                AssetRootDir {
+                &AssetRootDir {
                     id: AssetRootDirId(0),
                     path: asset_dir.path.clone(),
                 },
@@ -154,7 +154,7 @@ async fn main() -> Result<()> {
         {
             repository::data_dir::insert_data_dir(
                 &pool,
-                DataDir {
+                &DataDir {
                     id: DataDirId(0),
                     path: data_dir.path.clone(),
                 },

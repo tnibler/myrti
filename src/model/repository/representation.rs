@@ -66,7 +66,7 @@ WHERE asset_id=?;
 #[instrument(skip(conn))]
 pub async fn insert_video_representation(
     conn: &mut SqliteConnection,
-    repr: VideoRepresentation,
+    repr: &VideoRepresentation,
 ) -> Result<VideoRepresentationId> {
     assert!(repr.id.0 == 0);
     let db_val: DbVideoRepresentation = repr.try_into()?;
@@ -90,7 +90,7 @@ INSERT INTO VideoRepresentation VALUES(NULL, ?, ?, ?, ?, ?, ?);
 #[instrument(skip(conn))]
 pub async fn insert_audio_representation(
     conn: &mut SqliteConnection,
-    repr: AudioRepresentation,
+    repr: &AudioRepresentation,
 ) -> Result<AudioRepresentationId> {
     assert!(repr.id.0 == 0);
     let db_val: DbAudioRepresentation = repr.try_into()?;

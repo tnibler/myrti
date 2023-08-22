@@ -28,7 +28,7 @@ pub async fn get_asset_roots(pool: &DbPool) -> Result<Vec<AssetRootDir>> {
 
 pub async fn insert_asset_root(
     pool: &DbPool,
-    asset_root_dir: AssetRootDir,
+    asset_root_dir: &AssetRootDir,
 ) -> Result<AssetRootDirId> {
     let path = path_to_string(&asset_root_dir.path)?;
     sqlx::query!(

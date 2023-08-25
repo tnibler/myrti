@@ -58,8 +58,15 @@ impl TryFrom<&Asset> for DbAsset {
     fn try_from(value: &Asset) -> Result<Self, Self::Error> {
         let file_path = path_to_string(&value.base.file_path)?;
         let (taken_date, taken_date_local_fallback) = match value.base.taken_date {
-            MediaTimestamp::Utc(with_offset) => (Some(with_offset.naive_utc()), None),
-            MediaTimestamp::LocalFallback(naive) => (None, Some(naive)),
+            MediaTimestamp::Utc(with_offset) => (
+                Some(
+                    with_offset
+                        .with_timezone(&chrono::Utc)
+                        .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true),
+                ),
+                None,
+            ),
+            MediaTimestamp::LocalFallback(naive) => (None, Some(naive.to_string())),
         };
         let video = match &value.sp {
             super::AssetSpe::Image(_) => None,
@@ -71,7 +78,11 @@ impl TryFrom<&Asset> for DbAsset {
             root_dir_id: value.base.root_dir_id,
             file_path,
             hash: value.base.hash.clone(),
-            added_at: value.base.added_at.naive_utc(),
+            added_at: value
+                .base
+                .added_at
+                .with_timezone(&chrono::Utc)
+                .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true),
             taken_date,
             taken_date_local_fallback,
             width: value.base.size.width,
@@ -111,9 +122,11 @@ impl TryFrom<&DbAsset> for Asset {
     type Error = eyre::Report;
 
     fn try_from(value: &DbAsset) -> Result<Self, Self::Error> {
-        let taken_date = match (value.taken_date, value.taken_date_local_fallback) {
-            (Some(naive_utc), _) => MediaTimestamp::Utc(naive_utc.and_utc()),
-            (None, Some(local)) => MediaTimestamp::LocalFallback(local),
+        let taken_date = match (&value.taken_date, &value.taken_date_local_fallback) {
+            (Some(naive_utc), _) => {
+                MediaTimestamp::Utc(DateTime::parse_from_rfc3339(naive_utc)?.into())
+            }
+            (None, Some(local)) => MediaTimestamp::LocalFallback(local.parse::<NaiveDateTime>()?),
             (None, None) => {
                 bail!("one of taken_date or taken_date_local_fallback must be set in Assets row")
             }
@@ -138,7 +151,7 @@ impl TryFrom<&DbAsset> for Asset {
                 ty: value.ty.into(),
                 root_dir_id: value.root_dir_id,
                 file_path: value.file_path.as_str().into(),
-                added_at: value.added_at.and_utc(),
+                added_at: DateTime::parse_from_rfc3339(&value.added_at)?.into(),
                 hash: value.hash.clone(),
                 taken_date,
                 size: Size {

@@ -3,7 +3,7 @@ use eyre::{eyre, Context, Result};
 use serde::Deserialize;
 use std::{path::Path, process::Stdio};
 use tokio::process::Command;
-use tracing::{info_span, Instrument};
+use tracing::{debug, info_span, Instrument};
 
 pub mod exiftool {
     use serde::Deserialize;
@@ -32,6 +32,8 @@ pub mod exiftool {
     pub struct Exif {
         #[serde(rename = "CreateTime")]
         pub create_time: Option<String>,
+        #[serde(rename = "CreateDate")]
+        pub create_date: Option<String>,
         #[serde(rename = "DateTimeOriginal")]
         pub date_time_original: Option<String>,
         #[serde(rename = "OffsetTime")]
@@ -80,6 +82,7 @@ pub mod exiftool {
         #[serde(rename = "Composite")]
         pub composite: Option<Composite>,
         /// https://exiftool.org/makernote_types.html
+        #[serde(rename = "MakerNotes")]
         pub maker_notes: Option<serde_json::Value>,
     }
 }
@@ -117,6 +120,23 @@ pub enum TimestampGuess {
 /// Some/many camera manufacturers don't do that correctly, so this tries to
 /// puzzle together a good guess at the correct timezone
 pub fn figure_out_utc_timestamp(et: &exiftool::Output) -> TimestampGuess {
+    // manufacturer-specific tags in MakerNotes
+    if let Some(ref maker_notes) = et.maker_notes {
+        if let Some(make) = et.exif.as_ref().map(|exif| exif.make.as_ref()).flatten() {
+            match make.to_lowercase().as_str() {
+                "samsung" => {
+                    let json_val = maker_notes.get("TimeStamp");
+                    if let Some(serde_json::Value::String(ts)) = json_val {
+                        let parsed = parse_exiftool_subsecond_timestamp_with_offset(ts);
+                        if let Ok(timestamp) = parsed {
+                            return TimestampGuess::Utc(timestamp.with_timezone(&Utc));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
     // maybe we're super lucky and there's a timestamp with timezone right there
     if let Some(ref composite) = et.composite {
         if let Some(ref subsec_date_time_original) = composite.subsec_date_time_original {
@@ -133,28 +153,11 @@ pub fn figure_out_utc_timestamp(et: &exiftool::Output) -> TimestampGuess {
             .as_ref()
             .or(exif.offset_time_original.as_ref())
         {
-            if let Some(ref create_time) = exif.create_time {
-                let parsed = parse_exiftool_timestamp_with_offset_time(create_time, offset);
+            if let Some(ref create_date) = exif.create_date {
+                let parsed = parse_exiftool_timestamp_with_offset_time(create_date, offset);
                 if let Ok(timestamp) = parsed {
                     return TimestampGuess::Utc(timestamp.with_timezone(&Utc));
                 }
-            }
-        }
-    }
-    // manufacturer-specific tags in MakerNotes
-    if let Some(ref maker_notes) = et.maker_notes {
-        if let Some(make) = et.exif.as_ref().map(|exif| exif.make.as_ref()).flatten() {
-            match make.to_lowercase().as_str() {
-                "samsung" => {
-                    let json_val = maker_notes.get("TimeStamp");
-                    if let Some(serde_json::Value::String(ts)) = json_val {
-                        let parsed = parse_exiftool_subsecond_timestamp_with_offset(ts);
-                        if let Ok(timestamp) = parsed {
-                            return TimestampGuess::Utc(timestamp.with_timezone(&Utc));
-                        }
-                    }
-                }
-                _ => {}
             }
         }
     }

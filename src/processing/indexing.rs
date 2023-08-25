@@ -16,6 +16,7 @@ use super::{
     video::probe_video,
 };
 
+#[instrument(skip(pool))]
 pub async fn index_asset_root(asset_root: &AssetRootDir, pool: &DbPool) -> Result<Vec<AssetId>> {
     let mut new_asset_ids: Vec<AssetId> = vec![];
     // FIXME if a datadir is subdir of assetroot it should obviously not be indexed
@@ -23,7 +24,10 @@ pub async fn index_asset_root(asset_root: &AssetRootDir, pool: &DbPool) -> Resul
         match entry {
             Ok(e) => {
                 if e.file_type().is_file() {
-                    if let Some(id) = index_file(e.path(), asset_root, pool).await? {
+                    if let Some(id) = index_file(e.path(), asset_root, pool)
+                        .in_current_span()
+                        .await?
+                    {
                         new_asset_ids.push(id);
                     }
                 }
@@ -43,6 +47,7 @@ pub async fn index_asset_root(asset_root: &AssetRootDir, pool: &DbPool) -> Resul
     Ok(new_asset_ids)
 }
 
+#[instrument(skip(pool))]
 async fn index_file(
     path: &Path,
     asset_root: &AssetRootDir,
@@ -115,6 +120,7 @@ async fn index_file(
         }
     };
     let timestamp_guess = figure_out_utc_timestamp(&metadata);
+    debug!(?timestamp_guess);
     let timestamp = match timestamp_guess {
         TimestampGuess::None => MediaTimestamp::Utc(Utc::now()),
         TimestampGuess::Utc(utc) => MediaTimestamp::Utc(utc),

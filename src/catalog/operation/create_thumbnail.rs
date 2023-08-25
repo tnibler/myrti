@@ -118,9 +118,7 @@ pub async fn perform_side_effects_create_thumbnail(
                     .in_current_span()
                     .await
                 {
-                    Ok(_) => {
-                        tracing::info!("done")
-                    }
+                    Ok(_) => {}
                     Err(err) => {
                         result.failed.push((thumb.clone(), err));
                     }

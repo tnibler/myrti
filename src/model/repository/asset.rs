@@ -40,8 +40,9 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
-codec_name,
-bitrate,
+video_codec_name,
+video_bitrate,
+audio_codec_name,
 resource_dir
 FROM Asset
 WHERE id=?;
@@ -115,8 +116,9 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
-codec_name,
-bitrate,
+video_codec_name,
+video_bitrate,
+audio_codec_name,
 resource_dir
 FROM Asset;
     "#
@@ -214,8 +216,9 @@ thumb_small_square_width=?,
 thumb_small_square_height=?,
 thumb_large_orig_width=?,
 thumb_large_orig_height=?,
-codec_name=?,
-bitrate=?,
+video_codec_name=?,
+video_bitrate=?,
+audio_codec_name=?,
 resource_dir=?
 WHERE id=?;
 ",
@@ -238,8 +241,9 @@ WHERE id=?;
         db_asset.thumb_small_square_height,
         db_asset.thumb_large_orig_width,
         db_asset.thumb_large_orig_height,
-        db_asset.codec_name,
-        db_asset.bitrate,
+        db_asset.video_codec_name,
+        db_asset.video_bitrate,
+        db_asset.audio_codec_name,
         db_asset.resource_dir,
         asset.base.id.0
     )
@@ -291,12 +295,13 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
-codec_name,
-bitrate,
+video_codec_name,
+video_bitrate,
+audio_codec_name,
 resource_dir
 )
 VALUES
-(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 ",
         db_asset.ty,
         db_asset.root_dir_id.0,
@@ -317,8 +322,9 @@ VALUES
         db_asset.thumb_small_square_height,
         db_asset.thumb_large_orig_width,
         db_asset.thumb_large_orig_height,
-        db_asset.codec_name,
-        db_asset.bitrate,
+        db_asset.video_codec_name,
+        db_asset.video_bitrate,
+        db_asset.audio_codec_name,
         db_asset.resource_dir
     )
     .execute(pool)
@@ -407,8 +413,9 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
-codec_name,
-bitrate,
+video_codec_name,
+video_bitrate,
+audio_codec_name,
 resource_dir
 FROM Asset 
 WHERE
@@ -458,8 +465,9 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
-codec_name,
-bitrate,
+video_codec_name,
+video_bitrate,
+audio_codec_name,
 resource_dir
 FROM Asset 
 WHERE
@@ -530,8 +538,9 @@ Asset.thumb_small_square_width as thumb_small_square_width,
 Asset.thumb_small_square_height as thumb_small_square_height,
 Asset.thumb_large_orig_width as thumb_large_orig_width,
 Asset.thumb_large_orig_height as thumb_large_orig_height,
-Asset.codec_name as codec_name,
-Asset.bitrate as bitrate,
+Asset.video_codec_name as video_codec_name,
+Asset.video_bitrate as video_bitrate,
+Asset.audio_codec_name as audio_codec_name,
 Asset.resource_dir as resource_dir
 FROM Asset
 WHERE Asset.ty = "#,
@@ -587,8 +596,9 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
-codec_name,
-bitrate,
+video_codec_name,
+video_bitrate,
+audio_codec_name,
 resource_dir
 FROM Asset 
 WHERE resource_dir IS NULL

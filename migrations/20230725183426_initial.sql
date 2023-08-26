@@ -39,16 +39,18 @@ CREATE TABLE Asset (
   -- columns for images only
 
   -- columns for videos only
-  codec_name TEXT,
-  bitrate INTEGER,
+  video_codec_name TEXT,
+  video_bitrate INTEGER,
+  audio_codec_name TEXT,
   resource_dir TEXT,
 
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(id) ON DELETE CASCADE,
   UNIQUE(root_dir_id, file_path),
 
   CHECK(ty = 1 OR (
-      codec_name IS NOT NULL AND
-      bitrate IS NOT NULL
+      video_codec_name IS NOT NULL AND
+      video_bitrate IS NOT NULL AND
+      audio_codec_name IS NOT NULL
   )),
   CHECK(taken_date IS NOT NULL OR taken_date_local_fallback IS NOT NULL)
 ) STRICT;
@@ -67,7 +69,7 @@ CREATE TABLE VideoRepresentation (
 CREATE TABLE AudioRepresentation (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   asset_id INTEGER NOT NULL,
-  -- codec_name TEXT NOT NULL,
+  codec_name TEXT NOT NULL,
   -- bitrate INTEGER NOT NULL,
   path TEXT NOT NULL,
   FOREIGN KEY (asset_id) REFERENCES Asset(id) ON DELETE CASCADE

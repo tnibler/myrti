@@ -16,4 +16,5 @@ pub struct DbAudioRepresentation {
     pub id: AudioRepresentationId,
     pub asset_id: AssetId,
     pub path: String,
+    pub codec_name: String,
 }

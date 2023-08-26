@@ -96,8 +96,9 @@ async fn insert_mismatching_asset_ty_and_spe_fails() {
 
     let asset2 = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: String::from("h264"),
-            bitrate: 1234,
+            video_codec_name: "h264".into(),
+            video_bitrate: 1234,
+            audio_codec_name: "aac".into(),
             dash_resource_dir: None,
         }),
         base: AssetBase {
@@ -150,8 +151,9 @@ async fn insert_update_asset() {
     };
     let asset2 = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "h264".to_owned(),
-            bitrate: 1234,
+            video_codec_name: "h264".into(),
+            video_bitrate: 1234,
+            audio_codec_name: "mp3".into(),
             dash_resource_dir: Some("/dash/dir".into()),
         }),
         base: AssetBase {
@@ -180,8 +182,9 @@ async fn insert_update_asset() {
     let asset2_id = assert_ok!(repository::asset::insert_asset(&pool, &asset2).await);
     let asset2_changed = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "hevc".to_owned(),
-            bitrate: 456,
+            video_codec_name: "hevc".into(),
+            video_bitrate: 456,
+            audio_codec_name: "aac".into(),
             dash_resource_dir: Some("/other/dir".into()),
         }),
         base: AssetBase {
@@ -261,8 +264,9 @@ async fn get_assets_with_missing_thumbnails() {
     };
     let asset2 = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "h264".to_owned(),
-            bitrate: 1234,
+            video_codec_name: "h264".to_owned(),
+            video_bitrate: 1234,
+            audio_codec_name: "aac".into(),
             dash_resource_dir: Some("/dash/dir".into()),
         }),
         base: AssetBase {
@@ -289,8 +293,9 @@ async fn get_assets_with_missing_thumbnails() {
     };
     let asset3 = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "h264".to_owned(),
-            bitrate: 456,
+            video_codec_name: "h264".to_owned(),
+            video_bitrate: 456,
+            audio_codec_name: "aac".into(),
             dash_resource_dir: Some("/dash/dir2".into()),
         }),
         base: AssetBase {
@@ -351,8 +356,9 @@ async fn get_videos_without_dash() {
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir2).await);
     let asset = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "h264".to_owned(),
-            bitrate: 1234,
+            video_codec_name: "h264".to_owned(),
+            video_bitrate: 1234,
+            audio_codec_name: "opus".to_owned(),
             dash_resource_dir: None,
         }),
         base: AssetBase {
@@ -403,8 +409,9 @@ async fn get_videos_without_dash() {
     };
     let asset3 = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "hevc".to_owned(),
-            bitrate: 123456,
+            video_codec_name: "hevc".to_owned(),
+            video_bitrate: 123456,
+            audio_codec_name: "aac".into(),
             dash_resource_dir: Some("/dash1".into()),
         }),
         base: AssetBase {
@@ -415,8 +422,9 @@ async fn get_videos_without_dash() {
     };
     let asset4 = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "hevc".to_owned(),
-            bitrate: 123456,
+            video_codec_name: "hevc".to_owned(),
+            video_bitrate: 123456,
+            audio_codec_name: "mp3".into(),
             dash_resource_dir: None,
         }),
         base: AssetBase {
@@ -478,8 +486,9 @@ async fn get_videos_with_no_acceptable_repr() {
     // video h264
     let asset = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "h264".to_owned(),
-            bitrate: 1234,
+            video_codec_name: "h264".to_owned(),
+            video_bitrate: 1234,
+            audio_codec_name: "aac".into(),
             dash_resource_dir: None,
         }),
         base: AssetBase {
@@ -532,8 +541,9 @@ async fn get_videos_with_no_acceptable_repr() {
     // video hevc
     let asset3 = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "hevc".to_owned(),
-            bitrate: 123456,
+            video_codec_name: "hevc".to_owned(),
+            video_bitrate: 123456,
+            audio_codec_name: "aac".into(),
             dash_resource_dir: Some("/dash1".into()),
         }),
         base: AssetBase {
@@ -545,8 +555,9 @@ async fn get_videos_with_no_acceptable_repr() {
     // video hevc
     let asset4 = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "hevc".to_owned(),
-            bitrate: 123456,
+            video_codec_name: "hevc".to_owned(),
+            video_bitrate: 123456,
+            audio_codec_name: "aac".into(),
             dash_resource_dir: None,
         }),
         base: AssetBase {
@@ -558,8 +569,9 @@ async fn get_videos_with_no_acceptable_repr() {
     // video mov mjpeg
     let asset5 = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "mjpeg".to_owned(),
-            bitrate: 123456,
+            video_codec_name: "mjpeg".to_owned(),
+            video_bitrate: 123456,
+            audio_codec_name: "pcm_u8".into(),
             dash_resource_dir: None,
         }),
         base: AssetBase {

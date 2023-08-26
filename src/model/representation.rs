@@ -21,6 +21,7 @@ pub struct VideoRepresentation {
 pub struct AudioRepresentation {
     pub id: AudioRepresentationId,
     pub asset_id: AssetId,
+    pub codec_name: String,
     pub path: PathBuf,
 }
 
@@ -55,6 +56,7 @@ impl TryFrom<&DbAudioRepresentation> for AudioRepresentation {
         Ok(AudioRepresentation {
             id: value.id,
             asset_id: value.asset_id,
+            codec_name: value.codec_name.clone(),
             path: PathBuf::from(&value.path),
         })
     }
@@ -99,6 +101,7 @@ impl TryFrom<&AudioRepresentation> for DbAudioRepresentation {
         Ok(DbAudioRepresentation {
             id: value.id,
             asset_id: value.asset_id,
+            codec_name: value.codec_name.clone(),
             path: path_to_string(&value.path)?,
         })
     }

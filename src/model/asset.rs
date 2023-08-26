@@ -9,8 +9,9 @@ pub struct Image {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Video {
-    pub codec_name: String,
-    pub bitrate: i64,
+    pub video_codec_name: String,
+    pub video_bitrate: i64,
+    pub audio_codec_name: String,
     pub dash_resource_dir: Option<PathBuf>,
 }
 

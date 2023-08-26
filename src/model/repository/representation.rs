@@ -50,6 +50,7 @@ pub async fn get_audio_representation(
 SELECT
 id,
 asset_id,
+codec_name,
 path
 FROM AudioRepresentation 
 WHERE asset_id=?;
@@ -96,9 +97,10 @@ pub async fn insert_audio_representation(
     let db_val: DbAudioRepresentation = repr.try_into()?;
     let result = sqlx::query!(
         r#"
-INSERT INTO AudioRepresentation VALUES(NULL, ?, ?);
+INSERT INTO AudioRepresentation VALUES(NULL, ?, ?, ?);
     "#,
         db_val.asset_id,
+        db_val.codec_name,
         db_val.path
     )
     .execute(conn)

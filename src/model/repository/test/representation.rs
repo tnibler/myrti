@@ -18,8 +18,9 @@ async fn insert_retrieve_video_representation() {
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
     let asset = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "h264".to_owned(),
-            bitrate: 1234,
+            video_codec_name: "h264".to_owned(),
+            video_bitrate: 1234,
+            audio_codec_name: "aac".into(),
             dash_resource_dir: None,
         }),
         base: AssetBase {
@@ -46,8 +47,9 @@ async fn insert_retrieve_video_representation() {
     };
     let asset2 = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "hevc".to_owned(),
-            bitrate: 456,
+            video_codec_name: "hevc".to_owned(),
+            video_bitrate: 456,
+            audio_codec_name: "opus".into(),
             dash_resource_dir: None,
         }),
         base: AssetBase {
@@ -151,8 +153,9 @@ async fn insert_retrieve_audio_representation() {
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
     let asset = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "h264".to_owned(),
-            bitrate: 1234,
+            video_codec_name: "h264".to_owned(),
+            video_bitrate: 1234,
+            audio_codec_name: "aac".into(),
             dash_resource_dir: None,
         }),
         base: AssetBase {
@@ -179,8 +182,9 @@ async fn insert_retrieve_audio_representation() {
     };
     let asset2 = Asset {
         sp: AssetSpe::Video(Video {
-            codec_name: "hevc".to_owned(),
-            bitrate: 456,
+            video_codec_name: "hevc".to_owned(),
+            video_bitrate: 456,
+            audio_codec_name: "mp3".into(),
             dash_resource_dir: None,
         }),
         base: AssetBase {
@@ -210,11 +214,13 @@ async fn insert_retrieve_audio_representation() {
     let audio_repr = AudioRepresentation {
         id: AudioRepresentationId(0),
         asset_id,
+        codec_name: "opus".into(),
         path: "/path/to/audio.mp4".into(),
     };
     let audio_repr2 = AudioRepresentation {
         id: AudioRepresentationId(0),
         asset_id: asset2_id,
+        codec_name: "flac".into(),
         path: "/path/to/audio2.mp4".into(),
     };
     let audio_repr_id = assert_ok!(

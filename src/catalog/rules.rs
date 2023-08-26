@@ -67,7 +67,7 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
         return Ok(acceptable_codecs_no_dash
             .into_iter()
             .map(|asset| {
-                let video_out_path = PathBuf::from(asset.video.codec_name).join(format!(
+                let video_out_path = PathBuf::from(asset.video.video_codec_name).join(format!(
                     "{}x{}.mp4",
                     asset.base.size.width, asset.base.size.height
                 ));

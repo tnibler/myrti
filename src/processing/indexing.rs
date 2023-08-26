@@ -13,7 +13,7 @@ use walkdir::WalkDir;
 
 use super::{
     media_metadata::{figure_out_utc_timestamp, read_media_metadata, TimestampGuess},
-    video::probe_video,
+    video::{probe_audio, probe_video},
 };
 
 #[instrument(skip(pool))]
@@ -73,12 +73,18 @@ async fn index_file(
     };
     let (ty, full): (AssetType, AssetSpe) = match metadata.file.mime_type.as_ref() {
         Some(mime) if mime.starts_with("video") => {
-            let probe = probe_video(path)
+            let probe_video = probe_video(path)
+                .in_current_span()
+                .await
+                .wrap_err(format!("file has mimetype {}, but ffprobe failed", mime))?;
+            let probe_audio = probe_audio(path)
+                .in_current_span()
                 .await
                 .wrap_err(format!("file has mimetype {}, but ffprobe failed", mime))?;
             let video_info = AssetSpe::Video(Video {
-                codec_name: probe.codec_name,
-                bitrate: probe.bitrate,
+                video_codec_name: probe_video.codec_name.to_ascii_lowercase(),
+                video_bitrate: probe_video.bitrate,
+                audio_codec_name: probe_audio.codec_name.to_ascii_lowercase(),
                 dash_resource_dir: None,
             });
             (AssetType::Video, video_info)

@@ -107,6 +107,7 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
             let audio_representation = AudioRepresentation {
                 id: AudioRepresentationId(0),
                 asset_id: op.asset_id,
+                codec_name: "TODO".into(), // TODO
                 path: op.output_dir.join(audio_output),
             };
             let _audio_representation_id = repository::representation::insert_audio_representation(
@@ -121,10 +122,10 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
         CreatedVideoRepr::PackagedOriginalFile(video_output) => VideoRepresentation {
             id: VideoRepresentationId(0),
             asset_id: asset.base.id,
-            codec_name: asset.video.codec_name,
+            codec_name: asset.video.video_codec_name,
             width: asset.base.size.width,
             height: asset.base.size.height,
-            bitrate: asset.video.bitrate,
+            bitrate: asset.video.video_bitrate,
             path: op.output_dir.join(video_output),
         },
         CreatedVideoRepr::Transcode(transcode) => VideoRepresentation {

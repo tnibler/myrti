@@ -5,7 +5,7 @@ use claims::{assert_err, assert_ok};
 
 use crate::model::{
     repository, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType,
-    Image, MediaTimestamp, Size, Video, VideoAsset,
+    Image, MediaTimestamp, Size, Video, VideoAsset, VideoRepresentation, VideoRepresentationId,
 };
 
 use super::*;
@@ -416,8 +416,8 @@ async fn get_videos_without_dash() {
         },
     };
     let asset_id = assert_ok!(repository::asset::insert_asset(&pool, &asset).await);
-    let asset2_id = assert_ok!(repository::asset::insert_asset(&pool, &asset2).await);
-    let asset3_id = assert_ok!(repository::asset::insert_asset(&pool, &asset3).await);
+    let _asset2_id = assert_ok!(repository::asset::insert_asset(&pool, &asset2).await);
+    let _asset3_id = assert_ok!(repository::asset::insert_asset(&pool, &asset3).await);
     let asset4_id = assert_ok!(repository::asset::insert_asset(&pool, &asset4).await);
     let videos_without_dash: HashSet<VideoAsset> =
         assert_ok!(repository::asset::get_video_assets_without_dash(&pool).await)
@@ -452,5 +452,166 @@ async fn get_videos_in_acceptable_codec_without_dash() {
 
 #[tokio::test]
 async fn get_videos_with_no_acceptable_repr() {
-    todo!()
+    let pool = create_db().await;
+    let asset_root_dir = AssetRootDir {
+        id: AssetRootDirId(0),
+        path: PathBuf::from("/path/to/assets"),
+    };
+    let asset_root_dir2 = AssetRootDir {
+        id: AssetRootDirId(0),
+        path: PathBuf::from("/path/to/more/assets"),
+    };
+    let root_dir_id =
+        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
+    let root_dir2_id =
+        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir2).await);
+    // video h264
+    let asset = Asset {
+        sp: AssetSpe::Video(Video {
+            codec_name: "h264".to_owned(),
+            bitrate: 1234,
+            dash_resource_dir: None,
+        }),
+        base: AssetBase {
+            id: AssetId(0),
+            ty: AssetType::Video,
+            root_dir_id: root_dir2_id,
+            file_path: PathBuf::from("video.mp4"),
+            added_at: Utc::now(),
+            taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(3)).unwrap()),
+            size: Size {
+                width: 100,
+                height: 100,
+            },
+            rotation_correction: Some(90),
+            hash: None,
+            thumb_small_square_avif: Some("/path/1".into()),
+            thumb_small_square_webp: None,
+            thumb_large_orig_avif: None,
+            thumb_large_orig_webp: Some("/path/2".into()),
+            thumb_small_square_size: None,
+            thumb_large_orig_size: None,
+        },
+    };
+    // image
+    let asset2 = Asset {
+        sp: AssetSpe::Image(Image {}),
+        base: AssetBase {
+            id: AssetId(0),
+            ty: AssetType::Image,
+            root_dir_id,
+            file_path: "/path/to/image.jpg".into(),
+            added_at: Utc::now(),
+            taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(4)).unwrap()),
+            size: Size {
+                width: 1000,
+                height: 1000,
+            },
+            rotation_correction: None,
+            hash: None,
+            thumb_small_square_avif: None,
+            thumb_small_square_webp: None,
+            thumb_large_orig_avif: None,
+            thumb_large_orig_webp: None,
+            thumb_small_square_size: None,
+            thumb_large_orig_size: None,
+        },
+    };
+    // video hevc
+    let asset3 = Asset {
+        sp: AssetSpe::Video(Video {
+            codec_name: "hevc".to_owned(),
+            bitrate: 123456,
+            dash_resource_dir: Some("/dash1".into()),
+        }),
+        base: AssetBase {
+            root_dir_id: root_dir2_id,
+            file_path: "/some/video.mp4".into(),
+            ..asset.base.clone()
+        },
+    };
+    // video hevc
+    let asset4 = Asset {
+        sp: AssetSpe::Video(Video {
+            codec_name: "hevc".to_owned(),
+            bitrate: 123456,
+            dash_resource_dir: None,
+        }),
+        base: AssetBase {
+            root_dir_id: root_dir2_id,
+            file_path: "/some/video2.mp4".into(),
+            ..asset.base.clone()
+        },
+    };
+    let _asset_id = assert_ok!(repository::asset::insert_asset(&pool, &asset).await);
+    let _asset2_id = assert_ok!(repository::asset::insert_asset(&pool, &asset2).await);
+    let asset3_id = assert_ok!(repository::asset::insert_asset(&pool, &asset3).await);
+    let asset4_id = assert_ok!(repository::asset::insert_asset(&pool, &asset4).await);
+    let acceptable_codecs = ["h264", "av1", "vp9"];
+    let videos_with_no_acceptable_repr: HashSet<VideoAsset> = assert_ok!(
+        repository::asset::get_video_assets_with_no_acceptable_repr(
+            &pool,
+            acceptable_codecs.into_iter()
+        )
+        .await
+    )
+    .into_iter()
+    .collect();
+    let expected: HashSet<VideoAsset> = [
+        Asset {
+            base: AssetBase {
+                id: asset3_id,
+                ..asset3.base.clone()
+            },
+            ..asset3.clone()
+        },
+        Asset {
+            base: AssetBase {
+                id: asset4_id,
+                ..asset4.base.clone()
+            },
+            ..asset4.clone()
+        },
+    ]
+    .into_iter()
+    .map(|a| a.try_into().unwrap())
+    .collect();
+    assert_eq!(videos_with_no_acceptable_repr, expected);
+
+    let asset3_repr = VideoRepresentation {
+        id: VideoRepresentationId(0),
+        asset_id: asset3_id,
+        bitrate: 123456,
+        codec_name: "av1".to_owned(),
+        width: 100,
+        height: 100,
+        path: "/path/to/av1repr.mp4".into(),
+    };
+    let _asset3_repr_id = assert_ok!(
+        repository::representation::insert_video_representation(
+            pool.acquire().await.unwrap().as_mut(),
+            &asset3_repr
+        )
+        .await
+    );
+    let videos_with_no_acceptable_repr: HashSet<VideoAsset> = assert_ok!(
+        repository::asset::get_video_assets_with_no_acceptable_repr(
+            &pool,
+            acceptable_codecs.into_iter()
+        )
+        .await
+    )
+    .into_iter()
+    .collect();
+    let expected: HashSet<VideoAsset> = [Asset {
+        base: AssetBase {
+            id: asset4_id,
+            ..asset4.base
+        },
+        ..asset4
+    }]
+    .into_iter()
+    .map(|a| a.try_into().unwrap())
+    .collect();
+    assert_eq!(videos_with_no_acceptable_repr, expected);
 }

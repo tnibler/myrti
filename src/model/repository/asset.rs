@@ -485,6 +485,7 @@ pub async fn get_video_assets_with_no_acceptable_repr(
     pool: &DbPool,
     acceptable_codecs: impl Iterator<Item = &str>,
 ) -> Result<Vec<VideoAsset>> {
+    // TODO this query can be more efficient without the last subquery and just left join instead
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new(
         r#"
 WITH codecs AS 

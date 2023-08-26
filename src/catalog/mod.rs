@@ -16,13 +16,3 @@
 pub mod encoding_target;
 pub mod operation;
 pub mod rules;
-
-use self::operation::create_thumbnail::CreateThumbnail;
-use self::operation::package_video::PackageVideo;
-
-/// An operation that alters the catalog state
-#[derive(Debug, Clone)]
-pub enum Operation {
-    CreateThumbnail(Vec<CreateThumbnail>),
-    PackageVideo(Vec<PackageVideo>),
-}

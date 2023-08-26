@@ -3,12 +3,15 @@ pub struct EncodingTarget {
     pub codec: CodecTarget,
     pub scale: Option<Scale>,
 }
+
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CodecTarget {
     AVC(avc::AVCTarget),
     AV1(av1::AV1Target),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scale {
     HeightKeepAspect { height: u32 },
@@ -20,6 +23,7 @@ pub mod avc {
 
     use eyre::{eyre, Report};
 
+    #[allow(dead_code)]
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct AVCTarget {
         pub preset: Preset,
@@ -28,6 +32,7 @@ pub mod avc {
         pub max_bitrate: Option<u32>,
     }
 
+    #[allow(dead_code)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Preset {
         Ultrafast,
@@ -41,6 +46,7 @@ pub mod avc {
         Veryslow,
     }
 
+    #[allow(dead_code)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum Tune {
         Film,

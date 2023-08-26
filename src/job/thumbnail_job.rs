@@ -5,19 +5,19 @@ use chrono::Utc;
 use eyre::{Context, Report, Result};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, instrument, Instrument};
+use tracing::{debug, error, instrument, Instrument};
 
 use crate::{
     catalog::operation::create_thumbnail::{
         apply_create_thumbnail, perform_side_effects_create_thumbnail, CreateThumbnail,
-        CreateThumbnailWithPaths, ThumbnailToCreate, ThumbnailToCreateWithPaths,
+        CreateThumbnailWithPaths, ThumbnailToCreateWithPaths,
     },
     core::{
         job::{Job, JobHandle, JobProgress, JobResultType},
         DataDirManager,
     },
     model::{
-        repository::{self, failed_job::insert_failed_thumbnail_job, pool::DbPool},
+        repository::{self, pool::DbPool},
         AssetId, FailedThumbnailJob, ThumbnailType,
     },
     processing::hash::hash_file,

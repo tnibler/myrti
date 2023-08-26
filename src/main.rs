@@ -1,10 +1,5 @@
-use crate::{
-    core::{
-        job::JobId,
-        monitor::{Monitor, MonitorMessage},
-    },
-    model::{DataDir, DataDirId},
-};
+use std::{path::PathBuf, str::FromStr, sync::Arc};
+
 use axum::{
     extract::{Query, State},
     http::Method,
@@ -19,7 +14,6 @@ use http_error::HttpError;
 use model::repository::{self, pool::DbPool};
 use serde::Deserialize;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
-use std::{path::PathBuf, str::FromStr, sync::Arc};
 use tokio::{fs, signal, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
@@ -32,11 +26,16 @@ use tower_http::{
 use tracing::{info, instrument, Instrument};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{prelude::*, EnvFilter};
+use tracing_tree::HierarchicalLayer;
 
 use crate::{
     app_state::{AppState, SharedState},
-    core::scheduler::Scheduler,
-    model::{AssetRootDir, AssetRootDirId},
+    core::{
+        job::JobId,
+        monitor::{Monitor, MonitorMessage},
+        scheduler::Scheduler,
+    },
+    model::{AssetRootDir, AssetRootDirId, DataDir, DataDirId},
 };
 
 mod api;
@@ -133,11 +132,12 @@ async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
         .with(ErrorLayer::default())
-        .with(
-            tracing_subscriber::fmt::layer()
-                // .with_span_events(FmtSpan::NEW)
-                .with_writer(std::io::stderr),
-        )
+        .with(HierarchicalLayer::new(2).with_targets(true))
+        // .with(
+        //     tracing_subscriber::fmt::layer()
+        //         // .with_span_events(FmtSpan::NEW)
+        //         .with_writer(std::io::stderr),
+        // )
         .init();
 
     info!("Starting up...");

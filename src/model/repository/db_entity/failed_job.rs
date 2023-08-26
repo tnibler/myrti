@@ -1,4 +1,4 @@
-use crate::model::{AssetId, FailedThumbnailJobId};
+use crate::model::AssetId;
 
 #[derive(Debug, Clone, sqlx::Type)]
 pub struct DbFailedThumbnailJob {

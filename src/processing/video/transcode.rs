@@ -3,7 +3,6 @@ use std::{
     process::Stdio,
 };
 
-use eyre::Result;
 use tokio::process::Command;
 
 use crate::catalog::encoding_target::{CodecTarget, EncodingTarget, Scale};

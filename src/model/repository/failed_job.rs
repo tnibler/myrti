@@ -1,18 +1,13 @@
-use crate::model::{
-    repository::db_entity::DbFailedThumbnailJob, AssetId, FailedThumbnailJob, FailedThumbnailJobId,
-};
+use crate::model::{repository::db_entity::DbFailedThumbnailJob, AssetId, FailedThumbnailJob};
 use eyre::{Context, Result};
 use tracing::{instrument, Instrument};
 
 use super::pool::DbPool;
 
 #[instrument(skip(pool))]
-pub async fn insert_failed_thumbnail_job(
-    pool: &DbPool,
-    j: &FailedThumbnailJob,
-) -> Result<FailedThumbnailJobId> {
+pub async fn insert_failed_thumbnail_job(pool: &DbPool, j: &FailedThumbnailJob) -> Result<()> {
     let db_value: DbFailedThumbnailJob = j.try_into()?;
-    let result = sqlx::query!(
+    sqlx::query!(
         r#"
 INSERT INTO FailedThumbnailJob VALUES (?, ?, ?);
     "#,
@@ -24,7 +19,7 @@ INSERT INTO FailedThumbnailJob VALUES (?, ?, ?);
     .in_current_span()
     .await
     .wrap_err("could not insert into table FailedThumbnailJob")?;
-    Ok(FailedThumbnailJobId(result.last_insert_rowid()))
+    Ok(())
 }
 
 #[instrument(skip(pool))]

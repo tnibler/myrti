@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use eyre::{eyre, Context};
 use serde::Deserialize;
 use tokio_util::io::ReaderStream;
-use tracing::{debug, instrument, warn, Instrument};
+use tracing::{instrument, warn, Instrument};
 
 use crate::{
     api::{
@@ -20,7 +20,7 @@ use crate::{
         schema::{Asset, AssetId, TimelineChunk, TimelineRequest},
         ApiResult,
     },
-    app_state::{self, SharedState},
+    app_state::SharedState,
     model::{self, repository},
 };
 

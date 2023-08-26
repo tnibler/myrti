@@ -1,16 +1,13 @@
+use std::sync::Arc;
+
 use eyre::{Context, Report, Result};
-use std::{path::PathBuf, sync::Arc};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, instrument, Instrument};
+use tracing::{instrument, Instrument};
 
 use crate::{
-    catalog::{
-        encoding_target::EncodingTarget,
-        operation::package_video::{
-            apply_package_video, perform_side_effects_package_video, PackageVideo,
-            PackageVideoWithPath,
-        },
+    catalog::operation::package_video::{
+        apply_package_video, perform_side_effects_package_video, PackageVideo, PackageVideoWithPath,
     },
     core::{
         job::{Job, JobHandle, JobProgress, JobResultType},
@@ -18,7 +15,7 @@ use crate::{
     },
     model::{
         repository::{self, pool::DbPool},
-        AssetId, VideoAsset,
+        VideoAsset,
     },
 };
 
@@ -52,10 +49,10 @@ impl DashSegmentingJob {
         }
     }
 
-    #[instrument(name = "DashSegmentingJob", skip(self, status_tx, cancel))]
+    #[instrument(name = "DashSegmentingJob", skip(self, _status_tx, cancel))]
     async fn run(
         self,
-        status_tx: mpsc::Sender<JobProgress>,
+        _status_tx: mpsc::Sender<JobProgress>,
         cancel: CancellationToken,
     ) -> DashSegmentingJobResult {
         let mut failed: Vec<(PackageVideo, Report)> = vec![];

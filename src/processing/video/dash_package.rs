@@ -4,7 +4,7 @@ use std::{
 };
 
 use eyre::{bail, Context, Result};
-use tokio::{fs, process::Command};
+use tokio::process::Command;
 use tracing::{debug, instrument, Instrument};
 
 use super::transcode::ffmpeg_command;

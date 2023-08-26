@@ -14,7 +14,6 @@ use crate::{
         indexing_job::{IndexingJob, IndexingJobParams},
         thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
     },
-    model::repository,
 };
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
@@ -100,7 +99,6 @@ impl SchedulerImpl {
                                 UserRequest::ReindexAssetRoots { params } => {
                                     self.queue_or_start_indexing(params).await;
                                 },
-                                _ => todo!()
                             }
                         },
                         SchedulerMessage::JobComplete {id, result }=> {

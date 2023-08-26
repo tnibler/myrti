@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use super::{
     repository::db_entity::{DbAssetPathOnDisk, DbAssetThumbnails},
-    util::{opt_path_to_string, path_to_string},
+    util::opt_path_to_string,
     AssetId, AssetType,
 };
 

@@ -1,9 +1,9 @@
-use chrono::{DateTime, FixedOffset, NaiveDateTime, ParseResult, TimeZone, Utc};
-use eyre::{eyre, Context, Result};
-use serde::Deserialize;
 use std::{path::Path, process::Stdio};
+
+use chrono::{DateTime, FixedOffset, NaiveDateTime, ParseResult, Utc};
+use eyre::{eyre, Context, Result};
 use tokio::process::Command;
-use tracing::{debug, info_span, Instrument};
+use tracing::{info_span, Instrument};
 
 pub mod exiftool {
     use serde::Deserialize;

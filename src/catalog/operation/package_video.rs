@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 use std::process::Stdio;
 
-use eyre::{eyre, Context, Report, Result};
+use eyre::{eyre, Context, Result};
 use tokio::process::Command;
-use tracing::{info, instrument, warn, Instrument};
+use tracing::{instrument, warn, Instrument};
 
 use crate::processing::video::dash_package::{
     generate_mpd, shaka_package, RepresentationInput, RepresentationType,
@@ -146,25 +146,17 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
     Ok(())
 }
 
-pub struct PackageVideoSideEffectResult {
-    failed: Vec<(PackageVideo, Report)>,
-}
-
 #[instrument(skip(pool))]
 pub async fn perform_side_effects_package_video(
     pool: &DbPool,
     op: &PackageVideoWithPath,
 ) -> Result<CompletedPackageVideo> {
-    // create directories
     tokio::fs::create_dir_all(&op.output_dir)
         .await
         .wrap_err("could not create output directory")?;
     let package_video = &op.package_video;
     let output_dir = &op.output_dir;
     let asset_id = package_video.asset_id;
-    let asset: VideoAsset = repository::asset::get_asset(pool, asset_id)
-        .await?
-        .try_into()?;
     let asset_path = repository::asset::get_asset_path_on_disk(pool, asset_id).await?;
 
     let audio_path = match &package_video.create_audio_repr {

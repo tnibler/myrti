@@ -1,3 +1,13 @@
+use axum::{
+    extract::{Query, State},
+    response::IntoResponse,
+    routing::post,
+    Router,
+};
+use eyre::Context;
+use serde::Deserialize;
+use tracing::info;
+
 use crate::{
     app_state::SharedState,
     core::scheduler::{SchedulerMessage, UserRequest},
@@ -7,15 +17,6 @@ use crate::{
     model::repository,
     model::AssetRootDirId,
 };
-use axum::{
-    extract::{Query, State},
-    response::IntoResponse,
-    routing::post,
-    Json, Router,
-};
-use eyre::Context;
-use serde::Deserialize;
-use tracing::info;
 
 #[derive(Deserialize)]
 struct QueryIndexAssetRoot {

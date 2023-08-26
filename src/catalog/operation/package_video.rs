@@ -1,7 +1,9 @@
 use std::path::PathBuf;
+use std::process::Stdio;
 
 use eyre::{eyre, Context, Report, Result};
-use tracing::{info, instrument, warn};
+use tokio::process::Command;
+use tracing::{info, instrument, warn, Instrument};
 
 use crate::processing::video::dash_package::{
     generate_mpd, shaka_package, RepresentationInput, RepresentationType,
@@ -184,15 +186,72 @@ pub async fn perform_side_effects_package_video(
     let created_video_repr = match &package_video.create_video_repr {
         CreateVideoRepr::PackageOriginalFile(video_output) => {
             let out_path = output_dir.join(video_output);
-            let repr_inputs: &[RepresentationInput] = &[RepresentationInput {
-                path: asset_path.path_on_disk(),
-                ty: RepresentationType::Video,
-                out_path: out_path.clone(),
-            }];
-            shaka_package(repr_inputs)
-                .await
-                .wrap_err("could not shaka package video stream")?;
-            CreatedVideoRepr::PackagedOriginalFile(out_path)
+            if let Some(dir) = out_path.parent() {
+                tokio::fs::create_dir_all(dir)
+                    .in_current_span()
+                    .await
+                    .wrap_err("could not create video output dir")?;
+            }
+            // shaka-packager discards some metadata, notable stream side data like
+            // rotation.
+            // To correct that, we have to rerun the shaka-packager output through ffmpeg
+            // to set the rotation again if present.
+            // BUT since shaka-packager also outputs a media_info file that we need,
+            // the shaka-packager output file needs to be the same as the final ffmpeg
+            // output.
+            // TODO calling ffprobe yet again, ideally once is enough
+            let ffprobe = probe_video(&asset_path.path_on_disk()).await?;
+            if let Some(rotation) = ffprobe.rotation {
+                let temp_dir = tempfile::tempdir().wrap_err("could not create temp dir")?;
+                let ffmpeg_out_path = temp_dir.path().join("video.mp4");
+                let repr_inputs: &[RepresentationInput] = &[RepresentationInput {
+                    path: asset_path.path_on_disk(),
+                    ty: RepresentationType::Video,
+                    out_path: out_path.clone(),
+                }];
+                shaka_package(repr_inputs)
+                    .in_current_span()
+                    .await
+                    .wrap_err("could not shaka package video stream")?;
+                let mut command = Command::new("ffmpeg");
+                command
+                    .args(["-nostdin", "-y", "-display_rotation"])
+                    .arg(rotation.to_string())
+                    .arg("-i")
+                    .arg(&out_path)
+                    .arg("-metadata:s:v")
+                    .arg(format!(r#"rotate="{}""#, rotation))
+                    .args(["-c:v", "copy", "-c:a", "copy"])
+                    .arg(&ffmpeg_out_path)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+                let result = command
+                    .spawn()
+                    .wrap_err("failed to call ffmpeg")?
+                    .wait()
+                    .in_current_span()
+                    .await
+                    .wrap_err("error waiting for ffmpeg")?;
+                if !result.success() {
+                    return Err(eyre!("ffmpeg exited with an error"));
+                }
+                tokio::fs::copy(&ffmpeg_out_path, &out_path)
+                    .in_current_span()
+                    .await
+                    .wrap_err("error copying ffmpeg output to dash dir")?;
+                CreatedVideoRepr::PackagedOriginalFile(out_path)
+            } else {
+                let repr_inputs: &[RepresentationInput] = &[RepresentationInput {
+                    path: asset_path.path_on_disk(),
+                    ty: RepresentationType::Video,
+                    out_path: out_path.clone(),
+                }];
+                shaka_package(repr_inputs)
+                    .in_current_span()
+                    .await
+                    .wrap_err("could not shaka package video stream")?;
+                CreatedVideoRepr::PackagedOriginalFile(out_path)
+            }
         }
         CreateVideoRepr::Transcode(transcode) => {
             // ffmpeg transcodes to a temp file which is then fed through shaka packager

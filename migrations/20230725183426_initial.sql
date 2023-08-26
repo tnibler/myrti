@@ -16,6 +16,7 @@ CREATE TABLE Asset (
   ty INTEGER NOT NULL CHECK(ty IN (1, 2)),
   root_dir_id INTEGER NOT NULL,
   file_path TEXT NOT NULL,
+  file_type TEXT NOT NULL,
   hash BLOB,
   added_at TEXT NOT NULL,
   -- with zone offset if we know it, otherwise no offset and just assume local time

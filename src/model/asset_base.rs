@@ -17,6 +17,7 @@ pub struct AssetBase {
     pub id: AssetId,
     pub ty: AssetType,
     pub root_dir_id: AssetRootDirId,
+    pub file_type: String,
     pub file_path: PathBuf,
     pub added_at: DateTime<Utc>,
     /// The date under which this asset is displayed in the timeline
@@ -72,6 +73,7 @@ impl TryFrom<&Asset> for DbAsset {
             id: value.base.id,
             ty: value.base.ty.into(),
             root_dir_id: value.base.root_dir_id,
+            file_type: value.base.file_type.clone(),
             file_path,
             hash: value.base.hash.map(|h| hash_u64_to_vec8(h)),
             added_at: datetime_to_db_repr(&value.base.added_at),
@@ -147,6 +149,7 @@ impl TryFrom<&DbAsset> for Asset {
                 id: value.id,
                 ty: value.ty.into(),
                 root_dir_id: value.root_dir_id,
+                file_type: value.file_type.clone(),
                 file_path: value.file_path.as_str().into(),
                 added_at: datetime_from_db_repr(&value.added_at)?,
                 hash,

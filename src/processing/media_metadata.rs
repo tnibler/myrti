@@ -12,6 +12,8 @@ pub mod exiftool {
     pub struct File {
         #[serde(rename = "MIMEType")]
         pub mime_type: Option<String>,
+        #[serde(rename = "FileType")]
+        pub file_type: Option<String>,
         #[serde(rename = "FileModifyDate")]
         pub file_modify_date: Option<String>,
         #[serde(rename = "FileAccessDate")]

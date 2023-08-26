@@ -6,6 +6,7 @@ pub struct DbAsset {
     pub id: AssetId,
     pub ty: DbAssetType,
     pub root_dir_id: AssetRootDirId,
+    pub file_type: String,
     pub file_path: String,
     pub hash: Option<Vec<u8>>,
     pub added_at: String,

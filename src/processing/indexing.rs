@@ -64,6 +64,13 @@ async fn index_file(
         .in_current_span()
         .await
         .wrap_err("could not read file metadata")?;
+    let file_type = match &metadata.file.file_type {
+        Some(ft) => ft.to_ascii_lowercase(),
+        None => {
+            debug!(path=%path.display(), "No file type in exiftool output, ignoring");
+            return Ok(None);
+        }
+    };
     let (ty, full): (AssetType, AssetSpe) = match metadata.file.mime_type.as_ref() {
         Some(mime) if mime.starts_with("video") => {
             let probe = probe_video(path)
@@ -120,7 +127,6 @@ async fn index_file(
         }
     };
     let timestamp_guess = figure_out_utc_timestamp(&metadata);
-    debug!(?timestamp_guess);
     let timestamp = match timestamp_guess {
         TimestampGuess::None => MediaTimestamp::Utc(Utc::now()),
         TimestampGuess::Utc(utc) => MediaTimestamp::Utc(utc),
@@ -136,6 +142,7 @@ async fn index_file(
         id: AssetId(0),
         ty,
         root_dir_id: asset_root.id,
+        file_type: file_type.clone(),
         file_path: path.strip_prefix(&asset_root.path)?.to_owned(),
         added_at: Utc::now(),
         taken_date: timestamp,

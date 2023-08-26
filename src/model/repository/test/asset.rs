@@ -25,6 +25,7 @@ async fn insert_retrieve_asset() {
             id: AssetId(0),
             ty: AssetType::Image,
             root_dir_id: root_dir_id.unwrap(),
+            file_type: "jpeg".to_owned(),
             file_path: PathBuf::from("image.jpg"),
             added_at: Utc::now(),
             taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(2)).unwrap()),
@@ -73,6 +74,7 @@ async fn insert_mismatching_asset_ty_and_spe_fails() {
             id: AssetId(0),
             ty: AssetType::Video,
             root_dir_id,
+            file_type: "jpeg".to_owned(),
             file_path: PathBuf::from("image.jpg"),
             added_at: Utc::now(),
             taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(2)).unwrap()),
@@ -128,6 +130,7 @@ async fn insert_update_asset() {
             id: AssetId(0),
             ty: AssetType::Image,
             root_dir_id,
+            file_type: "jpeg".to_owned(),
             file_path: PathBuf::from("image.jpg"),
             added_at: Utc::now(),
             taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(2)).unwrap()),
@@ -155,6 +158,7 @@ async fn insert_update_asset() {
             id: AssetId(0),
             ty: AssetType::Video,
             root_dir_id: root_dir2_id,
+            file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video.mp4"),
             added_at: Utc::now(),
             taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(3)).unwrap()),
@@ -184,6 +188,7 @@ async fn insert_update_asset() {
             id: asset2_id,
             ty: asset2.base.ty,
             root_dir_id: asset2.base.root_dir_id,
+            file_type: "mp4".to_owned(),
             file_path: PathBuf::from("videoother.mp4"),
             added_at: Utc::now(),
             taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(4)).unwrap()),
@@ -236,6 +241,7 @@ async fn get_assets_with_missing_thumbnails() {
             id: AssetId(0),
             ty: AssetType::Image,
             root_dir_id,
+            file_type: "jpeg".to_owned(),
             file_path: PathBuf::from("image.jpg"),
             added_at: Utc::now(),
             taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(2)).unwrap()),
@@ -263,6 +269,7 @@ async fn get_assets_with_missing_thumbnails() {
             id: AssetId(0),
             ty: AssetType::Video,
             root_dir_id: root_dir2_id,
+            file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video.mp4"),
             added_at: Utc::now(),
             taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(3)).unwrap()),
@@ -290,6 +297,7 @@ async fn get_assets_with_missing_thumbnails() {
             id: AssetId(0),
             ty: AssetType::Video,
             root_dir_id: root_dir2_id,
+            file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video3.mp4"),
             added_at: Utc::now(),
             taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(3)).unwrap()),
@@ -351,6 +359,7 @@ async fn get_videos_without_dash() {
             id: AssetId(0),
             ty: AssetType::Video,
             root_dir_id: root_dir2_id,
+            file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video.mp4"),
             added_at: Utc::now(),
             taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(3)).unwrap()),
@@ -374,6 +383,7 @@ async fn get_videos_without_dash() {
             id: AssetId(0),
             ty: AssetType::Image,
             root_dir_id,
+            file_type: "jpeg".to_owned(),
             file_path: "/path/to/image.jpg".into(),
             added_at: Utc::now(),
             taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(4)).unwrap()),
@@ -476,6 +486,7 @@ async fn get_videos_with_no_acceptable_repr() {
             id: AssetId(0),
             ty: AssetType::Video,
             root_dir_id: root_dir2_id,
+            file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video.mp4"),
             added_at: Utc::now(),
             taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(3)).unwrap()),
@@ -500,6 +511,7 @@ async fn get_videos_with_no_acceptable_repr() {
             id: AssetId(0),
             ty: AssetType::Image,
             root_dir_id,
+            file_type: "jpeg".to_owned(),
             file_path: "/path/to/image.jpg".into(),
             added_at: Utc::now(),
             taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(4)).unwrap()),
@@ -543,11 +555,26 @@ async fn get_videos_with_no_acceptable_repr() {
             ..asset.base.clone()
         },
     };
+    // video mov mjpeg
+    let asset5 = Asset {
+        sp: AssetSpe::Video(Video {
+            codec_name: "mjpeg".to_owned(),
+            bitrate: 123456,
+            dash_resource_dir: None,
+        }),
+        base: AssetBase {
+            root_dir_id: root_dir2_id,
+            file_type: "mov".to_owned(),
+            file_path: "/some/video5.mov".into(),
+            ..asset.base.clone()
+        },
+    };
     let _asset_id = assert_ok!(repository::asset::insert_asset(&pool, &asset).await);
     let _asset2_id = assert_ok!(repository::asset::insert_asset(&pool, &asset2).await);
     let asset3_id = assert_ok!(repository::asset::insert_asset(&pool, &asset3).await);
     let asset4_id = assert_ok!(repository::asset::insert_asset(&pool, &asset4).await);
-    let acceptable_codecs = ["h264", "av1", "vp9"];
+    let asset5_id = assert_ok!(repository::asset::insert_asset(&pool, &asset5).await);
+    let acceptable_codecs = ["h264", "av1", "vp9", "mjpeg"];
     let videos_with_no_acceptable_repr: HashSet<VideoAsset> = assert_ok!(
         repository::asset::get_video_assets_with_no_acceptable_repr(
             &pool,
@@ -572,6 +599,13 @@ async fn get_videos_with_no_acceptable_repr() {
             },
             ..asset4.clone()
         },
+        Asset {
+            base: AssetBase {
+                id: asset5_id,
+                ..asset5.base.clone()
+            },
+            ..asset5.clone()
+        },
     ]
     .into_iter()
     .map(|a| a.try_into().unwrap())
@@ -591,6 +625,22 @@ async fn get_videos_with_no_acceptable_repr() {
         repository::representation::insert_video_representation(
             pool.acquire().await.unwrap().as_mut(),
             &asset3_repr
+        )
+        .await
+    );
+    let asset5_repr = VideoRepresentation {
+        id: VideoRepresentationId(0),
+        asset_id: asset5_id,
+        bitrate: 124456,
+        codec_name: "av1".to_owned(),
+        width: 100,
+        height: 100,
+        path: "/path/to/otherav1repr.mp4".into(),
+    };
+    let _asset4_repr_id = assert_ok!(
+        repository::representation::insert_video_representation(
+            pool.acquire().await.unwrap().as_mut(),
+            &asset5_repr
         )
         .await
     );

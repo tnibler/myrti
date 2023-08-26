@@ -24,6 +24,7 @@ id,
 ty as "ty: _",
 root_dir_id,
 file_path,
+file_type,
 hash,
 added_at,
 taken_date as "taken_date: _",
@@ -98,6 +99,7 @@ id,
 ty as "ty: _",
 root_dir_id,
 file_path,
+file_type,
 hash,
 added_at,
 taken_date as "taken_date: _",
@@ -196,6 +198,7 @@ UPDATE Asset SET
 ty=?,
 root_dir_id=?,
 file_path=?,
+file_type=?,
 hash=?,
 added_at=?,
 taken_date=?,
@@ -219,6 +222,7 @@ WHERE id=?;
         db_asset.ty,
         db_asset.root_dir_id.0,
         db_asset.file_path,
+        db_asset.file_type,
         db_asset.hash,
         db_asset.added_at,
         db_asset.taken_date,
@@ -271,6 +275,7 @@ INSERT INTO Asset
 ty,
 root_dir_id,
 file_path,
+file_type,
 hash,
 added_at,
 taken_date,
@@ -291,11 +296,12 @@ bitrate,
 resource_dir
 )
 VALUES
-(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 ",
         db_asset.ty,
         db_asset.root_dir_id.0,
         db_asset.file_path,
+        db_asset.file_type,
         db_asset.hash,
         db_asset.added_at,
         db_asset.taken_date,
@@ -384,6 +390,7 @@ SELECT
 id,
 ty as "ty: _",
 root_dir_id,
+file_type,
 file_path,
 hash,
 added_at,
@@ -434,6 +441,7 @@ SELECT
 id,
 ty as "ty: _",
 root_dir_id,
+file_type,
 file_path,
 hash,
 added_at,
@@ -492,7 +500,9 @@ WITH codecs AS
 (
     SELECT Asset.id as id, codec_name 
     FROM Asset 
-    WHERE Asset.ty=2
+    WHERE 
+    Asset.ty=2
+    AND Asset.file_type = 'mp4'
     UNION 
     SELECT Asset.id as id, vr.codec_name 
     FROM Asset, VideoRepresentation vr 
@@ -503,6 +513,7 @@ SELECT
 Asset.id as id,
 Asset.ty as ty,
 Asset.root_dir_id as root_dir_id,
+Asset.file_type as file_type,
 Asset.file_path as file_path,
 Asset.hash as hash,
 Asset.added_at as added_at,
@@ -559,6 +570,7 @@ SELECT
 id,
 ty,
 root_dir_id,
+file_type,
 file_path,
 hash,
 added_at,

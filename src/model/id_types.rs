@@ -28,3 +28,4 @@ impl_id!(AlbumEntryId);
 impl_id!(DataDirId);
 impl_id!(VideoRepresentationId);
 impl_id!(AudioRepresentationId);
+impl_id!(FailedThumbnailJobId);

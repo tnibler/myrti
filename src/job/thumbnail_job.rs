@@ -1,10 +1,11 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
+use chrono::Utc;
 use eyre::{Context, Report, Result};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, instrument};
+use tracing::{debug, error, info, instrument, Instrument};
 
 use crate::{
     catalog::operation::create_thumbnail::{
@@ -15,7 +16,11 @@ use crate::{
         job::{Job, JobHandle, JobProgress, JobResultType},
         DataDirManager,
     },
-    model::{repository::pool::DbPool, ThumbnailType},
+    model::{
+        repository::{self, failed_job::insert_failed_thumbnail_job, pool::DbPool},
+        AssetId, FailedThumbnailJob, ThumbnailType,
+    },
+    processing::hash::hash_file,
 };
 
 pub struct ThumbnailJob {
@@ -69,9 +74,34 @@ impl ThumbnailJob {
             .unwrap();
         let mut failed: Vec<FailedThumbnail> = Vec::default();
         for op in &self.params.thumbnails {
-            let op_resolved = match resolve(&op, &self.data_dir_manager).await {
+            let past_failed_job =
+                repository::failed_job::get_failed_thumbnail_job_for_asset(&self.pool, op.asset_id)
+                    .await?;
+            if let Some(past_failed_job) = past_failed_job {
+                let asset_path = repository::asset::get_asset_path_on_disk(&self.pool, op.asset_id)
+                    .in_current_span()
+                    .await?
+                    .path_on_disk();
+                let file = tokio::fs::File::open(&asset_path)
+                    .in_current_span()
+                    .await?
+                    .try_into_std()
+                    .unwrap();
+                let current_hash = hash_file(file).in_current_span().await?;
+                if current_hash == past_failed_job.file_hash {
+                    debug!(
+                        asset_id = ?op.asset_id,
+                        "skipping thumbnail that failed in the past"
+                    );
+                    continue;
+                }
+            }
+
+            let op_resolved = match resolve(&op, &self.data_dir_manager).in_current_span().await {
                 Ok(t) => t,
                 Err(err) => {
+                    // if things fail here it's not the asset's fault, so don't remember the fail
+                    // in the database
                     failed.push(FailedThumbnail {
                         thumbnail: op.clone(),
                         err,
@@ -80,9 +110,22 @@ impl ThumbnailJob {
                 }
             };
             let side_effect_results =
-                perform_side_effects_create_thumbnail(&self.pool, &op_resolved)
+                match perform_side_effects_create_thumbnail(&self.pool, &op_resolved)
+                    .in_current_span()
                     .await
-                    .unwrap();
+                {
+                    Err(err) => {
+                        // same as above
+                        // if things fail here it's not the asset's fault, so don't remember the fail
+                        // in the database
+                        failed.push(FailedThumbnail {
+                            thumbnail: op.clone(),
+                            err,
+                        });
+                        continue;
+                    }
+                    Ok(r) => r,
+                };
             // if one thumbnail of op fails we discard the whole thing for now
             if !side_effect_results.failed.is_empty() {
                 for (_thumbnail, report) in side_effect_results.failed {
@@ -90,6 +133,33 @@ impl ThumbnailJob {
                         thumbnail: op.clone(),
                         err: report,
                     });
+                }
+                let failed_asset_ids: HashSet<AssetId> =
+                    failed.iter().map(|f| f.thumbnail.asset_id).collect();
+                for failed_asset_id in failed_asset_ids {
+                    let asset_path =
+                        repository::asset::get_asset_path_on_disk(&self.pool, op.asset_id)
+                            .in_current_span()
+                            .await?
+                            .path_on_disk();
+                    let file = tokio::fs::File::open(&asset_path)
+                        .await?
+                        .try_into_std()
+                        .unwrap();
+                    let hash = hash_file(file).await?;
+                    let insert_res = repository::failed_job::insert_failed_thumbnail_job(
+                        &self.pool,
+                        &FailedThumbnailJob {
+                            asset_id: failed_asset_id,
+                            file_hash: hash,
+                            date: Utc::now(),
+                        },
+                    )
+                    .in_current_span()
+                    .await;
+                    if let Err(err) = insert_res {
+                        error!(%err, "failed inserting FailedThumbnailJob");
+                    }
                 }
                 continue;
             }

@@ -31,3 +31,14 @@ pub fn datetime_from_db_repr(s: &str) -> Result<DateTime<Utc>> {
         .wrap_err("error parsing RFC3339 datetime")?
         .with_timezone(&Utc))
 }
+
+pub fn hash_vec8_to_u64(v: &[u8]) -> Result<u64> {
+    let array: [u8; 8] = v
+        .try_into()
+        .wrap_err("could not parse hash from db value")?;
+    Ok(u64::from_le_bytes(array))
+}
+
+pub fn hash_u64_to_vec8(u: u64) -> Vec<u8> {
+    u.to_le_bytes().into_iter().collect()
+}

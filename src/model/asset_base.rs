@@ -5,7 +5,10 @@ use std::path::PathBuf;
 
 use super::{
     repository::db_entity::{DbAsset, DbAssetType},
-    util::{datetime_from_db_repr, datetime_to_db_repr, opt_path_to_string, path_to_string},
+    util::{
+        datetime_from_db_repr, datetime_to_db_repr, hash_u64_to_vec8, hash_vec8_to_u64,
+        opt_path_to_string, path_to_string,
+    },
     Asset, AssetId, AssetRootDirId, AssetSpe, AssetType, Image, Video,
 };
 
@@ -70,10 +73,7 @@ impl TryFrom<&Asset> for DbAsset {
             ty: value.base.ty.into(),
             root_dir_id: value.base.root_dir_id,
             file_path,
-            hash: value
-                .base
-                .hash
-                .map(|h| h.to_le_bytes().into_iter().collect()),
+            hash: value.base.hash.map(|h| hash_u64_to_vec8(h)),
             added_at: datetime_to_db_repr(&value.base.added_at),
             taken_date,
             taken_date_local_fallback,
@@ -136,16 +136,11 @@ impl TryFrom<&DbAsset> for Asset {
                 dash_resource_dir: value.resource_dir.as_ref().map(|p| PathBuf::from(p)),
             }),
         };
-        let hash_array: Option<[u8; 8]> = match value
+        let hash: Option<u64> = value
             .hash
             .as_ref()
-            .map(|h| h.as_slice().try_into())
-            .transpose()
-        {
-            Ok(h) => h,
-            Err(_) => return Err(eyre!("could not parse hash from db value")),
-        };
-        let hash: Option<u64> = hash_array.map(|a| u64::from_le_bytes(a));
+            .map(|a| hash_vec8_to_u64(&a))
+            .transpose()?;
         Ok(Asset {
             sp,
             base: AssetBase {

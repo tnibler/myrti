@@ -88,7 +88,15 @@ CREATE TABLE AlbumEntry (
   asset_id INTEGER NOT NULL,
   idx INTEGER NOT NULL,
   UNIQUE(album_id, idx),
-  FOREIGN KEY (album_id) REFERENCES Album(id) ON DELETE CASCADE
+  FOREIGN KEY (album_id) REFERENCES Album(id) ON DELETE CASCADE,
+  FOREIGN KEY (asset_id) REFERENCES Asset(id) ON DELETE CASCADE
 ) STRICT;
 
 CREATE INDEX album_id_index ON AlbumEntry(album_id);
+
+CREATE TABLE FailedThumbnailJob (
+  asset_id INTEGER PRIMARY KEY NOT NULL,
+  file_hash BLOB NOT NULL,
+  date TEXT NOT NULL,
+  FOREIGN KEY (asset_id) REFERENCES Asset(id) ON DELETE CASCADE
+) STRICT;

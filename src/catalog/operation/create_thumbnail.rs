@@ -84,13 +84,16 @@ pub async fn perform_side_effects_create_thumbnail(
     pool: &DbPool,
     op: &CreateThumbnailWithPaths,
 ) -> Result<ThumbnailSideEffectResult> {
+    let mut result = ThumbnailSideEffectResult {
+        failed: Vec::default(),
+    };
+    if op.thumbnails.is_empty() {
+        return Ok(result);
+    }
     let in_path = repository::asset::get_asset_path_on_disk(pool, op.asset_id)
         .await?
         .path_on_disk();
     let asset = repository::asset::get_asset(pool, op.asset_id).await?;
-    let mut result = ThumbnailSideEffectResult {
-        failed: Vec::default(),
-    };
     // TODO don't await sequentially. Not super bad because op.thumbnails is small but still
     match asset.base.ty {
         AssetType::Image => {
@@ -109,19 +112,31 @@ pub async fn perform_side_effects_create_thumbnail(
         AssetType::Video => {
             let snapshot_dir = tempfile::tempdir().wrap_err("could not create temp directory")?;
             let snapshot_path = snapshot_dir.path().join(format!("{}.webp", op.asset_id.0));
-            create_snapshot(&in_path, &snapshot_path)
+            let snapshot_result = create_snapshot(&in_path, &snapshot_path)
                 .in_current_span()
                 .await
-                .wrap_err("could not take video snapshot")?;
-            for thumb in &op.thumbnails {
-                match create_thumbnail_from_image(pool, snapshot_path.clone(), thumb)
-                    .in_current_span()
-                    .await
-                {
-                    Ok(_) => {}
-                    Err(err) => {
-                        result.failed.push((thumb.clone(), err));
+                .wrap_err("could not take video snapshot");
+            match snapshot_result {
+                Ok(_) => {
+                    for thumb in &op.thumbnails {
+                        match create_thumbnail_from_image(pool, snapshot_path.clone(), thumb)
+                            .in_current_span()
+                            .await
+                        {
+                            Ok(_) => {}
+                            Err(err) => {
+                                result.failed.push((thumb.clone(), err));
+                            }
+                        }
                     }
+                }
+                Err(err) => {
+                    // a specific ThumbnailToCreateWithPaths is required to add a result to failed,
+                    // so we just use the first here even though all of them failed in reality
+                    result
+                        .failed
+                        .push((op.thumbnails.first().unwrap().clone(), err)); // unwrap because we
+                                                                              // return early if op.thumbnails is emtpy
                 }
             }
         }

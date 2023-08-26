@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::{
     model::*,
-    processing,
+    processing::{self, hash::hash_file},
     repository::{self, pool::DbPool},
 };
 use chrono::Utc;
@@ -126,6 +126,12 @@ async fn index_file(
         TimestampGuess::Utc(utc) => MediaTimestamp::Utc(utc),
         TimestampGuess::LocalOnly(local) => MediaTimestamp::LocalFallback(local),
     };
+    let file = tokio::fs::File::open(&path)
+        .await
+        .wrap_err("could not open asset file")?
+        .try_into_std()
+        .unwrap();
+    let hash = hash_file(file).await?;
     let asset_base = AssetBase {
         id: AssetId(0),
         ty,
@@ -135,7 +141,7 @@ async fn index_file(
         taken_date: timestamp,
         size,
         rotation_correction: None,
-        hash: None,
+        hash: Some(hash),
         thumb_small_square_avif: None,
         thumb_small_square_webp: None,
         thumb_large_orig_avif: None,

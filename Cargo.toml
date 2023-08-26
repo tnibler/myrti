@@ -12,6 +12,7 @@ chrono = { version = "0.4.26", features = ["serde"] }
 claims = "0.7.1"
 color-eyre = "0.6.2"
 eyre = "0.6.8"
+fasthash = "0.4.0"
 futures = "0.3.28"
 html-escape = "0.2.13"
 lazy_static = "1.4.0"
@@ -31,6 +32,7 @@ tower-http = { version = "0.4.3", features = ["trace", "request-id", "util", "fs
 tracing = "0.1.37"
 tracing-error = "0.2.0"
 tracing-subscriber = {version = "0.3.17", features = ["env-filter"]}
+tracing-tree = "0.2.4"
 walkdir = "2.3.3"
 
 [profile.dev.package.sqlx-macros]

@@ -1,6 +1,5 @@
 use super::DbAssetType;
 use crate::model::{AssetId, AssetRootDirId};
-use chrono::NaiveDateTime;
 
 #[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct DbAsset {

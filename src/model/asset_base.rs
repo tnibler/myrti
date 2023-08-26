@@ -25,7 +25,7 @@ pub struct AssetBase {
     /// degrees clockwise
     pub rotation_correction: Option<i32>,
     /// Seahash of the file, if already computed
-    pub hash: Option<Vec<u8>>,
+    pub hash: Option<u64>,
     pub thumb_small_square_avif: Option<PathBuf>,
     pub thumb_small_square_webp: Option<PathBuf>,
     pub thumb_large_orig_avif: Option<PathBuf>,
@@ -70,7 +70,10 @@ impl TryFrom<&Asset> for DbAsset {
             ty: value.base.ty.into(),
             root_dir_id: value.base.root_dir_id,
             file_path,
-            hash: value.base.hash.clone(),
+            hash: value
+                .base
+                .hash
+                .map(|h| h.to_le_bytes().into_iter().collect()),
             added_at: datetime_to_db_repr(&value.base.added_at),
             taken_date,
             taken_date_local_fallback,
@@ -133,6 +136,16 @@ impl TryFrom<&DbAsset> for Asset {
                 dash_resource_dir: value.resource_dir.as_ref().map(|p| PathBuf::from(p)),
             }),
         };
+        let hash_array: Option<[u8; 8]> = match value
+            .hash
+            .as_ref()
+            .map(|h| h.as_slice().try_into())
+            .transpose()
+        {
+            Ok(h) => h,
+            Err(_) => return Err(eyre!("could not parse hash from db value")),
+        };
+        let hash: Option<u64> = hash_array.map(|a| u64::from_le_bytes(a));
         Ok(Asset {
             sp,
             base: AssetBase {
@@ -141,7 +154,7 @@ impl TryFrom<&DbAsset> for Asset {
                 root_dir_id: value.root_dir_id,
                 file_path: value.file_path.as_str().into(),
                 added_at: datetime_from_db_repr(&value.added_at)?,
-                hash: value.hash.clone(),
+                hash,
                 taken_date,
                 size: Size {
                     width: value.width,

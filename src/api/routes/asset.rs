@@ -152,10 +152,18 @@ async fn get_timeline(
             .wrap_err("bad datetime format")?
             .into(),
     };
-    let results =
-        repository::asset::get_asset_timeline_chunk(&app_state.pool, &start, req_body.max_count)
-            .in_current_span()
-            .await?;
+    let start_id = match req_body.start_id {
+        Some(s) => Some(model::AssetId(s.parse().wrap_err("bad asset id")?)),
+        None => None,
+    };
+    let results = repository::asset::get_asset_timeline_chunk(
+        &app_state.pool,
+        &start,
+        start_id,
+        req_body.max_count,
+    )
+    .in_current_span()
+    .await?;
     Ok(Json(TimelineChunk {
         date: Utc::now(),
         changed_since_last_fetch: false,

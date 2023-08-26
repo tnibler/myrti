@@ -2,7 +2,7 @@ use serde::Serialize;
 
 use super::repository::db_entity::DbAssetType;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Copy, Hash)]
 pub enum AssetType {
     Image,
     Video,

@@ -9,7 +9,7 @@ use super::{
     Asset, AssetId, AssetRootDirId, AssetSpe, AssetType, Image, Video,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AssetBase {
     pub id: AssetId,
     pub ty: AssetType,
@@ -34,19 +34,19 @@ pub struct AssetBase {
     pub thumb_large_orig_size: Option<Size>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Hash)]
 pub struct Size {
     pub width: i64,
     pub height: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MediaTimestamp {
     Utc(DateTime<Utc>),
     LocalFallback(NaiveDateTime),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ThumbnailType {
     SmallSquare,
     LargeOrigAspect,

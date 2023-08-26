@@ -423,6 +423,7 @@ AND resource_dir IS NULL;
 pub async fn get_asset_timeline_chunk(
     pool: &DbPool,
     start: &DateTime<Utc>,
+    start_id: Option<AssetId>,
     count: i32,
 ) -> Result<Vec<Asset>> {
     let start_naive = start.naive_utc();
@@ -459,12 +460,15 @@ OR
 -- TODO can we even lexicographically compare local fallback and DateTime<Utc>
 -- no we can't FIXME
 (taken_date_local_fallback IS NOT NULL AND taken_date_local_fallback < ?)
+AND (id < ? OR ? IS NULL)
 ORDER BY taken_date DESC, taken_date_local_fallback DESC, id DESC
 LIMIT ?;
     "#,
         // TODO only sort by canonical_date and id when canonical is actually computed during indexing
         start_naive,
         start_naive,
+        start_id,
+        start_id,
         count
     )
     .fetch_all(pool)

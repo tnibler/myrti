@@ -15,6 +15,7 @@ pub struct TimelineChunk {
 #[serde(rename_all = "camelCase")]
 pub struct TimelineRequest {
     pub start: Option<String>,
+    pub start_id: Option<String>,
     pub max_count: i32,
     pub last_fetch: String,
 }

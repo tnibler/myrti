@@ -4,35 +4,35 @@ use eyre::{eyre, Report};
 
 use super::{repository::db_entity::DbAsset, AssetBase};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Image {}
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Video {
     pub codec_name: String,
     pub bitrate: i64,
     pub dash_resource_dir: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AssetSpe {
     Image(Image),
     Video(Video),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Asset {
     pub base: AssetBase,
     pub sp: AssetSpe,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VideoAsset {
     pub base: AssetBase,
     pub video: Video,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImageAsset {
     pub base: AssetBase,
     pub image: Image,

@@ -1,5 +1,7 @@
+use super::operation::package_video::AudioEncodingTarget;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EncodingTarget {
+pub struct VideoEncodingTarget {
     pub codec: CodecTarget,
     pub scale: Option<Scale>,
 }
@@ -231,4 +233,14 @@ pub fn codec_name(target: &CodecTarget) -> String {
         CodecTarget::AV1(_) => "av1",
     }
     .to_string()
+}
+
+pub fn audio_codec_name(target: &AudioEncodingTarget) -> String {
+    match target {
+        AudioEncodingTarget::AAC => "aac",
+        AudioEncodingTarget::OPUS => "opus",
+        AudioEncodingTarget::FLAC => "flac",
+        AudioEncodingTarget::MP3 => "mp3",
+    }
+    .into()
 }

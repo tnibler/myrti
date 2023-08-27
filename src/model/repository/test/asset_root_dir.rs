@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use claims::{assert_err, assert_ok, assert_some};
+use pretty_assertions::assert_eq;
 
 use crate::model::{repository, AssetRootDir, AssetRootDirId};
 

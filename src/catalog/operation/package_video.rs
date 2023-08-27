@@ -5,12 +5,14 @@ use eyre::{eyre, Context, Result};
 use tokio::process::Command;
 use tracing::{instrument, warn, Instrument};
 
+use crate::catalog::encoding_target::audio_codec_name;
 use crate::processing::video::dash_package::{
     generate_mpd, shaka_package, RepresentationInput, RepresentationType,
 };
 use crate::processing::video::probe_video;
+use crate::processing::video::transcode::{ProduceAudio, ProduceVideo};
 use crate::{
-    catalog::encoding_target::{codec_name, EncodingTarget},
+    catalog::encoding_target::{codec_name, VideoEncodingTarget},
     model::{
         repository::{self, pool::DbPool},
         AssetId, AudioRepresentation, AudioRepresentationId, Size, Video, VideoAsset,
@@ -22,13 +24,15 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CreateAudioRepr {
     Existing(AudioRepresentation),
-    CreateNew(PathBuf),
+    Transcode(AudioTranscode),
+    PackageOriginalFile(PathBuf),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CreateVideoRepr {
+    Existing(VideoRepresentation),
     PackageOriginalFile(PathBuf),
-    Transcode(Transcode),
+    Transcode(VideoTranscode),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +55,8 @@ pub struct PackageVideoWithPath {
 pub enum CreatedVideoRepr {
     /// absolute path
     PackagedOriginalFile(PathBuf),
-    Transcode(TranscodeResult),
+    Transcode(VideoTranscodeResult),
+    Existing(VideoRepresentation),
 }
 
 // Some things like the resulting size and bitrate of
@@ -69,19 +74,35 @@ pub struct CompletedPackageVideo {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Transcode {
-    pub target: EncodingTarget,
+pub struct VideoTranscode {
+    pub target: VideoEncodingTarget,
     /// path where the final transcoded and shaka remuxed video file should be
     /// relative to PackageVideo::output_dir
     pub output: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TranscodeResult {
-    pub target: EncodingTarget,
+pub struct VideoTranscodeResult {
+    pub target: VideoEncodingTarget,
     pub final_size: Size,
     pub bitrate: i64,
     /// absolute path
+    pub output: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AudioEncodingTarget {
+    AAC,
+    OPUS,
+    FLAC,
+    MP3,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioTranscode {
+    pub target: AudioEncodingTarget,
+    /// path where the final transcoded and shaka packaged audio file should be
+    /// relative to PackageVideo::output_dir
     pub output: PathBuf,
 }
 
@@ -103,11 +124,24 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
     };
     repository::asset::update_asset(tx.as_mut(), &(&asset).into()).await?;
     match &op.created_audio_repr {
-        CreateAudioRepr::CreateNew(audio_output) => {
+        CreateAudioRepr::Transcode(audio_transcode) => {
             let audio_representation = AudioRepresentation {
                 id: AudioRepresentationId(0),
                 asset_id: op.asset_id,
-                codec_name: "TODO".into(), // TODO
+                codec_name: audio_codec_name(&audio_transcode.target),
+                path: op.output_dir.join(&audio_transcode.output),
+            };
+            let _audio_representation_id = repository::representation::insert_audio_representation(
+                tx.as_mut(),
+                &audio_representation,
+            )
+            .await?;
+        }
+        CreateAudioRepr::PackageOriginalFile(audio_output) => {
+            let audio_representation = AudioRepresentation {
+                id: AudioRepresentationId(0),
+                asset_id: op.asset_id,
+                codec_name: asset.video.audio_codec_name, // TODO
                 path: op.output_dir.join(audio_output),
             };
             let _audio_representation_id = repository::representation::insert_audio_representation(
@@ -116,10 +150,10 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
             )
             .await?;
         }
-        _ => {}
+        CreateAudioRepr::Existing(_) => {}
     }
-    let video_represention = match &op.created_video_repr {
-        CreatedVideoRepr::PackagedOriginalFile(video_output) => VideoRepresentation {
+    let created_video_represention = match &op.created_video_repr {
+        CreatedVideoRepr::PackagedOriginalFile(video_output) => Some(VideoRepresentation {
             id: VideoRepresentationId(0),
             asset_id: asset.base.id,
             codec_name: asset.video.video_codec_name,
@@ -127,8 +161,8 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
             height: asset.base.size.height,
             bitrate: asset.video.video_bitrate,
             path: op.output_dir.join(video_output),
-        },
-        CreatedVideoRepr::Transcode(transcode) => VideoRepresentation {
+        }),
+        CreatedVideoRepr::Transcode(transcode) => Some(VideoRepresentation {
             id: VideoRepresentationId(0),
             asset_id: asset.base.id,
             codec_name: codec_name(&transcode.target.codec),
@@ -136,11 +170,16 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
             height: transcode.final_size.height,
             bitrate: transcode.bitrate,
             path: op.output_dir.join(&transcode.output),
-        },
+        }),
+        CreatedVideoRepr::Existing(_) => None,
     };
-    let _representation_id =
-        repository::representation::insert_video_representation(tx.as_mut(), &video_represention)
-            .await?;
+    if let Some(video_represention) = created_video_represention {
+        let _representation_id = repository::representation::insert_video_representation(
+            tx.as_mut(),
+            &video_represention,
+        )
+        .await?;
+    }
     tx.commit()
         .await
         .wrap_err("could not commit db transaction")?;
@@ -160,9 +199,56 @@ pub async fn perform_side_effects_package_video(
     let asset_id = package_video.asset_id;
     let asset_path = repository::asset::get_asset_path_on_disk(pool, asset_id).await?;
 
+    // if video_transcode or audio_transcode
+    //    ffmpeg if video_transcode -c:v target... else -c:v copy
+    //           if audio_transcode -c:a target... else -c:a copy
+    //           temp_file
+    //    shaka-package if video_transcode or video_package_original:
+    //                      input=temp_file,stream=video,output=...
+    //                  if audio_transcode or audio_package_original:
+    //                      input_temp_file,stream=audio,output=...
+    // else if video_package_original or audio_package_original
+    //    shaka-package if video_package_original:
+    //                      input=original,stream=video,output=...
+    //                  if audio_package_original:
+    //                      input=original,stream=audio,output=...
+    // mpd_generator created or existing video repr
+    //               created or exiting audio repr
+    let ffmpeg_video_op: Option<ProduceVideo> = match package_video.create_video_repr.clone() {
+        CreateVideoRepr::Transcode(video_transcode) => {
+            Some(ProduceVideo::Transcode(video_transcode.target))
+        }
+        _ => None,
+    };
+    let ffmpeg_audio_op: Option<ProduceAudio> = match package_video.create_audio_repr.clone() {
+        CreateAudioRepr::Transcode(audio_transcode) => {
+            Some(ProduceAudio::Transcode(audio_transcode.target))
+        }
+        _ => None,
+    };
+
+    let (ffmpeg_out_path, _ffmpeg_temp_dir) =
+        if ffmpeg_video_op.is_some() || ffmpeg_audio_op.is_some() {
+            let temp_dir = tempfile::tempdir().wrap_err("error creating temp directory")?;
+            let ffmpeg_out_path = temp_dir.path().join("out.mp4");
+            let mut command = ffmpeg_command(
+                &asset_path.path_on_disk(),
+                &ffmpeg_out_path,
+                ffmpeg_video_op.as_ref(),
+                ffmpeg_audio_op.as_ref(),
+            );
+            let ffmpeg_result = command.spawn()?.wait().await?;
+            if !ffmpeg_result.success() {
+                return Err(eyre!("ffmpeg exited with an error"));
+            }
+            (Some(ffmpeg_out_path), Some(temp_dir))
+        } else {
+            (None, None)
+        };
+
     let audio_path = match &package_video.create_audio_repr {
         CreateAudioRepr::Existing(audio_repr) => audio_repr.path.clone(),
-        CreateAudioRepr::CreateNew(audio_output) => {
+        CreateAudioRepr::PackageOriginalFile(audio_output) => {
             let out_path = output_dir.join(audio_output);
             let repr_inputs: &[RepresentationInput] = &[RepresentationInput {
                 path: asset_path.path_on_disk(),
@@ -174,9 +260,25 @@ pub async fn perform_side_effects_package_video(
                 .wrap_err("could not shaka package audio stream")?;
             out_path
         }
+        CreateAudioRepr::Transcode(transcode) => {
+            let ffmpeg_out_path = ffmpeg_out_path
+                .as_ref()
+                .expect("ffmpeg output file must be present if audio was transcoded");
+            let out_path = output_dir.join(&transcode.output);
+            let repr_inputs: &[RepresentationInput] = &[RepresentationInput {
+                path: ffmpeg_out_path.clone(),
+                ty: RepresentationType::Audio,
+                out_path: out_path.clone(),
+            }];
+            shaka_package(repr_inputs)
+                .await
+                .wrap_err("could not shaka package audio stream")?;
+            out_path
+        }
     };
 
     let created_video_repr = match &package_video.create_video_repr {
+        CreateVideoRepr::Existing(video_repr) => CreatedVideoRepr::Existing(video_repr.clone()),
         CreateVideoRepr::PackageOriginalFile(video_output) => {
             let out_path = output_dir.join(video_output);
             if let Some(dir) = out_path.parent() {
@@ -247,21 +349,12 @@ pub async fn perform_side_effects_package_video(
             }
         }
         CreateVideoRepr::Transcode(transcode) => {
-            // ffmpeg transcodes to a temp file which is then fed through shaka packager
-            let temp_dir = tempfile::tempdir().wrap_err("error creating temp directory")?;
-            let ffmpeg_out_path = temp_dir.path().join("out.mp4");
-            let mut command = ffmpeg_command(
-                &asset_path.path_on_disk(),
-                &ffmpeg_out_path,
-                &transcode.target,
-            );
-            let ffmpeg_result = command.spawn()?.wait().await?;
-            if !ffmpeg_result.success() {
-                return Err(eyre!("ffmpeg exited with an error"));
-            }
+            let ffmpeg_out_path = ffmpeg_out_path
+                .as_ref()
+                .expect("ffmpeg output file must be present if video was transcoded");
             let output_path = output_dir.join(&transcode.output);
             let repr_inputs: &[RepresentationInput] = &[RepresentationInput {
-                path: ffmpeg_out_path,
+                path: ffmpeg_out_path.clone(),
                 ty: RepresentationType::Video,
                 out_path: output_path.clone(),
             }];
@@ -269,7 +362,7 @@ pub async fn perform_side_effects_package_video(
                 .await
                 .wrap_err("could not shaka package video stream")?;
             let probe = probe_video(&output_path).await?;
-            CreatedVideoRepr::Transcode(TranscodeResult {
+            CreatedVideoRepr::Transcode(VideoTranscodeResult {
                 target: transcode.target.clone(),
                 final_size: Size {
                     width: probe.width,
@@ -301,6 +394,7 @@ pub async fn perform_side_effects_package_video(
     let created_video_repr_path = match &created_video_repr {
         CreatedVideoRepr::PackagedOriginalFile(video_path) => video_path.as_path(),
         CreatedVideoRepr::Transcode(transcode_result) => transcode_result.output.as_path(),
+        CreatedVideoRepr::Existing(video_repr) => video_repr.path.as_path(),
     };
     match created_video_repr_path.file_name() {
         Some(filename) => {

@@ -496,27 +496,28 @@ LIMIT ?;
     .collect::<Result<Vec<_>>>()
 }
 
-#[instrument(skip(pool, acceptable_codecs))]
+#[instrument(skip(pool, acceptable_video_codecs, acceptable_audio_codecs))]
 pub async fn get_video_assets_with_no_acceptable_repr(
     pool: &DbPool,
-    acceptable_codecs: impl Iterator<Item = &str>,
+    acceptable_video_codecs: impl Iterator<Item = &str>,
+    acceptable_audio_codecs: impl Iterator<Item = &str>,
 ) -> Result<Vec<VideoAsset>> {
-    // TODO this query can be more efficient without the last subquery and just left join instead
+    r#"
+SELECT 
+DISTINCT
+Asset.*
+FROM Asset
+WHERE NOT EXISTS
+(SELECT 1 FROM Asset a, VideoRepresentation vr, AudioRepresentation ar
+WHERE 
+a.ty = 2
+AND vr.asset_id = a.id
+AND ar.asset_id = a.id
+AND vr.codec_name IN ('h264', 'av1')
+AND ar.codec_name IN ('aac', 'opus'));
+"#;
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new(
         r#"
-WITH codecs AS 
-(
-    SELECT Asset.id as id, codec_name 
-    FROM Asset 
-    WHERE 
-    Asset.ty=2
-    AND Asset.file_type = 'mp4'
-    UNION 
-    SELECT Asset.id as id, vr.codec_name 
-    FROM Asset, VideoRepresentation vr 
-    WHERE Asset.id=vr.asset_id
-) 
-
 SELECT 
 Asset.id as id,
 Asset.ty as ty,
@@ -548,14 +549,31 @@ WHERE Asset.ty = "#,
     query_builder.push_bind(DbAssetType::Video);
     query_builder.push(
         r#"
-AND id NOT IN
-    (SELECT id FROM codecs WHERE codec_name IN 
+AND NOT EXISTS
+(
+    SELECT 1 FROM VideoRepresentation vr, AudioRepresentation ar
+    WHERE 
+    vr.asset_id = Asset.id
+    AND ar.asset_id = Asset.id
+    AND vr.codec_name IN
     "#,
     );
-    query_builder.push_tuples(acceptable_codecs, |mut b, s| {
+    query_builder.push_tuples(acceptable_video_codecs, |mut b, s| {
         b.push_bind(s);
     });
-    query_builder.push(");");
+    query_builder.push(
+        r#"
+    AND ar.codec_name IN 
+    "#,
+    );
+    query_builder.push_tuples(acceptable_audio_codecs, |mut b, s| {
+        b.push_bind(s);
+    });
+    query_builder.push(
+        r#"
+);
+    "#,
+    );
     debug!(query = query_builder.sql());
     query_builder
         .build_query_as::<DbAsset>()
@@ -568,10 +586,11 @@ AND id NOT IN
         .collect::<Result<Vec<_>>>()
 }
 
-#[instrument(skip(pool, acceptable_codecs))]
+#[instrument(skip(pool, acceptable_video_codecs, acceptable_audio_codecs))]
 pub async fn get_videos_in_acceptable_codec_without_dash(
     pool: &DbPool,
-    acceptable_codecs: impl Iterator<Item = &str>,
+    acceptable_video_codecs: impl Iterator<Item = &str>,
+    acceptable_audio_codecs: impl Iterator<Item = &str>,
 ) -> Result<Vec<VideoAsset>> {
     let mut query_builder = QueryBuilder::new(
         r#"
@@ -607,12 +626,21 @@ AND Asset.ty ="#,
     query_builder.push_bind(DbAssetType::Video);
     query_builder.push(
         r#"
-AND codec_name IN
+AND video_codec_name IN
     "#,
     );
-    query_builder.push_tuples(acceptable_codecs, |mut b, s| {
+    query_builder.push_tuples(acceptable_video_codecs, |mut b, s| {
         b.push_bind(s);
     });
+    query_builder.push(
+        r#"
+AND audio_codec_name IN
+    "#,
+    );
+    query_builder.push_tuples(acceptable_audio_codecs, |mut b, s| {
+        b.push_bind(s);
+    });
+    query_builder.push(";");
     query_builder
         .build_query_as::<DbAsset>()
         .fetch_all(pool)

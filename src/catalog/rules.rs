@@ -5,8 +5,10 @@ use tracing::instrument;
 
 use crate::{
     catalog::{
-        encoding_target::{CodecTarget, EncodingTarget},
-        operation::package_video::{CreateAudioRepr, CreateVideoRepr, Transcode},
+        encoding_target::{CodecTarget, VideoEncodingTarget},
+        operation::package_video::{
+            AudioEncodingTarget, AudioTranscode, CreateAudioRepr, CreateVideoRepr, VideoTranscode,
+        },
     },
     model::{
         repository::{self, pool::DbPool},
@@ -57,10 +59,12 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
     // If we have a lot of video at the same time (e.g. initial index), we might not want to do this
     // if disk space is limited and prefer transcoding to a more efficient codec first.
 
-    let acceptable_codecs = ["h264", "av1", "vp9"];
+    let acceptable_video_codecs = ["h264", "av1", "vp9"];
+    let acceptable_audio_codecs = ["aac", "opus", "flac", "mp3"];
     let acceptable_codecs_no_dash = repository::asset::get_videos_in_acceptable_codec_without_dash(
         pool,
-        acceptable_codecs.into_iter(),
+        acceptable_video_codecs.into_iter(),
+        acceptable_audio_codecs.into_iter(),
     )
     .await?;
     if !acceptable_codecs_no_dash.is_empty() {
@@ -73,7 +77,8 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
                 ));
                 // if there is no dash resource directory then there can not already be an audio
                 // representation
-                let create_audio_repr = CreateAudioRepr::CreateNew(PathBuf::from("audio.mp4"));
+                let create_audio_repr =
+                    CreateAudioRepr::PackageOriginalFile(PathBuf::from("audio.mp4"));
                 // likewise for video representations
                 let existing_video_reprs = Vec::default();
                 PackageVideo {
@@ -90,7 +95,8 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
     let no_good_reprs: Vec<VideoAsset> =
         repository::asset::get_video_assets_with_no_acceptable_repr(
             pool,
-            acceptable_codecs.into_iter(),
+            acceptable_video_codecs.into_iter(),
+            acceptable_audio_codecs.into_iter(),
         )
         .await
         .unwrap();
@@ -98,32 +104,50 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
         use crate::catalog::encoding_target::av1;
         return Ok(no_good_reprs
             .into_iter()
-            .map(|asset| PackageVideo {
-                asset_id: asset.base.id,
-                mpd_output: PathBuf::from("stream.mpd"),
-                create_video_repr: CreateVideoRepr::Transcode(Transcode {
-                    target: EncodingTarget {
-                        codec: CodecTarget::AV1(av1::AV1Target {
-                            crf: av1::Crf::default(),
-                            fast_decode: None,
-                            preset: None,
-                            max_bitrate: None,
-                        }),
-                        scale: None,
-                    },
-                    output: PathBuf::from("av1/original.mp4"),
-                }),
-                // TODO actually check existing reprs
-                create_audio_repr: CreateAudioRepr::CreateNew(PathBuf::from("audio.mp4")),
-                existing_video_reprs: Vec::default(),
+            .map(|asset| {
+                let video_output: PathBuf = format!(
+                    "av1/{}x{}.mp4",
+                    asset.base.size.width, asset.base.size.height
+                )
+                .into();
+                let create_video_repr = match asset.video.video_codec_name.as_str() {
+                    // TODO replace with target codec from config
+                    "av1" => CreateVideoRepr::PackageOriginalFile(video_output),
+                    _ => CreateVideoRepr::Transcode(VideoTranscode {
+                        target: VideoEncodingTarget {
+                            codec: CodecTarget::AV1(av1::AV1Target {
+                                crf: av1::Crf::default(),
+                                fast_decode: None,
+                                preset: None,
+                                max_bitrate: None,
+                            }),
+                            scale: None,
+                        },
+                        output: video_output,
+                    }),
+                };
+                let audio_output: PathBuf = "audio.mp4".into();
+                // TODO actually check existing reprs in database.
+                // maybe the acceptable video in config changed, making us reencode video
+                // but actually a suitable audio repr already exists (or vice versa)
+                let create_audio_repr = match asset.video.audio_codec_name.as_str() {
+                    "aac" | "opus" | "mp3" => CreateAudioRepr::PackageOriginalFile(audio_output),
+                    _ => CreateAudioRepr::Transcode(AudioTranscode {
+                        target: AudioEncodingTarget::OPUS,
+                        output: audio_output,
+                    }),
+                };
+                PackageVideo {
+                    asset_id: asset.base.id,
+                    mpd_output: PathBuf::from("stream.mpd"),
+                    create_video_repr,
+                    create_audio_repr,
+                    existing_video_reprs: Vec::default(),
+                }
             })
             .collect());
     }
-    return Ok(vec![]);
-    // transcode no_good_reprs into target codec first
-    // we want DashPackagingJob to either only package, or transcode and then package
-    // by adding an Option<EncodingTarget> to every param
-
+    // return Ok(vec![]);
     // if all videos have at least one good repr:
     //   for every rung in quality_levels starting from the highest
     //     for every video, ql = quality_ladder(video):

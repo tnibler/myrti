@@ -2,10 +2,13 @@ use std::{collections::HashSet, path::PathBuf};
 
 use chrono::{Months, Utc};
 use claims::{assert_err, assert_ok};
+use pretty_assertions::assert_eq;
 
 use crate::model::{
-    repository, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType,
-    Image, MediaTimestamp, Size, Video, VideoAsset, VideoRepresentation, VideoRepresentationId,
+    repository::{self, representation::insert_video_representation},
+    Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType,
+    AudioRepresentation, AudioRepresentationId, Image, MediaTimestamp, Size, Video, VideoAsset,
+    VideoRepresentation, VideoRepresentationId,
 };
 
 use super::*;
@@ -581,22 +584,32 @@ async fn get_videos_with_no_acceptable_repr() {
             ..asset.base.clone()
         },
     };
-    let _asset_id = assert_ok!(repository::asset::insert_asset(&pool, &asset).await);
+    let asset_id = assert_ok!(repository::asset::insert_asset(&pool, &asset).await);
     let _asset2_id = assert_ok!(repository::asset::insert_asset(&pool, &asset2).await);
     let asset3_id = assert_ok!(repository::asset::insert_asset(&pool, &asset3).await);
     let asset4_id = assert_ok!(repository::asset::insert_asset(&pool, &asset4).await);
     let asset5_id = assert_ok!(repository::asset::insert_asset(&pool, &asset5).await);
-    let acceptable_codecs = ["h264", "av1", "vp9", "mjpeg"];
+    let acceptable_video_codecs = ["h264", "av1", "vp9", "mjpeg"];
+    let acceptable_audio_codecs = ["aac", "opus", "flac", "mp3"];
     let videos_with_no_acceptable_repr: HashSet<VideoAsset> = assert_ok!(
         repository::asset::get_video_assets_with_no_acceptable_repr(
             &pool,
-            acceptable_codecs.into_iter()
+            acceptable_video_codecs.into_iter(),
+            acceptable_audio_codecs.into_iter()
         )
         .await
     )
     .into_iter()
     .collect();
-    let expected: HashSet<VideoAsset> = [
+    // no reprs at all yet, so expect to get all videos
+    let expected_all_videos_with_ids: HashSet<VideoAsset> = [
+        Asset {
+            base: AssetBase {
+                id: asset_id,
+                ..asset.base.clone()
+            },
+            ..asset.clone()
+        },
         Asset {
             base: AssetBase {
                 id: asset3_id,
@@ -622,7 +635,7 @@ async fn get_videos_with_no_acceptable_repr() {
     .into_iter()
     .map(|a| a.try_into().unwrap())
     .collect();
-    assert_eq!(videos_with_no_acceptable_repr, expected);
+    assert_eq!(videos_with_no_acceptable_repr, expected_all_videos_with_ids);
 
     let asset3_repr = VideoRepresentation {
         id: VideoRepresentationId(0),
@@ -649,7 +662,7 @@ async fn get_videos_with_no_acceptable_repr() {
         height: 100,
         path: "/path/to/otherav1repr.mp4".into(),
     };
-    let _asset4_repr_id = assert_ok!(
+    let _asset5_repr_id = assert_ok!(
         repository::representation::insert_video_representation(
             pool.acquire().await.unwrap().as_mut(),
             &asset5_repr
@@ -659,21 +672,85 @@ async fn get_videos_with_no_acceptable_repr() {
     let videos_with_no_acceptable_repr: HashSet<VideoAsset> = assert_ok!(
         repository::asset::get_video_assets_with_no_acceptable_repr(
             &pool,
-            acceptable_codecs.into_iter()
+            acceptable_video_codecs.into_iter(),
+            acceptable_audio_codecs.into_iter()
         )
         .await
     )
     .into_iter()
     .collect();
-    let expected: HashSet<VideoAsset> = [Asset {
-        base: AssetBase {
-            id: asset4_id,
-            ..asset4.base
+    // no audio reprs, so expect all videos
+    assert_eq!(videos_with_no_acceptable_repr, expected_all_videos_with_ids);
+
+    let asset3_audio_repr = AudioRepresentation {
+        id: AudioRepresentationId(0),
+        asset_id: asset3_id,
+        codec_name: "aac".into(),
+        path: "/audio/path/3.mp4".into(),
+    };
+    let _asset3_audio_repr_id = assert_ok!(
+        repository::representation::insert_audio_representation(
+            pool.acquire().await.unwrap().as_mut(),
+            &asset3_audio_repr
+        )
+        .await
+    );
+    let asset4_audio_repr = AudioRepresentation {
+        id: AudioRepresentationId(0),
+        asset_id: asset4_id,
+        codec_name: "pcm_u8".into(),
+        path: "/audio/path/4.idk".into(),
+    };
+    let _asset4_audio_repr_id = assert_ok!(
+        repository::representation::insert_audio_representation(
+            pool.acquire().await.unwrap().as_mut(),
+            &asset4_audio_repr
+        )
+        .await
+    );
+    let asset5_audio_repr = AudioRepresentation {
+        id: AudioRepresentationId(0),
+        asset_id: asset5_id,
+        codec_name: "aac".into(),
+        path: "/audio/path/5.mp4".into(),
+    };
+    let _asset5_audio_repr_id = assert_ok!(
+        repository::representation::insert_audio_representation(
+            pool.acquire().await.unwrap().as_mut(),
+            &asset5_audio_repr
+        )
+        .await
+    );
+    // asset1 has no audio repr
+    // asset4 only has audio in pcm_u8
+    let expected: HashSet<VideoAsset> = [
+        Asset {
+            base: AssetBase {
+                id: asset_id,
+                ..asset.base
+            },
+            ..asset
         },
-        ..asset4
-    }]
+        Asset {
+            base: AssetBase {
+                id: asset4_id,
+                ..asset4.base
+            },
+            ..asset4
+        },
+    ]
     .into_iter()
     .map(|a| a.try_into().unwrap())
+    .collect();
+    let videos_with_no_acceptable_repr: HashSet<VideoAsset> = assert_ok!(
+        repository::asset::get_video_assets_with_no_acceptable_repr(
+            &pool,
+            acceptable_video_codecs.into_iter(),
+            acceptable_audio_codecs.into_iter()
+        )
+        .await
+    )
+    .into_iter()
     .collect();
     assert_eq!(videos_with_no_acceptable_repr, expected);
 }

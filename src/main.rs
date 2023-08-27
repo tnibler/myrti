@@ -26,7 +26,7 @@ use tower_http::{
 use tracing::{info, instrument, Instrument};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{prelude::*, EnvFilter};
-use tracing_tree::HierarchicalLayer;
+use tracing_forest::ForestLayer;
 
 use crate::{
     app_state::{AppState, SharedState},
@@ -132,7 +132,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
         .with(ErrorLayer::default())
-        .with(HierarchicalLayer::new(2).with_targets(true))
+        .with(ForestLayer::default())
         // .with(
         //     tracing_subscriber::fmt::layer()
         //         // .with_span_events(FmtSpan::NEW)

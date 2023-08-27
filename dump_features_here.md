@@ -18,4 +18,5 @@
  - transcoding/processing on different client with better hardware when it makes itself available
  - Automatic database backup, recovery if data dirs get corrupted/lost
  - deduplication: hash during indexing, mark duplicate of
- - click on album -> download as zip/tar
+ - click on album -> download as zip/tar, with a self-contained gallery html file
+ - store perceptive hash with assets and dedupe if possible

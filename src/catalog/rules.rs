@@ -76,9 +76,15 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
                     asset.base.size.width, asset.base.size.height
                 ));
                 // if there is no dash resource directory then there can not already be an audio
-                // representation
-                let create_audio_repr =
-                    CreateAudioRepr::PackageOriginalFile(PathBuf::from("audio.mp4"));
+                // representation, so create one if the video has audio
+                let create_audio_repr = if asset.video.audio_codec_name.is_some() {
+                    Some(CreateAudioRepr::PackageOriginalFile(PathBuf::from(
+                        "audio.mp4",
+                    )))
+                } else {
+                    // video does not have audio
+                    None
+                };
                 // likewise for video representations
                 let existing_video_reprs = Vec::default();
                 PackageVideo {
@@ -130,12 +136,16 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
                 // TODO actually check existing reprs in database.
                 // maybe the acceptable video in config changed, making us reencode video
                 // but actually a suitable audio repr already exists (or vice versa)
-                let create_audio_repr = match asset.video.audio_codec_name.as_str() {
-                    "aac" | "opus" | "mp3" => CreateAudioRepr::PackageOriginalFile(audio_output),
-                    _ => CreateAudioRepr::Transcode(AudioTranscode {
+                let create_audio_repr = match asset.video.audio_codec_name.as_deref() {
+                    Some("aac" | "opus" | "mp3") => {
+                        Some(CreateAudioRepr::PackageOriginalFile(audio_output))
+                    }
+                    // TODO matching strings is ehh since we only allow a few codecs anyway
+                    Some(_) => Some(CreateAudioRepr::Transcode(AudioTranscode {
                         target: AudioEncodingTarget::OPUS,
                         output: audio_output,
-                    }),
+                    })),
+                    None => None,
                 };
                 PackageVideo {
                     asset_id: asset.base.id,

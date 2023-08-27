@@ -11,7 +11,7 @@ pub struct Image {}
 pub struct Video {
     pub video_codec_name: String,
     pub video_bitrate: i64,
-    pub audio_codec_name: String,
+    pub audio_codec_name: Option<String>,
     pub dash_resource_dir: Option<PathBuf>,
 }
 

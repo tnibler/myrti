@@ -95,7 +95,7 @@ impl Monitor {
                     // New job added with its corresponding channel to read incoming status updates
                     // from
                     Some(NewJobToWatch { id, mut progress_rx }) = add_job_rx.recv() => {
-                        debug!(job_id=%id, "New job added to monitor");
+                        debug!(immediate=true, job_id=%id, "New job added to monitor");
                         let (mut progress_with_id_tx, progress_with_id_rx) = futures::channel::mpsc::channel::<JobStatusWithId>(1000);
                         tokio::task::spawn(async move {
                             while let Some(progress) = progress_rx.recv().await {
@@ -117,7 +117,7 @@ impl Monitor {
                         }
                     }
                     Some((job_id, job_result)) = job_result_rx.recv() => {
-                        info!(?job_result, "Received result from job");
+                        info!(immediate=true, ?job_result, "Received result from job");
                             monitor_copy.on_result_received(job_id, job_result).await;
                     }
                 }
@@ -126,16 +126,15 @@ impl Monitor {
         monitor
     }
 
-    #[instrument(name = "Status received", skip(self), level = "info")]
+    #[instrument(skip(self))]
     async fn on_status_received(&self, job_id: JobId, progress: JobProgress) {
-        debug!("received status");
         let mut statuses = self.statuses.lock().await;
         match statuses.get(&job_id) {
             None | Some(JobStatus::NotStarted) | Some(JobStatus::Running(_)) => {
                 statuses.insert(job_id, JobStatus::Running(progress));
             }
             Some(status) => {
-                error!(%job_id, ?status, "Must not receive progress updates for job with this status");
+                error!(immediate=true, %job_id, ?status, "Must not receive progress updates for job with this status");
             }
         }
     }
@@ -224,7 +223,7 @@ impl Monitor {
             .ok_or_else(|| eyre!("no job with this id"))
     }
 
-    #[instrument(name = "Add job", skip(self, handle))]
+    #[instrument(skip(self, handle))]
     pub async fn add_job(&self, handle: JobHandle, ty: JobType) -> JobId {
         let mut inner = self.inner.lock().await;
         inner.last_job_id = JobId(inner.last_job_id.0 + 1);
@@ -248,10 +247,10 @@ impl Monitor {
                     handle.join_handle.in_current_span().await;
                 match join_result {
                     Ok(ref job_result) => {
-                        debug!(result_type=%job_result, "Received result");
+                        debug!(immediate=true, result_type=%job_result, "Received result");
                     }
                     Err(ref join_error) => {
-                        debug!(%join_error, "Error joining job");
+                        debug!(immediate=true, %join_error, "Error joining job");
                     }
                 };
                 job_result_tx.send((id, join_result)).await.unwrap();
@@ -261,7 +260,7 @@ impl Monitor {
         id
     }
 
-    #[instrument(name = "Cancel job", skip(self))]
+    #[instrument(skip(self))]
     pub async fn cancel_job(&self, id: JobId) -> Result<()> {
         let inner = self.inner.lock().await;
         inner
@@ -277,7 +276,7 @@ impl Monitor {
         Ok(())
     }
 
-    #[instrument(name = "Get all jobs", skip(self))]
+    #[instrument(skip(self))]
     pub async fn get_all_jobs(&self) -> Result<Vec<AJobInfo>> {
         let inner = self.inner.lock().in_current_span().await;
         let mut infos: Vec<AJobInfo> = Vec::new();
@@ -290,7 +289,7 @@ impl Monitor {
                 .get(&job.id)
                 .cloned();
             if status.is_none() {
-                warn!(job_id=%job.id, "No status for job");
+                warn!(immediate=true, job_id=%job.id, "No status for job");
             }
             infos.push(AJobInfo {
                 id: job.id,

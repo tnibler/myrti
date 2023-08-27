@@ -25,8 +25,8 @@ use tower_http::{
 };
 use tracing::{info, instrument, Instrument};
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{prelude::*, EnvFilter};
 use tracing_forest::ForestLayer;
+use tracing_subscriber::{prelude::*, EnvFilter};
 
 use crate::{
     app_state::{AppState, SharedState},

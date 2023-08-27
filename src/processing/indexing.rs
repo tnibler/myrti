@@ -13,7 +13,7 @@ use walkdir::WalkDir;
 
 use super::{
     media_metadata::{figure_out_utc_timestamp, read_media_metadata, TimestampGuess},
-    video::{probe_audio, probe_video},
+    video::ffprobe_get_streams,
 };
 
 #[instrument(skip(pool))]
@@ -71,65 +71,54 @@ async fn index_file(
             return Ok(None);
         }
     };
-    let (ty, full): (AssetType, AssetSpe) = match metadata.file.mime_type.as_ref() {
+    let (ty, full, size): (AssetType, AssetSpe, Size) = match metadata.file.mime_type.as_ref() {
         Some(mime) if mime.starts_with("video") => {
-            let probe_video = probe_video(path)
-                .in_current_span()
+            let streams = ffprobe_get_streams(path)
                 .await
-                .wrap_err(format!("file has mimetype {}, but ffprobe failed", mime))?;
-            let probe_audio = probe_audio(path)
-                .in_current_span()
-                .await
-                .wrap_err(format!("file has mimetype {}, but ffprobe failed", mime))?;
+                .wrap_err("error getting stream info from file")?;
+            let video = streams.video;
             let video_info = AssetSpe::Video(Video {
-                video_codec_name: probe_video.codec_name.to_ascii_lowercase(),
-                video_bitrate: probe_video.bitrate,
-                audio_codec_name: probe_audio.codec_name.to_ascii_lowercase(),
+                video_codec_name: video.codec_name.to_ascii_lowercase(),
+                video_bitrate: video.bitrate,
+                audio_codec_name: streams
+                    .audio
+                    .map(|audio| audio.codec_name.to_ascii_lowercase()),
                 dash_resource_dir: None,
             });
-            (AssetType::Video, video_info)
+            let swap = match video.rotation {
+                Some(n) if n % 180 == 0 => false,
+                Some(n) if n % 90 == 0 => true,
+                _ => false,
+            };
+            let size = if swap {
+                Size {
+                    height: video.width.into(),
+                    width: video.height.into(),
+                }
+            } else {
+                Size {
+                    width: video.width.into(),
+                    height: video.height.into(),
+                }
+            };
+            (AssetType::Video, video_info, size)
         }
         Some(mime) if mime.starts_with("image") => {
             let image_info = AssetSpe::Image(Image {});
-            (AssetType::Image, image_info)
-        }
-        None | Some(_) => {
-            debug!(path=%path.display(), "Ignoring file");
-            return Ok(None);
-        }
-    };
-    let size: Size = match ty {
-        AssetType::Image => {
             let p = path.to_owned();
             let s = tokio::task::spawn_blocking(move || {
                 processing::image::get_image_size(&p).wrap_err("could not read image size")
             })
             .await??;
-            Size {
+            let size = Size {
                 width: s.width.into(),
                 height: s.height.into(),
-            }
-        }
-        AssetType::Video => {
-            let probe = processing::video::probe_video(path)
-                .await
-                .wrap_err("could not read video info using ffprobe")?;
-            let swap = match probe.rotation {
-                Some(n) if n % 180 == 0 => false,
-                Some(n) if n % 90 == 0 => true,
-                _ => false,
             };
-            if swap {
-                Size {
-                    height: probe.width.into(),
-                    width: probe.height.into(),
-                }
-            } else {
-                Size {
-                    width: probe.width.into(),
-                    height: probe.height.into(),
-                }
-            }
+            (AssetType::Image, image_info, size)
+        }
+        None | Some(_) => {
+            debug!(path=%path.display(), "Ignoring file");
+            return Ok(None);
         }
     };
     let timestamp_guess = figure_out_utc_timestamp(&metadata);

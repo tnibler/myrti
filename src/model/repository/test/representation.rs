@@ -21,7 +21,7 @@ async fn insert_retrieve_video_representation() {
         sp: AssetSpe::Video(Video {
             video_codec_name: "h264".to_owned(),
             video_bitrate: 1234,
-            audio_codec_name: "aac".into(),
+            audio_codec_name: Some("aac".into()),
             dash_resource_dir: None,
         }),
         base: AssetBase {
@@ -50,7 +50,7 @@ async fn insert_retrieve_video_representation() {
         sp: AssetSpe::Video(Video {
             video_codec_name: "hevc".to_owned(),
             video_bitrate: 456,
-            audio_codec_name: "opus".into(),
+            audio_codec_name: Some("opus".into()),
             dash_resource_dir: None,
         }),
         base: AssetBase {
@@ -156,7 +156,7 @@ async fn insert_retrieve_audio_representation() {
         sp: AssetSpe::Video(Video {
             video_codec_name: "h264".to_owned(),
             video_bitrate: 1234,
-            audio_codec_name: "aac".into(),
+            audio_codec_name: Some("aac".into()),
             dash_resource_dir: None,
         }),
         base: AssetBase {
@@ -185,7 +185,7 @@ async fn insert_retrieve_audio_representation() {
         sp: AssetSpe::Video(Video {
             video_codec_name: "hevc".to_owned(),
             video_bitrate: 456,
-            audio_codec_name: "mp3".into(),
+            audio_codec_name: Some("mp3".into()),
             dash_resource_dir: None,
         }),
         base: AssetBase {

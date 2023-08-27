@@ -21,18 +21,18 @@ parse-size = { version = "1.0.0", features = ["std"] }
 rayon = "1.7.0"
 serde = { version = "1.0.175", features = ["derive"] }
 serde_json = "1.0.104"
-sqlx = {version ="0.7.1", features = ["sqlite", "runtime-tokio", "chrono", "migrate"]}
+sqlx = { version ="0.7.1", features = ["sqlite", "runtime-tokio", "chrono", "migrate"] }
 strum_macros = "0.25.2"
 tempfile = "3.7.0"
 tokio = { version = "1.29.1", features = ["full"] }
-tokio-util = {version = "0.7.8", features = ["io"]}
+tokio-util = { version = "0.7.8", features = ["io"] }
 toml = "0.7.6"
 tower = { version = "0.4.13", features = ["tracing"] }
 tower-http = { version = "0.4.3", features = ["trace", "request-id", "util", "fs", "cors"] }
 tracing = "0.1.37"
 tracing-error = "0.2.0"
-tracing-forest = "0.1.6"
-tracing-subscriber = {version = "0.3.17", features = ["env-filter"]}
+tracing-forest = { version = "0.1.6", features = ["ansi", "tokio", "serde", "env-filter"] }
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 walkdir = "2.3.3"
 
 [build-dependencies]

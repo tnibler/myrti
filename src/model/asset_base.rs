@@ -96,7 +96,7 @@ impl TryFrom<&Asset> for DbAsset {
             thumb_large_orig_height: value.base.thumb_large_orig_size.as_ref().map(|s| s.height),
             video_codec_name: video.map(|v| v.video_codec_name.clone()),
             video_bitrate: video.map(|v| v.video_bitrate),
-            audio_codec_name: video.map(|v| v.audio_codec_name.clone()),
+            audio_codec_name: video.map(|v| v.audio_codec_name.clone()).flatten(),
             resource_dir: video
                 .map(|v| v.dash_resource_dir.as_ref().map(|p| path_to_string(p)))
                 .flatten()
@@ -136,10 +136,7 @@ impl TryFrom<&DbAsset> for Asset {
                 video_bitrate: value
                     .video_bitrate
                     .ok_or(eyre!("video DbAsset must have video_bitrate set"))?,
-                audio_codec_name: value
-                    .audio_codec_name
-                    .clone()
-                    .ok_or(eyre!("video DbAsset must have audio_codec_name set"))?,
+                audio_codec_name: value.audio_codec_name.clone(),
                 dash_resource_dir: value.resource_dir.as_ref().map(|p| PathBuf::from(p)),
             }),
         };

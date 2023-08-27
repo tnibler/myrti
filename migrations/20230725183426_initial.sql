@@ -49,8 +49,8 @@ CREATE TABLE Asset (
 
   CHECK(ty = 1 OR (
       video_codec_name IS NOT NULL AND
-      video_bitrate IS NOT NULL AND
-      audio_codec_name IS NOT NULL
+      video_bitrate IS NOT NULL 
+      -- audio_codec_name can be null if there's no audio stream
   )),
   CHECK(taken_date IS NOT NULL OR taken_date_local_fallback IS NOT NULL)
 ) STRICT;

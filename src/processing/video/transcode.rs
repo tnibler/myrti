@@ -1,7 +1,4 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Stdio,
-};
+use std::{path::Path, process::Stdio};
 
 use tokio::process::Command;
 use tracing::warn;
@@ -133,6 +130,7 @@ pub fn ffmpeg_command(
 #[test]
 fn ffmpeg_avc_command_assembled_correctly() {
     use crate::catalog::encoding_target::avc::*;
+    use std::path::PathBuf;
     let input = PathBuf::from("/path/to/input.mp4");
     let output = PathBuf::from("out.mp4");
     let codec = CodecTarget::AVC(AVCTarget {
@@ -159,6 +157,7 @@ fn ffmpeg_avc_command_assembled_correctly() {
 #[test]
 fn ffmpeg_av1_command_assembled_correctly() {
     use crate::catalog::encoding_target::av1::*;
+    use std::path::PathBuf;
     let input = PathBuf::from("/path/to/input.mp4");
     let output = PathBuf::from("out.mp4");
     let codec = CodecTarget::AV1(AV1Target {

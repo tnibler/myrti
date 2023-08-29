@@ -7,7 +7,6 @@ use eyre::{bail, Context, Result};
 use tokio::process::Command;
 use tracing::{debug, instrument, Instrument};
 
-use super::transcode::ffmpeg_command;
 pub use crate::catalog::encoding_target::VideoEncodingTarget;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,7 +25,10 @@ pub struct RepresentationInput {
 // FIXME this doesn't work for video files with no audio/video streams
 // it assumes one video and one audio stream
 #[instrument()]
-pub async fn shaka_package(reprs: &[RepresentationInput]) -> Result<()> {
+pub async fn shaka_package(
+    reprs: &[RepresentationInput],
+    working_dir: Option<&Path>,
+) -> Result<()> {
     let mut command = Command::new("packager");
     for repr in reprs {
         if !repr.path.is_file() {
@@ -44,8 +46,10 @@ pub async fn shaka_package(reprs: &[RepresentationInput]) -> Result<()> {
         ));
     }
     command.arg("--output_media_info");
-    // let mpd_out_path = mpd_out_path.to_str().unwrap().to_owned();
-    // command.arg(format!("--mpd_output={}", mpd_out_path));
+    if let Some(wd) = working_dir {
+        command.current_dir(wd);
+    }
+
     debug!(?command, "Invoking shaka-packager");
     let result = command
         .stdout(Stdio::piped())

@@ -3,6 +3,7 @@ use std::{path::PathBuf, sync::Arc};
 use super::{
     job::{Job, JobId, JobResultType},
     monitor::MonitorMessage,
+    storage::Storage,
     DataDirManager,
 };
 use crate::{
@@ -42,7 +43,11 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn start(monitor_tx: mpsc::Sender<MonitorMessage>, pool: SqlitePool) -> Scheduler {
+    pub fn start(
+        monitor_tx: mpsc::Sender<MonitorMessage>,
+        pool: SqlitePool,
+        storage: Storage,
+    ) -> Scheduler {
         let (tx, rx) = mpsc::channel::<SchedulerMessage>(1000);
         let cancel = CancellationToken::new();
         let cancel_copy = cancel.clone();
@@ -55,6 +60,7 @@ impl Scheduler {
                 data_dir_manager: Arc::new(DataDirManager::new(pool.clone())),
                 pool,
                 monitor_tx,
+                storage,
             };
             si.run().await;
         });
@@ -77,6 +83,7 @@ struct SchedulerImpl {
     pool: SqlitePool,
     monitor_tx: mpsc::Sender<MonitorMessage>,
     data_dir_manager: Arc<DataDirManager>,
+    storage: Storage,
 }
 
 impl SchedulerImpl {
@@ -135,6 +142,7 @@ impl SchedulerImpl {
                 params.clone(),
                 self.data_dir_manager.clone(),
                 self.pool.clone(),
+                self.storage.clone(),
             );
             let handle = job.start();
             self.monitor_tx
@@ -155,11 +163,8 @@ impl SchedulerImpl {
             let params = DashSegmentingJobParams {
                 tasks: videos_to_package,
             };
-            let job = DashSegmentingJob::new(
-                params.clone(),
-                self.data_dir_manager.clone(),
-                self.pool.clone(),
-            );
+            let job =
+                DashSegmentingJob::new(params.clone(), self.storage.clone(), self.pool.clone());
             let handle = job.start();
             self.monitor_tx
                 .send(MonitorMessage::AddJob {

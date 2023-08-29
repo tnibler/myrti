@@ -7,7 +7,7 @@ use super::{
     repository::db_entity::{DbAsset, DbAssetType},
     util::{
         datetime_from_db_repr, datetime_to_db_repr, hash_u64_to_vec8, hash_vec8_to_u64,
-        opt_path_to_string, path_to_string,
+        path_to_string,
     },
     Asset, AssetId, AssetRootDirId, AssetSpe, AssetType, Image, Video,
 };
@@ -30,10 +30,10 @@ pub struct AssetBase {
     pub rotation_correction: Option<i32>,
     /// Seahash of the file, if already computed
     pub hash: Option<u64>,
-    pub thumb_small_square_avif: Option<PathBuf>,
-    pub thumb_small_square_webp: Option<PathBuf>,
-    pub thumb_large_orig_avif: Option<PathBuf>,
-    pub thumb_large_orig_webp: Option<PathBuf>,
+    pub thumb_small_square_avif: Option<String>,
+    pub thumb_small_square_webp: Option<String>,
+    pub thumb_large_orig_avif: Option<String>,
+    pub thumb_large_orig_webp: Option<String>,
     pub thumb_small_square_size: Option<Size>,
     pub thumb_large_orig_size: Option<Size>,
 }
@@ -54,6 +54,12 @@ pub enum MediaTimestamp {
 pub enum ThumbnailType {
     SmallSquare,
     LargeOrigAspect,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ThumbnailFormat {
+    Webp,
+    Avif,
 }
 
 impl TryFrom<&Asset> for DbAsset {
@@ -82,10 +88,10 @@ impl TryFrom<&Asset> for DbAsset {
             width: value.base.size.width,
             height: value.base.size.height,
             rotation_correction: value.base.rotation_correction,
-            thumb_small_square_avif: opt_path_to_string(&value.base.thumb_small_square_avif)?,
-            thumb_small_square_webp: opt_path_to_string(&value.base.thumb_small_square_webp)?,
-            thumb_large_orig_avif: opt_path_to_string(&value.base.thumb_large_orig_avif)?,
-            thumb_large_orig_webp: opt_path_to_string(&value.base.thumb_large_orig_webp)?,
+            thumb_small_square_avif: value.base.thumb_small_square_avif.clone(),
+            thumb_small_square_webp: value.base.thumb_small_square_webp.clone(),
+            thumb_large_orig_avif: value.base.thumb_large_orig_avif.clone(),
+            thumb_large_orig_webp: value.base.thumb_large_orig_webp.clone(),
             thumb_small_square_width: value.base.thumb_small_square_size.as_ref().map(|s| s.width),
             thumb_small_square_height: value
                 .base
@@ -97,10 +103,7 @@ impl TryFrom<&Asset> for DbAsset {
             video_codec_name: video.map(|v| v.video_codec_name.clone()),
             video_bitrate: video.map(|v| v.video_bitrate),
             audio_codec_name: video.map(|v| v.audio_codec_name.clone()).flatten(),
-            resource_dir: video
-                .map(|v| v.dash_resource_dir.as_ref().map(|p| path_to_string(p)))
-                .flatten()
-                .transpose()?,
+            has_dash: video.map(|v| if v.has_dash { 1 } else { 0 }),
         })
     }
 }
@@ -137,7 +140,10 @@ impl TryFrom<&DbAsset> for Asset {
                     .video_bitrate
                     .ok_or(eyre!("video DbAsset must have video_bitrate set"))?,
                 audio_codec_name: value.audio_codec_name.clone(),
-                dash_resource_dir: value.resource_dir.as_ref().map(|p| PathBuf::from(p)),
+                has_dash: value
+                    .has_dash
+                    .map(|i| i != 0)
+                    .ok_or(eyre!("Video asset can not have has_dash null"))?,
             }),
         };
         let hash: Option<u64> = value

@@ -3,11 +3,15 @@ use std::{collections::HashMap, ffi::OsString, os::unix::prelude::OsStrExt};
 use axum::{
     body::StreamBody,
     extract::{Path, Query, State},
-    http::{header, HeaderMap, HeaderValue},
+    http::{
+        header::{self, CONTENT_TYPE},
+        HeaderMap, HeaderValue,
+    },
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
 };
+use axum_extra::body::AsyncReadBody;
 use chrono::{DateTime, Utc};
 use eyre::{eyre, Context};
 use serde::Deserialize;
@@ -21,6 +25,8 @@ use crate::{
         ApiResult,
     },
     app_state::SharedState,
+    catalog::storage_key,
+    core::storage::StorageProvider,
     model::{self, repository},
 };
 
@@ -68,33 +74,47 @@ async fn get_thumbnail(
     Path((id, size, format)): Path<(String, ThumbnailSize, ThumbnailFormat)>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Response> {
-    let id: model::AssetId = AssetId(id).try_into()?;
-    let asset_base = repository::asset::get_asset(&app_state.pool, id)
-        .await?
-        .base;
-    let (thumb_path, content_type) = match (size, format) {
-        (ThumbnailSize::Small, ThumbnailFormat::Avif) => {
-            (asset_base.thumb_small_square_avif, "image/avif")
-        }
-        (ThumbnailSize::Small, ThumbnailFormat::Webp) => {
-            (asset_base.thumb_small_square_webp, "image/webp")
-        }
-        (ThumbnailSize::Large, ThumbnailFormat::Avif) => {
-            (asset_base.thumb_large_orig_avif, "image/avif")
-        }
-        (ThumbnailSize::Large, ThumbnailFormat::Webp) => {
-            (asset_base.thumb_large_orig_webp, "image/webp")
-        }
+    let asset_id: model::AssetId = AssetId(id).try_into()?;
+    let (thumb_key, content_type) = match (size, format) {
+        (ThumbnailSize::Small, ThumbnailFormat::Avif) => (
+            storage_key::thumbnail(
+                asset_id,
+                model::ThumbnailType::SmallSquare,
+                model::ThumbnailFormat::Avif,
+            ),
+            "image/avif",
+        ),
+        (ThumbnailSize::Small, ThumbnailFormat::Webp) => (
+            storage_key::thumbnail(
+                asset_id,
+                model::ThumbnailType::SmallSquare,
+                model::ThumbnailFormat::Webp,
+            ),
+            "image/webp",
+        ),
+        (ThumbnailSize::Large, ThumbnailFormat::Avif) => (
+            storage_key::thumbnail(
+                asset_id,
+                model::ThumbnailType::LargeOrigAspect,
+                model::ThumbnailFormat::Avif,
+            ),
+            "image/avif",
+        ),
+        (ThumbnailSize::Large, ThumbnailFormat::Webp) => (
+            storage_key::thumbnail(
+                asset_id,
+                model::ThumbnailType::LargeOrigAspect,
+                model::ThumbnailFormat::Webp,
+            ),
+            "image/webp",
+        ),
     };
-    match thumb_path {
-        None => Ok(().into_response()),
-        Some(path) => {
-            let file = tokio::fs::File::open(path).await?;
-            let stream = ReaderStream::new(file);
-            let body = StreamBody::new(stream);
-            Ok(([(header::CONTENT_TYPE, content_type)], body).into_response())
-        }
-    }
+    // TODO 404 if not found not 503
+    let read = app_state.storage.open_read_stream(&thumb_key).await?;
+    let headers = [(CONTENT_TYPE, content_type)];
+    let body = AsyncReadBody::new(read);
+    // TODO add size hint for files https://github.com/tokio-rs/axum/discussions/2074
+    return Ok((headers, body).into_response());
 }
 
 #[instrument(name = "Get Asset file", skip(app_state))]

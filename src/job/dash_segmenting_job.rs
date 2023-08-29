@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use eyre::{Context, Report, Result};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -7,16 +5,13 @@ use tracing::{instrument, Instrument};
 
 use crate::{
     catalog::operation::package_video::{
-        apply_package_video, perform_side_effects_package_video, PackageVideo, PackageVideoWithPath,
+        apply_package_video, perform_side_effects_package_video, PackageVideo,
     },
     core::{
         job::{Job, JobHandle, JobProgress, JobResultType},
-        DataDirManager,
+        storage::Storage,
     },
-    model::{
-        repository::{self, pool::DbPool},
-        VideoAsset,
-    },
+    model::repository::pool::DbPool,
 };
 
 #[derive(Debug, Clone)]
@@ -26,7 +21,7 @@ pub struct DashSegmentingJobParams {
 
 pub struct DashSegmentingJob {
     params: DashSegmentingJobParams,
-    data_dir_manager: Arc<DataDirManager>,
+    storage: Storage,
     pool: DbPool,
 }
 
@@ -39,13 +34,13 @@ pub struct DashSegmentingJobResult {
 impl DashSegmentingJob {
     pub fn new(
         params: DashSegmentingJobParams,
-        data_dir_manager: Arc<DataDirManager>,
+        storage: Storage,
         pool: DbPool,
     ) -> DashSegmentingJob {
         DashSegmentingJob {
-            pool,
-            data_dir_manager,
             params,
+            storage,
+            pool,
         }
     }
 
@@ -74,25 +69,8 @@ impl DashSegmentingJob {
     }
 
     async fn process_task(&self, package_video: PackageVideo) -> Result<()> {
-        let asset: VideoAsset = repository::asset::get_asset(&self.pool, package_video.asset_id)
-            .in_current_span()
-            .await?
-            .try_into()?;
-        let resource_dir = match asset.video.dash_resource_dir {
-            None => self
-                .data_dir_manager
-                .new_dash_dir(format!("{}", asset.base.id.0).as_str())
-                .in_current_span()
-                .await
-                .wrap_err("error creating video resource dir")?,
-            Some(resource_dir) => resource_dir,
-        };
-        let package_video_with_path = PackageVideoWithPath {
-            output_dir: resource_dir,
-            package_video,
-        };
         let completed_package_video =
-            perform_side_effects_package_video(&self.pool, &package_video_with_path)
+            perform_side_effects_package_video(&self.pool, &self.storage, &package_video)
                 .in_current_span()
                 .await
                 .wrap_err("error packaging video asset")?;

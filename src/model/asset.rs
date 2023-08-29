@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use eyre::{eyre, Report};
 
 use super::{repository::db_entity::DbAsset, AssetBase};
@@ -12,7 +10,7 @@ pub struct Video {
     pub video_codec_name: String,
     pub video_bitrate: i64,
     pub audio_codec_name: Option<String>,
-    pub dash_resource_dir: Option<PathBuf>,
+    pub has_dash: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

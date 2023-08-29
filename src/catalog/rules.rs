@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use eyre::{Context, Result};
 use tracing::instrument;
 
@@ -9,6 +7,7 @@ use crate::{
         operation::package_video::{
             AudioEncodingTarget, AudioTranscode, CreateAudioRepr, CreateVideoRepr, VideoTranscode,
         },
+        storage_key,
     },
     model::{
         repository::{self, pool::DbPool},
@@ -58,6 +57,9 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
     //
     // If we have a lot of video at the same time (e.g. initial index), we might not want to do this
     // if disk space is limited and prefer transcoding to a more efficient codec first.
+    // Also only package originals if there is space for the original codec + transcode,
+    // and allow setting this per storage provider (don't want to upload loads to S3 only to
+    // delete it later when transcoding is done)
 
     let acceptable_video_codecs = ["h264", "av1", "vp9"];
     let acceptable_audio_codecs = ["aac", "opus", "flac", "mp3"];
@@ -71,28 +73,33 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
         return Ok(acceptable_codecs_no_dash
             .into_iter()
             .map(|asset| {
-                let video_out_path = PathBuf::from(asset.video.video_codec_name).join(format!(
-                    "{}x{}.mp4",
-                    asset.base.size.width, asset.base.size.height
-                ));
                 // if there is no dash resource directory then there can not already be an audio
                 // representation, so create one if the video has audio
                 let create_audio_repr = if asset.video.audio_codec_name.is_some() {
-                    Some(CreateAudioRepr::PackageOriginalFile(PathBuf::from(
-                        "audio.mp4",
-                    )))
+                    Some(CreateAudioRepr::PackageOriginalFile {
+                        output_key: storage_key::dash_file(
+                            asset.base.id,
+                            format_args!("audio.mp4"),
+                        ),
+                    })
                 } else {
                     // video does not have audio
                     None
                 };
                 // likewise for video representations
                 let existing_video_reprs = Vec::default();
+                let video_out_key = storage_key::dash_file(
+                    asset.base.id,
+                    format_args!("{}x{}.mp4", asset.base.size.width, asset.base.size.height),
+                );
                 PackageVideo {
                     asset_id: asset.base.id,
-                    create_video_repr: CreateVideoRepr::PackageOriginalFile(video_out_path),
+                    create_video_repr: CreateVideoRepr::PackageOriginalFile {
+                        output_key: video_out_key,
+                    },
                     create_audio_repr,
                     existing_video_reprs,
-                    mpd_output: PathBuf::from("stream.mpd"),
+                    mpd_out_key: storage_key::mpd_manifest(asset.base.id),
                 }
             })
             .collect());
@@ -111,14 +118,15 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
         return Ok(no_good_reprs
             .into_iter()
             .map(|asset| {
-                let video_output: PathBuf = format!(
-                    "av1/{}x{}.mp4",
-                    asset.base.size.width, asset.base.size.height
-                )
-                .into();
+                let video_out_key = storage_key::dash_file(
+                    asset.base.id,
+                    format_args!("{}x{}.mp4", asset.base.size.width, asset.base.size.height),
+                );
                 let create_video_repr = match asset.video.video_codec_name.as_str() {
                     // TODO replace with target codec from config
-                    "av1" => CreateVideoRepr::PackageOriginalFile(video_output),
+                    "av1" => CreateVideoRepr::PackageOriginalFile {
+                        output_key: video_out_key,
+                    },
                     _ => CreateVideoRepr::Transcode(VideoTranscode {
                         target: VideoEncodingTarget {
                             codec: CodecTarget::AV1(av1::AV1Target {
@@ -129,30 +137,31 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
                             }),
                             scale: None,
                         },
-                        output: video_output,
+                        output_key: video_out_key,
                     }),
                 };
-                let audio_output: PathBuf = "audio.mp4".into();
+                let audio_out_key =
+                    storage_key::dash_file(asset.base.id, format_args!("audio.mp4"));
                 // TODO actually check existing reprs in database.
                 // maybe the acceptable video in config changed, making us reencode video
                 // but actually a suitable audio repr already exists (or vice versa)
                 let create_audio_repr = match asset.video.audio_codec_name.as_deref() {
-                    Some("aac" | "opus" | "mp3") => {
-                        Some(CreateAudioRepr::PackageOriginalFile(audio_output))
-                    }
+                    Some("aac" | "opus" | "mp3") => Some(CreateAudioRepr::PackageOriginalFile {
+                        output_key: audio_out_key,
+                    }),
                     // TODO matching strings is ehh since we only allow a few codecs anyway
                     Some(_) => Some(CreateAudioRepr::Transcode(AudioTranscode {
                         target: AudioEncodingTarget::OPUS,
-                        output: audio_output,
+                        output_key: audio_out_key,
                     })),
                     None => None,
                 };
                 PackageVideo {
                     asset_id: asset.base.id,
-                    mpd_output: PathBuf::from("stream.mpd"),
                     create_video_repr,
                     create_audio_repr,
                     existing_video_reprs: Vec::default(),
+                    mpd_out_key: storage_key::mpd_manifest(asset.base.id),
                 }
             })
             .collect());

@@ -25,8 +25,8 @@ struct TomlDataDir {
 struct TomlConfig {
     #[serde(rename = "AssetDirs")]
     pub asset_dirs: Vec<TomlAssetDir>,
-    #[serde(rename = "DataDirs")]
-    pub data_dirs: Vec<TomlDataDir>,
+    #[serde(rename = "DataDir")]
+    pub data_dir: TomlDataDir,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -46,7 +46,7 @@ pub struct DataDir {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Config {
     pub asset_dirs: Vec<AssetDir>,
-    pub data_dirs: Vec<DataDir>,
+    pub data_dir: DataDir,
 }
 
 pub async fn read_config(path: &Path) -> Result<Config> {
@@ -65,34 +65,31 @@ pub async fn read_config(path: &Path) -> Result<Config> {
             })
         })
         .collect::<Result<_>>()?;
-    let data_dirs: Vec<DataDir> = toml_config
-        .data_dirs
-        .into_iter()
-        .map(|toml_value| {
-            let path = PathBuf::from_str(&toml_value.path)?;
-            let max_size: Option<u64> = toml_value
-                .max_size
-                .as_ref()
-                .map(|s| parse_size::parse_size(s))
-                .transpose()?;
-            let max_disk_usage = match toml_value.max_disk_usage {
-                Some(percent) if percent > 0 && percent <= 100 => Some(percent as i32),
-                Some(other) => bail!(
-                    "Error parsing config: invalid disk use percentage {}",
-                    other
-                ),
-                None => None,
-            };
-            Ok(DataDir {
-                path,
-                name: toml_value.name,
-                max_size,
-                max_disk_usage,
-            })
-        })
-        .collect::<Result<_>>()?;
+    let data_dir: DataDir = {
+        let path = toml_config.data_dir.path.into();
+        let max_size: Option<u64> = toml_config
+            .data_dir
+            .max_size
+            .as_ref()
+            .map(|s| parse_size::parse_size(s))
+            .transpose()?;
+        let max_disk_usage = match toml_config.data_dir.max_disk_usage {
+            Some(percent) if percent > 0 && percent <= 100 => Some(percent as i32),
+            Some(other) => bail!(
+                "Error parsing config: invalid disk use percentage {}",
+                other
+            ),
+            None => None,
+        };
+        DataDir {
+            path,
+            name: toml_config.data_dir.name,
+            max_size,
+            max_disk_usage,
+        }
+    };
     Ok(Config {
         asset_dirs,
-        data_dirs,
+        data_dir,
     })
 }

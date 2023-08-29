@@ -83,7 +83,7 @@ async fn index_file(
                 audio_codec_name: streams
                     .audio
                     .map(|audio| audio.codec_name.to_ascii_lowercase()),
-                dash_resource_dir: None,
+                has_dash: false,
             });
             let swap = match video.rotation {
                 Some(n) if n % 180 == 0 => false,

@@ -34,6 +34,7 @@ use crate::{
         job::JobId,
         monitor::{Monitor, MonitorMessage},
         scheduler::Scheduler,
+        storage::{LocalFileStorage, Storage},
     },
     model::{AssetRootDir, AssetRootDirId, DataDir, DataDirId},
 };
@@ -146,32 +147,18 @@ async fn main() -> Result<()> {
         .await
         .unwrap();
     let pool = db_setup().await.unwrap();
-    for data_dir in config.data_dirs.iter() {
-        if repository::data_dir::get_data_dir_with_path(&pool, data_dir.path.to_str().unwrap())
-            .await
-            .unwrap()
-            .is_none()
-        {
-            repository::data_dir::insert_data_dir(
-                &pool,
-                &DataDir {
-                    id: DataDirId(0),
-                    path: data_dir.path.clone(),
-                },
-            )
-            .await
-            .unwrap();
-            fs::create_dir_all(&data_dir.path).await.unwrap();
-        }
-    }
     store_asset_roots_from_config(&config, &pool).await?;
     // run it with hyper on localhost:3000
     let (monitor_tx, monitor_rx) = mpsc::channel::<MonitorMessage>(1000);
-    let scheduler = Scheduler::start(monitor_tx, pool.clone());
+    let storage_path = config.data_dir.path;
+    std::fs::create_dir_all(&storage_path).unwrap();
+    let storage: Storage = LocalFileStorage::new(storage_path).into();
+    let scheduler = Scheduler::start(monitor_tx, pool.clone(), storage.clone());
     let monitor_cancel = CancellationToken::new();
     let monitor = Monitor::new(monitor_rx, scheduler.tx.clone(), monitor_cancel.clone());
     let shared_state: SharedState = Arc::new(AppState {
         pool: pool.clone(),
+        storage,
         scheduler,
         monitor,
     });

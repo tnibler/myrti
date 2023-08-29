@@ -26,7 +26,7 @@ pub struct DbAsset {
     pub video_codec_name: Option<String>,
     pub video_bitrate: Option<i64>,
     pub audio_codec_name: Option<String>,
-    pub resource_dir: Option<String>,
+    pub has_dash: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

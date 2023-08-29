@@ -1,24 +1,28 @@
-use std::{collections::HashSet, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use async_trait::async_trait;
 use chrono::Utc;
-use eyre::{Context, Report, Result};
+use eyre::{Report, Result};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, instrument, Instrument};
 
 use crate::{
-    catalog::operation::create_thumbnail::{
-        apply_create_thumbnail, perform_side_effects_create_thumbnail, CreateThumbnail,
-        CreateThumbnailWithPaths, ThumbnailToCreateWithPaths,
+    catalog::{
+        operation::create_thumbnail::{
+            apply_create_thumbnail, perform_side_effects_create_thumbnail, CreateThumbnail,
+            CreateThumbnailWithPaths, ThumbnailToCreateWithPaths,
+        },
+        storage_key,
     },
     core::{
         job::{Job, JobHandle, JobProgress, JobResultType},
+        storage::Storage,
         DataDirManager,
     },
     model::{
         repository::{self, pool::DbPool},
-        AssetId, FailedThumbnailJob, ThumbnailType,
+        AssetId, FailedThumbnailJob, ThumbnailFormat,
     },
     processing::hash::hash_file,
 };
@@ -27,6 +31,7 @@ pub struct ThumbnailJob {
     params: ThumbnailJobParams,
     data_dir_manager: Arc<DataDirManager>,
     pool: DbPool,
+    storage: Storage,
 }
 
 #[derive(Debug, Clone)]
@@ -50,11 +55,13 @@ impl ThumbnailJob {
         params: ThumbnailJobParams,
         data_dir_manager: Arc<DataDirManager>,
         pool: DbPool,
+        storage: Storage,
     ) -> ThumbnailJob {
         ThumbnailJob {
             params,
             data_dir_manager,
             pool,
+            storage,
         }
     }
 
@@ -97,9 +104,17 @@ impl ThumbnailJob {
                 }
             }
 
-            let op_resolved = match resolve(&op, &self.data_dir_manager).in_current_span().await {
-                Ok(t) => t,
+            let op_resolved = resolve(&op).in_current_span().await;
+            let side_effect_results = match perform_side_effects_create_thumbnail(
+                &self.storage,
+                &self.pool,
+                &op_resolved,
+            )
+            .in_current_span()
+            .await
+            {
                 Err(err) => {
+                    // same as above
                     // if things fail here it's not the asset's fault, so don't remember the fail
                     // in the database
                     failed.push(FailedThumbnail {
@@ -108,24 +123,8 @@ impl ThumbnailJob {
                     });
                     continue;
                 }
+                Ok(r) => r,
             };
-            let side_effect_results =
-                match perform_side_effects_create_thumbnail(&self.pool, &op_resolved)
-                    .in_current_span()
-                    .await
-                {
-                    Err(err) => {
-                        // same as above
-                        // if things fail here it's not the asset's fault, so don't remember the fail
-                        // in the database
-                        failed.push(FailedThumbnail {
-                            thumbnail: op.clone(),
-                            err,
-                        });
-                        continue;
-                    }
-                    Ok(r) => r,
-                };
             // if one thumbnail of op fails we discard the whole thing for now
             if !side_effect_results.failed.is_empty() {
                 for (_thumbnail, report) in side_effect_results.failed {
@@ -174,39 +173,22 @@ impl ThumbnailJob {
         }
         return Ok(ThumbnailJobResult { failed });
 
-        async fn resolve(
-            op: &CreateThumbnail,
-            data_dir_manager: &DataDirManager,
-        ) -> Result<CreateThumbnailWithPaths> {
+        async fn resolve(op: &CreateThumbnail) -> CreateThumbnailWithPaths {
             let mut thumbnails_to_create: Vec<ThumbnailToCreateWithPaths> = Vec::default();
             for thumb in &op.thumbnails {
-                let stem = match thumb.ty {
-                    ThumbnailType::SmallSquare => {
-                        format!("{}_sm", op.asset_id.0)
-                    }
-                    ThumbnailType::LargeOrigAspect => {
-                        format!("{}", op.asset_id.0)
-                    }
-                };
-                let avif_path = data_dir_manager
-                    .new_thumbnail_file(&PathBuf::from(format!("{}.avif", &stem)))
-                    .await
-                    .wrap_err("could not create new thumbnail resource file")?;
-                let webp_path = data_dir_manager
-                    .new_thumbnail_file(&PathBuf::from(format!("{}.webp", &stem)))
-                    .await
-                    .wrap_err("could not create new thumbnail resource file")?;
+                let avif_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Avif);
+                let webp_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Webp);
                 let thumbnail_to_create = ThumbnailToCreateWithPaths {
                     ty: thumb.ty,
-                    webp_path,
-                    avif_path,
+                    webp_key,
+                    avif_key,
                 };
                 thumbnails_to_create.push(thumbnail_to_create);
             }
-            Ok(CreateThumbnailWithPaths {
+            CreateThumbnailWithPaths {
                 asset_id: op.asset_id,
                 thumbnails: thumbnails_to_create,
-            })
+            }
         }
     }
 }

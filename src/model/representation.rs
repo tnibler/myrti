@@ -1,8 +1,5 @@
-use std::path::PathBuf;
-
 use super::{
     repository::db_entity::{DbAudioRepresentation, DbVideoRepresentation},
-    util::path_to_string,
     AssetId, AudioRepresentationId, VideoRepresentationId,
 };
 
@@ -14,7 +11,8 @@ pub struct VideoRepresentation {
     pub width: i64,
     pub height: i64,
     pub bitrate: i64,
-    pub path: PathBuf,
+    pub file_key: String,
+    pub media_info_key: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -22,7 +20,8 @@ pub struct AudioRepresentation {
     pub id: AudioRepresentationId,
     pub asset_id: AssetId,
     pub codec_name: String,
-    pub path: PathBuf,
+    pub file_key: String,
+    pub media_info_key: String,
 }
 
 impl TryFrom<&DbVideoRepresentation> for VideoRepresentation {
@@ -36,7 +35,8 @@ impl TryFrom<&DbVideoRepresentation> for VideoRepresentation {
             width: value.width,
             height: value.height,
             bitrate: value.bitrate,
-            path: PathBuf::from(&value.path),
+            file_key: value.file_key.clone(),
+            media_info_key: value.media_info_key.clone(),
         })
     }
 }
@@ -57,7 +57,8 @@ impl TryFrom<&DbAudioRepresentation> for AudioRepresentation {
             id: value.id,
             asset_id: value.asset_id,
             codec_name: value.codec_name.clone(),
-            path: PathBuf::from(&value.path),
+            file_key: value.file_key.clone(),
+            media_info_key: value.media_info_key.clone(),
         })
     }
 }
@@ -81,7 +82,8 @@ impl TryFrom<&VideoRepresentation> for DbVideoRepresentation {
             width: value.width,
             height: value.height,
             bitrate: value.bitrate,
-            path: path_to_string(&value.path)?,
+            file_key: value.file_key.clone(),
+            media_info_key: value.media_info_key.clone(),
         })
     }
 }
@@ -102,7 +104,8 @@ impl TryFrom<&AudioRepresentation> for DbAudioRepresentation {
             id: value.id,
             asset_id: value.asset_id,
             codec_name: value.codec_name.clone(),
-            path: path_to_string(&value.path)?,
+            file_key: value.file_key.clone(),
+            media_info_key: value.media_info_key.clone(),
         })
     }
 }

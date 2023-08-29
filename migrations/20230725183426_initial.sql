@@ -42,15 +42,23 @@ CREATE TABLE Asset (
   video_codec_name TEXT,
   video_bitrate INTEGER,
   audio_codec_name TEXT,
-  resource_dir TEXT,
+  has_dash INTEGER,
 
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(id) ON DELETE CASCADE,
   UNIQUE(root_dir_id, file_path),
 
-  CHECK(ty = 1 OR (
-      video_codec_name IS NOT NULL AND
-      video_bitrate IS NOT NULL 
-      -- audio_codec_name can be null if there's no audio stream
+  CHECK(has_dash = 0 OR has_dash = 1),
+  CHECK((ty = 1
+          AND video_codec_name IS NULL
+          AND video_bitrate IS NULL
+          AND audio_codec_name IS NULL
+          AND has_dash IS NULL)
+        OR (
+          ty = 2 
+          AND video_codec_name IS NOT NULL
+          AND video_bitrate IS NOT NULL 
+          AND has_dash IS NOT NULL
+          -- audio_codec_name can be null if there's no audio stream
   )),
   CHECK(taken_date IS NOT NULL OR taken_date_local_fallback IS NOT NULL)
 ) STRICT;
@@ -62,7 +70,8 @@ CREATE TABLE VideoRepresentation (
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
   bitrate INTEGER NOT NULL,
-  path TEXT NOT NULL,
+  file_key TEXT NOT NULL,
+  media_info_key TEXT NOT NULL,
   FOREIGN KEY (asset_id) REFERENCES Asset(id) ON DELETE CASCADE
 ) STRICT;
 
@@ -71,7 +80,8 @@ CREATE TABLE AudioRepresentation (
   asset_id INTEGER NOT NULL,
   codec_name TEXT NOT NULL,
   -- bitrate INTEGER NOT NULL,
-  path TEXT NOT NULL,
+  file_key TEXT NOT NULL,
+  media_info_key TEXT NOT NULL,
   FOREIGN KEY (asset_id) REFERENCES Asset(id) ON DELETE CASCADE
 ) STRICT;
 

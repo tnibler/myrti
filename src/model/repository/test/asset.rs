@@ -4,11 +4,13 @@ use chrono::{Months, Utc};
 use claims::{assert_err, assert_ok};
 use pretty_assertions::assert_eq;
 
-use crate::model::{
-    repository::{self, representation::insert_video_representation},
-    Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType,
-    AudioRepresentation, AudioRepresentationId, Image, MediaTimestamp, Size, Video, VideoAsset,
-    VideoRepresentation, VideoRepresentationId,
+use crate::{
+    catalog::storage_key,
+    model::{
+        repository, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType,
+        AudioRepresentation, AudioRepresentationId, Image, MediaTimestamp, Size, Video, VideoAsset,
+        VideoRepresentation, VideoRepresentationId,
+    },
 };
 
 use super::*;
@@ -102,7 +104,7 @@ async fn insert_mismatching_asset_ty_and_spe_fails() {
             video_codec_name: "h264".into(),
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
-            dash_resource_dir: None,
+            has_dash: false,
         }),
         base: AssetBase {
             id: AssetId(0),
@@ -157,7 +159,7 @@ async fn insert_update_asset() {
             video_codec_name: "h264".into(),
             video_bitrate: 1234,
             audio_codec_name: Some("mp3".into()),
-            dash_resource_dir: Some("/dash/dir".into()),
+            has_dash: true,
         }),
         base: AssetBase {
             id: AssetId(0),
@@ -188,7 +190,7 @@ async fn insert_update_asset() {
             video_codec_name: "hevc".into(),
             video_bitrate: 456,
             audio_codec_name: Some("aac".into()),
-            dash_resource_dir: Some("/other/dir".into()),
+            has_dash: true,
         }),
         base: AssetBase {
             id: asset2_id,
@@ -270,7 +272,7 @@ async fn get_assets_with_missing_thumbnails() {
             video_codec_name: "h264".to_owned(),
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
-            dash_resource_dir: Some("/dash/dir".into()),
+            has_dash: true,
         }),
         base: AssetBase {
             id: AssetId(0),
@@ -299,7 +301,7 @@ async fn get_assets_with_missing_thumbnails() {
             video_codec_name: "h264".to_owned(),
             video_bitrate: 456,
             audio_codec_name: Some("aac".into()),
-            dash_resource_dir: Some("/dash/dir2".into()),
+            has_dash: true,
         }),
         base: AssetBase {
             id: AssetId(0),
@@ -362,7 +364,7 @@ async fn get_videos_without_dash() {
             video_codec_name: "h264".to_owned(),
             video_bitrate: 1234,
             audio_codec_name: Some("opus".to_owned()),
-            dash_resource_dir: None,
+            has_dash: false,
         }),
         base: AssetBase {
             id: AssetId(0),
@@ -415,7 +417,7 @@ async fn get_videos_without_dash() {
             video_codec_name: "hevc".to_owned(),
             video_bitrate: 123456,
             audio_codec_name: Some("aac".into()),
-            dash_resource_dir: Some("/dash1".into()),
+            has_dash: true,
         }),
         base: AssetBase {
             root_dir_id: root_dir2_id,
@@ -428,7 +430,7 @@ async fn get_videos_without_dash() {
             video_codec_name: "hevc".to_owned(),
             video_bitrate: 123456,
             audio_codec_name: Some("mp3".into()),
-            dash_resource_dir: None,
+            has_dash: false,
         }),
         base: AssetBase {
             root_dir_id: root_dir2_id,
@@ -492,7 +494,7 @@ async fn get_videos_with_no_acceptable_repr() {
             video_codec_name: "h264".to_owned(),
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
-            dash_resource_dir: None,
+            has_dash: true,
         }),
         base: AssetBase {
             id: AssetId(0),
@@ -547,7 +549,7 @@ async fn get_videos_with_no_acceptable_repr() {
             video_codec_name: "hevc".to_owned(),
             video_bitrate: 123456,
             audio_codec_name: Some("aac".into()),
-            dash_resource_dir: Some("/dash1".into()),
+            has_dash: true,
         }),
         base: AssetBase {
             root_dir_id: root_dir2_id,
@@ -561,7 +563,7 @@ async fn get_videos_with_no_acceptable_repr() {
             video_codec_name: "hevc".to_owned(),
             video_bitrate: 123456,
             audio_codec_name: Some("aac".into()),
-            dash_resource_dir: None,
+            has_dash: false,
         }),
         base: AssetBase {
             root_dir_id: root_dir2_id,
@@ -575,7 +577,7 @@ async fn get_videos_with_no_acceptable_repr() {
             video_codec_name: "mjpeg".to_owned(),
             video_bitrate: 123456,
             audio_codec_name: Some("pcm_u8".into()),
-            dash_resource_dir: None,
+            has_dash: false,
         }),
         base: AssetBase {
             root_dir_id: root_dir2_id,
@@ -644,7 +646,11 @@ async fn get_videos_with_no_acceptable_repr() {
         codec_name: "av1".to_owned(),
         width: 100,
         height: 100,
-        path: "/path/to/av1repr.mp4".into(),
+        file_key: storage_key::dash_file(asset3_id, format_args!("av1_100x100.mp4")),
+        media_info_key: storage_key::dash_file(
+            asset3_id,
+            format_args!("av1_100x100.mp4.media_info"),
+        ),
     };
     let _asset3_repr_id = assert_ok!(
         repository::representation::insert_video_representation(
@@ -660,7 +666,11 @@ async fn get_videos_with_no_acceptable_repr() {
         codec_name: "av1".to_owned(),
         width: 100,
         height: 100,
-        path: "/path/to/otherav1repr.mp4".into(),
+        file_key: storage_key::dash_file(asset5_id, format_args!("av1_100x100.mp4")),
+        media_info_key: storage_key::dash_file(
+            asset5_id,
+            format_args!("av1_100x100.mp4.media_info"),
+        ),
     };
     let _asset5_repr_id = assert_ok!(
         repository::representation::insert_video_representation(
@@ -686,7 +696,8 @@ async fn get_videos_with_no_acceptable_repr() {
         id: AudioRepresentationId(0),
         asset_id: asset3_id,
         codec_name: "aac".into(),
-        path: "/audio/path/3.mp4".into(),
+        file_key: storage_key::dash_file(asset3_id, format_args!("audio.mp4")),
+        media_info_key: storage_key::dash_file(asset3_id, format_args!("audio.mp4.media_info")),
     };
     let _asset3_audio_repr_id = assert_ok!(
         repository::representation::insert_audio_representation(
@@ -699,7 +710,8 @@ async fn get_videos_with_no_acceptable_repr() {
         id: AudioRepresentationId(0),
         asset_id: asset4_id,
         codec_name: "pcm_u8".into(),
-        path: "/audio/path/4.idk".into(),
+        file_key: storage_key::dash_file(asset4_id, format_args!("audio.mp4")),
+        media_info_key: storage_key::dash_file(asset4_id, format_args!("audio.mp4.media_info")),
     };
     let _asset4_audio_repr_id = assert_ok!(
         repository::representation::insert_audio_representation(
@@ -712,7 +724,8 @@ async fn get_videos_with_no_acceptable_repr() {
         id: AudioRepresentationId(0),
         asset_id: asset5_id,
         codec_name: "aac".into(),
-        path: "/audio/path/5.mp4".into(),
+        file_key: storage_key::dash_file(asset5_id, format_args!("audio.mp4")),
+        media_info_key: storage_key::dash_file(asset5_id, format_args!("audio.mp4.media_info")),
     };
     let _asset5_audio_repr_id = assert_ok!(
         repository::representation::insert_audio_representation(

@@ -4,7 +4,7 @@ use chrono::{Months, Utc};
 use claims::assert_ok;
 use pretty_assertions::assert_eq;
 
-use crate::model::*;
+use crate::{catalog::storage_key, model::*};
 
 pub use super::*;
 
@@ -22,7 +22,7 @@ async fn insert_retrieve_video_representation() {
             video_codec_name: "h264".to_owned(),
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
-            dash_resource_dir: None,
+            has_dash: false,
         }),
         base: AssetBase {
             id: AssetId(0),
@@ -51,7 +51,7 @@ async fn insert_retrieve_video_representation() {
             video_codec_name: "hevc".to_owned(),
             video_bitrate: 456,
             audio_codec_name: Some("opus".into()),
-            dash_resource_dir: None,
+            has_dash: false,
         }),
         base: AssetBase {
             id: AssetId(0),
@@ -84,7 +84,11 @@ async fn insert_retrieve_video_representation() {
         bitrate: 123456,
         width: 123,
         height: 456,
-        path: "/path/to/repr.mp4".into(),
+        file_key: storage_key::dash_file(asset_id, format_args!("av1_100x100.mp4")),
+        media_info_key: storage_key::dash_file(
+            asset_id,
+            format_args!("av1_100x100.mp4.media_info"),
+        ),
     };
     let video_repr2 = VideoRepresentation {
         id: VideoRepresentationId(0),
@@ -93,7 +97,11 @@ async fn insert_retrieve_video_representation() {
         bitrate: 123456,
         width: 1230,
         height: 4560,
-        path: "/path/to/repr.mp4".into(),
+        file_key: storage_key::dash_file(asset_id, format_args!("av1_1230x4560.mp4")),
+        media_info_key: storage_key::dash_file(
+            asset_id,
+            format_args!("av1_1230x4560.mp4.media_info"),
+        ),
     };
     let video_repr3 = VideoRepresentation {
         id: VideoRepresentationId(0),
@@ -102,7 +110,11 @@ async fn insert_retrieve_video_representation() {
         bitrate: 12345,
         width: 230,
         height: 560,
-        path: "/path/to/repr2.mp4".into(),
+        file_key: storage_key::dash_file(asset2_id, format_args!("av1_1230x4560.mp4")),
+        media_info_key: storage_key::dash_file(
+            asset2_id,
+            format_args!("av1_1230x4560.mp4.media_info"),
+        ),
     };
     let video_repr_id = assert_ok!(
         repository::representation::insert_video_representation(
@@ -157,7 +169,7 @@ async fn insert_retrieve_audio_representation() {
             video_codec_name: "h264".to_owned(),
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
-            dash_resource_dir: None,
+            has_dash: false,
         }),
         base: AssetBase {
             id: AssetId(0),
@@ -186,7 +198,7 @@ async fn insert_retrieve_audio_representation() {
             video_codec_name: "hevc".to_owned(),
             video_bitrate: 456,
             audio_codec_name: Some("mp3".into()),
-            dash_resource_dir: None,
+            has_dash: false,
         }),
         base: AssetBase {
             id: AssetId(0),
@@ -216,13 +228,15 @@ async fn insert_retrieve_audio_representation() {
         id: AudioRepresentationId(0),
         asset_id,
         codec_name: "opus".into(),
-        path: "/path/to/audio.mp4".into(),
+        file_key: storage_key::dash_file(asset_id, format_args!("audio.mp4")),
+        media_info_key: storage_key::dash_file(asset_id, format_args!("audio.mp4.media_info")),
     };
     let audio_repr2 = AudioRepresentation {
         id: AudioRepresentationId(0),
         asset_id: asset2_id,
         codec_name: "flac".into(),
-        path: "/path/to/audio2.mp4".into(),
+        file_key: storage_key::dash_file(asset2_id, format_args!("audio.mp4")),
+        media_info_key: storage_key::dash_file(asset2_id, format_args!("audio.mp4.media_info")),
     };
     let audio_repr_id = assert_ok!(
         repository::representation::insert_audio_representation(

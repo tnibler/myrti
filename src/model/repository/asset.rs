@@ -6,7 +6,6 @@ use eyre::{eyre, Context, Result};
 use sqlx::{QueryBuilder, Sqlite, SqliteConnection};
 use tracing::{debug, error, instrument, Instrument};
 
-use crate::model::util::path_to_string;
 use crate::model::{
     Asset, AssetId, AssetPathOnDisk, AssetSpe, AssetThumbnails, AssetType, VideoAsset,
 };
@@ -43,7 +42,7 @@ thumb_large_orig_height,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
-resource_dir
+has_dash
 FROM Asset
 WHERE id=?;
     "#,
@@ -119,7 +118,7 @@ thumb_large_orig_height,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
-resource_dir
+has_dash as "has_dash: _"
 FROM Asset;
     "#
     )
@@ -194,6 +193,7 @@ WHERE
 pub async fn update_asset(conn: &mut SqliteConnection, asset: &Asset) -> Result<()> {
     assert!(asset.base.id.0 != 0);
     let db_asset: DbAsset = asset.try_into()?;
+    let has_dash: Option<i64> = db_asset.has_dash.map(|d| d.into());
     sqlx::query!(
         "
 UPDATE Asset SET 
@@ -219,7 +219,7 @@ thumb_large_orig_height=?,
 video_codec_name=?,
 video_bitrate=?,
 audio_codec_name=?,
-resource_dir=?
+has_dash=?
 WHERE id=?;
 ",
         db_asset.ty,
@@ -244,7 +244,7 @@ WHERE id=?;
         db_asset.video_codec_name,
         db_asset.video_bitrate,
         db_asset.audio_codec_name,
-        db_asset.resource_dir,
+        has_dash,
         asset.base.id.0
     )
     .execute(conn)
@@ -272,8 +272,9 @@ pub async fn insert_asset(pool: &DbPool, asset: &Asset) -> Result<AssetId> {
         ));
     }
     let db_asset: DbAsset = asset.try_into()?;
+    let has_dash: Option<i64> = db_asset.has_dash.map(|d| d.into());
     let result = sqlx::query!(
-        "
+        r#"
 INSERT INTO Asset
 (id,
 ty,
@@ -298,11 +299,11 @@ thumb_large_orig_height,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
-resource_dir
+has_dash 
 )
 VALUES
 (null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-",
+"#,
         db_asset.ty,
         db_asset.root_dir_id.0,
         db_asset.file_path,
@@ -325,7 +326,7 @@ VALUES
         db_asset.video_codec_name,
         db_asset.video_bitrate,
         db_asset.audio_codec_name,
-        db_asset.resource_dir
+        has_dash
     )
     .execute(pool)
     .in_current_span()
@@ -339,11 +340,9 @@ VALUES
 pub async fn set_asset_small_thumbnails(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
-    thumb_small_square_avif: &Path,
-    thumb_small_square_webp: &Path,
+    thumb_small_square_avif: &str,
+    thumb_small_square_webp: &str,
 ) -> Result<()> {
-    let thumb_small_square_avif = path_to_string(thumb_small_square_avif)?;
-    let thumb_small_square_webp = path_to_string(thumb_small_square_webp)?;
     sqlx::query!(
         r#"
 UPDATE Asset SET 
@@ -365,11 +364,9 @@ WHERE id=?;
 pub async fn set_asset_large_thumbnails(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
-    thumb_large_orig_avif: &Path,
-    thumb_large_orig_webp: &Path,
+    thumb_large_orig_avif: &str,
+    thumb_large_orig_webp: &str,
 ) -> Result<()> {
-    let thumb_large_orig_avif = path_to_string(thumb_large_orig_avif)?;
-    let thumb_large_orig_webp = path_to_string(thumb_large_orig_webp)?;
     sqlx::query!(
         r#"
 UPDATE Asset SET 
@@ -416,11 +413,11 @@ thumb_large_orig_height,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
-resource_dir
+has_dash as "has_dash: _"
 FROM Asset 
 WHERE
 Asset.ty = ?
-AND resource_dir IS NULL;
+AND has_dash = 0;
     "#,
         DbAssetType::Video
     )
@@ -468,7 +465,7 @@ thumb_large_orig_height,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
-resource_dir
+has_dash as "has_dash: _"
 FROM Asset 
 WHERE
 (taken_date IS NOT NULL AND taken_date < ?) 
@@ -542,7 +539,7 @@ Asset.thumb_large_orig_height as thumb_large_orig_height,
 Asset.video_codec_name as video_codec_name,
 Asset.video_bitrate as video_bitrate,
 Asset.audio_codec_name as audio_codec_name,
-Asset.resource_dir as resource_dir
+Asset.has_dash as has_dash
 FROM Asset
 WHERE Asset.ty = "#,
     );
@@ -618,9 +615,9 @@ thumb_large_orig_height,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
-resource_dir
+has_dash
 FROM Asset 
-WHERE resource_dir IS NULL
+WHERE has_dash = 0
 AND Asset.ty ="#,
     );
     query_builder.push_bind(DbAssetType::Video);

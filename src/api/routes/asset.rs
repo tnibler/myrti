@@ -12,8 +12,9 @@ use axum::{
     Json, Router,
 };
 use axum_extra::body::AsyncReadBody;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, NaiveDate, NaiveTime, Utc};
 use eyre::{eyre, Context};
+use itertools::Itertools;
 use serde::Deserialize;
 use tokio_util::io::ReaderStream;
 use tracing::{instrument, warn, Instrument};
@@ -21,13 +22,15 @@ use tracing::{instrument, warn, Instrument};
 use crate::{
     api::{
         self,
-        schema::{Asset, AssetId, TimelineChunk, TimelineRequest},
+        schema::{
+            Asset, AssetId, TimelineChunk, TimelineGroup, TimelineGroupType, TimelineRequest,
+        },
         ApiResult,
     },
     app_state::SharedState,
     catalog::storage_key,
     core::storage::StorageProvider,
-    model::{self, repository},
+    model::{self, repository, MediaTimestamp},
 };
 
 pub fn router() -> Router<SharedState> {
@@ -167,6 +170,8 @@ async fn get_timeline(
 ) -> ApiResult<Json<TimelineChunk>> {
     // ignore last_fetch for now
     let start: DateTime<Utc> = match req_body.start {
+        // FIXME make start date optional, as this here can lead to assets not
+        // appearing if they're "in the future"
         None => Utc::now(),
         Some(ref d) => DateTime::parse_from_rfc3339(d)
             .wrap_err("bad datetime format")?
@@ -184,10 +189,32 @@ async fn get_timeline(
     )
     .in_current_span()
     .await?;
+    let grouped_by_date: Vec<(NaiveDate, Vec<_>)> = results
+        .into_iter()
+        .group_by(|asset| match asset.base.taken_date {
+            MediaTimestamp::Utc(date) => date.date_naive(),
+            MediaTimestamp::LocalFallback(naive_date) => {
+                naive_date
+                    .and_local_timezone(Local)
+                    .unwrap()
+                    .with_timezone(&Utc) // TODO
+                    .date_naive()
+            }
+        })
+        .into_iter()
+        .map(|(date, group)| (date, group.collect()))
+        .collect();
+    let groups: Vec<TimelineGroup> = grouped_by_date
+        .into_iter()
+        .map(|(date, group)| TimelineGroup {
+            assets: group.into_iter().map(|a| a.into()).collect(),
+            ty: TimelineGroupType::Day(date.and_time(NaiveTime::default()).and_utc()),
+        })
+        .collect();
     Ok(Json(TimelineChunk {
         date: Utc::now(),
         changed_since_last_fetch: false,
-        assets: results.into_iter().map(|a| a.into()).collect(),
+        groups,
     }))
 }
 

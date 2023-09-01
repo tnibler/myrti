@@ -477,7 +477,6 @@ AND (id < ? OR ? IS NULL)
 ORDER BY taken_date DESC, taken_date_local_fallback DESC, id DESC
 LIMIT ?;
     "#,
-        // TODO only sort by canonical_date and id when canonical is actually computed during indexing
         start_naive,
         start_naive,
         start_id,

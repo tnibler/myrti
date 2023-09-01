@@ -20,12 +20,12 @@ pub fn path_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
         .ok_or_else(|| eyre!("non unicode file path not supported"))
 }
 
-/// Formats as RFC3339 with nanoseconds
+/// Formats as RFC3339 with milliseconds
 pub fn datetime_to_db_repr(d: &DateTime<Utc>) -> String {
-    d.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
+    d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
-/// Parses from RFC3339 with nanoseconds
+/// Parses from RFC3339 with milliseconds
 pub fn datetime_from_db_repr(s: &str) -> Result<DateTime<Utc>> {
     Ok(DateTime::parse_from_rfc3339(s)
         .wrap_err("error parsing RFC3339 datetime")?

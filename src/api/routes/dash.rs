@@ -1,12 +1,11 @@
 use axum::{
     body::Body,
     extract::{Path, State},
-    http::{header::CONTENT_TYPE, Request, StatusCode},
+    http::Request,
     response::{IntoResponse, Response},
     routing::get,
     Router,
 };
-use axum_extra::body::AsyncReadBody;
 use eyre::Context;
 use serde::Deserialize;
 use tower::ServiceExt;

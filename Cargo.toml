@@ -17,6 +17,7 @@ eyre = "0.6.8"
 fasthash = "0.4.0"
 futures = "0.3.28"
 html-escape = "0.2.13"
+itertools = "0.11.0"
 lazy_static = "1.4.0"
 notify = "6.0.1"
 parse-size = { version = "1.0.0", features = ["std"] }

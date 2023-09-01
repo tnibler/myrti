@@ -9,7 +9,7 @@ edition = "2021"
 async-trait = "0.1.73"
 axum = { version = "0.6.19", features = ["tracing", "macros"] }
 axum-extra = { version = "0.7.7", features = ["async-read-body"] }
-chrono = { version = "0.4.26", features = ["serde"] }
+chrono = { version = "0.4.28", features = ["serde"] }
 claims = "0.7.1"
 color-eyre = "0.6.2"
 enum_dispatch = "0.3.12"

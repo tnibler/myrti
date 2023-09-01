@@ -18,19 +18,22 @@ CREATE TABLE Asset (
   file_path TEXT NOT NULL,
   file_type TEXT NOT NULL,
   hash BLOB,
-  added_at TEXT NOT NULL,
-  -- with zone offset if we know it, otherwise no offset and just assume local time
-  taken_date TEXT,
-  taken_date_local_fallback TEXT,
+  -- UTC timestamp in milliseconds since UNIX epoch
+  added_at INTEGER NOT NULL,
+  -- UTC timestamp in milliseconds since UNIX epoch
+  taken_date INTEGER NOT NULL,
+  -- "+03:00"
+  timezone_offset TEXT,
+  timezone_info INTEGER NOT NULL,
   -- width and height of the image/video as it is displayed, all metadata taken into account
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
   -- rotation correction applied after exif/metadata rotation if that's still wrong
   rotation_correction INTEGER,
-  thumb_small_square_avif TEXT,
-  thumb_small_square_webp TEXT,
-  thumb_large_orig_avif TEXT,
-  thumb_large_orig_webp TEXT,
+  thumb_small_square_avif INTEGER NOT NULL,
+  thumb_small_square_webp INTEGER NOT NULL,
+  thumb_large_orig_avif INTEGER NOT NULL,
+  thumb_large_orig_webp INTEGER NOT NULL,
   thumb_small_square_width INTEGER,
   thumb_small_square_height INTEGER,
   thumb_large_orig_width INTEGER,
@@ -47,7 +50,11 @@ CREATE TABLE Asset (
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(id) ON DELETE CASCADE,
   UNIQUE(root_dir_id, file_path),
 
-  CHECK(has_dash = 0 OR has_dash = 1),
+  -- timezone_offset NULL is only valid for timezone_info=UtcCertain
+  CHECK (timezone_info IN (1, 2, 3, 4, 5, 6) AND (timezone_info = 2 OR timezone_offset IS NOT NULL)),
+
+  CHECK(has_dash IN (0, 1)),
+  -- valid Image or Video
   CHECK((ty = 1
           AND video_codec_name IS NULL
           AND video_bitrate IS NULL
@@ -59,8 +66,7 @@ CREATE TABLE Asset (
           AND video_bitrate IS NOT NULL 
           AND has_dash IS NOT NULL
           -- audio_codec_name can be null if there's no audio stream
-  )),
-  CHECK(taken_date IS NOT NULL OR taken_date_local_fallback IS NOT NULL)
+  ))
 ) STRICT;
 
 CREATE TABLE VideoRepresentation (
@@ -110,6 +116,7 @@ CREATE INDEX album_id_index ON AlbumEntry(album_id);
 CREATE TABLE FailedThumbnailJob (
   asset_id INTEGER PRIMARY KEY NOT NULL,
   file_hash BLOB NOT NULL,
-  date TEXT NOT NULL,
+  -- milliseconds since UNIX epoch
+  date INTEGER NOT NULL,
   FOREIGN KEY (asset_id) REFERENCES Asset(id) ON DELETE CASCADE
 ) STRICT;

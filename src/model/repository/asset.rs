@@ -26,8 +26,9 @@ file_path,
 file_type,
 hash,
 added_at,
-taken_date as "taken_date: _",
-taken_date_local_fallback as "taken_date_local_fallback: _",
+taken_date,
+timezone_offset,
+timezone_info as "timezone_info: _",
 width,
 height,
 rotation_correction as "rotation_correction: _",
@@ -102,8 +103,9 @@ file_path,
 file_type,
 hash,
 added_at,
-taken_date as "taken_date: _",
-taken_date_local_fallback as "taken_date_local_fallback: _",
+taken_date,
+timezone_offset,
+timezone_info as "timezone_info: _",
 width,
 height,
 rotation_correction as "rotation_correction: _",
@@ -142,16 +144,16 @@ pub async fn get_assets_with_missing_thumbnail(
             r#"
 SELECT id,
 ty as "ty: _",
-thumb_small_square_avif as "thumb_small_square_avif: _",
-thumb_small_square_webp as "thumb_small_square_webp: _",
-thumb_large_orig_avif as "thumb_large_orig_avif: _",
-thumb_large_orig_webp as "thumb_large_orig_webp: _"
+thumb_small_square_avif,
+thumb_small_square_webp,
+thumb_large_orig_avif,
+thumb_large_orig_webp 
 FROM Asset
 WHERE   
-    thumb_small_square_avif IS NULL OR
-    thumb_small_square_webp IS NULL OR
-    thumb_large_orig_avif IS NULL OR
-    thumb_large_orig_avif IS NULL
+    thumb_small_square_avif = 0 OR
+    thumb_small_square_webp = 0 OR
+    thumb_large_orig_avif = 0 OR
+    thumb_large_orig_webp = 0
 LIMIT ?;
     "#,
             limit
@@ -174,10 +176,10 @@ thumb_large_orig_avif as "thumb_large_orig_avif: _",
 thumb_large_orig_webp as "thumb_large_orig_webp: _"
 FROM Asset
 WHERE   
-    thumb_small_square_avif IS NULL OR
-    thumb_small_square_webp IS NULL OR
-    thumb_large_orig_avif IS NULL OR
-    thumb_large_orig_avif IS NULL;
+    thumb_small_square_avif = 0 OR
+    thumb_small_square_webp = 0 OR
+    thumb_large_orig_avif = 0 OR
+    thumb_large_orig_webp = 0;
     "#
         )
         .fetch_all(pool)
@@ -204,7 +206,8 @@ file_type=?,
 hash=?,
 added_at=?,
 taken_date=?,
-taken_date_local_fallback=?,
+timezone_offset=?,
+timezone_info=?,
 width=?,
 height=?,
 rotation_correction=?,
@@ -229,7 +232,8 @@ WHERE id=?;
         db_asset.hash,
         db_asset.added_at,
         db_asset.taken_date,
-        db_asset.taken_date_local_fallback,
+        db_asset.timezone_offset,
+        db_asset.timezone_info,
         db_asset.width,
         db_asset.height,
         db_asset.rotation_correction,
@@ -284,7 +288,8 @@ file_type,
 hash,
 added_at,
 taken_date,
-taken_date_local_fallback,
+timezone_offset,
+timezone_info,
 width,
 height,
 rotation_correction,
@@ -302,7 +307,7 @@ audio_codec_name,
 has_dash 
 )
 VALUES
-(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 "#,
         db_asset.ty,
         db_asset.root_dir_id.0,
@@ -311,7 +316,8 @@ VALUES
         db_asset.hash,
         db_asset.added_at,
         db_asset.taken_date,
-        db_asset.taken_date_local_fallback,
+        db_asset.timezone_offset,
+        db_asset.timezone_info,
         db_asset.width,
         db_asset.height,
         db_asset.rotation_correction,
@@ -397,8 +403,9 @@ file_type,
 file_path,
 hash,
 added_at,
-taken_date as "taken_date: _",
-taken_date_local_fallback as "taken_date_local_fallback: _",
+taken_date,
+timezone_offset,
+timezone_info as "timezone_info: _",
 width,
 height,
 rotation_correction as "rotation_correction: _",
@@ -449,8 +456,9 @@ file_type,
 file_path,
 hash,
 added_at,
-taken_date as "taken_date: _",
-taken_date_local_fallback as "taken_date_local_fallback: _",
+taken_date,
+timezone_offset,
+timezone_info as "timezone_info: _",
 width,
 height,
 rotation_correction as "rotation_correction: _",
@@ -468,16 +476,11 @@ audio_codec_name,
 has_dash as "has_dash: _"
 FROM Asset 
 WHERE
-(taken_date IS NOT NULL AND taken_date < ?) 
-OR 
--- TODO can we even lexicographically compare local fallback and DateTime<Utc>
--- no we can't FIXME
-(taken_date_local_fallback IS NOT NULL AND taken_date_local_fallback < ?)
+taken_date < ? 
 AND (id < ? OR ? IS NULL)
-ORDER BY taken_date DESC, taken_date_local_fallback DESC, id DESC
+ORDER BY taken_date DESC, id DESC
 LIMIT ?;
     "#,
-        start_naive,
         start_naive,
         start_id,
         start_id,
@@ -523,7 +526,8 @@ Asset.file_path as file_path,
 Asset.hash as hash,
 Asset.added_at as added_at,
 Asset.taken_date as taken_date,
-Asset.taken_date_local_fallback as taken_date_local_fallback,
+Asset.timezone_offset as timezone_offset,
+timezone_info ,
 Asset.width as width,
 Asset.height as height,
 Asset.rotation_correction as rotation_correction,
@@ -599,7 +603,8 @@ file_path,
 hash,
 added_at,
 taken_date,
-taken_date_local_fallback,
+timezone_offset,
+timezone_info,
 width,
 height,
 rotation_correction,

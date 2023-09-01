@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use super::{
     repository::db_entity::{DbAssetPathOnDisk, DbAssetThumbnails},
-    util::opt_path_to_string,
+    util::bool_to_int,
     AssetId, AssetType,
 };
 
@@ -12,10 +12,10 @@ use serde::Serialize;
 pub struct AssetThumbnails {
     pub id: AssetId,
     pub ty: AssetType,
-    pub thumb_small_square_avif: Option<PathBuf>,
-    pub thumb_small_square_webp: Option<PathBuf>,
-    pub thumb_large_orig_avif: Option<PathBuf>,
-    pub thumb_large_orig_webp: Option<PathBuf>,
+    pub thumb_small_square_avif: bool,
+    pub thumb_small_square_webp: bool,
+    pub thumb_large_orig_avif: bool,
+    pub thumb_large_orig_webp: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -38,10 +38,10 @@ impl TryFrom<&AssetThumbnails> for DbAssetThumbnails {
         Ok(DbAssetThumbnails {
             id: value.id,
             ty: value.ty.into(),
-            thumb_small_square_avif: opt_path_to_string(&value.thumb_small_square_avif)?,
-            thumb_small_square_webp: opt_path_to_string(&value.thumb_small_square_webp)?,
-            thumb_large_orig_avif: opt_path_to_string(&value.thumb_large_orig_avif)?,
-            thumb_large_orig_webp: opt_path_to_string(&value.thumb_large_orig_webp)?,
+            thumb_small_square_avif: bool_to_int(value.thumb_small_square_avif),
+            thumb_small_square_webp: bool_to_int(value.thumb_small_square_webp),
+            thumb_large_orig_avif: bool_to_int(value.thumb_large_orig_avif),
+            thumb_large_orig_webp: bool_to_int(value.thumb_large_orig_webp),
         })
     }
 }
@@ -61,10 +61,10 @@ impl TryFrom<&DbAssetThumbnails> for AssetThumbnails {
         Ok(AssetThumbnails {
             id: value.id,
             ty: value.ty.into(),
-            thumb_small_square_avif: value.thumb_small_square_avif.as_ref().map(|p| p.into()),
-            thumb_small_square_webp: value.thumb_small_square_webp.as_ref().map(|p| p.into()),
-            thumb_large_orig_avif: value.thumb_large_orig_avif.as_ref().map(|p| p.into()),
-            thumb_large_orig_webp: value.thumb_large_orig_webp.as_ref().map(|p| p.into()),
+            thumb_small_square_avif: value.thumb_small_square_avif != 0,
+            thumb_small_square_webp: value.thumb_small_square_webp != 0,
+            thumb_large_orig_avif: value.thumb_large_orig_avif != 0,
+            thumb_large_orig_webp: value.thumb_large_orig_webp != 0,
         })
     }
 }

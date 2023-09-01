@@ -40,10 +40,7 @@ impl From<model::Asset> for Asset {
             width: value.base.size.width as i32,
             height: value.base.size.height as i32,
             added_at: value.base.added_at,
-            taken_date: match value.base.taken_date {
-                model::MediaTimestamp::Utc(utc) => utc,
-                model::MediaTimestamp::LocalFallback(local) => local.and_utc(),
-            },
+            taken_date: value.base.taken_date,
             metadata: None,
         }
     }

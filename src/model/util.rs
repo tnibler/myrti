@@ -1,6 +1,15 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use eyre::{eyre, Context, Result};
 use std::path::{Path, PathBuf};
+
+#[inline]
+pub fn bool_to_int(b: bool) -> i64 {
+    if b {
+        1
+    } else {
+        0
+    }
+}
 
 pub fn opt_path_to_string(path: &Option<PathBuf>) -> Result<Option<String>> {
     match path.as_ref() {
@@ -20,16 +29,17 @@ pub fn path_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
         .ok_or_else(|| eyre!("non unicode file path not supported"))
 }
 
-/// Formats as RFC3339 with milliseconds
-pub fn datetime_to_db_repr(d: &DateTime<Utc>) -> String {
-    d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+/// milliseconds since UNIX epoch
+pub fn datetime_to_db_repr(d: &DateTime<Utc>) -> i64 {
+    d.timestamp_millis()
 }
 
-/// Parses from RFC3339 with milliseconds
-pub fn datetime_from_db_repr(s: &str) -> Result<DateTime<Utc>> {
-    Ok(DateTime::parse_from_rfc3339(s)
-        .wrap_err("error parsing RFC3339 datetime")?
-        .with_timezone(&Utc))
+/// From milliseconds since UNIX epoch
+pub fn datetime_from_db_repr(s: i64) -> Result<DateTime<Utc>> {
+    match Utc.timestamp_millis_opt(s) {
+        chrono::LocalResult::Single(dt) => Ok(dt),
+        _ => Err(eyre!("error parsing RFC3339 datetime")),
+    }
 }
 
 pub fn hash_vec8_to_u64(v: &[u8]) -> Result<u64> {

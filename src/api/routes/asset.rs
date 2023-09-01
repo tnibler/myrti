@@ -30,7 +30,7 @@ use crate::{
     app_state::SharedState,
     catalog::storage_key,
     core::storage::StorageProvider,
-    model::{self, repository, MediaTimestamp},
+    model::{self, repository},
 };
 
 pub fn router() -> Router<SharedState> {
@@ -191,16 +191,7 @@ async fn get_timeline(
     .await?;
     let grouped_by_date: Vec<(NaiveDate, Vec<_>)> = results
         .into_iter()
-        .group_by(|asset| match asset.base.taken_date {
-            MediaTimestamp::Utc(date) => date.date_naive(),
-            MediaTimestamp::LocalFallback(naive_date) => {
-                naive_date
-                    .and_local_timezone(Local)
-                    .unwrap()
-                    .with_timezone(&Utc) // TODO
-                    .date_naive()
-            }
-        })
+        .group_by(|asset| asset.base.taken_date.date_naive())
         .into_iter()
         .map(|(date, group)| (date, group.collect()))
         .collect();

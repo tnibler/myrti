@@ -112,8 +112,9 @@ pub async fn read_media_metadata(path: &Path) -> Result<exiftool::Output> {
 
 #[derive(Debug, Clone)]
 pub enum TimestampGuess {
+    WithTimezone(DateTime<FixedOffset>),
     Utc(DateTime<Utc>),
-    LocalOnly(NaiveDateTime),
+    Local(NaiveDateTime),
     None,
 }
 
@@ -131,7 +132,7 @@ pub fn figure_out_utc_timestamp(et: &exiftool::Output) -> TimestampGuess {
                     if let Some(serde_json::Value::String(ts)) = json_val {
                         let parsed = parse_exiftool_subsecond_timestamp_with_offset(ts);
                         if let Ok(timestamp) = parsed {
-                            return TimestampGuess::Utc(timestamp.with_timezone(&Utc));
+                            return TimestampGuess::WithTimezone(timestamp);
                         }
                     }
                 }
@@ -144,7 +145,7 @@ pub fn figure_out_utc_timestamp(et: &exiftool::Output) -> TimestampGuess {
         if let Some(ref subsec_date_time_original) = composite.subsec_date_time_original {
             let parsed = parse_exiftool_subsecond_timestamp_with_offset(subsec_date_time_original);
             if let Ok(timestamp) = parsed {
-                return TimestampGuess::Utc(timestamp.with_timezone(&Utc));
+                return TimestampGuess::WithTimezone(timestamp);
             }
         }
     }
@@ -158,7 +159,7 @@ pub fn figure_out_utc_timestamp(et: &exiftool::Output) -> TimestampGuess {
             if let Some(ref create_date) = exif.create_date {
                 let parsed = parse_exiftool_timestamp_with_offset_time(create_date, offset);
                 if let Ok(timestamp) = parsed {
-                    return TimestampGuess::Utc(timestamp.with_timezone(&Utc));
+                    return TimestampGuess::WithTimezone(timestamp);
                 }
             }
         }
@@ -182,10 +183,11 @@ pub fn figure_out_utc_timestamp(et: &exiftool::Output) -> TimestampGuess {
             }
         }
     }
+    // FIXME is this ever what we want
     if let Some(ref file_modify_date) = et.file.file_modify_date {
         let parsed = parse_exiftool_timestamp_with_offset(file_modify_date);
         if let Ok(timestamp) = parsed {
-            return TimestampGuess::Utc(timestamp.with_timezone(&Utc));
+            return TimestampGuess::WithTimezone(timestamp);
         }
     }
     return TimestampGuess::None;

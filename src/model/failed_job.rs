@@ -26,7 +26,7 @@ impl TryFrom<&DbFailedThumbnailJob> for FailedThumbnailJob {
         Ok(FailedThumbnailJob {
             asset_id: value.asset_id,
             file_hash: hash_vec8_to_u64(&value.file_hash)?,
-            date: datetime_from_db_repr(&value.date)?,
+            date: datetime_from_db_repr(value.date)?,
         })
     }
 }

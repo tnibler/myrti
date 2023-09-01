@@ -5,7 +5,7 @@ use crate::{
     processing::{self, hash::hash_file},
     repository::{self, pool::DbPool},
 };
-use chrono::Utc;
+use chrono::{DateTime, FixedOffset, Local, TimeZone, Utc};
 use color_eyre::eyre::Result;
 use eyre::Context;
 use tracing::{debug, error, instrument, Instrument};
@@ -122,10 +122,17 @@ async fn index_file(
         }
     };
     let timestamp_guess = figure_out_utc_timestamp(&metadata);
-    let timestamp = match timestamp_guess {
-        TimestampGuess::None => MediaTimestamp::Utc(Utc::now()),
-        TimestampGuess::Utc(utc) => MediaTimestamp::Utc(utc),
-        TimestampGuess::LocalOnly(local) => MediaTimestamp::LocalFallback(local),
+    let (timestamp, timestamp_info): (DateTime<Utc>, TimestampInfo) = match timestamp_guess {
+        TimestampGuess::None => (Utc::now(), TimestampInfo::NoTimestamp),
+        TimestampGuess::Utc(utc) => (utc, TimestampInfo::UtcCertain),
+        TimestampGuess::WithTimezone(dt) => (
+            dt.with_timezone(&Utc),
+            TimestampInfo::TzCertain(*dt.offset()),
+        ),
+        TimestampGuess::Local(dt) => (
+            dt.and_utc(),
+            TimestampInfo::TzGuessedLocal(*Local::now().offset()),
+        ),
     };
     let file = tokio::fs::File::open(&path)
         .await
@@ -141,13 +148,14 @@ async fn index_file(
         file_path: path.strip_prefix(&asset_root.path)?.to_owned(),
         added_at: Utc::now(),
         taken_date: timestamp,
+        timestamp_info,
         size,
         rotation_correction: None,
         hash: Some(hash),
-        thumb_small_square_avif: None,
-        thumb_small_square_webp: None,
-        thumb_large_orig_avif: None,
-        thumb_large_orig_webp: None,
+        thumb_small_square_avif: false,
+        thumb_small_square_webp: false,
+        thumb_large_orig_avif: false,
+        thumb_large_orig_webp: false,
         thumb_small_square_size: None,
         thumb_large_orig_size: None,
     };

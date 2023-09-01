@@ -470,7 +470,147 @@ async fn get_videos_without_dash() {
 
 #[tokio::test]
 async fn get_videos_in_acceptable_codec_without_dash() {
-    todo!()
+    let pool = create_db().await;
+    let asset_root_dir = AssetRootDir {
+        id: AssetRootDirId(0),
+        path: PathBuf::from("/path/to/assets"),
+    };
+    let root_dir_id =
+        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
+    // h264 aac with dash
+    let asset1 = Asset {
+        base: AssetBase {
+            id: AssetId(0),
+            ty: AssetType::Video,
+            root_dir_id,
+            file_type: "mp4".to_owned(),
+            file_path: PathBuf::from("video.mp4"),
+            added_at: Utc::now(),
+            taken_date: MediaTimestamp::Utc(Utc::now().checked_sub_months(Months::new(3)).unwrap()),
+            size: Size {
+                width: 100,
+                height: 100,
+            },
+            rotation_correction: Some(90),
+            hash: None,
+            thumb_small_square_avif: Some("/path/1".into()),
+            thumb_small_square_webp: None,
+            thumb_large_orig_avif: None,
+            thumb_large_orig_webp: Some("/path/2".into()),
+            thumb_small_square_size: None,
+            thumb_large_orig_size: None,
+        },
+        sp: AssetSpe::Video(Video {
+            video_codec_name: "h264".to_owned(),
+            video_bitrate: 1234,
+            audio_codec_name: Some("aac".into()),
+            has_dash: true,
+        }),
+    };
+    // h264 flac no dash
+    let asset2 = Asset {
+        base: AssetBase {
+            file_path: "video2.mp4".into(),
+            ..asset1.base.clone()
+        },
+        sp: AssetSpe::Video(Video {
+            video_codec_name: "h264".to_owned(),
+            video_bitrate: 1234,
+            audio_codec_name: Some("flac".into()),
+            has_dash: false,
+        }),
+    };
+    // hevc aac with dash
+    let asset3 = Asset {
+        sp: AssetSpe::Video(Video {
+            video_codec_name: "hevc".into(),
+            video_bitrate: 1234,
+            audio_codec_name: Some("aac".into()),
+            has_dash: true,
+        }),
+        base: AssetBase {
+            file_path: "video3.mp4".into(),
+            ..asset1.base.clone()
+        },
+    };
+    // hevc aac no dash
+    let asset4 = Asset {
+        sp: AssetSpe::Video(Video {
+            video_codec_name: "hevc".into(),
+            video_bitrate: 1234,
+            audio_codec_name: Some("aac".into()),
+            has_dash: false,
+        }),
+        base: AssetBase {
+            file_path: "video4.mp4".into(),
+            ..asset1.base.clone()
+        },
+    };
+    // hevc mp3 no dash
+    let asset5 = Asset {
+        sp: AssetSpe::Video(Video {
+            video_codec_name: "hevc".into(),
+            video_bitrate: 1234,
+            audio_codec_name: Some("mp3".into()),
+            has_dash: false,
+        }),
+        base: AssetBase {
+            file_path: "video5.mp4".into(),
+            ..asset1.base.clone()
+        },
+    };
+    let _asset1_id = assert_ok!(repository::asset::insert_asset(&pool, &asset1).await);
+    let asset2_id = assert_ok!(repository::asset::insert_asset(&pool, &asset2).await);
+    let _asset3_id = assert_ok!(repository::asset::insert_asset(&pool, &asset3).await);
+    let asset4_id = assert_ok!(repository::asset::insert_asset(&pool, &asset4).await);
+    let asset5_id = assert_ok!(repository::asset::insert_asset(&pool, &asset5).await);
+    let acceptable_video_codecs1 = ["h264"];
+    let acceptable_audio_codecs1 = ["aac", "flac"];
+    let result1: HashSet<AssetId> = assert_ok!(
+        repository::asset::get_videos_in_acceptable_codec_without_dash(
+            &pool,
+            acceptable_video_codecs1,
+            acceptable_audio_codecs1
+        )
+        .await
+    )
+    .into_iter()
+    .map(|a| a.base.id)
+    .collect();
+    let expected1: HashSet<AssetId> = [asset2_id].into_iter().collect();
+    assert_eq!(result1, expected1);
+
+    let acceptable_video_codecs2 = ["h264", "hevc"];
+    let acceptable_audio_codecs2 = ["aac"];
+    let result2: HashSet<AssetId> = assert_ok!(
+        repository::asset::get_videos_in_acceptable_codec_without_dash(
+            &pool,
+            acceptable_video_codecs2,
+            acceptable_audio_codecs2
+        )
+        .await
+    )
+    .into_iter()
+    .map(|a| a.base.id)
+    .collect();
+    let expected2: HashSet<AssetId> = [asset4_id].into_iter().collect();
+    assert_eq!(result2, expected2);
+
+    let acceptable_video_codecs3 = ["h264", "hevc"];
+    let acceptable_audio_codecs3 = ["aac", "mp3", "flac"];
+    let result3: HashSet<AssetId> = assert_ok!(
+        repository::asset::get_videos_in_acceptable_codec_without_dash(
+            &pool,
+            acceptable_video_codecs3,
+            acceptable_audio_codecs3
+        )
+        .await
+    )
+    .into_iter()
+    .map(|a| a.base.id)
+    .collect();
+    let expected3: HashSet<AssetId> = [asset2_id, asset4_id, asset5_id].into_iter().collect();
+    assert_eq!(result3, expected3);
 }
 
 #[tokio::test]

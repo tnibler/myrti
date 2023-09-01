@@ -586,8 +586,8 @@ AND NOT EXISTS
 #[instrument(skip(pool, acceptable_video_codecs, acceptable_audio_codecs))]
 pub async fn get_videos_in_acceptable_codec_without_dash(
     pool: &DbPool,
-    acceptable_video_codecs: impl Iterator<Item = &str>,
-    acceptable_audio_codecs: impl Iterator<Item = &str>,
+    acceptable_video_codecs: impl IntoIterator<Item = &str>,
+    acceptable_audio_codecs: impl IntoIterator<Item = &str>,
 ) -> Result<Vec<VideoAsset>> {
     let mut query_builder = QueryBuilder::new(
         r#"
@@ -626,7 +626,7 @@ AND Asset.ty ="#,
 AND video_codec_name IN
     "#,
     );
-    query_builder.push_tuples(acceptable_video_codecs, |mut b, s| {
+    query_builder.push_tuples(acceptable_video_codecs.into_iter(), |mut b, s| {
         b.push_bind(s);
     });
     query_builder.push(
@@ -634,7 +634,7 @@ AND video_codec_name IN
 AND audio_codec_name IN
     "#,
     );
-    query_builder.push_tuples(acceptable_audio_codecs, |mut b, s| {
+    query_builder.push_tuples(acceptable_audio_codecs.into_iter(), |mut b, s| {
         b.push_bind(s);
     });
     query_builder.push(";");

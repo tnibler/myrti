@@ -346,8 +346,8 @@ VALUES
 pub async fn set_asset_small_thumbnails(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
-    thumb_small_square_avif: &str,
-    thumb_small_square_webp: &str,
+    thumb_small_square_avif: bool,
+    thumb_small_square_webp: bool,
 ) -> Result<()> {
     sqlx::query!(
         r#"
@@ -370,8 +370,8 @@ WHERE id=?;
 pub async fn set_asset_large_thumbnails(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
-    thumb_large_orig_avif: &str,
-    thumb_large_orig_webp: &str,
+    thumb_large_orig_avif: bool,
+    thumb_large_orig_webp: bool,
 ) -> Result<()> {
     sqlx::query!(
         r#"

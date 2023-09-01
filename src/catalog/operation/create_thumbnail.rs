@@ -50,22 +50,12 @@ pub async fn apply_create_thumbnail(pool: &DbPool, op: &CreateThumbnailWithPaths
             .wrap_err("could not begin db transaction")?;
         match thumb.ty {
             ThumbnailType::SmallSquare => {
-                repository::asset::set_asset_small_thumbnails(
-                    tx.as_mut(),
-                    op.asset_id,
-                    &thumb.avif_key,
-                    &thumb.webp_key,
-                )
-                .await
+                repository::asset::set_asset_small_thumbnails(tx.as_mut(), op.asset_id, true, true)
+                    .await
             }
             ThumbnailType::LargeOrigAspect => {
-                repository::asset::set_asset_large_thumbnails(
-                    tx.as_mut(),
-                    op.asset_id,
-                    &thumb.avif_key,
-                    &thumb.webp_key,
-                )
-                .await
+                repository::asset::set_asset_large_thumbnails(tx.as_mut(), op.asset_id, true, true)
+                    .await
             }
         }
         .wrap_err("could not set asset thumbnails")?;

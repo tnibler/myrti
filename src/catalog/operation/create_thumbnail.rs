@@ -11,7 +11,7 @@ use crate::{
     },
     processing::{
         self,
-        image::{generate_thumbnail, ThumbnailParams},
+        image::thumbnail::{GenerateThumbnailTrait, ThumbnailParams},
         video::create_snapshot,
     },
 };
@@ -71,7 +71,7 @@ pub struct ThumbnailSideEffectResult {
 }
 
 #[instrument(skip(pool, storage))]
-pub async fn perform_side_effects_create_thumbnail(
+pub async fn perform_side_effects_create_thumbnail<G: GenerateThumbnailTrait>(
     storage: &Storage,
     pool: &DbPool,
     op: &CreateThumbnailWithPaths,
@@ -90,7 +90,7 @@ pub async fn perform_side_effects_create_thumbnail(
     match asset.base.ty {
         AssetType::Image => {
             for thumb in &op.thumbnails {
-                match create_thumbnail_from_image(storage, in_path.clone(), thumb)
+                match create_thumbnail_from_image::<G>(storage, in_path.clone(), thumb)
                     .in_current_span()
                     .await
                 {
@@ -111,9 +111,13 @@ pub async fn perform_side_effects_create_thumbnail(
             match snapshot_result {
                 Ok(_) => {
                     for thumb in &op.thumbnails {
-                        match create_thumbnail_from_image(storage, snapshot_path.clone(), thumb)
-                            .in_current_span()
-                            .await
+                        match create_thumbnail_from_image::<G>(
+                            storage,
+                            snapshot_path.clone(),
+                            thumb,
+                        )
+                        .in_current_span()
+                        .await
                         {
                             Ok(_) => {}
                             Err(err) => {
@@ -137,17 +141,13 @@ pub async fn perform_side_effects_create_thumbnail(
 }
 
 #[instrument(skip(storage))]
-async fn create_thumbnail_from_image(
+async fn create_thumbnail_from_image<G: GenerateThumbnailTrait>(
     storage: &Storage,
     image_path: PathBuf,
     thumb: &ThumbnailToCreateWithPaths,
 ) -> Result<()> {
     let out_file_avif = storage.new_command_out_file(&thumb.avif_key).await?;
     let out_file_webp = storage.new_command_out_file(&thumb.webp_key).await?;
-    let out_paths = vec![
-        out_file_avif.path().to_owned(),
-        out_file_webp.path().to_owned(),
-    ];
     let out_dimension = match thumb.ty {
         ThumbnailType::SmallSquare => processing::image::OutDimension::Crop {
             width: 200,
@@ -157,15 +157,18 @@ async fn create_thumbnail_from_image(
             processing::image::OutDimension::KeepAspect { width: 400 }
         }
     };
-    let thumbnail_params = ThumbnailParams {
-        in_path: image_path,
-        out_paths,
-        out_dimension,
-    };
     let (tx, rx) = tokio::sync::oneshot::channel();
-    rayon::spawn(move || {
-        let res = generate_thumbnail(thumbnail_params);
-        tx.send(res).unwrap();
+    rayon::scope(|scope| {
+        let out_paths = vec![&out_file_avif, &out_file_webp];
+        let thumbnail_params = ThumbnailParams {
+            in_path: image_path,
+            outputs: out_paths,
+            out_dimension,
+        };
+        scope.spawn(move |_| {
+            let res = G::generate_thumbnail(thumbnail_params);
+            tx.send(res).unwrap();
+        });
     });
     let result = rx
         .in_current_span()

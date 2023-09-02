@@ -42,13 +42,13 @@ pub enum OutDimension {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ThumbnailParams {
+pub struct VipsThumbnailParams {
     pub in_path: PathBuf,
     pub out_paths: Vec<PathBuf>,
     pub out_dimension: OutDimension,
 }
 
-pub fn generate_thumbnail(params: ThumbnailParams) -> Result<()> {
+pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<()> {
     let span = info_span!("Generate image thumbnail (libvips)");
     let _enter = span.enter();
     let c_path = CString::new(params.in_path.as_os_str().as_bytes()).wrap_err(format!(

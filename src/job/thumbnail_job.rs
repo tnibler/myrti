@@ -24,7 +24,10 @@ use crate::{
         repository::{self, pool::DbPool},
         AssetId, FailedThumbnailJob, ThumbnailFormat,
     },
-    processing::hash::hash_file,
+    processing::{
+        hash::hash_file,
+        image::thumbnail::{GenerateThumbnail, GenerateThumbnailMock},
+    },
 };
 
 pub struct ThumbnailJob {
@@ -105,26 +108,27 @@ impl ThumbnailJob {
             }
 
             let op_resolved = resolve(&op).in_current_span().await;
-            let side_effect_results = match perform_side_effects_create_thumbnail(
-                &self.storage,
-                &self.pool,
-                &op_resolved,
-            )
-            .in_current_span()
-            .await
-            {
-                Err(err) => {
-                    // same as above
-                    // if things fail here it's not the asset's fault, so don't remember the fail
-                    // in the database
-                    failed.push(FailedThumbnail {
-                        thumbnail: op.clone(),
-                        err,
-                    });
-                    continue;
-                }
-                Ok(r) => r,
-            };
+            let side_effect_results =
+                match perform_side_effects_create_thumbnail::<GenerateThumbnail>(
+                    &self.storage,
+                    &self.pool,
+                    &op_resolved,
+                )
+                .in_current_span()
+                .await
+                {
+                    Err(err) => {
+                        // same as above
+                        // if things fail here it's not the asset's fault, so don't remember the fail
+                        // in the database
+                        failed.push(FailedThumbnail {
+                            thumbnail: op.clone(),
+                            err,
+                        });
+                        continue;
+                    }
+                    Ok(r) => r,
+                };
             // if one thumbnail of op fails we discard the whole thing for now
             if !side_effect_results.failed.is_empty() {
                 for (_thumbnail, report) in side_effect_results.failed {

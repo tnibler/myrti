@@ -20,3 +20,13 @@
  - deduplication: hash during indexing, mark duplicate of
  - click on album -> download as zip/tar, with a self-contained gallery html file
  - store perceptive hash with assets and dedupe if possible
+
+
+client GET /dash/:id/stream.mpd         -> d/dash/:id/stream.mpd
+client GET /dash/:id/av1_1080x1920.mp4  -> d/dash/:id/av1_1080x1920.mp4
+assemble key dash/:id/:file
+
+shaka-packager local_file,output=av1_1080x1920.mp4 av1_1080x1920.mp4.media_info
+needs to be run in output directory so that media_info contains filename instead of path
+if localfilestorage: create path, cd into directory, run in cwd
+otherwise: cd into tempdir, run in cwd, write to storage_provider

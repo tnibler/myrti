@@ -191,7 +191,7 @@ async fn get_timeline(
     .await?;
     let grouped_by_date: Vec<(NaiveDate, Vec<_>)> = results
         .into_iter()
-        .group_by(|asset| asset.base.taken_date.date_naive())
+        .group_by(|asset| asset.base.taken_date_local().date_naive())
         .into_iter()
         .map(|(date, group)| (date, group.collect()))
         .collect();

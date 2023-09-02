@@ -71,6 +71,19 @@ pub enum ThumbnailFormat {
     Avif,
 }
 
+impl AssetBase {
+    pub fn taken_date_local(&self) -> DateTime<FixedOffset> {
+        match self.timestamp_info {
+            TimestampInfo::NoTimestamp => self.taken_date.into(),
+            TimestampInfo::UtcCertain => self.taken_date.into(),
+            TimestampInfo::TzCertain(tz)
+            | TimestampInfo::TzSetByUser(tz)
+            | TimestampInfo::TzInferredLocation(tz)
+            | TimestampInfo::TzGuessedLocal(tz) => self.taken_date.with_timezone(&tz),
+        }
+    }
+}
+
 impl TryFrom<&Asset> for DbAsset {
     type Error = eyre::Report;
 

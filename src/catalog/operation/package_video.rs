@@ -318,7 +318,7 @@ pub async fn perform_side_effects_package_video(
             // To correct that, we have to rerun the shaka-packager output through ffmpeg
             // to set the rotation again if present.
             // BUT since shaka-packager also outputs a media_info file that we need,
-            // the shaka-packager output file needs to be the same as the final ffmpeg
+            // the shaka-packager output filename needs to be the same as the final ffmpeg
             // output.
             // TODO calling ffprobe yet again, ideally once is enough
             let ffprobe = ffprobe_get_streams(&asset_path.path_on_disk()).await?.video;

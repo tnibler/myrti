@@ -8,7 +8,7 @@ use futures::{SinkExt, StreamExt};
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 use tokio::{select, sync::mpsc, task::JoinError};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, info_span, instrument, warn, Instrument};
+use tracing::{debug, debug_span, error, info, instrument, warn, Instrument};
 
 #[derive(Clone)]
 pub struct Monitor {
@@ -145,6 +145,7 @@ impl Monitor {
                 match job_result {
                     JobResultType::Indexing(ref indexing_result) => {
                         let status = if indexing_result.failed.is_empty() {
+                            warn!("IndexingJob failures");
                             JobStatus::CompleteWithErrors
                         } else {
                             JobStatus::Complete
@@ -153,10 +154,16 @@ impl Monitor {
                     }
                     JobResultType::Thumbnail(ref thumbnail_results) => {
                         let status = match thumbnail_results {
-                            Err(e) => JobStatus::Failed { msg: e.to_string() },
-                            Ok(r) if !r.failed.is_empty() => JobStatus::Failed {
-                                msg: format!("some thumbnail tasks failed: {:?}", r.failed),
-                            },
+                            Err(e) => {
+                                warn!("ThumbnailJob failed (like, completely)");
+                                JobStatus::Failed { msg: e.to_string() }
+                            }
+                            Ok(r) if !r.failed.is_empty() => {
+                                warn!("ThumbnailJob failures");
+                                JobStatus::Failed {
+                                    msg: format!("some thumbnail tasks failed: {:?}", r.failed),
+                                }
+                            }
                             Ok(_results) => JobStatus::Complete,
                         };
                         self.set_status(job_id, status).await;
@@ -165,10 +172,12 @@ impl Monitor {
                         let status = if segmenting_results.failed.is_empty() {
                             JobStatus::Complete
                         } else if segmenting_results.completed.is_empty() {
+                            warn!("DashSegmenting failures (only failures in fact)");
                             JobStatus::Failed {
                                 msg: format!("all tasks failed"),
                             }
                         } else {
+                            warn!("DashSegmenting failures");
                             JobStatus::CompleteWithErrors
                         };
                         self.set_status(job_id, status).await;
@@ -255,7 +264,7 @@ impl Monitor {
                 };
                 job_result_tx.send((id, join_result)).await.unwrap();
             }
-            .instrument(info_span!("Waiting for job result")),
+            .instrument(debug_span!("Waiting for job result")),
         );
         id
     }

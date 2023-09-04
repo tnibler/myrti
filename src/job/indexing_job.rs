@@ -40,8 +40,6 @@ impl IndexingJob {
         status_tx: mpsc::Sender<JobProgress>,
         _cancel: CancellationToken,
     ) -> IndexingJobResult {
-        // let span = info_span!("IndexingJob");
-        // let _enter = span.enter();
         let _asset_ids: Vec<AssetId> = Vec::new();
         status_tx
             .send(JobProgress {

@@ -1,10 +1,9 @@
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 use super::{
     job::{Job, JobId, JobResultType},
     monitor::MonitorMessage,
     storage::Storage,
-    DataDirManager,
 };
 use crate::{
     catalog::{operation::package_video::PackageVideo, rules},
@@ -57,7 +56,6 @@ impl Scheduler {
                 events_tx: tx_copy,
                 events_rx: rx,
                 cancel,
-                data_dir_manager: Arc::new(DataDirManager::new(pool.clone())),
                 pool,
                 monitor_tx,
                 storage,
@@ -82,7 +80,6 @@ struct SchedulerImpl {
     pub cancel: CancellationToken,
     pool: SqlitePool,
     monitor_tx: mpsc::Sender<MonitorMessage>,
-    data_dir_manager: Arc<DataDirManager>,
     storage: Storage,
 }
 
@@ -138,12 +135,7 @@ impl SchedulerImpl {
             let params = ThumbnailJobParams {
                 thumbnails: thumbnails_to_create,
             };
-            let job = ThumbnailJob::new(
-                params.clone(),
-                self.data_dir_manager.clone(),
-                self.pool.clone(),
-                self.storage.clone(),
-            );
+            let job = ThumbnailJob::new(params.clone(), self.pool.clone(), self.storage.clone());
             let handle = job.start();
             self.monitor_tx
                 .send(MonitorMessage::AddJob {

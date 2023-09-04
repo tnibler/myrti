@@ -1,5 +1,5 @@
-use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
-use eyre::{bail, eyre, Context, ContextCompat, Result};
+use chrono::{DateTime, FixedOffset, Utc};
+use eyre::{eyre, Context, Result};
 use serde::Serialize;
 use std::path::PathBuf;
 

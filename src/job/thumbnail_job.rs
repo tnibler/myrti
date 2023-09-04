@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
 use async_trait::async_trait;
 use chrono::Utc;
@@ -18,21 +18,16 @@ use crate::{
     core::{
         job::{Job, JobHandle, JobProgress, JobResultType},
         storage::Storage,
-        DataDirManager,
     },
     model::{
         repository::{self, pool::DbPool},
         AssetId, FailedThumbnailJob, ThumbnailFormat,
     },
-    processing::{
-        hash::hash_file,
-        image::thumbnail::{GenerateThumbnail, GenerateThumbnailMock},
-    },
+    processing::{hash::hash_file, image::thumbnail::GenerateThumbnail},
 };
 
 pub struct ThumbnailJob {
     params: ThumbnailJobParams,
-    data_dir_manager: Arc<DataDirManager>,
     pool: DbPool,
     storage: Storage,
 }
@@ -54,15 +49,9 @@ pub struct ThumbnailJobResult {
 }
 
 impl ThumbnailJob {
-    pub fn new(
-        params: ThumbnailJobParams,
-        data_dir_manager: Arc<DataDirManager>,
-        pool: DbPool,
-        storage: Storage,
-    ) -> ThumbnailJob {
+    pub fn new(params: ThumbnailJobParams, pool: DbPool, storage: Storage) -> ThumbnailJob {
         ThumbnailJob {
             params,
-            data_dir_manager,
             pool,
             storage,
         }

@@ -1,9 +1,7 @@
 use std::path::PathBuf;
-use std::process::Stdio;
 
 use eyre::{eyre, Context, Result};
-use tokio::process::Command;
-use tracing::{instrument, Instrument};
+use tracing::{error, instrument, Instrument};
 
 use crate::{
     catalog::{
@@ -17,9 +15,17 @@ use crate::{
         VideoRepresentation, VideoRepresentationId,
     },
     processing::video::{
-        dash_package::{generate_mpd, shaka_package, RepresentationInput, RepresentationType},
-        ffprobe_get_streams,
-        transcode::{ffmpeg_command, ProduceAudio, ProduceVideo},
+        dash_package::generate_mpd,
+        ffmpeg::{FFmpegBuilder, FFmpegBuilderTrait},
+        ffmpeg_into_shaka::{
+            FFmpegIntoShaka, FFmpegIntoShakaFlagTrait, FFmpegIntoShakaInputFlagTrait,
+            FFmpegIntoShakaNew, FFmpegIntoShakaTrait,
+        },
+        shaka::{RepresentationType, ShakaPackager, ShakaPackagerTrait},
+        shaka_into_ffmpeg::{ShakaIntoFFmpeg, ShakaIntoFFmpegTrait},
+        transcode::{ffmpeg_audio_flags, ffmpeg_video_flags, ProduceAudio, ProduceVideo},
+        video_rotation::FFProbeRotationTrait,
+        FFProbe,
     },
 };
 
@@ -232,47 +238,33 @@ pub async fn perform_side_effects_package_video(
         _ => None,
     };
 
-    let (ffmpeg_out_path, _ffmpeg_temp_dir) =
-        if ffmpeg_video_op.is_some() || ffmpeg_audio_op.is_some() {
-            let temp_dir = tempfile::tempdir().wrap_err("error creating temp directory")?;
-            let ffmpeg_out_path = temp_dir.path().join("out.mp4");
-            let mut command = ffmpeg_command(
-                &asset_path.path_on_disk(),
-                &ffmpeg_out_path,
-                ffmpeg_video_op.as_ref(),
-                ffmpeg_audio_op.as_ref(),
-            );
-            let ffmpeg_result = command.spawn()?.wait().await?;
-            if !ffmpeg_result.success() {
-                return Err(eyre!("ffmpeg exited with an error"));
-            }
-            (Some(ffmpeg_out_path), Some(temp_dir))
-        } else {
-            (None, None)
-        };
+    let ffmpeg_into_shaka = if ffmpeg_video_op.is_some() || ffmpeg_audio_op.is_some() {
+        let mut ffmpeg_into_shaka = FFmpegIntoShaka::new().input(&asset_path.path_on_disk());
+        if let Some(video_op) = &ffmpeg_video_op {
+            ffmpeg_into_shaka.flags(ffmpeg_video_flags(video_op));
+        }
+        if let Some(audio_op) = &ffmpeg_audio_op {
+            ffmpeg_into_shaka.flags(ffmpeg_audio_flags(audio_op));
+        }
+        let ffmpeg_into_shaka = ffmpeg_into_shaka.run_ffmpeg().in_current_span().await?;
+        Some(ffmpeg_into_shaka)
+    } else {
+        None
+    };
 
     let created_audio_repr: Option<CreatedAudioRepr> = match &package_video.create_audio_repr {
         Some(CreateAudioRepr::Existing(audio_repr)) => {
             Some(CreatedAudioRepr::Existing(audio_repr.clone()))
         }
         Some(CreateAudioRepr::PackageOriginalFile { output_key }) => {
-            let command_out_file = storage.new_command_out_file(&output_key).await?;
-            let command_out_path = command_out_file.path();
-            let command_out_dir = command_out_path
-                .parent()
-                .expect("CommandOutputFile must have a parent directory");
-            let command_out_filename = command_out_path
-                .file_name()
-                .expect("CommandOutputFile must have a filename");
-            let repr_inputs: &[RepresentationInput] = &[RepresentationInput {
-                path: asset_path.path_on_disk(),
-                ty: RepresentationType::Audio,
-                out_path: command_out_filename.into(),
-            }];
-            shaka_package(repr_inputs, Some(command_out_dir))
-                .await
-                .wrap_err("could not shaka package audio stream")?;
-            command_out_file.flush_to_storage().await?;
+            ShakaPackager::run(
+                &asset_path.path_on_disk(),
+                RepresentationType::Audio,
+                &output_key,
+                storage,
+            )
+            .await
+            .wrap_err("could not shaka package audio stream")?;
             let out_media_info_key = format!("{}.media_info", output_key);
             Some(CreatedAudioRepr::PackagedOriginalFile {
                 out_file_key: output_key.clone(),
@@ -280,31 +272,24 @@ pub async fn perform_side_effects_package_video(
             })
         }
         Some(CreateAudioRepr::Transcode(transcode)) => {
-            let ffmpeg_out_path = ffmpeg_out_path
-                .as_ref()
-                .expect("ffmpeg output file must be present if audio was transcoded");
-            let command_out_file = storage.new_command_out_file(&transcode.output_key).await?;
-            let command_out_path = command_out_file.path();
-            let command_out_dir = command_out_path
-                .parent()
-                .expect("CommandOutputFile must have a parent directory");
-            let command_out_filename = command_out_path
-                .file_name()
-                .expect("CommandOutputFile must have a filename");
-            let repr_inputs: &[RepresentationInput] = &[RepresentationInput {
-                path: ffmpeg_out_path.clone(),
-                ty: RepresentationType::Audio,
-                out_path: command_out_filename.into(),
-            }];
-            shaka_package(repr_inputs, Some(command_out_dir))
-                .await
-                .wrap_err("could not shaka package audio stream")?;
-            command_out_file.flush_to_storage().await?;
-            let out_media_info_key = format!("{}.media_info", transcode.output_key);
+            debug_assert!(ffmpeg_into_shaka.is_some());
+            let ffmpeg_into_shaka = match ffmpeg_into_shaka.as_ref() {
+                Some(f) => f,
+                None => {
+                    error!("BUG: ffmpeg_into_shaka is None when it should not be");
+                    return Err(eyre!(
+                        "BUG: ffmpeg_into_shaka is None when it should not be"
+                    ));
+                }
+            };
+            let shaka_result = ffmpeg_into_shaka
+                .run_shaka_packager(RepresentationType::Audio, &transcode.output_key, &storage)
+                .in_current_span()
+                .await?;
             Some(CreatedAudioRepr::Transcode(AudioTranscodeResult {
                 target: transcode.target.clone(),
                 out_file_key: transcode.output_key.clone(),
-                out_media_info_key,
+                out_media_info_key: shaka_result.media_info_key,
             }))
         }
         None => None,
@@ -320,111 +305,58 @@ pub async fn perform_side_effects_package_video(
             // BUT since shaka-packager also outputs a media_info file that we need,
             // the shaka-packager output filename needs to be the same as the final ffmpeg
             // output.
-            // TODO calling ffprobe yet again, ideally once is enough
-            let ffprobe = ffprobe_get_streams(&asset_path.path_on_disk()).await?.video;
-            if let Some(rotation) = ffprobe.rotation {
-                let temp_dir = tempfile::tempdir().wrap_err("could not create temp dir")?;
-                let ffmpeg_out_path = temp_dir.path().join("video.mp4");
-                let command_out_file = storage.new_command_out_file(output_key).await?;
-                let command_out_path = command_out_file.path();
-                let command_out_dir = command_out_path
-                    .parent()
-                    .expect("CommandOutputFile must have a parent directory");
-                let command_out_filename = command_out_path
-                    .file_name()
-                    .expect("CommandOutputFile must have a filename");
-                let repr_inputs: &[RepresentationInput] = &[RepresentationInput {
-                    path: asset_path.path_on_disk(),
-                    ty: RepresentationType::Video,
-                    out_path: command_out_filename.into(),
-                }];
-                // shaka-packager writes to final destination, ffmpeg reads that and
-                // writes to temp file, then move temp file to final destination
-                shaka_package(repr_inputs, Some(command_out_dir))
-                    .in_current_span()
-                    .await
-                    .wrap_err("could not shaka package video stream")?;
-                let mut command = Command::new("ffmpeg");
-                command
-                    .args(["-nostdin", "-y", "-display_rotation"])
-                    .arg(rotation.to_string())
-                    .arg("-i")
-                    .arg(command_out_file.path())
-                    .arg("-metadata:s:v")
-                    .arg(format!(r#"rotate="{}""#, rotation))
-                    .args(["-c:v", "copy", "-c:a", "copy"])
-                    .arg(&ffmpeg_out_path)
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped());
-                let result = command
-                    .spawn()
-                    .wrap_err("failed to call ffmpeg")?
-                    .wait()
-                    .in_current_span()
-                    .await
-                    .wrap_err("error waiting for ffmpeg")?;
-                if !result.success() {
-                    return Err(eyre!("ffmpeg exited with an error"));
-                }
-                tokio::fs::copy(&ffmpeg_out_path, command_out_file.path())
-                    .in_current_span()
-                    .await
-                    .wrap_err("error copying ffmpeg output to dash dir")?;
-                command_out_file.flush_to_storage().await?;
-                let out_media_info_key = format!("{}.media_info", output_key);
+            // TODO calling ffprobe yet again, ideally once is enough? Or not I'm not sure
+            let rotation = FFProbe::video_rotation(&asset_path.path_on_disk()).await?;
+            if let Some(rotation) = rotation {
+                let correct_rotation_ffmpeg = FFmpegBuilder::new()
+                    .pre_input_flag("-display_rotation")
+                    .pre_input_flag(rotation.to_string())
+                    .flags(["-c:v", "copy"])
+                    .build();
+                let shaka_result = ShakaIntoFFmpeg::run(
+                    &asset_path.path_on_disk(),
+                    RepresentationType::Video,
+                    &correct_rotation_ffmpeg,
+                    output_key,
+                    storage,
+                )
+                .await?;
+
                 CreatedVideoRepr::PackagedOriginalFile {
                     out_file_key: output_key.clone(),
-                    out_media_info_key,
+                    out_media_info_key: shaka_result.media_info_key,
                 }
             } else {
-                let command_out_file = storage.new_command_out_file(output_key).await?;
-                let command_out_path = command_out_file.path();
-                let command_out_dir = command_out_path
-                    .parent()
-                    .expect("CommandOutputFile must have a parent directory");
-                let command_out_filename = command_out_path
-                    .file_name()
-                    .expect("CommandOutputFile must have a filename");
-                let repr_inputs: &[RepresentationInput] = &[RepresentationInput {
-                    path: asset_path.path_on_disk(),
-                    ty: RepresentationType::Video,
-                    out_path: command_out_filename.into(),
-                }];
-                shaka_package(repr_inputs, Some(command_out_dir))
-                    .in_current_span()
-                    .await
-                    .wrap_err("could not shaka package video stream")?;
-                command_out_file.flush_to_storage().await?;
-                let out_media_info_key = format!("{}.media_info", output_key);
+                let shaka_result = ShakaPackager::run(
+                    &asset_path.path_on_disk(),
+                    RepresentationType::Video,
+                    output_key,
+                    storage,
+                )
+                .await
+                .wrap_err("could not shaka package audio stream")?;
                 CreatedVideoRepr::PackagedOriginalFile {
                     out_file_key: output_key.clone(),
-                    out_media_info_key,
+                    out_media_info_key: shaka_result.media_info_key,
                 }
             }
         }
         CreateVideoRepr::Transcode(transcode) => {
-            let command_out_file = storage.new_command_out_file(&transcode.output_key).await?;
-            let command_out_path = command_out_file.path();
-            let command_out_dir = command_out_path
-                .parent()
-                .expect("CommandOutputFile must have a parent directory");
-            let command_out_filename = command_out_path
-                .file_name()
-                .expect("CommandOutputFile must have a filename");
-            let ffmpeg_out_path = ffmpeg_out_path
-                .as_ref()
-                .expect("ffmpeg output file must be present if video was transcoded");
-            let repr_inputs: &[RepresentationInput] = &[RepresentationInput {
-                path: ffmpeg_out_path.clone(),
-                ty: RepresentationType::Video,
-                out_path: command_out_filename.into(),
-            }];
-            shaka_package(repr_inputs, Some(command_out_dir))
-                .await
-                .wrap_err("could not shaka package video stream")?;
-            let probe = ffprobe_get_streams(&command_out_path).await?.video;
-            command_out_file.flush_to_storage().await?;
-            let out_media_info_key = format!("{}.media_info", &transcode.output_key);
+            debug_assert!(ffmpeg_into_shaka.is_some());
+            let ffmpeg_into_shaka = match ffmpeg_into_shaka.as_ref() {
+                Some(f) => f,
+                None => {
+                    error!("BUG: ffmpeg_into_shaka is None when it should not be");
+                    return Err(eyre!(
+                        "BUG: ffmpeg_into_shaka is None when it should not be"
+                    ));
+                }
+            };
+            let shaka_result = ffmpeg_into_shaka
+                .run_shaka_packager(RepresentationType::Video, &transcode.output_key, &storage)
+                .in_current_span()
+                .await?;
+            let probe = ffmpeg_into_shaka.ffprobe_get_streams().await?.video;
             CreatedVideoRepr::Transcode(VideoTranscodeResult {
                 target: transcode.target.clone(),
                 final_size: Size {
@@ -433,7 +365,7 @@ pub async fn perform_side_effects_package_video(
                 },
                 bitrate: probe.bitrate,
                 out_file_key: transcode.output_key.clone(),
-                out_media_info_key,
+                out_media_info_key: shaka_result.media_info_key,
             })
         }
     };

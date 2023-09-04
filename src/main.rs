@@ -14,7 +14,7 @@ use http_error::HttpError;
 use model::repository::{self, pool::DbPool};
 use serde::Deserialize;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
-use tokio::{fs, signal, sync::mpsc};
+use tokio::{signal, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
 use tower_http::{
@@ -36,7 +36,7 @@ use crate::{
         scheduler::Scheduler,
         storage::{LocalFileStorage, Storage},
     },
-    model::{AssetRootDir, AssetRootDirId, DataDir, DataDirId},
+    model::{AssetRootDir, AssetRootDirId},
 };
 
 mod api;

@@ -1,6 +1,6 @@
 use std::{collections::HashSet, path::PathBuf};
 
-use chrono::{Months, Utc};
+use chrono::Months;
 use claims::assert_ok;
 use pretty_assertions::assert_eq;
 

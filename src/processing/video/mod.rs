@@ -1,5 +1,6 @@
 pub mod dash_package;
 pub mod ffmpeg;
+pub mod ffmpeg_into_shaka;
 mod ffmpeg_thumbnail;
 mod ffprobe;
 pub mod shaka;

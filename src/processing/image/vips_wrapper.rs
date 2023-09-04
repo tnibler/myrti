@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Once,
 };
-use tracing::{error, info_span};
+use tracing::{debug_span, error, info_span};
 
 #[allow(non_snake_case)]
 mod wrapper {
@@ -49,7 +49,7 @@ pub struct VipsThumbnailParams {
 }
 
 pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<()> {
-    let span = info_span!("Generate image thumbnail (libvips)");
+    let span = debug_span!("Generate image thumbnail (libvips)");
     let _enter = span.enter();
     let c_path = CString::new(params.in_path.as_os_str().as_bytes()).wrap_err(format!(
         "Could not convert path {} to bytes",

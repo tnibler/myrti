@@ -12,7 +12,7 @@ use axum::{
     Json, Router,
 };
 use axum_extra::body::AsyncReadBody;
-use chrono::{DateTime, Local, NaiveDate, NaiveTime, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use eyre::{eyre, Context};
 use itertools::Itertools;
 use serde::Deserialize;

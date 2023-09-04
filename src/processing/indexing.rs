@@ -5,7 +5,7 @@ use crate::{
     processing::{self, hash::hash_file},
     repository::{self, pool::DbPool},
 };
-use chrono::{DateTime, FixedOffset, Local, TimeZone, Utc};
+use chrono::{DateTime, Local, Utc};
 use color_eyre::eyre::Result;
 use eyre::Context;
 use tracing::{debug, error, instrument, Instrument};
@@ -13,7 +13,7 @@ use walkdir::WalkDir;
 
 use super::{
     media_metadata::{figure_out_utc_timestamp, read_media_metadata, TimestampGuess},
-    video::ffprobe_get_streams,
+    video::{streams::FFProbeStreamsTrait, FFProbe},
 };
 
 #[instrument(skip(pool))]
@@ -73,7 +73,7 @@ async fn index_file(
     };
     let (ty, full, size): (AssetType, AssetSpe, Size) = match metadata.file.mime_type.as_ref() {
         Some(mime) if mime.starts_with("video") => {
-            let streams = ffprobe_get_streams(path)
+            let streams = FFProbe::streams(path)
                 .await
                 .wrap_err("error getting stream info from file")?;
             let video = streams.video;

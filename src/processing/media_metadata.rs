@@ -3,7 +3,7 @@ use std::{path::Path, process::Stdio};
 use chrono::{DateTime, FixedOffset, NaiveDateTime, ParseResult, Utc};
 use eyre::{eyre, Context, Result};
 use tokio::process::Command;
-use tracing::{info_span, Instrument};
+use tracing::{debug_span, Instrument};
 
 pub mod exiftool {
     use serde::Deserialize;
@@ -100,7 +100,7 @@ pub async fn read_media_metadata(path: &Path) -> Result<exiftool::Output> {
         .spawn()
         .wrap_err("failed to call exiftool")?
         .wait_with_output()
-        .instrument(info_span!("exiftool"))
+        .instrument(debug_span!("exiftool"))
         .await
         .wrap_err("exiftool error")?;
     let mut json_out: Vec<exiftool::Output> =

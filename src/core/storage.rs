@@ -18,7 +18,7 @@ use tracing::instrument;
 #[enum_dispatch(Storage)]
 pub trait StorageProvider: Clone {
     async fn open_read_stream(&self, key: &str) -> Result<Box<dyn AsyncRead + Send + Unpin>>;
-    async fn open_write_stream(&self, key: &str) -> Result<Box<dyn AsyncWrite>>;
+    async fn open_write_stream(&self, key: &str) -> Result<Box<dyn AsyncWrite + Send + Unpin>>;
     async fn exists(&self, key: &str) -> Result<bool>;
     async fn new_command_out_file(&self, key: &str) -> Result<CommandOutputFile>;
     /// If this `StorageProvider` is backed by a local filesystem,
@@ -84,7 +84,7 @@ impl StorageCommandOutput for LocalOutputFile {
         &self.path
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), level = "debug")]
     async fn flush_to_storage(mut self) -> Result<()> {
         self.debug_only_flushed_to_storage = true;
         Ok(())
@@ -102,7 +102,7 @@ impl Drop for LocalOutputFile {
 
 #[async_trait]
 impl StorageProvider for LocalFileStorage {
-    #[instrument(skip(self))]
+    #[instrument(skip(self), level = "debug")]
     async fn open_read_stream(&self, key: &str) -> Result<Box<dyn AsyncRead + Send + Unpin>> {
         Ok(Box::new(
             tokio::fs::OpenOptions::new()
@@ -113,8 +113,8 @@ impl StorageProvider for LocalFileStorage {
         ))
     }
 
-    #[instrument(skip(self))]
-    async fn open_write_stream(&self, key: &str) -> Result<Box<dyn AsyncWrite>> {
+    #[instrument(skip(self), level = "debug")]
+    async fn open_write_stream(&self, key: &str) -> Result<Box<dyn AsyncWrite + Send + Unpin>> {
         Ok(Box::new(
             tokio::fs::OpenOptions::new()
                 .create_new(true)
@@ -126,14 +126,14 @@ impl StorageProvider for LocalFileStorage {
         ))
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), level = "debug")]
     async fn exists(&self, key: &str) -> Result<bool> {
         tokio::fs::try_exists(self.root.join(key))
             .await
             .wrap_err("error checking if path exists")
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), level = "debug")]
     async fn new_command_out_file(&self, key: &str) -> Result<CommandOutputFile> {
         let path = self.root.join(key);
         if let Some(parent) = &path.parent() {

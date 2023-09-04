@@ -1,8 +1,3 @@
-use std::{path::Path, process::Stdio};
-
-use tokio::process::Command;
-use tracing::warn;
-
 use crate::catalog::{
     encoding_target::{CodecTarget, Scale, VideoEncodingTarget},
     operation::package_video::AudioEncodingTarget,
@@ -20,7 +15,7 @@ pub enum ProduceVideo {
     Transcode(VideoEncodingTarget),
 }
 
-fn ffmpeg_video_flags(produce_video: &ProduceVideo) -> Vec<String> {
+pub fn ffmpeg_video_flags(produce_video: &ProduceVideo) -> Vec<String> {
     match produce_video {
         ProduceVideo::Copy => vec![format!("-c:v"), format!("copy")],
         ProduceVideo::Transcode(encoding_target) => {
@@ -87,7 +82,7 @@ fn ffmpeg_video_flags(produce_video: &ProduceVideo) -> Vec<String> {
     }
 }
 
-fn ffmpeg_audio_flags(produce_audio: &ProduceAudio) -> Vec<String> {
+pub fn ffmpeg_audio_flags(produce_audio: &ProduceAudio) -> Vec<String> {
     match produce_audio {
         ProduceAudio::Copy => vec![format!("-c:a"), format!("copy")],
         ProduceAudio::Transcode(encoding_target) => vec![
@@ -102,37 +97,9 @@ fn ffmpeg_audio_flags(produce_audio: &ProduceAudio) -> Vec<String> {
     }
 }
 
-pub fn ffmpeg_command(
-    input: &Path,
-    output: &Path,
-    produce_video: Option<&ProduceVideo>,
-    produce_audio: Option<&ProduceAudio>,
-) -> Command {
-    if produce_audio.is_none() && produce_video.is_none() {
-        warn!("useless ffmpeg invocation");
-    }
-    let mut command = Command::new("ffmpeg");
-    command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .arg("-i")
-        .arg(input);
-    if let Some(produce_video) = produce_video {
-        command.args(ffmpeg_video_flags(produce_video));
-    }
-    if let Some(produce_audio) = produce_audio {
-        command.args(ffmpeg_audio_flags(produce_audio));
-    }
-    command.arg(output);
-    command
-}
-
 #[test]
-fn ffmpeg_avc_command_assembled_correctly() {
+fn ffmpeg_avc_flags_assembled_correctly() {
     use crate::catalog::encoding_target::avc::*;
-    use std::path::PathBuf;
-    let input = PathBuf::from("/path/to/input.mp4");
-    let output = PathBuf::from("out.mp4");
     let codec = CodecTarget::AVC(AVCTarget {
         preset: Preset::Medium,
         tune: Some(Tune::Zerolatency),
@@ -140,26 +107,30 @@ fn ffmpeg_avc_command_assembled_correctly() {
         max_bitrate: Some(10_000_000),
     });
     let scale = Some(Scale::WidthKeepAspect { width: 1280 });
-    let command = ffmpeg_command(
-        &input,
-        &output,
-        Some(&ProduceVideo::Transcode(VideoEncodingTarget {
-            codec,
-            scale,
-        })),
-        None,
-    );
-    let expected = "ffmpeg -i /path/to/input.mp4 -c:v libx264 -crf 24 -preset medium -tune zerolatency -maxrate 10000000 -vf scale=1280:-2 out.mp4";
-    let actual = format!("{:?}", command.as_std()).replace("\"", "");
-    assert_eq!(expected, actual);
+    let expected = [
+        "-c:v",
+        "libx264",
+        "-crf",
+        "24",
+        "-preset",
+        "medium",
+        "-tune",
+        "zerolatency",
+        "-maxrate",
+        "10000000",
+        "-vf",
+        "scale=1280:-2",
+    ];
+    let actual = ffmpeg_video_flags(&ProduceVideo::Transcode(VideoEncodingTarget {
+        codec,
+        scale,
+    }));
+    assert_eq!(expected.as_slice(), &actual);
 }
 
 #[test]
 fn ffmpeg_av1_command_assembled_correctly() {
     use crate::catalog::encoding_target::av1::*;
-    use std::path::PathBuf;
-    let input = PathBuf::from("/path/to/input.mp4");
-    let output = PathBuf::from("out.mp4");
     let codec = CodecTarget::AV1(AV1Target {
         preset: Some(Preset::try_from(8).unwrap()),
         crf: Crf::try_from(45).unwrap(),
@@ -167,16 +138,23 @@ fn ffmpeg_av1_command_assembled_correctly() {
         fast_decode: Some(FastDecode::try_from(1).unwrap()),
     });
     let scale: Option<Scale> = Some(Scale::HeightKeepAspect { height: 500 });
-    let command = ffmpeg_command(
-        &input,
-        &output,
-        Some(&ProduceVideo::Transcode(VideoEncodingTarget {
-            codec,
-            scale,
-        })),
-        None,
-    );
-    let expected = "ffmpeg -i /path/to/input.mp4 -c:v libsvtav1 -crf 45 -preset 8 -maxrate 4000000 -svtav1-params fast-decode=1 -vf scale=-2:500 out.mp4";
-    let actual = format!("{:?}", command.as_std()).replace("\"", "");
-    assert_eq!(expected, actual);
+    let expected = [
+        "-c:v",
+        "libsvtav1",
+        "-crf",
+        "45",
+        "-preset",
+        "8",
+        "-maxrate",
+        "4000000",
+        "-svtav1-params",
+        "fast-decode=1",
+        "-vf",
+        "scale=-2:500",
+    ];
+    let actual = ffmpeg_video_flags(&ProduceVideo::Transcode(VideoEncodingTarget {
+        codec,
+        scale,
+    }));
+    assert_eq!(expected.as_slice(), &actual);
 }

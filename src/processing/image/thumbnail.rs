@@ -25,7 +25,7 @@ pub struct GenerateThumbnailMock {}
 
 impl GenerateThumbnailTrait for GenerateThumbnail {
     fn generate_thumbnail(params: ThumbnailParams) -> Result<()> {
-        let mut out_paths: Vec<PathBuf> = params
+        let out_paths: Vec<PathBuf> = params
             .outputs
             .iter()
             .map(|f| f.path().to_path_buf())

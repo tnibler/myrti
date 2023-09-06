@@ -8,19 +8,19 @@ use crate::{
         encoding_target::{audio_codec_name, codec_name, VideoEncodingTarget},
         storage_key,
     },
-    core::storage::{Storage, StorageCommandOutput, StorageProvider},
+    core::storage::Storage,
     model::{
         repository::{self, pool::DbPool},
         AssetId, AudioRepresentation, AudioRepresentationId, Size, Video, VideoAsset,
         VideoRepresentation, VideoRepresentationId,
     },
     processing::video::{
-        dash_package::generate_mpd,
         ffmpeg::{FFmpegBuilder, FFmpegBuilderTrait},
         ffmpeg_into_shaka::{
             FFmpegIntoShaka, FFmpegIntoShakaFlagTrait, FFmpegIntoShakaInputFlagTrait,
             FFmpegIntoShakaNew, FFmpegIntoShakaTrait,
         },
+        mpd_generator::{MpdGenerator, MpdGeneratorTrait},
         shaka::{RepresentationType, ShakaPackager, ShakaPackagerTrait},
         shaka_into_ffmpeg::{ShakaIntoFFmpeg, ShakaIntoFFmpegTrait},
         transcode::{ffmpeg_audio_flags, ffmpeg_video_flags, ProduceAudio, ProduceVideo},
@@ -394,17 +394,8 @@ pub async fn perform_side_effects_package_video(
     for video_repr in &package_video.existing_video_reprs {
         media_info_keys.push(video_repr.media_info_key.clone());
     }
-    let mut media_info_local_paths: Vec<PathBuf> = Vec::default();
-    for key in media_info_keys {
-        let path = match storage.local_path(&key).await {
-            Ok(Some(path)) => path,
-            _ => todo!("handle errors and non-local StorageProvider"),
-        };
-        media_info_local_paths.push(path);
-    }
     let mpd_key = storage_key::mpd_manifest(asset_id);
-    let mpd_command_out_file = storage.new_command_out_file(&mpd_key).await?;
-    generate_mpd(&media_info_local_paths, mpd_command_out_file.path())
+    MpdGenerator::run(media_info_keys.iter().map(AsRef::as_ref), &mpd_key, storage)
         .await
         .wrap_err("could not generate mpd manifest")?;
     Ok(CompletedPackageVideo {

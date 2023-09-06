@@ -1,8 +1,8 @@
-pub mod dash_package;
 pub mod ffmpeg;
 pub mod ffmpeg_into_shaka;
 mod ffmpeg_thumbnail;
 mod ffprobe;
+pub mod mpd_generator;
 pub mod shaka;
 pub mod shaka_into_ffmpeg;
 pub mod transcode;

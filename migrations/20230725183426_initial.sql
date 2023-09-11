@@ -47,7 +47,7 @@ CREATE TABLE Asset (
   audio_codec_name TEXT,
   has_dash INTEGER,
 
-  FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(id) ON DELETE CASCADE,
+  FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(id),
   UNIQUE(root_dir_id, file_path),
 
   -- timezone_offset NULL is only valid for timezone_info=UtcCertain
@@ -69,6 +69,16 @@ CREATE TABLE Asset (
   ))
 ) STRICT;
 
+CREATE TABLE DuplicateAsset (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  asset_id INTEGER NOT NULL,
+  root_dir_id INTEGER NOT NULL,
+  file_path TEXT NOT NULL,
+  FOREIGN KEY (asset_id) REFERENCES Asset(id),
+  FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(id),
+  UNIQUE(root_dir_id, file_path),
+) STRICT;
+
 CREATE TABLE VideoRepresentation (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   asset_id INTEGER NOT NULL,
@@ -78,7 +88,7 @@ CREATE TABLE VideoRepresentation (
   bitrate INTEGER NOT NULL,
   file_key TEXT NOT NULL,
   media_info_key TEXT NOT NULL,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id) ON DELETE CASCADE
+  FOREIGN KEY (asset_id) REFERENCES Asset(id)
 ) STRICT;
 
 CREATE TABLE AudioRepresentation (
@@ -88,7 +98,7 @@ CREATE TABLE AudioRepresentation (
   -- bitrate INTEGER NOT NULL,
   file_key TEXT NOT NULL,
   media_info_key TEXT NOT NULL,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id) ON DELETE CASCADE
+  FOREIGN KEY (asset_id) REFERENCES Asset(id)
 ) STRICT;
 
 CREATE TABLE Album (
@@ -107,8 +117,8 @@ CREATE TABLE AlbumEntry (
   asset_id INTEGER NOT NULL,
   idx INTEGER NOT NULL,
   UNIQUE(album_id, idx),
-  FOREIGN KEY (album_id) REFERENCES Album(id) ON DELETE CASCADE,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id) ON DELETE CASCADE
+  FOREIGN KEY (album_id) REFERENCES Album(id),
+  FOREIGN KEY (asset_id) REFERENCES Asset(id)
 ) STRICT;
 
 CREATE INDEX album_id_index ON AlbumEntry(album_id);
@@ -118,5 +128,21 @@ CREATE TABLE FailedThumbnailJob (
   file_hash BLOB NOT NULL,
   -- milliseconds since UNIX epoch
   date INTEGER NOT NULL,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id) ON DELETE CASCADE
+  FOREIGN KEY (asset_id) REFERENCES Asset(id)
 ) STRICT;
+
+CREATE TABLE FailedFFmpeg (
+  asset_id INTEGER PRIMARY KEY NOT NULL,
+  file_hash BLOB NOT NULL,
+  -- milliseconds since UNIX epoch
+  date INTEGER NOT NULL,
+  FOREIGN KEY (asset_id) REFERENCES Asset(id)
+);
+
+CREATE TABLE FailedShakaPackager (
+  asset_id INTEGER PRIMARY KEY NOT NULL,
+  file_hash BLOB NOT NULL,
+  -- milliseconds since UNIX epoch
+  date INTEGER NOT NULL,
+  FOREIGN KEY (asset_id) REFERENCES Asset(id)
+);

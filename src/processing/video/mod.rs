@@ -1,6 +1,5 @@
 pub mod ffmpeg;
 pub mod ffmpeg_into_shaka;
-pub mod ffmpeg_snapshot;
 mod ffprobe;
 pub mod mpd_generator;
 pub mod shaka;

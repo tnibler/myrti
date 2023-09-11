@@ -6,7 +6,7 @@ use tracing::Instrument;
 
 use crate::{
     core::storage::{CommandOutputFile, StorageCommandOutput},
-    processing::video::ffmpeg_snapshot::ffmpeg_snapshot,
+    processing::image::ffmpeg_snapshot::ffmpeg_snapshot,
 };
 
 use super::{

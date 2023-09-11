@@ -13,11 +13,12 @@ CREATE TABLE DataDir (
 CREATE TABLE Asset (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   -- 1=Image, 2=Video
-  ty INTEGER NOT NULL CHECK(ty IN (1, 2)),
+  ty INTEGER NOT NULL CHECK (ty IN (1, 2)),
   root_dir_id INTEGER NOT NULL,
   file_path TEXT NOT NULL,
   file_type TEXT NOT NULL,
   hash BLOB,
+  is_hidden INTEGER NOT NULL CHECK (is_hidden IN (0, 1)),
   -- UTC timestamp in milliseconds since UNIX epoch
   added_at INTEGER NOT NULL,
   -- UTC timestamp in milliseconds since UNIX epoch
@@ -76,7 +77,7 @@ CREATE TABLE DuplicateAsset (
   file_path TEXT NOT NULL,
   FOREIGN KEY (asset_id) REFERENCES Asset(id),
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(id),
-  UNIQUE(root_dir_id, file_path),
+  UNIQUE(root_dir_id, file_path)
 ) STRICT;
 
 CREATE TABLE VideoRepresentation (

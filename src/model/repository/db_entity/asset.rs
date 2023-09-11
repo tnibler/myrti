@@ -8,6 +8,7 @@ pub struct DbAsset {
     pub root_dir_id: AssetRootDirId,
     pub file_type: String,
     pub file_path: String,
+    pub is_hidden: i64,
     pub hash: Option<Vec<u8>>,
     pub added_at: i64,
     pub taken_date: i64,

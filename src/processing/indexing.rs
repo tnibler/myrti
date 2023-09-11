@@ -146,6 +146,7 @@ async fn index_file(
         root_dir_id: asset_root.id,
         file_type: file_type.clone(),
         file_path: path.strip_prefix(&asset_root.path)?.to_owned(),
+        is_hidden: false,
         added_at: Utc::now(),
         taken_date: timestamp,
         timestamp_info,

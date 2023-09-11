@@ -1,13 +1,14 @@
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SubsecRound, Utc};
 use color_eyre::eyre;
 use eyre::{eyre, Context, Result};
 use sqlx::{QueryBuilder, Sqlite, SqliteConnection};
 use tracing::{debug, error, instrument, Instrument};
 
 use crate::model::{
-    Asset, AssetId, AssetPathOnDisk, AssetSpe, AssetThumbnails, AssetType, VideoAsset,
+    Asset, AssetBase, AssetId, AssetPathOnDisk, AssetSpe, AssetThumbnails, AssetType, CreateAsset,
+    VideoAsset,
 };
 
 use super::db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType};
@@ -346,6 +347,46 @@ VALUES
     .wrap_err("could not insert into table Assets")?;
     let rowid = result.last_insert_rowid();
     Ok(AssetId(rowid))
+}
+
+#[instrument(skip(pool))]
+pub async fn create_asset(pool: &DbPool, create_asset: CreateAsset) -> Result<AssetId> {
+    if create_asset.ty
+        != match create_asset.sp {
+            AssetSpe::Image(_) => AssetType::Image,
+            AssetSpe::Video(_) => AssetType::Video,
+        }
+    {
+        error!("attempting to insert Asset with mismatching type and sp fields");
+        return Err(eyre!(
+            "attempting to insert Asset with mismatching type and sp fields"
+        ));
+    }
+    let asset_base = AssetBase {
+        id: AssetId(0),
+        ty: create_asset.ty,
+        root_dir_id: create_asset.root_dir_id,
+        file_type: create_asset.file_type,
+        file_path: create_asset.file_path,
+        is_hidden: false,
+        added_at: Utc::now().trunc_subsecs(3), // db stores milliseconds only
+        taken_date: create_asset.taken_date,
+        timestamp_info: create_asset.timestamp_info,
+        size: create_asset.size,
+        rotation_correction: create_asset.rotation_correction,
+        hash: create_asset.hash,
+        thumb_small_square_avif: false,
+        thumb_small_square_webp: false,
+        thumb_large_orig_avif: false,
+        thumb_large_orig_webp: false,
+        thumb_large_orig_size: None,
+        thumb_small_square_size: None,
+    };
+    let asset = Asset {
+        base: asset_base,
+        sp: create_asset.sp,
+    };
+    insert_asset(pool, &asset).await
 }
 
 #[instrument(skip(conn))]

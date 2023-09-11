@@ -30,6 +30,7 @@ async fn insert_retrieve_video_representation() {
             root_dir_id,
             file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video.mp4"),
+            is_hidden: false,
             added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(2))
@@ -62,6 +63,7 @@ async fn insert_retrieve_video_representation() {
             root_dir_id,
             file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video2.mp4"),
+            is_hidden: false,
             added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(2))
@@ -183,6 +185,7 @@ async fn insert_retrieve_audio_representation() {
             root_dir_id,
             file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video.mp4"),
+            is_hidden: false,
             added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(2))
@@ -215,6 +218,7 @@ async fn insert_retrieve_audio_representation() {
             root_dir_id,
             file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video2.mp4"),
+            is_hidden: false,
             added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(2))

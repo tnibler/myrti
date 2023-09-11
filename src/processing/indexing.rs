@@ -140,30 +140,18 @@ async fn index_file(
         .try_into_std()
         .unwrap();
     let hash = hash_file(file).await?;
-    let asset_base = AssetBase {
-        id: AssetId(0),
+    let create_asset = CreateAsset {
         ty,
         root_dir_id: asset_root.id,
         file_type: file_type.clone(),
         file_path: path.strip_prefix(&asset_root.path)?.to_owned(),
-        is_hidden: false,
-        added_at: Utc::now(),
         taken_date: timestamp,
         timestamp_info,
         size,
         rotation_correction: None,
         hash: Some(hash),
-        thumb_small_square_avif: false,
-        thumb_small_square_webp: false,
-        thumb_large_orig_avif: false,
-        thumb_large_orig_webp: false,
-        thumb_small_square_size: None,
-        thumb_large_orig_size: None,
-    };
-    let full_asset = Asset {
-        base: asset_base,
         sp: full,
     };
-    let id = repository::asset::insert_asset(pool, &full_asset).await?;
+    let id = repository::asset::create_asset(pool, create_asset).await?;
     Ok(Some(id))
 }

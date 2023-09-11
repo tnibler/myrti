@@ -8,8 +8,8 @@ use crate::{
     catalog::storage_key,
     model::{
         repository, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType,
-        AudioRepresentation, AudioRepresentationId, Image, Size, TimestampInfo, Video, VideoAsset,
-        VideoRepresentation, VideoRepresentationId,
+        AudioRepresentation, AudioRepresentationId, CreateAsset, Image, Size, TimestampInfo, Video,
+        VideoAsset, VideoRepresentation, VideoRepresentationId,
     },
 };
 
@@ -32,6 +32,7 @@ async fn insert_retrieve_asset() {
             root_dir_id: root_dir_id.unwrap(),
             file_type: "jpeg".to_owned(),
             file_path: PathBuf::from("image.jpg"),
+            is_hidden: false,
             added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(2))
@@ -68,7 +69,7 @@ async fn insert_retrieve_asset() {
 
 #[tokio::test]
 #[allow(unused_must_use)]
-async fn insert_mismatching_asset_ty_and_spe_fails() {
+async fn create_mismatching_asset_ty_and_spe_fails() {
     let pool = create_db().await;
     let asset_root_dir = AssetRootDir {
         id: AssetRootDirId(0),
@@ -76,53 +77,40 @@ async fn insert_mismatching_asset_ty_and_spe_fails() {
     };
     let root_dir_id =
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
-    let asset = Asset {
+    let asset = CreateAsset {
         sp: AssetSpe::Image(Image {}),
-        base: AssetBase {
-            id: AssetId(0),
-            ty: AssetType::Video,
-            root_dir_id,
-            file_type: "jpeg".to_owned(),
-            file_path: PathBuf::from("image.jpg"),
-            added_at: utc_now_millis_zero(),
-            taken_date: utc_now_millis_zero()
-                .checked_sub_months(Months::new(2))
-                .unwrap(),
-            timestamp_info: TimestampInfo::UtcCertain,
-            size: Size {
-                width: 1024,
-                height: 1024,
-            },
-            rotation_correction: None,
-            hash: None,
-            thumb_small_square_avif: false,
-            thumb_small_square_webp: false,
-            thumb_large_orig_avif: false,
-            thumb_large_orig_webp: false,
-            thumb_small_square_size: None,
-            thumb_large_orig_size: None,
+        ty: AssetType::Video,
+        root_dir_id,
+        file_type: "jpeg".to_owned(),
+        file_path: PathBuf::from("image.jpg"),
+        taken_date: utc_now_millis_zero()
+            .checked_sub_months(Months::new(2))
+            .unwrap(),
+        timestamp_info: TimestampInfo::UtcCertain,
+        size: Size {
+            width: 1024,
+            height: 1024,
         },
+        rotation_correction: None,
+        hash: None,
     };
-    assert_err!(repository::asset::insert_asset(&pool, &asset).await);
+    assert_err!(repository::asset::create_asset(&pool, asset.clone()).await);
 
-    let asset2 = Asset {
+    let asset2 = CreateAsset {
         sp: AssetSpe::Video(Video {
             video_codec_name: "h264".into(),
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
             has_dash: false,
         }),
-        base: AssetBase {
-            id: AssetId(0),
-            ty: AssetType::Image,
-            ..asset.base.clone()
-        },
+        ty: AssetType::Image,
+        ..asset
     };
-    assert_err!(repository::asset::insert_asset(&pool, &asset2).await);
+    assert_err!(repository::asset::create_asset(&pool, asset2).await);
 }
 
 #[tokio::test]
-async fn insert_update_asset() {
+async fn create_update_asset() {
     let pool = create_db().await;
     let asset_root_dir = AssetRootDir {
         id: AssetRootDirId(0),
@@ -136,67 +124,47 @@ async fn insert_update_asset() {
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
     let root_dir2_id =
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir2).await);
-    let asset = Asset {
+    let asset = CreateAsset {
         sp: AssetSpe::Image(Image {}),
-        base: AssetBase {
-            id: AssetId(0),
-            ty: AssetType::Image,
-            root_dir_id,
-            file_type: "jpeg".to_owned(),
-            file_path: PathBuf::from("image.jpg"),
-            added_at: utc_now_millis_zero(),
-            taken_date: utc_now_millis_zero()
-                .checked_sub_months(Months::new(2))
-                .unwrap(),
-            timestamp_info: TimestampInfo::UtcCertain,
-            size: Size {
-                width: 1024,
-                height: 1024,
-            },
-            rotation_correction: None,
-            hash: None,
-            thumb_small_square_avif: false,
-            thumb_small_square_webp: false,
-            thumb_large_orig_avif: false,
-            thumb_large_orig_webp: false,
-            thumb_small_square_size: None,
-            thumb_large_orig_size: None,
+        ty: AssetType::Image,
+        root_dir_id,
+        file_type: "jpeg".to_owned(),
+        file_path: PathBuf::from("image.jpg"),
+        taken_date: utc_now_millis_zero()
+            .checked_sub_months(Months::new(2))
+            .unwrap(),
+        timestamp_info: TimestampInfo::UtcCertain,
+        size: Size {
+            width: 1024,
+            height: 1024,
         },
+        rotation_correction: None,
+        hash: None,
     };
-    let asset2 = Asset {
+    let asset2 = CreateAsset {
         sp: AssetSpe::Video(Video {
             video_codec_name: "h264".into(),
             video_bitrate: 1234,
             audio_codec_name: Some("mp3".into()),
             has_dash: true,
         }),
-        base: AssetBase {
-            id: AssetId(0),
-            ty: AssetType::Video,
-            root_dir_id: root_dir2_id,
-            file_type: "mp4".to_owned(),
-            file_path: PathBuf::from("video.mp4"),
-            added_at: utc_now_millis_zero(),
-            taken_date: utc_now_millis_zero()
-                .checked_sub_months(Months::new(3))
-                .unwrap(),
-            timestamp_info: TimestampInfo::UtcCertain,
-            size: Size {
-                width: 100,
-                height: 100,
-            },
-            rotation_correction: Some(90),
-            hash: None,
-            thumb_small_square_avif: false,
-            thumb_small_square_webp: false,
-            thumb_large_orig_avif: false,
-            thumb_large_orig_webp: false,
-            thumb_small_square_size: None,
-            thumb_large_orig_size: None,
+        ty: AssetType::Video,
+        root_dir_id: root_dir2_id,
+        file_type: "mp4".to_owned(),
+        file_path: PathBuf::from("video.mp4"),
+        taken_date: utc_now_millis_zero()
+            .checked_sub_months(Months::new(3))
+            .unwrap(),
+        timestamp_info: TimestampInfo::UtcCertain,
+        size: Size {
+            width: 100,
+            height: 100,
         },
+        rotation_correction: Some(90),
+        hash: None,
     };
-    let asset_id = assert_ok!(repository::asset::insert_asset(&pool, &asset).await);
-    let asset2_id = assert_ok!(repository::asset::insert_asset(&pool, &asset2).await);
+    let _asset_id = assert_ok!(repository::asset::create_asset(&pool, asset.clone()).await);
+    let asset2_id = assert_ok!(repository::asset::create_asset(&pool, asset2.clone()).await);
     let asset2_changed = Asset {
         sp: AssetSpe::Video(Video {
             video_codec_name: "hevc".into(),
@@ -206,10 +174,11 @@ async fn insert_update_asset() {
         }),
         base: AssetBase {
             id: asset2_id,
-            ty: asset2.base.ty,
-            root_dir_id: asset2.base.root_dir_id,
+            ty: asset2.ty,
+            root_dir_id: asset2.root_dir_id,
             file_type: "mp4".to_owned(),
             file_path: PathBuf::from("videoother.mp4"),
+            is_hidden: true,
             added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(4))
@@ -258,32 +227,23 @@ async fn get_assets_with_missing_thumbnails() {
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
     let root_dir2_id =
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir2).await);
-    let asset = Asset {
+    // no thumbnails at all
+    let asset = CreateAsset {
         sp: AssetSpe::Image(Image {}),
-        base: AssetBase {
-            id: AssetId(0),
-            ty: AssetType::Image,
-            root_dir_id,
-            file_type: "jpeg".to_owned(),
-            file_path: PathBuf::from("image.jpg"),
-            added_at: utc_now_millis_zero(),
-            taken_date: utc_now_millis_zero()
-                .checked_sub_months(Months::new(2))
-                .unwrap(),
-            timestamp_info: TimestampInfo::UtcCertain,
-            size: Size {
-                width: 1024,
-                height: 1024,
-            },
-            rotation_correction: None,
-            hash: None,
-            thumb_small_square_avif: false,
-            thumb_small_square_webp: false,
-            thumb_large_orig_avif: false,
-            thumb_large_orig_webp: false,
-            thumb_small_square_size: None,
-            thumb_large_orig_size: None,
+        ty: AssetType::Image,
+        root_dir_id,
+        file_type: "jpeg".to_owned(),
+        file_path: PathBuf::from("image.jpg"),
+        taken_date: utc_now_millis_zero()
+            .checked_sub_months(Months::new(2))
+            .unwrap(),
+        timestamp_info: TimestampInfo::UtcCertain,
+        size: Size {
+            width: 1024,
+            height: 1024,
         },
+        rotation_correction: None,
+        hash: None,
     };
     let asset2 = Asset {
         sp: AssetSpe::Video(Video {
@@ -298,6 +258,7 @@ async fn get_assets_with_missing_thumbnails() {
             root_dir_id: root_dir2_id,
             file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video.mp4"),
+            is_hidden: false,
             added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(3))
@@ -330,6 +291,7 @@ async fn get_assets_with_missing_thumbnails() {
             root_dir_id: root_dir2_id,
             file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video3.mp4"),
+            is_hidden: false,
             added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(3))
@@ -349,7 +311,7 @@ async fn get_assets_with_missing_thumbnails() {
             thumb_large_orig_size: None,
         },
     };
-    let asset_id = assert_ok!(repository::asset::insert_asset(&pool, &asset).await);
+    let asset_id = assert_ok!(repository::asset::create_asset(&pool, asset).await);
     let asset2_id = assert_ok!(repository::asset::insert_asset(&pool, &asset2).await);
     let _asset3_id = assert_ok!(repository::asset::insert_asset(&pool, &asset3).await);
     let expected_ids: HashSet<AssetId> = HashSet::from([asset_id, asset2_id]);
@@ -396,6 +358,7 @@ async fn get_videos_without_dash() {
             root_dir_id: root_dir2_id,
             file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video.mp4"),
+            is_hidden: false,
             added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(3))
@@ -415,32 +378,22 @@ async fn get_videos_without_dash() {
             thumb_large_orig_size: None,
         },
     };
-    let asset2 = Asset {
+    let asset2 = CreateAsset {
         sp: AssetSpe::Image(Image {}),
-        base: AssetBase {
-            id: AssetId(0),
-            ty: AssetType::Image,
-            root_dir_id,
-            file_type: "jpeg".to_owned(),
-            file_path: "/path/to/image.jpg".into(),
-            added_at: utc_now_millis_zero(),
-            taken_date: utc_now_millis_zero()
-                .checked_sub_months(Months::new(4))
-                .unwrap(),
-            timestamp_info: TimestampInfo::UtcCertain,
-            size: Size {
-                width: 1000,
-                height: 1000,
-            },
-            rotation_correction: None,
-            hash: None,
-            thumb_small_square_avif: false,
-            thumb_small_square_webp: false,
-            thumb_large_orig_avif: false,
-            thumb_large_orig_webp: false,
-            thumb_small_square_size: None,
-            thumb_large_orig_size: None,
+        ty: AssetType::Image,
+        root_dir_id,
+        file_type: "jpeg".to_owned(),
+        file_path: "/path/to/image.jpg".into(),
+        taken_date: utc_now_millis_zero()
+            .checked_sub_months(Months::new(4))
+            .unwrap(),
+        timestamp_info: TimestampInfo::UtcCertain,
+        size: Size {
+            width: 1000,
+            height: 1000,
         },
+        rotation_correction: None,
+        hash: None,
     };
     let asset3 = Asset {
         sp: AssetSpe::Video(Video {
@@ -469,7 +422,7 @@ async fn get_videos_without_dash() {
         },
     };
     let asset_id = assert_ok!(repository::asset::insert_asset(&pool, &asset).await);
-    let _asset2_id = assert_ok!(repository::asset::insert_asset(&pool, &asset2).await);
+    let _asset2_id = assert_ok!(repository::asset::create_asset(&pool, asset2).await);
     let _asset3_id = assert_ok!(repository::asset::insert_asset(&pool, &asset3).await);
     let asset4_id = assert_ok!(repository::asset::insert_asset(&pool, &asset4).await);
     let videos_without_dash: HashSet<VideoAsset> =
@@ -515,6 +468,7 @@ async fn get_videos_in_acceptable_codec_without_dash() {
             root_dir_id,
             file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video.mp4"),
+            is_hidden: false,
             added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(3))
@@ -675,6 +629,7 @@ async fn get_videos_with_no_acceptable_repr() {
             root_dir_id: root_dir2_id,
             file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video.mp4"),
+            is_hidden: false,
             added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(3))
@@ -703,6 +658,7 @@ async fn get_videos_with_no_acceptable_repr() {
             root_dir_id,
             file_type: "jpeg".to_owned(),
             file_path: "/path/to/image.jpg".into(),
+            is_hidden: false,
             added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(4))

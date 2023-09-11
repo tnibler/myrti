@@ -1,6 +1,11 @@
+use std::path::PathBuf;
+
+use chrono::{DateTime, Utc};
 use eyre::{eyre, Report};
 
-use super::{repository::db_entity::DbAsset, AssetBase};
+use super::{
+    repository::db_entity::DbAsset, AssetBase, AssetRootDirId, AssetType, Size, TimestampInfo,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Image {}
@@ -35,6 +40,22 @@ pub struct VideoAsset {
 pub struct ImageAsset {
     pub base: AssetBase,
     pub image: Image,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CreateAsset {
+    pub ty: AssetType,
+    pub root_dir_id: AssetRootDirId,
+    pub file_type: String,
+    pub file_path: PathBuf,
+    pub taken_date: DateTime<Utc>,
+    pub timestamp_info: TimestampInfo,
+    pub size: Size,
+    /// degrees clockwise
+    pub rotation_correction: Option<i32>,
+    /// Seahash of the file, if already computed
+    pub hash: Option<u64>,
+    pub sp: AssetSpe,
 }
 
 impl From<&ImageAsset> for Asset {

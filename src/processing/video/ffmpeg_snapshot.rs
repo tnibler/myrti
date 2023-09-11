@@ -1,19 +1,20 @@
-use eyre::{bail, Context, Result};
 use std::{path::Path, process::Stdio};
+
+use eyre::{eyre, Context, Result};
 use tokio::process::Command;
 use tracing::instrument;
 
-#[instrument("Take video snapshot")]
-pub async fn create_snapshot(video_path: &Path, out_path: &Path) -> Result<()> {
+#[instrument]
+pub async fn ffmpeg_snapshot(video_path: &Path, output: &Path) -> Result<()> {
     let exit_status = Command::new("ffmpeg")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .arg("-nostdin")
+        .arg("-y")
         .arg("-i")
         .arg(video_path)
         .args(&["-ss", "00:00:00.00", "-frames:v", "1"])
-        .arg(out_path)
-        // .stdout(Stdio::piped())
-        // .stderr(Stdio::piped())
+        .arg(output)
         .spawn()
         .wrap_err("failed to call ffmpeg")?
         .wait()
@@ -21,11 +22,11 @@ pub async fn create_snapshot(video_path: &Path, out_path: &Path) -> Result<()> {
         .wrap_err("ffmpeg error")?;
     match exit_status.code() {
         Some(0) => Ok(()),
-        Some(_) => {
-            bail!("error taking video snapshot: ffmpeg exited with non-zero code")
-        }
-        None => {
-            bail!("error taking video snapshot: ffmpeg exited by signal")
-        }
+        Some(_) => Err(eyre!(
+            "error taking video snapshot: ffmpeg exited with non-zero code"
+        )),
+        None => Err(eyre!(
+            "error taking video snapshot: ffmpeg exited by signal"
+        )),
     }
 }

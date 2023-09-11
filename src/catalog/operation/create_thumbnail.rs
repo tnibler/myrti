@@ -12,7 +12,6 @@ use crate::{
     processing::{
         self,
         image::thumbnail::{GenerateThumbnailTrait, ThumbnailParams},
-        video::create_snapshot,
     },
 };
 
@@ -87,53 +86,14 @@ pub async fn perform_side_effects_create_thumbnail<G: GenerateThumbnailTrait>(
         .path_on_disk();
     let asset = repository::asset::get_asset(pool, op.asset_id).await?;
     // TODO don't await sequentially. Not super bad because op.thumbnails is small but still
-    match asset.base.ty {
-        AssetType::Image => {
-            for thumb in &op.thumbnails {
-                match create_thumbnail_from_image::<G>(storage, in_path.clone(), thumb)
-                    .in_current_span()
-                    .await
-                {
-                    Ok(_) => (),
-                    Err(err) => {
-                        result.failed.push((thumb.clone(), err));
-                    }
-                }
-            }
-        }
-        AssetType::Video => {
-            let snapshot_dir = tempfile::tempdir().wrap_err("could not create temp directory")?;
-            let snapshot_path = snapshot_dir.path().join(format!("{}.webp", op.asset_id.0));
-            let snapshot_result = create_snapshot(&in_path, &snapshot_path)
-                .in_current_span()
-                .await
-                .wrap_err("could not take video snapshot");
-            match snapshot_result {
-                Ok(_) => {
-                    for thumb in &op.thumbnails {
-                        match create_thumbnail_from_image::<G>(
-                            storage,
-                            snapshot_path.clone(),
-                            thumb,
-                        )
-                        .in_current_span()
-                        .await
-                        {
-                            Ok(_) => {}
-                            Err(err) => {
-                                result.failed.push((thumb.clone(), err));
-                            }
-                        }
-                    }
-                }
-                Err(err) => {
-                    // a specific ThumbnailToCreateWithPaths is required to add a result to failed,
-                    // so we just use the first here even though all of them failed in reality
-                    result
-                        .failed
-                        .push((op.thumbnails.first().unwrap().clone(), err)); // unwrap because we
-                                                                              // return early if op.thumbnails is emtpy
-                }
+    for thumb in &op.thumbnails {
+        match create_thumbnail::<G>(in_path.clone(), asset.base.ty, thumb, storage)
+            .in_current_span()
+            .await
+        {
+            Ok(_) => (),
+            Err(err) => {
+                result.failed.push((thumb.clone(), err));
             }
         }
     }
@@ -141,10 +101,11 @@ pub async fn perform_side_effects_create_thumbnail<G: GenerateThumbnailTrait>(
 }
 
 #[instrument(skip(storage))]
-async fn create_thumbnail_from_image<G: GenerateThumbnailTrait>(
-    storage: &Storage,
-    image_path: PathBuf,
+async fn create_thumbnail<G: GenerateThumbnailTrait>(
+    asset_path: PathBuf,
+    asset_type: AssetType,
     thumb: &ThumbnailToCreateWithPaths,
+    storage: &Storage,
 ) -> Result<()> {
     let out_file_avif = storage.new_command_out_file(&thumb.avif_key).await?;
     let out_file_webp = storage.new_command_out_file(&thumb.webp_key).await?;
@@ -158,18 +119,17 @@ async fn create_thumbnail_from_image<G: GenerateThumbnailTrait>(
         }
     };
     let (tx, rx) = tokio::sync::oneshot::channel();
-    rayon::scope(|scope| {
-        let out_paths = vec![&out_file_avif, &out_file_webp];
-        let thumbnail_params = ThumbnailParams {
-            in_path: image_path,
-            outputs: out_paths,
-            out_dimension,
-        };
-        scope.spawn(move |_| {
-            let res = G::generate_thumbnail(thumbnail_params);
-            tx.send(res).unwrap();
-        });
-    });
+    let out_paths = vec![&out_file_avif, &out_file_webp];
+    let thumbnail_params = ThumbnailParams {
+        in_path: asset_path,
+        outputs: out_paths,
+        out_dimension,
+    };
+    let res = match asset_type {
+        AssetType::Image => G::generate_thumbnail(thumbnail_params).await,
+        AssetType::Video => G::generate_video_thumbnail(thumbnail_params).await,
+    };
+    tx.send(res).unwrap();
     let result = rx
         .in_current_span()
         .await

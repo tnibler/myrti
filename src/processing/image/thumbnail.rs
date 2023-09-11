@@ -1,8 +1,13 @@
 use std::path::PathBuf;
 
-use eyre::Result;
+use async_trait::async_trait;
+use eyre::{Context, Result};
+use tracing::Instrument;
 
-use crate::core::storage::{CommandOutputFile, StorageCommandOutput};
+use crate::{
+    core::storage::{CommandOutputFile, StorageCommandOutput},
+    processing::video::ffmpeg_snapshot::ffmpeg_snapshot,
+};
 
 use super::{
     vips_wrapper::{self, VipsThumbnailParams},
@@ -15,16 +20,19 @@ pub struct ThumbnailParams<'a> {
     pub out_dimension: OutDimension,
 }
 
+#[async_trait]
 pub trait GenerateThumbnailTrait {
-    fn generate_thumbnail(params: ThumbnailParams) -> Result<()>;
+    async fn generate_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<()>;
+    async fn generate_video_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<()>;
 }
 
 pub struct GenerateThumbnail {}
 
 pub struct GenerateThumbnailMock {}
 
+#[async_trait]
 impl GenerateThumbnailTrait for GenerateThumbnail {
-    fn generate_thumbnail(params: ThumbnailParams) -> Result<()> {
+    async fn generate_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<()> {
         let out_paths: Vec<PathBuf> = params
             .outputs
             .iter()
@@ -35,12 +43,49 @@ impl GenerateThumbnailTrait for GenerateThumbnail {
             out_paths,
             out_dimension: params.out_dimension,
         };
-        vips_wrapper::generate_thumbnail(vips_params)
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<()>>();
+        rayon::spawn(move || {
+            let res = vips_wrapper::generate_thumbnail(vips_params);
+            tx.send(res).unwrap();
+        });
+        rx.await
+            .wrap_err("error generating thumbnail with libvips")?
+            .wrap_err("error generating thumbnail with libvips")
+    }
+
+    async fn generate_video_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<()> {
+        let snapshot_path = tempfile::Builder::new()
+            .prefix("snap")
+            .suffix(".webp")
+            .tempfile()
+            .wrap_err("could not create temp file")?
+            .into_temp_path();
+        tracing::debug!(out_path=%snapshot_path.display(), "taking ffmpeg snapshot");
+        ffmpeg_snapshot(&params.in_path, &snapshot_path)
+            .in_current_span()
+            .await?;
+        tracing::debug!("done taking snapshot");
+        Self::generate_thumbnail(ThumbnailParams {
+            in_path: snapshot_path.to_path_buf(),
+            ..params
+        })
+        .in_current_span()
+        .await?;
+        tracing::debug!("done with vips image thumb");
+        snapshot_path
+            .persist(PathBuf::from("/tmp/snap.webp"))
+            .unwrap();
+        Ok(())
     }
 }
 
+#[async_trait]
 impl GenerateThumbnailTrait for GenerateThumbnailMock {
-    fn generate_thumbnail(params: ThumbnailParams) -> Result<()> {
+    async fn generate_thumbnail<'a>(_params: ThumbnailParams<'a>) -> Result<()> {
+        Ok(())
+    }
+
+    async fn generate_video_thumbnail<'a>(_params: ThumbnailParams<'a>) -> Result<()> {
         Ok(())
     }
 }

@@ -78,3 +78,21 @@ impl MpdGeneratorTrait for MpdGenerator {
         Ok(())
     }
 }
+
+#[cfg(feature = "mock-commands")]
+pub struct MpdGeneratorMock {}
+
+#[cfg(feature = "mock-commands")]
+#[async_trait]
+impl MpdGeneratorTrait for MpdGenerator {
+    #[instrument(name = "mpd_generator", skip(storage, media_info_keys))]
+    async fn run(
+        media_info_keys: impl Iterator<Item = &str> + Send,
+        output_key: &str,
+        storage: &Storage,
+    ) -> Result<()> {
+        let command_out_file = storage.new_command_out_file(output_key).await?;
+        command_out_file.flush_to_storage().await?;
+        Ok(())
+    }
+}

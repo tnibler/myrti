@@ -73,3 +73,31 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
         Ok(ShakaResult { media_info_key })
     }
 }
+
+#[cfg(feature = "mock-commands")]
+pub struct ShakaIntoFFmpegMock {}
+
+#[cfg(feature = "mock-commands")]
+use super::ffmpeg::FFmpegMock;
+
+#[cfg(feature = "mock-commands")]
+#[async_trait]
+impl ShakaIntoFFmpegTrait for ShakaIntoFFmpegMock {
+    type FFmpeg = FFmpegMock;
+
+    #[instrument(name = "shaka_into_ffmpeg", skip(ffmpeg, storage))]
+    async fn run(
+        input: &Path,
+        repr_type: RepresentationType,
+        ffmpeg: &Self::FFmpeg,
+        output_key: &str,
+        storage: &Storage,
+    ) -> Result<ShakaResult> {
+        ffmpeg
+            .run(&PathBuf::from("MOCK_PATH"), output_key, storage)
+            .in_current_span()
+            .await?;
+        let media_info_key = format!("{}.media_info", output_key);
+        Ok(ShakaResult { media_info_key })
+    }
+}

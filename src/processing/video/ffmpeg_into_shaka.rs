@@ -1,45 +1,26 @@
-use std::{ffi::OsStr, path::Path, process::Stdio};
+use std::path::PathBuf;
 
 use async_trait::async_trait;
-use eyre::{eyre, Context, Result};
-use tokio::process::Command;
-use tracing::{instrument, Instrument};
+use eyre::{Context, Result};
+use tracing::Instrument;
 
 use crate::core::storage::Storage;
 
 use super::{
+    ffmpeg::{FFmpeg, FFmpegLocalOutputTrait, FFmpegTrait},
     shaka::{RepresentationType, ShakaPackager, ShakaPackagerTrait, ShakaResult},
     streams::FFProbeStreamsTrait,
-    FFProbe, FFProbeStreams,
+    transcode::{ffmpeg_audio_flags, ffmpeg_video_flags, ProduceAudio, ProduceVideo},
+    FFProbe, FFProbeStreams, VideoStream,
 };
 
-pub trait FFmpegIntoShakaNew {
-    type FFmpegInputFlagTrait: FFmpegIntoShakaInputFlagTrait;
-    fn new() -> Self::FFmpegInputFlagTrait;
-}
-
-pub trait FFmpegIntoShakaInputFlagTrait {
-    type FFmpegFlagTrait: FFmpegIntoShakaFlagTrait;
-
-    fn pre_input_flag<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self;
-    fn pre_input_flags<I, S>(&mut self, args: I) -> &mut Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>;
-
-    fn input(self, path: impl AsRef<Path>) -> Self::FFmpegFlagTrait;
-}
-
 #[async_trait]
-pub trait FFmpegIntoShakaFlagTrait {
-    type ShakaTrait: FFmpegIntoShakaTrait;
-    fn flag<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self;
-    fn flags<I, S>(&mut self, args: I) -> &mut Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>;
+pub trait FFmpegIntoShakaFFmpegTrait {
+    type Next: FFmpegIntoShakaTrait;
 
-    async fn run_ffmpeg(self) -> Result<Self::ShakaTrait>;
+    fn new(input: PathBuf, video: Option<&ProduceVideo>, audio: Option<&ProduceAudio>) -> Self;
+
+    async fn run_ffmpeg(self) -> Result<Self::Next>;
 }
 
 #[async_trait]
@@ -51,135 +32,126 @@ pub trait FFmpegIntoShakaTrait {
         storage: &Storage,
     ) -> Result<ShakaResult>;
 
-    /// calls ffprobe on temporary ffmpeg output file
     async fn ffprobe_get_streams(&self) -> Result<FFProbeStreams>;
 }
 
-pub trait FFmpegIntoShakaStep {}
-
-pub struct MissingFFmpegInput {
-    ffmpeg_command: Command,
-}
-impl FFmpegIntoShakaStep for MissingFFmpegInput {}
-pub struct WithFFmpegInputArg {
-    ffmpeg_command: Command,
-}
-impl FFmpegIntoShakaStep for WithFFmpegInputArg {}
-pub struct FFmpegHasRun {
-    ffmpeg_out_path: tempfile::TempPath,
-}
-impl FFmpegIntoShakaStep for FFmpegHasRun {}
-
-pub struct FFmpegIntoShaka<I: FFmpegIntoShakaStep> {
-    step: I,
-}
-
-impl FFmpegIntoShakaNew for FFmpegIntoShaka<MissingFFmpegInput> {
-    type FFmpegInputFlagTrait = FFmpegIntoShaka<MissingFFmpegInput>;
-
-    fn new() -> Self::FFmpegInputFlagTrait {
-        let mut command = Command::new("ffmpeg");
-        command
-            .arg("-nostdin")
-            .arg("-y")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        FFmpegIntoShaka {
-            step: MissingFFmpegInput {
-                ffmpeg_command: command,
-            },
-        }
-    }
-}
-
-impl FFmpegIntoShakaInputFlagTrait for FFmpegIntoShaka<MissingFFmpegInput> {
-    type FFmpegFlagTrait = FFmpegIntoShaka<WithFFmpegInputArg>;
-
-    fn pre_input_flag<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
-        self.step.ffmpeg_command.arg(arg);
-        self
-    }
-
-    fn pre_input_flags<I, S>(&mut self, args: I) -> &mut Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
-    {
-        self.step.ffmpeg_command.args(args);
-        self
-    }
-
-    fn input(mut self, path: impl AsRef<Path>) -> Self::FFmpegFlagTrait {
-        self.step.ffmpeg_command.arg("-i").arg(path.as_ref());
-        FFmpegIntoShaka {
-            step: WithFFmpegInputArg {
-                ffmpeg_command: self.step.ffmpeg_command,
-            },
-        }
-    }
+pub struct FFmpegIntoShaka {
+    input: PathBuf,
+    ffmpeg: FFmpeg,
 }
 
 #[async_trait]
-impl FFmpegIntoShakaFlagTrait for FFmpegIntoShaka<WithFFmpegInputArg> {
-    type ShakaTrait = FFmpegIntoShaka<FFmpegHasRun>;
+impl FFmpegIntoShakaFFmpegTrait for FFmpegIntoShaka {
+    type Next = FFmpegIntoShakaAfterFFmpeg;
 
-    fn flag<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
-        self.step.ffmpeg_command.arg(arg);
-        self
+    fn new(input: PathBuf, video: Option<&ProduceVideo>, audio: Option<&ProduceAudio>) -> Self {
+        let pre_input_flags = Vec::default();
+        let mut flags = match video {
+            Some(video) => ffmpeg_video_flags(video),
+            None => Vec::default(),
+        };
+        if let Some(audio) = audio {
+            flags.append(&mut ffmpeg_audio_flags(audio));
+        }
+        let ffmpeg = FFmpeg::new(
+            pre_input_flags,
+            flags.into_iter().map(|s| s.into()).collect(),
+        );
+        Self { input, ffmpeg }
     }
 
-    fn flags<I, S>(&mut self, args: I) -> &mut Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
-    {
-        self.step.ffmpeg_command.args(args);
-        self
-    }
-
-    #[instrument(skip(self))]
-    async fn run_ffmpeg(self) -> Result<Self::ShakaTrait> {
+    async fn run_ffmpeg(self) -> Result<Self::Next> {
         let ffmpeg_out_path = tempfile::Builder::new()
             .suffix(".mp4")
             .tempfile()
             .wrap_err("error creating temp directory")?
             .into_temp_path();
-        let mut ffmpeg_command = self.step.ffmpeg_command;
-        ffmpeg_command.arg(&ffmpeg_out_path);
-        let result = ffmpeg_command
-            .spawn()
-            .wrap_err("failed to call ffmpeg")?
-            .wait()
-            .in_current_span()
-            .await
-            .wrap_err("error waiting for ffmpeg")?;
-        if result.success() {
-            Ok(FFmpegIntoShaka {
-                step: FFmpegHasRun { ffmpeg_out_path },
-            })
-        } else {
-            Err(eyre!("ffmpeg exited with an error"))
-        }
+        self.ffmpeg
+            .run_with_local_output(&self.input, &ffmpeg_out_path)
+            .await?;
+        Ok(FFmpegIntoShakaAfterFFmpeg { ffmpeg_out_path })
     }
 }
 
+pub struct FFmpegIntoShakaAfterFFmpeg {
+    ffmpeg_out_path: tempfile::TempPath,
+}
+
 #[async_trait]
-impl FFmpegIntoShakaTrait for FFmpegIntoShaka<FFmpegHasRun> {
-    #[instrument(skip(self, storage))]
+impl FFmpegIntoShakaTrait for FFmpegIntoShakaAfterFFmpeg {
     async fn run_shaka_packager(
         &self,
         repr_type: RepresentationType,
         output_key: &str,
         storage: &Storage,
     ) -> Result<ShakaResult> {
-        ShakaPackager::run(&self.step.ffmpeg_out_path, repr_type, output_key, storage)
-            .in_current_span()
-            .await
+        ShakaPackager::run(&self.ffmpeg_out_path, repr_type, output_key, storage).await
     }
 
     async fn ffprobe_get_streams(&self) -> Result<FFProbeStreams> {
-        FFProbe::streams(&self.step.ffmpeg_out_path)
+        FFProbe::streams(&self.ffmpeg_out_path)
             .in_current_span()
             .await
+    }
+}
+
+#[cfg(feature = "mock-commands")]
+pub struct FFmpegIntoShakaMock {
+    video: Option<ProduceVideo>,
+    audio: Option<ProduceAudio>,
+}
+
+#[cfg(feature = "mock-commands")]
+#[async_trait]
+impl FFmpegIntoShakaFFmpegTrait for FFmpegIntoShakaMock {
+    type Next = FFmpegIntoShakaMock;
+
+    fn new(input: PathBuf, video: Option<&ProduceVideo>, audio: Option<&ProduceAudio>) -> Self {
+        Self {
+            video: video.cloned(),
+            audio: audio.cloned(),
+        }
+    }
+
+    async fn run_ffmpeg(self) -> Result<Self::Next> {
+        Ok(self)
+    }
+}
+
+#[cfg(feature = "mock-commands")]
+#[async_trait]
+impl FFmpegIntoShakaTrait for FFmpegIntoShakaMock {
+    async fn run_shaka_packager(
+        &self,
+        repr_type: RepresentationType,
+        output_key: &str,
+        storage: &Storage,
+    ) -> Result<ShakaResult> {
+        super::shaka::ShakaPackagerMock::run(
+            &PathBuf::from("MOCK_PATH"),
+            repr_type,
+            output_key,
+            storage,
+        )
+        .await
+    }
+
+    async fn ffprobe_get_streams(&self) -> Result<FFProbeStreams> {
+        use super::AudioStream;
+        Ok(FFProbeStreams {
+            video: VideoStream {
+                codec_name: "mock_codec".into(),
+                width: 1,
+                height: 1,
+                bitrate: 1,
+                rotation: None,
+            },
+            audio: self.audio.as_ref().map(|_audio| AudioStream {
+                codec_name: "mock_codec".into(),
+                bitrate: 1,
+                channels: 1,
+                sample_rate: 1,
+            }),
+        })
     }
 }

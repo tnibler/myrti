@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{ffi::OsString, path::PathBuf};
 
 use eyre::{eyre, Context, Result};
 use tracing::{error, instrument, Instrument};
@@ -15,15 +15,13 @@ use crate::{
         VideoRepresentation, VideoRepresentationId,
     },
     processing::video::{
-        ffmpeg::{FFmpegBuilder, FFmpegBuilderTrait},
-        ffmpeg_into_shaka::{
-            FFmpegIntoShaka, FFmpegIntoShakaFlagTrait, FFmpegIntoShakaInputFlagTrait,
-            FFmpegIntoShakaNew, FFmpegIntoShakaTrait,
-        },
-        mpd_generator::{MpdGenerator, MpdGeneratorTrait},
-        shaka::{RepresentationType, ShakaPackager, ShakaPackagerTrait},
-        shaka_into_ffmpeg::{ShakaIntoFFmpeg, ShakaIntoFFmpegTrait},
-        transcode::{ffmpeg_audio_flags, ffmpeg_video_flags, ProduceAudio, ProduceVideo},
+        commands::{FFmpeg, FFmpegIntoShaka, MpdGenerator, ShakaIntoFFmpeg, ShakaPackager},
+        ffmpeg::FFmpegTrait,
+        ffmpeg_into_shaka::{FFmpegIntoShakaFFmpegTrait, FFmpegIntoShakaTrait},
+        mpd_generator::MpdGeneratorTrait,
+        shaka::{RepresentationType, ShakaPackagerTrait},
+        shaka_into_ffmpeg::ShakaIntoFFmpegTrait,
+        transcode::{ProduceAudio, ProduceVideo},
         video_rotation::FFProbeRotationTrait,
         FFProbe,
     },
@@ -239,15 +237,12 @@ pub async fn perform_side_effects_package_video(
     };
 
     let ffmpeg_into_shaka = if ffmpeg_video_op.is_some() || ffmpeg_audio_op.is_some() {
-        let mut ffmpeg_into_shaka = FFmpegIntoShaka::new().input(&asset_path.path_on_disk());
-        if let Some(video_op) = &ffmpeg_video_op {
-            ffmpeg_into_shaka.flags(ffmpeg_video_flags(video_op));
-        }
-        if let Some(audio_op) = &ffmpeg_audio_op {
-            ffmpeg_into_shaka.flags(ffmpeg_audio_flags(audio_op));
-        }
-        let ffmpeg_into_shaka = ffmpeg_into_shaka.run_ffmpeg().in_current_span().await?;
-        Some(ffmpeg_into_shaka)
+        let ffmpeg_into_shaka = FFmpegIntoShaka::new(
+            asset_path.path_on_disk(),
+            ffmpeg_video_op.as_ref(),
+            ffmpeg_audio_op.as_ref(),
+        );
+        Some(ffmpeg_into_shaka.run_ffmpeg().await?)
     } else {
         None
     };
@@ -308,11 +303,10 @@ pub async fn perform_side_effects_package_video(
             // TODO calling ffprobe yet again, ideally once is enough? Or not I'm not sure
             let rotation = FFProbe::video_rotation(&asset_path.path_on_disk()).await?;
             if let Some(rotation) = rotation {
-                let correct_rotation_ffmpeg = FFmpegBuilder::new()
-                    .pre_input_flag("-display_rotation")
-                    .pre_input_flag(rotation.to_string())
-                    .flags(["-c:v", "copy"])
-                    .build();
+                let pre_input_flags: Vec<OsString> =
+                    vec!["-display_rotation".into(), rotation.to_string().into()];
+                let flags: Vec<OsString> = vec!["-c:v".into(), "copy".into()];
+                let correct_rotation_ffmpeg: FFmpeg = FFmpeg::new(pre_input_flags, flags);
                 let shaka_result = ShakaIntoFFmpeg::run(
                     &asset_path.path_on_disk(),
                     RepresentationType::Video,

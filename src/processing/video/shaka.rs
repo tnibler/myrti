@@ -125,32 +125,23 @@ impl ShakaPackagerTrait for ShakaPackager {
     }
 }
 
-pub mod mock {
-    use std::path::Path;
+#[cfg(feature = "mock-commands")]
+pub struct ShakaPackagerMock {}
 
-    use async_trait::async_trait;
-    use eyre::Result;
-
-    use crate::core::storage::{Storage, StorageCommandOutput, StorageProvider};
-
-    use super::{RepresentationType, ShakaPackagerTrait, ShakaResult};
-
-    pub struct MockShakaPackager {}
-
-    #[async_trait]
-    impl ShakaPackagerTrait for MockShakaPackager {
-        async fn run(
-            _input: &Path,
-            _repr_type: RepresentationType,
-            output_key: &str,
-            storage: &Storage,
-        ) -> Result<ShakaResult> {
-            let mp4_out_file = storage.new_command_out_file(output_key).await?;
-            let media_info_key = format!("{}.media_info", output_key);
-            let media_info_out_file = storage.new_command_out_file(&media_info_key).await?;
-            mp4_out_file.flush_to_storage().await?;
-            media_info_out_file.flush_to_storage().await?;
-            Ok(ShakaResult { media_info_key })
-        }
+#[cfg(feature = "mock-commands")]
+#[async_trait]
+impl ShakaPackagerTrait for ShakaPackagerMock {
+    async fn run(
+        _input: &Path,
+        _repr_type: RepresentationType,
+        output_key: &str,
+        storage: &Storage,
+    ) -> Result<ShakaResult> {
+        let mp4_out_file = storage.new_command_out_file(output_key).await?;
+        let media_info_key = format!("{}.media_info", output_key);
+        let media_info_out_file = storage.new_command_out_file(&media_info_key).await?;
+        mp4_out_file.flush_to_storage().await?;
+        media_info_out_file.flush_to_storage().await?;
+        Ok(ShakaResult { media_info_key })
     }
 }

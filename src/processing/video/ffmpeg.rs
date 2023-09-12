@@ -13,28 +13,6 @@ use crate::core::storage::{Storage, StorageCommandOutput, StorageProvider};
 
 pub trait CommandInputOutput {}
 
-pub trait FFmpegBuilderTrait {
-    type FFmpeg: FFmpegTrait;
-    fn new() -> Self;
-    fn pre_input_flag<S>(self, flag: S) -> Self
-    where
-        S: AsRef<OsStr>;
-    fn pre_input_flags<I, S>(self, flags: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>;
-
-    fn flag<S>(self, flag: S) -> Self
-    where
-        S: AsRef<OsStr>;
-    fn flags<I, S>(self, flags: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>;
-
-    fn build(self) -> Self::FFmpeg;
-}
-
 #[async_trait]
 pub trait FFmpegLocalOutputTrait {
     async fn run_with_local_output(&self, input: &Path, output: &Path) -> Result<()>;
@@ -42,71 +20,13 @@ pub trait FFmpegLocalOutputTrait {
 
 #[async_trait]
 pub trait FFmpegTrait {
+    fn new(pre_input_flags: Vec<OsString>, flags: Vec<OsString>) -> Self;
     async fn run(&self, input: &Path, output_key: &str, storage: &Storage) -> Result<()>;
 }
 
 pub struct FFmpeg {
     pre_input_flags: Vec<OsString>,
     flags: Vec<OsString>,
-}
-
-pub struct FFmpegBuilder {
-    pre_input_flags: Vec<OsString>,
-    flags: Vec<OsString>,
-}
-
-impl FFmpegBuilderTrait for FFmpegBuilder {
-    type FFmpeg = FFmpeg;
-
-    fn new() -> Self {
-        FFmpegBuilder {
-            pre_input_flags: Default::default(),
-            flags: Default::default(),
-        }
-    }
-
-    fn pre_input_flag<S>(mut self, flag: S) -> Self
-    where
-        S: AsRef<OsStr>,
-    {
-        self.pre_input_flags.push(flag.as_ref().to_owned());
-        self
-    }
-
-    fn pre_input_flags<I, S>(mut self, flags: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
-    {
-        self.pre_input_flags
-            .extend(flags.into_iter().map(|s| s.as_ref().to_owned()));
-        self
-    }
-
-    fn flag<S>(mut self, flag: S) -> Self
-    where
-        S: AsRef<OsStr>,
-    {
-        self.flags.push(flag.as_ref().to_owned());
-        self
-    }
-
-    fn flags<I, S>(mut self, flags: I) -> Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
-    {
-        self.flags
-            .extend(flags.into_iter().map(|s| s.as_ref().to_owned()));
-        self
-    }
-
-    fn build(self) -> Self::FFmpeg {
-        FFmpeg {
-            pre_input_flags: self.pre_input_flags,
-            flags: self.flags,
-        }
-    }
 }
 
 #[async_trait]
@@ -141,10 +61,36 @@ impl FFmpegLocalOutputTrait for FFmpeg {
 
 #[async_trait]
 impl FFmpegTrait for FFmpeg {
+    fn new(pre_input_flags: Vec<OsString>, flags: Vec<OsString>) -> Self {
+        Self {
+            pre_input_flags,
+            flags,
+        }
+    }
+
     async fn run(&self, input: &Path, output_key: &str, storage: &Storage) -> Result<()> {
         let command_out_file = storage.new_command_out_file(output_key).await?;
         self.run_with_local_output(input, command_out_file.path())
             .in_current_span()
-            .await
+            .await?;
+        command_out_file.flush_to_storage().await?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "mock-commands")]
+pub struct FFmpegMock {}
+
+#[cfg(feature = "mock-commands")]
+#[async_trait]
+impl FFmpegTrait for FFmpegMock {
+    fn new(_pre_input_flags: Vec<OsString>, _flags: Vec<OsString>) -> Self {
+        Self {}
+    }
+
+    async fn run(&self, input: &Path, output_key: &str, storage: &Storage) -> Result<()> {
+        let command_out_file = storage.new_command_out_file(output_key).await?;
+        command_out_file.flush_to_storage().await?;
+        Ok(())
     }
 }

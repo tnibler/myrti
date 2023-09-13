@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 
 use super::{
     job::{Job, JobId, JobResultType},
@@ -10,10 +10,11 @@ use crate::{
     core::job::JobType,
     eyre::Result,
     job::{
-        dash_segmenting_job::{DashSegmentingJob, DashSegmentingJobParams},
+        dash_segmenting_job::{VideoPackagingJob, VideoPackagingJobParams},
         indexing_job::{IndexingJob, IndexingJobParams},
         thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
     },
+    model::repository,
 };
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
@@ -27,6 +28,7 @@ pub enum SchedulerMessage {
     UserRequest(UserRequest),
     JobComplete { id: JobId, result: JobResultType },
     JobFailed { id: JobId },
+    JobRegisteredWithMonitor { id: JobId, job_type: JobType },
     ConfigChange,
 }
 
@@ -59,6 +61,7 @@ impl Scheduler {
                 pool,
                 monitor_tx,
                 storage,
+                running_jobs: HashMap::default(),
             };
             si.run().await;
         });
@@ -81,12 +84,15 @@ struct SchedulerImpl {
     pool: SqlitePool,
     monitor_tx: mpsc::Sender<MonitorMessage>,
     storage: Storage,
+
+    running_jobs: HashMap<JobId, JobType>,
 }
 
 impl SchedulerImpl {
     #[instrument(name = "event_loop", skip(self))]
     async fn run(&mut self) {
         info!("Scheduler starting");
+        self.on_startup().await;
         loop {
             tokio::select! {
                 _ = self.cancel.cancelled() => {
@@ -101,15 +107,22 @@ impl SchedulerImpl {
                         SchedulerMessage::UserRequest(request) => {
                             match request {
                                 UserRequest::ReindexAssetRoots { params } => {
-                                    self.queue_or_start_indexing(params).await;
+                                    self.index_asset_root(params).await;
                                 },
                             }
                         },
+                        SchedulerMessage::JobRegisteredWithMonitor { id, job_type } => {
+                            assert!(
+                                self.running_jobs.insert(id, job_type).is_none(),
+                                "Attempting to insert already existing JobId into running_jobs"
+                            );
+                        }
                         SchedulerMessage::JobComplete {id, result }=> {
                             self.on_job_complete(id, result).await;
+                            debug_assert!(self.running_jobs.remove(&id).is_some(), "Scheduler did not know about job that completed");
                         },
-                        SchedulerMessage::JobFailed { id: _ } => {
-
+                        SchedulerMessage::JobFailed { id } => {
+                            debug_assert!(self.running_jobs.remove(&id).is_some(), "Scheduler did not know about job that completed");
                         }
                         SchedulerMessage::ConfigChange => todo!(),
                     }
@@ -120,56 +133,107 @@ impl SchedulerImpl {
 
     async fn on_job_complete(&self, _job_id: JobId, result: JobResultType) {
         match result {
-            JobResultType::Indexing(_) => {
-                self.thumbnail_if_required().await;
-                self.dash_package_if_required().await;
-            }
+            JobResultType::Indexing(_) => {}
             JobResultType::Thumbnail(_) => {}
-            JobResultType::DashSegmenting(_) => {}
+            JobResultType::VideoPackaging(_) => {}
+        }
+        self.start_any_job_if_required().await;
+    }
+
+    async fn on_startup(&self) {
+        let asset_roots = repository::asset_root_dir::get_asset_roots(&self.pool)
+            .await
+            .expect("TODO how do we handle errors in scheduler");
+        for asset_root in asset_roots {
+            self.index_asset_root(IndexingJobParams {
+                asset_root,
+                sub_paths: None,
+            })
+            .await;
         }
     }
 
-    async fn thumbnail_if_required(&self) {
+    async fn start_any_job_if_required(&self) -> bool {
+        let thumbnail = self.thumbnail_if_required().await;
+        let package_video = self.package_video_if_required().await;
+        return thumbnail || package_video;
+    }
+
+    async fn thumbnail_if_required(&self) -> bool {
+        // Only run one job of a given type at a time. In the future, we might want to run multiple,
+        // in which case we'll need to compute the diff between the params of currently running
+        // jobs and the output of rules::thumbnails_to_create
+        let any_running_thumbnail_job = self
+            .running_jobs
+            .values()
+            .any(|job_type| matches!(job_type, JobType::Thumbnail { params: _ }));
+        if any_running_thumbnail_job {
+            return false;
+        }
+
         let thumbnails_to_create = rules::thumbnails_to_create(&self.pool).await.unwrap();
-        if !thumbnails_to_create.is_empty() {
-            let params = ThumbnailJobParams {
-                thumbnails: thumbnails_to_create,
-            };
-            let job = ThumbnailJob::new(params.clone(), self.pool.clone(), self.storage.clone());
-            let handle = job.start();
-            self.monitor_tx
-                .send(MonitorMessage::AddJob {
-                    handle,
-                    ty: JobType::Thumbnail { params },
-                })
-                .await
-                .unwrap();
+        if thumbnails_to_create.is_empty() {
+            return false;
         }
+        let params = ThumbnailJobParams {
+            thumbnails: thumbnails_to_create,
+        };
+        let job = ThumbnailJob::new(params.clone(), self.pool.clone(), self.storage.clone());
+        let handle = job.start();
+        self.monitor_tx
+            .send(MonitorMessage::AddJob {
+                handle,
+                ty: JobType::Thumbnail { params },
+            })
+            .await
+            .unwrap();
+        return true;
     }
 
-    async fn dash_package_if_required(&self) {
+    async fn package_video_if_required(&self) -> bool {
+        // Only run one job of a given type at a time. In the future, we might want to run multiple,
+        // in which case we'll need to compute the diff between the params of currently running
+        // jobs and the output of rules::video_packaging_due
+        let any_running_video_packaging_job = self
+            .running_jobs
+            .values()
+            .any(|job_type| matches!(job_type, JobType::VideoPackaging { params: _ }));
+        if any_running_video_packaging_job {
+            return false;
+        }
+
         let videos_to_package: Vec<PackageVideo> =
             rules::video_packaging_due(&self.pool).await.unwrap();
-        debug!(?videos_to_package);
-        if !videos_to_package.is_empty() {
-            let params = DashSegmentingJobParams {
-                tasks: videos_to_package,
-            };
-            let job =
-                DashSegmentingJob::new(params.clone(), self.storage.clone(), self.pool.clone());
-            let handle = job.start();
-            self.monitor_tx
-                .send(MonitorMessage::AddJob {
-                    handle,
-                    ty: JobType::DashSegmenting { params },
-                })
-                .await
-                .unwrap();
+        if videos_to_package.is_empty() {
+            return false;
         }
+        let params = VideoPackagingJobParams {
+            tasks: videos_to_package,
+        };
+        let job = VideoPackagingJob::new(params.clone(), self.storage.clone(), self.pool.clone());
+        let handle = job.start();
+        self.monitor_tx
+            .send(MonitorMessage::AddJob {
+                handle,
+                ty: JobType::VideoPackaging { params },
+            })
+            .await
+            .unwrap();
+        return true;
     }
 
-    async fn queue_or_start_indexing(&mut self, params: IndexingJobParams) {
-        // // always starting job, no queue yet
+    async fn index_asset_root(&self, params: IndexingJobParams) -> bool {
+        let asset_root_already_being_indexed =
+            self.running_jobs.values().any(|job_type| match job_type {
+                JobType::Indexing { params } if params.asset_root.id == params.asset_root.id => {
+                    true
+                }
+                _ => false,
+            });
+        if asset_root_already_being_indexed {
+            return false;
+        }
+
         let job = IndexingJob::new(params.clone(), self.pool.clone());
         let handle = job.start();
         self.monitor_tx
@@ -179,5 +243,6 @@ impl SchedulerImpl {
             })
             .await
             .unwrap();
+        return true;
     }
 }

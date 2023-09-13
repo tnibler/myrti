@@ -10,7 +10,7 @@ pub struct JobId(pub String);
 pub enum JobType {
     Indexing,
     Thumbnail,
-    DashSegmenting,
+    VideoPackaging,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -51,7 +51,7 @@ pub fn api_job_type(job_type: &core::job::JobType) -> JobType {
     match job_type {
         core::job::JobType::Indexing { params: _ } => JobType::Indexing,
         core::job::JobType::Thumbnail { params: _ } => JobType::Thumbnail,
-        core::job::JobType::DashSegmenting { params: _ } => JobType::DashSegmenting,
+        core::job::JobType::VideoPackaging { params: _ } => JobType::VideoPackaging,
     }
 }
 

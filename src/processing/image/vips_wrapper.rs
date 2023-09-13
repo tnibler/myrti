@@ -48,9 +48,10 @@ pub struct VipsThumbnailParams {
     pub out_dimension: OutDimension,
 }
 
+#[tracing::instrument(level = "debug")]
 pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<()> {
-    let span = debug_span!("Generate image thumbnail (libvips)");
-    let _enter = span.enter();
+    // let span = debug_span!("Generate image thumbnail (libvips)");
+    // let _enter = span.enter();
     let c_path = CString::new(params.in_path.as_os_str().as_bytes()).wrap_err(format!(
         "Could not convert path {} to bytes",
         params.in_path.display()

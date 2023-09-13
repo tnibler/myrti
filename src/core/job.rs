@@ -1,5 +1,5 @@
 use crate::job::{
-    dash_segmenting_job::{DashSegmentingJob, DashSegmentingJobParams},
+    dash_segmenting_job::{VideoPackagingJob, VideoPackagingJobParams},
     indexing_job::{IndexingJob, IndexingJobParams},
     thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
 };
@@ -22,14 +22,14 @@ impl Display for JobId {
 pub enum JobResultType {
     Indexing(<IndexingJob as Job>::Result),
     Thumbnail(<ThumbnailJob as Job>::Result),
-    DashSegmenting(<DashSegmentingJob as Job>::Result),
+    VideoPackaging(<VideoPackagingJob as Job>::Result),
 }
 
 #[derive(Debug, Clone)]
 pub enum JobType {
     Indexing { params: IndexingJobParams },
     Thumbnail { params: ThumbnailJobParams },
-    DashSegmenting { params: DashSegmentingJobParams },
+    VideoPackaging { params: VideoPackagingJobParams },
 }
 
 impl Display for JobType {
@@ -37,7 +37,7 @@ impl Display for JobType {
         let s = match self {
             JobType::Indexing { params: _ } => "Indexing",
             JobType::Thumbnail { params: _ } => "Thumbnail",
-            JobType::DashSegmenting { params: _ } => "DashSegmenting",
+            JobType::VideoPackaging { params: _ } => "VideoPackaging",
         };
         write!(f, "{}", s)
     }
@@ -48,7 +48,7 @@ impl Display for JobResultType {
         let s = match self {
             JobResultType::Indexing(_) => "Indexing",
             JobResultType::Thumbnail(_) => "Thumbnail",
-            JobResultType::DashSegmenting(_) => "DashSegmenting",
+            JobResultType::VideoPackaging(_) => "VideoPackaging",
         };
         write!(f, "{}Result", s)
     }

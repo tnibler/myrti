@@ -82,7 +82,6 @@ impl Monitor {
             statuses: statuses_copy,
         };
         let monitor_copy = monitor.clone();
-        let event_loop_span = tracing::info_span!("Monitor event loop");
         tokio::task::spawn(async move {
             let status_rxs = Vec::<futures::channel::mpsc::Receiver<JobStatusWithId>>::new();
             let mut any_status = futures::stream::select_all(status_rxs);
@@ -95,7 +94,7 @@ impl Monitor {
                     // New job added with its corresponding channel to read incoming status updates
                     // from
                     Some(NewJobToWatch { id, mut progress_rx }) = add_job_rx.recv() => {
-                        debug!(immediate=true, job_id=%id, "New job added to monitor");
+                        debug!(job_id=%id, "New job added to monitor");
                         let (mut progress_with_id_tx, progress_with_id_rx) = futures::channel::mpsc::channel::<JobStatusWithId>(1000);
                         tokio::task::spawn(async move {
                             while let Some(progress) = progress_rx.recv().await {
@@ -109,20 +108,20 @@ impl Monitor {
                         monitor_copy.on_status_received(status_with_id.id, status_with_id.progress).in_current_span().await;
                     }
                     Some(msg) = msg_rx.recv() => {
-                        debug!(%msg, "Received message");
                         match msg {
                             MonitorMessage::AddJob{ handle, ty } => {
-                                monitor_copy.add_job(handle, ty).await;
+                                let id = monitor_copy.add_job(handle, ty.clone()).await;
+                                monitor_copy.scheduler_tx.send(SchedulerMessage::JobRegisteredWithMonitor { id, job_type: ty }).await.unwrap();
                             }
                         }
                     }
                     Some((job_id, job_result)) = job_result_rx.recv() => {
-                        info!(immediate=true, ?job_result, "Received result from job");
+                        debug!(?job_result, "Received job result");
                             monitor_copy.on_result_received(job_id, job_result).await;
                     }
                 }
             }
-        }.instrument(event_loop_span));
+        });
         monitor
     }
 
@@ -168,7 +167,7 @@ impl Monitor {
                         };
                         self.set_status(job_id, status).await;
                     }
-                    JobResultType::DashSegmenting(ref segmenting_results) => {
+                    JobResultType::VideoPackaging(ref segmenting_results) => {
                         let status = if segmenting_results.failed.is_empty() {
                             JobStatus::Complete
                         } else if segmenting_results.completed.is_empty() {

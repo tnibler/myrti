@@ -15,41 +15,41 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct DashSegmentingJobParams {
+pub struct VideoPackagingJobParams {
     pub tasks: Vec<PackageVideo>,
 }
 
-pub struct DashSegmentingJob {
-    params: DashSegmentingJobParams,
+pub struct VideoPackagingJob {
+    params: VideoPackagingJobParams,
     storage: Storage,
     pool: DbPool,
 }
 
 #[derive(Debug)]
-pub struct DashSegmentingJobResult {
+pub struct VideoPackagingJobResult {
     pub completed: Vec<PackageVideo>,
     pub failed: Vec<(PackageVideo, Report)>,
 }
 
-impl DashSegmentingJob {
+impl VideoPackagingJob {
     pub fn new(
-        params: DashSegmentingJobParams,
+        params: VideoPackagingJobParams,
         storage: Storage,
         pool: DbPool,
-    ) -> DashSegmentingJob {
-        DashSegmentingJob {
+    ) -> VideoPackagingJob {
+        VideoPackagingJob {
             params,
             storage,
             pool,
         }
     }
 
-    #[instrument(name = "DashSegmentingJob", skip(self, _status_tx, cancel))]
+    #[instrument(name = "VideoPackagingJob", skip(self, _status_tx, cancel))]
     async fn run(
         self,
         _status_tx: mpsc::Sender<JobProgress>,
         cancel: CancellationToken,
-    ) -> DashSegmentingJobResult {
+    ) -> VideoPackagingJobResult {
         let mut failed: Vec<(PackageVideo, Report)> = vec![];
         let mut completed: Vec<PackageVideo> = vec![];
         for task in &self.params.tasks {
@@ -65,7 +65,7 @@ impl DashSegmentingJob {
                 }
             }
         }
-        DashSegmentingJobResult { completed, failed }
+        VideoPackagingJobResult { completed, failed }
     }
 
     async fn process_task(&self, package_video: PackageVideo) -> Result<()> {
@@ -82,8 +82,8 @@ impl DashSegmentingJob {
     }
 }
 
-impl Job for DashSegmentingJob {
-    type Result = DashSegmentingJobResult;
+impl Job for VideoPackagingJob {
+    type Result = VideoPackagingJobResult;
 
     fn start(self) -> JobHandle {
         let (tx, rx) = mpsc::channel::<JobProgress>(1000);
@@ -91,7 +91,7 @@ impl Job for DashSegmentingJob {
         let cancel_copy = cancel.clone();
         let join_handle = tokio::spawn(async move {
             let r = self.run(tx, cancel_copy).await;
-            JobResultType::DashSegmenting(r)
+            JobResultType::VideoPackaging(r)
         });
         let handle: JobHandle = JobHandle {
             progress_rx: rx,

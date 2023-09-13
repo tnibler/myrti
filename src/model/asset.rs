@@ -8,7 +8,9 @@ use super::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Image {}
+pub struct Image {
+    pub image_format_name: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Video {

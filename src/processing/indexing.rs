@@ -1,15 +1,16 @@
 use std::path::Path;
 
+use chrono::{DateTime, Local, Utc};
+use color_eyre::eyre::Result;
+use eyre::{eyre, Context};
+use tracing::{debug, error, instrument, Instrument};
+use walkdir::WalkDir;
+
 use crate::{
     model::{repository::duplicate_asset::NewDuplicateAsset, *},
     processing::{self, hash::hash_file},
     repository::{self, pool::DbPool},
 };
-use chrono::{DateTime, Local, Utc};
-use color_eyre::eyre::Result;
-use eyre::Context;
-use tracing::{debug, error, instrument, Instrument};
-use walkdir::WalkDir;
 
 use super::{
     media_metadata::{figure_out_utc_timestamp, read_media_metadata, TimestampGuess},
@@ -110,7 +111,15 @@ async fn index_file(
             (AssetType::Video, video_info, size)
         }
         Some(mime) if mime.starts_with("image") => {
-            let image_info = AssetSpe::Image(Image {});
+            let format = metadata
+                .file
+                .file_type
+                .as_ref()
+                .ok_or(eyre!("no file type in exiftool output"))?
+                .to_ascii_uppercase();
+            let image_info = AssetSpe::Image(Image {
+                image_format_name: format,
+            });
             let p = path.to_owned();
             let s = tokio::task::spawn_blocking(move || {
                 processing::image::get_image_size(&p).wrap_err("could not read image size")

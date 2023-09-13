@@ -43,6 +43,7 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
+image_format_name,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
@@ -150,6 +151,7 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
+image_format_name,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
@@ -253,6 +255,7 @@ thumb_small_square_width=?,
 thumb_small_square_height=?,
 thumb_large_orig_width=?,
 thumb_large_orig_height=?,
+image_format_name=?,
 video_codec_name=?,
 video_bitrate=?,
 audio_codec_name=?,
@@ -280,6 +283,7 @@ WHERE id=?;
         db_asset.thumb_small_square_height,
         db_asset.thumb_large_orig_width,
         db_asset.thumb_large_orig_height,
+        db_asset.image_format_name,
         db_asset.video_codec_name,
         db_asset.video_bitrate,
         db_asset.audio_codec_name,
@@ -337,13 +341,14 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
+image_format_name,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
 has_dash 
 )
 VALUES
-(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 "#,
         db_asset.ty,
         db_asset.root_dir_id.0,
@@ -366,6 +371,7 @@ VALUES
         db_asset.thumb_small_square_height,
         db_asset.thumb_large_orig_width,
         db_asset.thumb_large_orig_height,
+        db_asset.image_format_name,
         db_asset.video_codec_name,
         db_asset.video_bitrate,
         db_asset.audio_codec_name,
@@ -495,6 +501,7 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
+image_format_name,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
@@ -549,6 +556,7 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
+image_format_name,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
@@ -580,20 +588,6 @@ pub async fn get_video_assets_with_no_acceptable_repr(
     acceptable_video_codecs: impl Iterator<Item = &str>,
     acceptable_audio_codecs: impl Iterator<Item = &str>,
 ) -> Result<Vec<VideoAsset>> {
-    r#"
-SELECT 
-DISTINCT
-Asset.*
-FROM Asset
-WHERE NOT EXISTS
-(SELECT 1 FROM Asset a, VideoRepresentation vr, AudioRepresentation ar
-WHERE 
-a.ty = 2
-AND vr.asset_id = a.id
-AND ar.asset_id = a.id
-AND vr.codec_name IN ('h264', 'av1')
-AND ar.codec_name IN ('aac', 'opus'));
-"#;
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new(
         r#"
 SELECT 
@@ -619,6 +613,7 @@ Asset.thumb_small_square_width as thumb_small_square_width,
 Asset.thumb_small_square_height as thumb_small_square_height,
 Asset.thumb_large_orig_width as thumb_large_orig_width,
 Asset.thumb_large_orig_height as thumb_large_orig_height,
+Asset.image_format_name as image_format_name,
 Asset.video_codec_name as video_codec_name,
 Asset.video_bitrate as video_bitrate,
 Asset.audio_codec_name as audio_codec_name,
@@ -697,6 +692,7 @@ thumb_small_square_width,
 thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
+image_format_name,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
@@ -732,4 +728,57 @@ AND audio_codec_name IN
         .into_iter()
         .map(|a| a.try_into())
         .collect::<Result<Vec<_>>>()
+}
+
+#[instrument(skip(pool, acceptable_codecs))]
+pub async fn get_image_assets_with_no_acceptable_repr(
+    pool: &DbPool,
+    acceptable_codecs: impl Iterator<Item = &str> + Clone,
+) -> Result<Vec<AssetId>> {
+    let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new(
+        r#"
+SELECT 
+Asset.id as id
+FROM Asset
+WHERE Asset.ty = "#,
+    );
+    query_builder.push_bind(DbAssetType::Image);
+    query_builder.push(
+        r#"
+AND Asset.image_format_name NOT IN
+    "#,
+    );
+    query_builder.push_tuples(acceptable_codecs.clone(), |mut b, s| {
+        b.push_bind(s);
+    });
+    query_builder.push(
+        r#"
+AND NOT EXISTS
+(
+    SELECT (1) FROM ImageRepresentation ir
+    WHERE 
+    ir.asset_id = Asset.id
+    AND ir.format_name IN
+    "#,
+    );
+    query_builder.push_tuples(acceptable_codecs, |mut b, s| {
+        b.push_bind(s);
+    });
+    query_builder.push(
+        r#"
+);
+    "#,
+    );
+    // #[derive(Debug, sqlx::FromRow)]
+    struct Row {
+        pub asset_id: AssetId,
+    }
+    Ok(query_builder
+        .build_query_as::<AssetId>()
+        .fetch_all(pool)
+        .in_current_span()
+        .await
+        .wrap_err("could not query for Image Assets with no acceptable representations")?
+        .into_iter()
+        .collect::<Vec<_>>())
 }

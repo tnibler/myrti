@@ -25,6 +25,7 @@ pub struct DbAsset {
     pub thumb_small_square_height: Option<i64>,
     pub thumb_large_orig_width: Option<i64>,
     pub thumb_large_orig_height: Option<i64>,
+    pub image_format_name: Option<String>,
     pub video_codec_name: Option<String>,
     pub video_bitrate: Option<i64>,
     pub audio_codec_name: Option<String>,

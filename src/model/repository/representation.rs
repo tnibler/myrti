@@ -1,12 +1,12 @@
 use crate::model::{
     repository::db_entity::{DbAudioRepresentation, DbVideoRepresentation},
-    AssetId, AudioRepresentation, AudioRepresentationId, VideoRepresentation,
-    VideoRepresentationId,
+    AssetId, AudioRepresentation, AudioRepresentationId, ImageRepresentation,
+    ImageRepresentationId, VideoRepresentation, VideoRepresentationId,
 };
 
 use eyre::{Context, Result};
 use sqlx::SqliteConnection;
-use tracing::instrument;
+use tracing::{instrument, Instrument};
 
 use super::pool::DbPool;
 
@@ -75,7 +75,9 @@ pub async fn insert_video_representation(
     let db_val: DbVideoRepresentation = repr.try_into()?;
     let result = sqlx::query!(
         r#"
-INSERT INTO VideoRepresentation VALUES(NULL, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO VideoRepresentation
+(id, asset_id, codec_name, width, height, bitrate, file_key, media_info_key)
+VALUES(NULL, ?, ?, ?, ?, ?, ?, ?);
     "#,
         db_val.asset_id,
         db_val.codec_name,
@@ -100,7 +102,9 @@ pub async fn insert_audio_representation(
     let db_val: DbAudioRepresentation = repr.try_into()?;
     let result = sqlx::query!(
         r#"
-INSERT INTO AudioRepresentation VALUES(NULL, ?, ?, ?, ?);
+INSERT INTO AudioRepresentation
+(id, asset_id, codec_name, file_key, media_info_key)
+VALUES(NULL, ?, ?, ?, ?);
     "#,
         db_val.asset_id,
         db_val.codec_name,
@@ -111,4 +115,54 @@ INSERT INTO AudioRepresentation VALUES(NULL, ?, ?, ?, ?);
     .await
     .wrap_err("could not insert into table AudioRepresentation")?;
     Ok(AudioRepresentationId(result.last_insert_rowid()))
+}
+
+#[tracing::instrument(skip(pool), level = "debug")]
+pub async fn insert_image_representation(
+    pool: &DbPool,
+    repr: &ImageRepresentation,
+) -> Result<ImageRepresentationId> {
+    let result = sqlx::query!(
+        r#"
+INSERT INTO ImageRepresentation
+(id, asset_id, format_name, width, height, file_key)
+VALUES (NULL, ?, ?, ?, ?, ?);
+    "#,
+        repr.asset_id,
+        repr.format_name,
+        repr.width,
+        repr.height,
+        repr.file_key
+    )
+    .execute(pool)
+    .in_current_span()
+    .await
+    .wrap_err("could not insert into table ImageRepresentation")?;
+    Ok(ImageRepresentationId(result.last_insert_rowid()))
+}
+
+#[tracing::instrument(skip(pool), level = "debug")]
+pub async fn get_image_representations(
+    pool: &DbPool,
+    asset_id: AssetId,
+) -> Result<Vec<ImageRepresentation>> {
+    sqlx::query_as!(
+        ImageRepresentation,
+        r#"
+SELECT 
+id,
+asset_id,
+format_name,
+width,
+height,
+file_key
+FROM ImageRepresentation
+WHERE asset_id = ?;
+    "#,
+        asset_id
+    )
+    .fetch_all(pool)
+    .in_current_span()
+    .await
+    .wrap_err("could not query table ImageRepresentation")
 }

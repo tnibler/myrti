@@ -1,6 +1,6 @@
 use super::{
     repository::db_entity::{DbAudioRepresentation, DbVideoRepresentation},
-    AssetId, AudioRepresentationId, VideoRepresentationId,
+    AssetId, AudioRepresentationId, ImageRepresentationId, VideoRepresentationId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -22,6 +22,16 @@ pub struct AudioRepresentation {
     pub codec_name: String,
     pub file_key: String,
     pub media_info_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ImageRepresentation {
+    pub id: ImageRepresentationId,
+    pub asset_id: AssetId,
+    pub format_name: String,
+    pub width: i64,
+    pub height: i64,
+    pub file_key: String,
 }
 
 impl TryFrom<&DbVideoRepresentation> for VideoRepresentation {

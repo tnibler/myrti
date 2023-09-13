@@ -25,7 +25,9 @@ async fn insert_retrieve_asset() {
     let root_dir_id = repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await;
     assert_ok!(root_dir_id);
     let asset = Asset {
-        sp: AssetSpe::Image(Image {}),
+        sp: AssetSpe::Image(Image {
+            image_format_name: "jpeg".into(),
+        }),
         base: AssetBase {
             id: AssetId(0),
             ty: AssetType::Image,
@@ -78,7 +80,9 @@ async fn create_mismatching_asset_ty_and_spe_fails() {
     let root_dir_id =
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
     let asset = CreateAsset {
-        sp: AssetSpe::Image(Image {}),
+        sp: AssetSpe::Image(Image {
+            image_format_name: "jpeg".into(),
+        }),
         ty: AssetType::Video,
         root_dir_id,
         file_type: "jpeg".to_owned(),
@@ -125,7 +129,9 @@ async fn create_update_asset() {
     let root_dir2_id =
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir2).await);
     let asset = CreateAsset {
-        sp: AssetSpe::Image(Image {}),
+        sp: AssetSpe::Image(Image {
+            image_format_name: "jpeg".into(),
+        }),
         ty: AssetType::Image,
         root_dir_id,
         file_type: "jpeg".to_owned(),
@@ -229,7 +235,9 @@ async fn get_assets_with_missing_thumbnails() {
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir2).await);
     // no thumbnails at all
     let asset = CreateAsset {
-        sp: AssetSpe::Image(Image {}),
+        sp: AssetSpe::Image(Image {
+            image_format_name: "jpeg".into(),
+        }),
         ty: AssetType::Image,
         root_dir_id,
         file_type: "jpeg".to_owned(),
@@ -379,7 +387,9 @@ async fn get_videos_without_dash() {
         },
     };
     let asset2 = CreateAsset {
-        sp: AssetSpe::Image(Image {}),
+        sp: AssetSpe::Image(Image {
+            image_format_name: "jpeg".into(),
+        }),
         ty: AssetType::Image,
         root_dir_id,
         file_type: "jpeg".to_owned(),
@@ -651,7 +661,9 @@ async fn get_videos_with_no_acceptable_repr() {
     };
     // image
     let asset2 = Asset {
-        sp: AssetSpe::Image(Image {}),
+        sp: AssetSpe::Image(Image {
+            image_format_name: "jpeg".into(),
+        }),
         base: AssetBase {
             id: AssetId(0),
             ty: AssetType::Image,

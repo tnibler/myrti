@@ -90,9 +90,9 @@ impl TryFrom<&Asset> for DbAsset {
 
     fn try_from(value: &Asset) -> Result<Self, Self::Error> {
         let file_path = path_to_string(&value.base.file_path)?;
-        let video = match &value.sp {
-            super::AssetSpe::Image(_) => None,
-            super::AssetSpe::Video(video) => Some(video),
+        let (image, video) = match &value.sp {
+            super::AssetSpe::Image(image) => (Some(image), None),
+            super::AssetSpe::Video(video) => (None, Some(video)),
         };
         let timezone_offset: Option<String> = match value.base.timestamp_info {
             TimestampInfo::TzCertain(tz)
@@ -128,6 +128,7 @@ impl TryFrom<&Asset> for DbAsset {
                 .map(|s| s.height),
             thumb_large_orig_width: value.base.thumb_large_orig_size.as_ref().map(|s| s.width),
             thumb_large_orig_height: value.base.thumb_large_orig_size.as_ref().map(|s| s.height),
+            image_format_name: image.map(|i| i.image_format_name.clone()),
             video_codec_name: video.map(|v| v.video_codec_name.clone()),
             video_bitrate: video.map(|v| v.video_bitrate),
             audio_codec_name: video.map(|v| v.audio_codec_name.clone()).flatten(),
@@ -169,7 +170,12 @@ impl TryFrom<&DbAsset> for Asset {
             }
         };
         let sp = match value.ty {
-            DbAssetType::Image => AssetSpe::Image(Image {}),
+            DbAssetType::Image => AssetSpe::Image(Image {
+                image_format_name: value
+                    .image_format_name
+                    .clone()
+                    .ok_or(eyre!("image DbAsset must have image_format_name set"))?,
+            }),
             DbAssetType::Video => AssetSpe::Video(Video {
                 video_codec_name: value
                     .video_codec_name

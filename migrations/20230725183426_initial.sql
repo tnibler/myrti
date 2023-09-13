@@ -41,6 +41,7 @@ CREATE TABLE Asset (
   thumb_large_orig_height INTEGER,
 
   -- columns for images only
+  image_format_name TEXT,
 
   -- columns for videos only
   video_codec_name TEXT,
@@ -57,16 +58,18 @@ CREATE TABLE Asset (
   CHECK(has_dash IN (0, 1)),
   -- valid Image or Video
   CHECK((ty = 1
-          AND video_codec_name IS NULL
-          AND video_bitrate IS NULL
-          AND audio_codec_name IS NULL
-          AND has_dash IS NULL)
-        OR (
-          ty = 2 
-          AND video_codec_name IS NOT NULL
-          AND video_bitrate IS NOT NULL 
-          AND has_dash IS NOT NULL
-          -- audio_codec_name can be null if there's no audio stream
+      AND image_format_name IS NOT NULL
+      AND video_codec_name IS NULL
+      AND video_bitrate IS NULL
+      AND audio_codec_name IS NULL
+      AND has_dash IS NULL)
+    OR (
+      ty = 2 
+      AND image_format_name IS NULL
+      AND video_codec_name IS NOT NULL
+      AND video_bitrate IS NOT NULL 
+      AND has_dash IS NOT NULL
+      -- audio_codec_name can be null if there's no audio stream
   ))
 ) STRICT;
 
@@ -99,6 +102,16 @@ CREATE TABLE AudioRepresentation (
   -- bitrate INTEGER NOT NULL,
   file_key TEXT NOT NULL,
   media_info_key TEXT NOT NULL,
+  FOREIGN KEY (asset_id) REFERENCES Asset(id)
+) STRICT;
+
+CREATE TABLE ImageRepresentation (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  asset_id INTEGER NOT NULL,
+  format_name TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  file_key TEXT NOT NULL,
   FOREIGN KEY (asset_id) REFERENCES Asset(id)
 ) STRICT;
 

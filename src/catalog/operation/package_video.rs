@@ -14,16 +14,18 @@ use crate::{
         AssetId, AudioRepresentation, AudioRepresentationId, Size, Video, VideoAsset,
         VideoRepresentation, VideoRepresentationId,
     },
-    processing::video::{
+    processing::{
         commands::{FFmpeg, FFmpegIntoShaka, MpdGenerator, ShakaIntoFFmpeg, ShakaPackager},
-        ffmpeg::FFmpegTrait,
-        ffmpeg_into_shaka::{FFmpegIntoShakaFFmpegTrait, FFmpegIntoShakaTrait},
-        mpd_generator::MpdGeneratorTrait,
-        shaka::{RepresentationType, ShakaPackagerTrait},
-        shaka_into_ffmpeg::ShakaIntoFFmpegTrait,
-        transcode::{ProduceAudio, ProduceVideo},
-        video_rotation::FFProbeRotationTrait,
-        FFProbe,
+        video::{
+            ffmpeg::FFmpegTrait,
+            ffmpeg_into_shaka::{FFmpegIntoShakaFFmpegTrait, FFmpegIntoShakaTrait},
+            mpd_generator::MpdGeneratorTrait,
+            shaka::{RepresentationType, ShakaPackagerTrait},
+            shaka_into_ffmpeg::ShakaIntoFFmpegTrait,
+            transcode::{ProduceAudio, ProduceVideo},
+            video_rotation::FFProbeRotationTrait,
+            FFProbe,
+        },
     },
 };
 

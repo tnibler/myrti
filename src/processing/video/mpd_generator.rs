@@ -84,7 +84,7 @@ pub struct MpdGeneratorMock {}
 
 #[cfg(feature = "mock-commands")]
 #[async_trait]
-impl MpdGeneratorTrait for MpdGenerator {
+impl MpdGeneratorTrait for MpdGeneratorMock {
     #[instrument(name = "mpd_generator", skip(storage, media_info_keys))]
     async fn run(
         media_info_keys: impl Iterator<Item = &str> + Send,

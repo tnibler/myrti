@@ -11,6 +11,7 @@ use crate::{
     },
     processing::{
         self,
+        commands::GenerateThumbnail,
         image::thumbnail::{GenerateThumbnailTrait, ThumbnailParams},
     },
 };
@@ -70,7 +71,7 @@ pub struct ThumbnailSideEffectResult {
 }
 
 #[instrument(skip(pool, storage))]
-pub async fn perform_side_effects_create_thumbnail<G: GenerateThumbnailTrait>(
+pub async fn perform_side_effects_create_thumbnail(
     storage: &Storage,
     pool: &DbPool,
     op: &CreateThumbnailWithPaths,
@@ -87,7 +88,7 @@ pub async fn perform_side_effects_create_thumbnail<G: GenerateThumbnailTrait>(
     let asset = repository::asset::get_asset(pool, op.asset_id).await?;
     // TODO don't await sequentially. Not super bad because op.thumbnails is small but still
     for thumb in &op.thumbnails {
-        match create_thumbnail::<G>(in_path.clone(), asset.base.ty, thumb, storage)
+        match create_thumbnail(in_path.clone(), asset.base.ty, thumb, storage)
             .in_current_span()
             .await
         {
@@ -101,7 +102,7 @@ pub async fn perform_side_effects_create_thumbnail<G: GenerateThumbnailTrait>(
 }
 
 #[instrument(skip(storage))]
-async fn create_thumbnail<G: GenerateThumbnailTrait>(
+async fn create_thumbnail(
     asset_path: PathBuf,
     asset_type: AssetType,
     thumb: &ThumbnailToCreateWithPaths,
@@ -126,8 +127,8 @@ async fn create_thumbnail<G: GenerateThumbnailTrait>(
         out_dimension,
     };
     let res = match asset_type {
-        AssetType::Image => G::generate_thumbnail(thumbnail_params).await,
-        AssetType::Video => G::generate_video_thumbnail(thumbnail_params).await,
+        AssetType::Image => GenerateThumbnail::generate_thumbnail(thumbnail_params).await,
+        AssetType::Video => GenerateThumbnail::generate_video_thumbnail(thumbnail_params).await,
     };
     tx.send(res).unwrap();
     let result = rx

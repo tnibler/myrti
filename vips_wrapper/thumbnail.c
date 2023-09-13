@@ -1,5 +1,5 @@
+#include <assert.h>
 #include <vips/vips.h>
-
 #include <vips/conversion.h>
 #include <vips/error.h>
 #include <vips/foreign.h>
@@ -34,6 +34,7 @@ int thumbnail(ThumbnailParams params) {
       }
       return ret;
     }
+    assert(out);
     ret = vips_image_write_to_file(out, params.out_paths[i], NULL);
     if (out != NULL) {
       g_object_unref(out);

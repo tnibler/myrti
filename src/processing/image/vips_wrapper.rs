@@ -7,6 +7,11 @@ use std::{
 };
 use tracing::{debug_span, error, info_span};
 
+use crate::catalog::image_conversion_target::{
+    heif::{BitDepth, Compression},
+    ImageConversionTarget,
+};
+
 #[allow(non_snake_case)]
 mod wrapper {
     include!(concat!(env!("OUT_DIR"), "/vips_wrapper_bindings.rs"));
@@ -120,5 +125,52 @@ pub fn get_image_size(path: &Path) -> Result<Size> {
             height: out.height,
         }),
         _ => Err(eyre!("Error getting image info with libvips")),
+    }
+}
+
+pub fn convert_image(input: &Path, output: &Path, target: &ImageConversionTarget) -> Result<()> {
+    let c_in_path = CString::new(input.as_os_str().as_bytes()).wrap_err(format!(
+        "Could not convert path {} to bytes",
+        input.display()
+    ))?;
+    let c_out_path = CString::new(output.as_os_str().as_bytes()).wrap_err(format!(
+        "Could not convert path {} to bytes",
+        output.display()
+    ))?;
+    match target {
+        ImageConversionTarget::AVIF(avif) => {
+            let c_params = wrapper::HeifSaveParams {
+                quality: avif.quality.into(),
+                lossless: if avif.lossless { 1 } else { 0 },
+                bit_depth: match avif.bit_depth {
+                    BitDepth::Eight => 8,
+                    BitDepth::Ten => 10,
+                    BitDepth::Twelve => 12,
+                },
+                compression: match avif.compression {
+                    Compression::HEVC => 1,
+                    Compression::AVC => 2,
+                    Compression::JPEG => 3,
+                    Compression::AV1 => 4,
+                },
+            };
+            let ret =
+                unsafe { wrapper::convert_heif(c_in_path.as_ptr(), c_out_path.as_ptr(), c_params) };
+            match ret {
+                0 => Ok(()),
+                _ => Err(eyre!("Error converting image to HEIF with libvips")),
+            }
+        }
+        ImageConversionTarget::JPEG(jpeg) => {
+            let c_params = wrapper::JpegSaveParams {
+                quality: jpeg.quality.into(),
+            };
+            let ret =
+                unsafe { wrapper::convert_jpeg(c_in_path.as_ptr(), c_out_path.as_ptr(), c_params) };
+            match ret {
+                0 => Ok(()),
+                _ => Err(eyre!("Error converting image to JPEG with libvips")),
+            }
+        }
     }
 }

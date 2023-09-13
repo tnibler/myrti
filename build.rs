@@ -29,6 +29,7 @@ fn main() {
     wrapper_cc
         .file("vips_wrapper/thumbnail.c")
         .file("vips_wrapper/image_info.c")
+        .file("vips_wrapper/image_conversion.c")
         .warnings_into_errors(true);
     for flag in flags {
         if !flag.is_empty() {

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::{
-    model::*,
+    model::{repository::duplicate_asset::NewDuplicateAsset, *},
     processing::{self, hash::hash_file},
     repository::{self, pool::DbPool},
 };
@@ -47,6 +47,7 @@ pub async fn index_asset_root(asset_root: &AssetRootDir, pool: &DbPool) -> Resul
     Ok(new_asset_ids)
 }
 
+/// Returns Some(AssetId) if a new, non duplicate asset was indexed and added to the database
 #[instrument(skip(pool))]
 async fn index_file(
     path: &Path,
@@ -121,6 +122,26 @@ async fn index_file(
             return Ok(None);
         }
     };
+    let file = tokio::fs::File::open(&path)
+        .await
+        .wrap_err("could not open asset file")?
+        .try_into_std()
+        .unwrap();
+    let hash = hash_file(file).await?;
+    let existing_with_same_hash = repository::asset::get_asset_with_hash(pool, hash).await?;
+    if let Some(existing_asset_id) = existing_with_same_hash {
+        repository::duplicate_asset::insert_duplicate_asset(
+            pool,
+            NewDuplicateAsset {
+                existing_asset_id,
+                asset_root_dir_id: asset_root.id,
+                path_in_asset_root,
+            },
+        )
+        .in_current_span()
+        .await?;
+        return Ok(None);
+    }
     let timestamp_guess = figure_out_utc_timestamp(&metadata);
     let (timestamp, timestamp_info): (DateTime<Utc>, TimestampInfo) = match timestamp_guess {
         TimestampGuess::None => (Utc::now(), TimestampInfo::NoTimestamp),
@@ -134,12 +155,6 @@ async fn index_file(
             TimestampInfo::TzGuessedLocal(*Local::now().offset()),
         ),
     };
-    let file = tokio::fs::File::open(&path)
-        .await
-        .wrap_err("could not open asset file")?
-        .try_into_std()
-        .unwrap();
-    let hash = hash_file(file).await?;
     let create_asset = CreateAsset {
         ty,
         root_dir_id: asset_root.id,

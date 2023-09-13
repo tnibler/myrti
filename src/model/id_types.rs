@@ -26,5 +26,6 @@ impl_id!(AssetRootDirId);
 impl_id!(AlbumId);
 impl_id!(AlbumEntryId);
 impl_id!(DataDirId);
+impl_id!(DuplicateAssetId);
 impl_id!(VideoRepresentationId);
 impl_id!(AudioRepresentationId);

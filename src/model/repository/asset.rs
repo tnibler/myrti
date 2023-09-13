@@ -6,6 +6,7 @@ use eyre::{eyre, Context, Result};
 use sqlx::{QueryBuilder, Sqlite, SqliteConnection};
 use tracing::{debug, error, instrument, Instrument};
 
+use crate::model::util::hash_u64_to_vec8;
 use crate::model::{
     Asset, AssetBase, AssetId, AssetPathOnDisk, AssetSpe, AssetThumbnails, AssetType, CreateAsset,
     VideoAsset,
@@ -55,6 +56,22 @@ WHERE id=?;
     .in_current_span()
     .await?
     .try_into()
+}
+
+pub async fn get_asset_with_hash(pool: &DbPool, hash: u64) -> Result<Option<AssetId>> {
+    let hash = hash_u64_to_vec8(hash);
+    let maybe_id = sqlx::query!(
+        r#"
+SELECT id FROM Asset 
+WHERE hash = ?;
+    "#,
+        hash
+    )
+    .fetch_optional(pool)
+    .await
+    .wrap_err("could not query table Asset")?
+    .map(|r| AssetId(r.id));
+    Ok(maybe_id)
 }
 
 #[instrument(skip(pool))]

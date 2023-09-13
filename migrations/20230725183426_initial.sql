@@ -17,7 +17,7 @@ CREATE TABLE Asset (
   root_dir_id INTEGER NOT NULL,
   file_path TEXT NOT NULL,
   file_type TEXT NOT NULL,
-  hash BLOB,
+  hash BLOB UNIQUE,
   is_hidden INTEGER NOT NULL CHECK (is_hidden IN (0, 1)),
   -- UTC timestamp in milliseconds since UNIX epoch
   added_at INTEGER NOT NULL,

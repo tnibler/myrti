@@ -8,8 +8,8 @@ use tracing::{debug, error, instrument, Instrument};
 
 use crate::model::util::hash_u64_to_vec8;
 use crate::model::{
-    Asset, AssetBase, AssetId, AssetPathOnDisk, AssetSpe, AssetThumbnails, AssetType, CreateAsset,
-    VideoAsset,
+    Asset, AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetThumbnails,
+    AssetType, CreateAsset, VideoAsset,
 };
 
 use super::db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType};
@@ -94,14 +94,27 @@ WHERE Asset.id = ?;
 }
 
 #[instrument(skip(pool))]
-pub async fn asset_with_path_exists(pool: &DbPool, path: &Path) -> Result<bool> {
+pub async fn asset_or_duplicate_with_path_exists(
+    pool: &DbPool,
+    asset_root_dir_id: AssetRootDirId,
+    path: &Path,
+) -> Result<bool> {
     let path = path.to_str().unwrap();
     Ok(sqlx::query!(
         r#"
 SELECT (1) as a
-FROM Asset WHERE file_path = ?;
+FROM Asset WHERE 
+file_path = $1 
+AND root_dir_id = $2
+UNION 
+SELECT (1) as a
+FROM DuplicateAsset WHERE
+file_path = $1
+AND root_dir_id = $2
+LIMIT 1;
     "#,
-        path
+        path,
+        asset_root_dir_id,
     )
     .fetch_optional(pool)
     .in_current_span()

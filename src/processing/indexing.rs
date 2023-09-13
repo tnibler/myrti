@@ -57,7 +57,12 @@ async fn index_file(
     let path_in_asset_root = path
         .strip_prefix(&asset_root.path)
         .wrap_err("file to index is not in provided asset root")?;
-    let existing = repository::asset::asset_with_path_exists(pool, path_in_asset_root).await?;
+    let existing = repository::asset::asset_or_duplicate_with_path_exists(
+        pool,
+        asset_root.id,
+        path_in_asset_root,
+    )
+    .await?;
     if existing {
         return Ok(None);
     }

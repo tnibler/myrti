@@ -1,0 +1,8 @@
+[[AssetDirs]]
+name = "Small library"
+path = "/home/thomas/p/mediathingy/smalllibrary"
+
+[DataDir]
+path = "/home/thomas/p/mediathingy/server/cachedir"
+maxDiskUsage = 80
+maxSize = "100G"

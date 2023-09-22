@@ -1,4 +1,6 @@
 use std::collections::HashSet;
+use std::eprintln;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -6,7 +8,8 @@ use color_eyre::eyre::{eyre, Context, Result};
 use futures::{StreamExt, TryStreamExt};
 use geo::BoundingRect;
 use geo::{algorithm::contains::Contains, Coord, Geometry};
-use geocode::download;
+use geocode::download::{download_file_reader, download_zipped_file};
+use geocode::{country_data_exists, country_geometry_exists, country_list_exists, download};
 use geojson::GeoJson;
 use serde::Deserialize;
 use sqlx::QueryBuilder;
@@ -32,13 +35,31 @@ pub async fn create_db() -> Result<DbPool> {
     Ok(pool)
 }
 
-pub async fn ingest_country_info(path: &Path, pool: &DbPool) -> Result<()> {
-    let file = tokio::fs::File::open(path).await?;
+pub async fn ingest_country_info(
+    read: impl tokio::io::AsyncRead + Unpin + Send,
+    pool: &DbPool,
+) -> Result<()> {
+    sqlx::query!(
+        r#"
+DELETE FROM Country;
+        "#
+    )
+    .execute(pool)
+    .await
+    .wrap_err("could not delete from table Country")?;
+    sqlx::query!(
+        r#"
+DELETE FROM CountryListPresent;
+        "#
+    )
+    .execute(pool)
+    .await
+    .wrap_err("could not delete from table CountryListPresent")?;
     let mut records = csv_async::AsyncReaderBuilder::new()
         .has_headers(false)
         .comment(Some(b'#'))
         .delimiter(b'\t')
-        .create_reader(file)
+        .create_reader(read)
         .into_records();
     let no_longer_exist: HashSet<i64> = [
         5880801, // American Samoa
@@ -70,18 +91,31 @@ neighbors
         .execute(pool)
         .await?;
     }
+    let now = chrono::Utc::now().timestamp();
+    sqlx::query!(
+        r#"
+INSERT INTO CountryListPresent VALUES (0, ?);
+    "#,
+        now
+    )
+    .execute(pool)
+    .await
+    .wrap_err("could not insert into table CountryListPresent")?;
     Ok(())
 }
 
-pub async fn ingest_country_geojson(path: &Path, pool: &DbPool) -> Result<()> {
-    let file = tokio::fs::File::open(path).await?;
+pub async fn ingest_country_geojson(
+    read: impl tokio::io::AsyncRead + Unpin + Send,
+    pool: &DbPool,
+) -> Result<()> {
     let mut records = csv_async::AsyncReaderBuilder::new()
         .has_headers(true)
         .comment(Some(b'#'))
         .delimiter(b'\t')
-        .create_reader(file)
+        .create_reader(read)
         .into_records();
     while let Some(record) = records.next().await {
+        dbg!(&record);
         let record: GeoJsonCsv = record?.deserialize(None)?;
         let exists = sqlx::query!(
             r#"
@@ -268,7 +302,7 @@ AND feature_code IN ('PPL', 'PPLL', 'PPLS', 'PPLA', 'PPLA2', 'PPLA3', 'PPLA4', '
 }
 
 fn parse_lat_lon(s: &str) -> Result<(f32, f32)> {
-    match s.trim().split(", ").collect::<Vec<_>>() {
+    match s.trim().split(",").map(|s| s.trim()).collect::<Vec<_>>() {
         split if split.len() == 2 => {
             let f: Vec<f32> = split
                 .into_iter()
@@ -285,12 +319,36 @@ async fn main() {
     println!("initializing");
     let pool = create_db().await.unwrap();
 
-    // ingest_country_info(&PathBuf::from("./data/countryInfo.txt"), &pool)
-    //     .await
-    //     .unwrap();
-    // ingest_country_geojson(&PathBuf::from("./data/shapes_all_low.txt"), &pool)
-    //     .await
-    //     .unwrap();
+    if let None = country_list_exists(&pool).await.unwrap() {
+        eprintln!("downloading countryList.txt");
+        let country_list_read = download_file_reader("countryInfo.txt").await.unwrap();
+        ingest_country_info(country_list_read, &pool).await.unwrap();
+    }
+
+    if let None = country_geometry_exists(&pool).await.unwrap() {
+        eprintln!("downloading shapes_all_low.txt");
+        let country_shapes_path = tempfile::Builder::new()
+            .tempfile()
+            .unwrap()
+            .into_temp_path();
+        download_zipped_file(
+            "shapes_all_low.zip",
+            "shapes_all_low.txt",
+            std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .open("shapes_all_low.txt")
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+        ingest_country_geojson(
+            tokio::fs::File::open(&country_shapes_path).await.unwrap(),
+            &pool,
+        )
+        .await
+        .unwrap();
+    }
     // ingest_geoname_data(&PathBuf::from("./data/DE.txt"), &pool)
     //     .await
     //     .unwrap();
@@ -302,41 +360,47 @@ async fn main() {
         let (lat, lon): (f32, f32) = match parse_lat_lon(&input) {
             Ok(t) => t,
             Err(_) => {
+                eprintln!("error parsing input");
                 input.clear();
                 continue;
             }
         };
-        let result_ids = index.search(&[lat, lon], 10).unwrap();
-        for (id, distance) in result_ids
-            .keys
-            .into_iter()
-            .zip(result_ids.distances.into_iter())
-        {
-            let id = id as i64;
-            let row = sqlx::query!(
-                r#"
-SELECT * FROM Geoname WHERE geoname_id = ?;
-            "#,
-                id
-            )
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-            println!("{}: {}", row.name, distance);
+        //         let result_ids = index.search(&[lat, lon], 10).unwrap();
+        //         for (id, distance) in result_ids
+        //             .keys
+        //             .into_iter()
+        //             .zip(result_ids.distances.into_iter())
+        //         {
+        //             let id = id as i64;
+        //             let row = sqlx::query!(
+        //                 r#"
+        // SELECT * FROM Geoname WHERE geoname_id = ?;
+        //             "#,
+        //                 id
+        //             )
+        //             .fetch_one(&pool)
+        //             .await
+        //             .unwrap();
+        //             println!("{}: {}", row.name, distance);
+        //         }
+        let bbox_candidates = country_bbox_candidates(lat, lon, &pool).await.unwrap();
+        for country_id in bbox_candidates {
+            // if let None = country_data_exists(country_id, &pool).await.unwrap() {
+            //     println!("country data not present");
+            // } else {
+            //     println!("country present")
+            // }
+            // let contains = country_contains(country_id, lat, lon, &pool).await.unwrap();
+            // if contains {
+            //     let name =
+            //         sqlx::query!("SELECT name FROM Country WHERE geoname_id = ?;", country_id)
+            //             .fetch_one(&pool)
+            //             .await
+            //             .unwrap()
+            //             .name;
+            //     println!("{}, {}: {}", lat, lon, name);
+            // }
         }
-        // let bbox_candidates = country_bbox_candidates(lat, lon, &pool).await.unwrap();
-        // for country_id in bbox_candidates {
-        //     let contains = country_contains(country_id, lat, lon, &pool).await.unwrap();
-        //     if contains {
-        //         let name =
-        //             sqlx::query!("SELECT name FROM Country WHERE geoname_id = ?;", country_id)
-        //                 .fetch_one(&pool)
-        //                 .await
-        //                 .unwrap()
-        //                 .name;
-        //         println!("{}, {}: {}", lat, lon, name);
-        //     }
-        // }
         input.clear();
     }
 

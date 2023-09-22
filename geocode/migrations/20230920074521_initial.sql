@@ -33,3 +33,23 @@ CREATE TABLE Geoname (
   
   FOREIGN KEY (country_code) REFERENCES Country(iso)
 ) STRICT;
+
+-- when table Country was populated
+CREATE TABLE CountryListPresent (
+  id INTEGER PRIMARY KEY CHECK(id = 0),
+  added_at INTEGER NOT NULL
+) STRICT;
+
+-- when table CountryGeometry was populated
+CREATE TABLE CountryGeometryPresent (
+  id INTEGER PRIMARY KEY CHECK(id = 0),
+  added_at INTEGER NOT NULL
+) STRICT;
+
+-- when geoname info for Country was added to table Geoname
+CREATE TABLE CountryDataPresent (
+  geoname_id INTEGER PRIMARY KEY NOT NULL,
+  -- Unix timestamp in seconds
+  added_at INTEGER NOT NULL
+) STRICT;
+

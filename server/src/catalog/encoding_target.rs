@@ -14,7 +14,7 @@ pub enum CodecTarget {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Scale {
     HeightKeepAspect { height: u32 },
     WidthKeepAspect { width: u32 },

@@ -1,4 +1,11 @@
-pub enum ImageConversionTarget {
+#[derive(Debug, Clone)]
+pub struct ImageConversionTarget {
+    pub format: ImageFormatTarget,
+    pub scale: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ImageFormatTarget {
     AVIF(heif::AvifTarget),
     JPEG(jpeg::JpegTarget),
 }

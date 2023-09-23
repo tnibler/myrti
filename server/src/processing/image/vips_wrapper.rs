@@ -9,7 +9,7 @@ use tracing::{debug_span, error, info_span};
 
 use crate::catalog::image_conversion_target::{
     heif::{BitDepth, Compression},
-    ImageConversionTarget,
+    ImageConversionTarget, ImageFormatTarget,
 };
 
 #[allow(non_snake_case)]
@@ -87,11 +87,11 @@ pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<()> {
             OutDimension::Crop { width: _, height } => height,
         },
         keep_aspect: match params.out_dimension {
-            OutDimension::KeepAspect { width: _ } => 1,
+            OutDimension::KeepAspect { width: _ } => true,
             OutDimension::Crop {
                 width: _,
                 height: _,
-            } => 0,
+            } => false,
         },
     };
     let ret = unsafe { wrapper::thumbnail(params) };
@@ -137,9 +137,13 @@ pub fn convert_image(input: &Path, output: &Path, target: &ImageConversionTarget
         "Could not convert path {} to bytes",
         output.display()
     ))?;
-    match target {
-        ImageConversionTarget::AVIF(avif) => {
-            let c_params = wrapper::HeifSaveParams {
+    let c_scale = wrapper::Scale {
+        do_scale: target.scale.is_some(),
+        scale: target.scale.unwrap_or(0.0),
+    };
+    match &target.format {
+        ImageFormatTarget::AVIF(avif) => {
+            let c_save_params = wrapper::HeifSaveParams {
                 quality: avif.quality.into(),
                 lossless: if avif.lossless { 1 } else { 0 },
                 bit_depth: match avif.bit_depth {
@@ -154,19 +158,31 @@ pub fn convert_image(input: &Path, output: &Path, target: &ImageConversionTarget
                     Compression::AV1 => 4,
                 },
             };
-            let ret =
-                unsafe { wrapper::convert_heif(c_in_path.as_ptr(), c_out_path.as_ptr(), c_params) };
+            let ret = unsafe {
+                wrapper::convert_heif(
+                    c_in_path.as_ptr(),
+                    c_out_path.as_ptr(),
+                    c_save_params,
+                    c_scale,
+                )
+            };
             match ret {
                 0 => Ok(()),
                 _ => Err(eyre!("Error converting image to HEIF with libvips")),
             }
         }
-        ImageConversionTarget::JPEG(jpeg) => {
-            let c_params = wrapper::JpegSaveParams {
+        ImageFormatTarget::JPEG(jpeg) => {
+            let c_save_params = wrapper::JpegSaveParams {
                 quality: jpeg.quality.into(),
             };
-            let ret =
-                unsafe { wrapper::convert_jpeg(c_in_path.as_ptr(), c_out_path.as_ptr(), c_params) };
+            let ret = unsafe {
+                wrapper::convert_jpeg(
+                    c_in_path.as_ptr(),
+                    c_out_path.as_ptr(),
+                    c_save_params,
+                    c_scale,
+                )
+            };
             match ret {
                 0 => Ok(()),
                 _ => Err(eyre!("Error converting image to JPEG with libvips")),

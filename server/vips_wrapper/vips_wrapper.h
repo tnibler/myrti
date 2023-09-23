@@ -1,6 +1,8 @@
 #ifndef __VIPS_WRAPPER_H
 #define __VIPS_WRAPPER_H
 
+#include <stdbool.h>
+
 int init();
 void teardown();
 
@@ -8,7 +10,7 @@ typedef struct ThumbnailOptions {
   const char *in_path;
   const char *const *out_paths;
   unsigned long long num_out_paths;
-  int keep_aspect;
+  bool keep_aspect;
   int width;
   int height;
 } ThumbnailParams;
@@ -34,12 +36,17 @@ typedef struct HeifSaveParams {
   int compression;
 } HeifSaveParams;
 
-int convert_heif(const char *, const char *, HeifSaveParams);
+typedef struct Scale {
+  bool do_scale;
+  double scale;
+} Scale;
+
+int convert_heif(const char *, const char *, HeifSaveParams, Scale);
 
 typedef struct JpegSaveParams {
   int quality;
 } JpegSaveParams;
 
-int convert_jpeg(const char *, const char *, JpegSaveParams);
+int convert_jpeg(const char *, const char *, JpegSaveParams, Scale);
 
 #endif // __VIPS_WRAPPER_H

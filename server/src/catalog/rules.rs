@@ -174,3 +174,5 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
     //         transcode to that rung
     todo!()
 }
+
+pub async fn image_conversion_due(pool: &DbPool) -> Result<Vec<()>> {

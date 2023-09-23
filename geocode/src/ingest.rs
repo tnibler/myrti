@@ -49,6 +49,15 @@ neighbors
         .execute(pool)
         .await?;
     }
+    let now = chrono::Utc::now().timestamp();
+    sqlx::query!(
+        r#"
+INSERT INTO CountryListPresent VALUES (0, ?);
+    "#,
+        now
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -108,6 +117,15 @@ geojson
         .execute(pool)
         .await?;
     }
+    let now = chrono::Utc::now().timestamp();
+    sqlx::query!(
+        r#"
+INSERT INTO CountryGeometryPresent VALUES (0, ?);
+    "#,
+        now
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

@@ -24,3 +24,6 @@ async-compression = { version = "0.4.3", features = ["tokio", "deflate"] }
 tempfile = "3.8.0"
 zip = "0.6.6"
 chrono = "0.4.31"
+tracing = "0.1.37"
+camino = "1.1.6"
+thiserror = "1.0.48"

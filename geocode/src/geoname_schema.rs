@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 /// Row in countryInfo.txt
 #[derive(Debug, Deserialize)]
-pub struct CountryInfoCsv {
+pub(crate) struct CountryInfoCsv {
     pub iso: String,
     pub iso3: String,
     pub iso_numeric: String,
@@ -25,7 +25,7 @@ pub struct CountryInfoCsv {
 
 /// Row in shapes_all_low.txt
 #[derive(Deserialize)]
-pub struct GeoJsonCsv {
+pub(crate) struct GeoJsonCsv {
     #[serde(rename = "geoNameId")]
     pub geoname_id: i64,
     #[serde(rename = "geoJSON")]
@@ -34,7 +34,7 @@ pub struct GeoJsonCsv {
 
 /// Row in main geonames country CSV file
 #[derive(Deserialize)]
-pub struct GeonameCsv {
+pub(crate) struct GeonameCsv {
     pub geoname_id: i64,
     pub name: String,
     pub asciiname: String,

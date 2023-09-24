@@ -1,5 +1,6 @@
 use crate::job::{
     dash_segmenting_job::{VideoPackagingJob, VideoPackagingJobParams},
+    image_conversion_job::{ImageConversionJob, ImageConversionParams},
     indexing_job::{IndexingJob, IndexingJobParams},
     thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
 };
@@ -23,6 +24,7 @@ pub enum JobResultType {
     Indexing(<IndexingJob as Job>::Result),
     Thumbnail(<ThumbnailJob as Job>::Result),
     VideoPackaging(<VideoPackagingJob as Job>::Result),
+    ImageConversion(<ImageConversionJob as Job>::Result),
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +32,7 @@ pub enum JobType {
     Indexing { params: IndexingJobParams },
     Thumbnail { params: ThumbnailJobParams },
     VideoPackaging { params: VideoPackagingJobParams },
+    ImageConversion { params: ImageConversionParams },
 }
 
 impl Display for JobType {
@@ -38,6 +41,7 @@ impl Display for JobType {
             JobType::Indexing { params: _ } => "Indexing",
             JobType::Thumbnail { params: _ } => "Thumbnail",
             JobType::VideoPackaging { params: _ } => "VideoPackaging",
+            JobType::ImageConversion { params: _ } => "ImageConversion",
         };
         write!(f, "{}", s)
     }
@@ -49,6 +53,7 @@ impl Display for JobResultType {
             JobResultType::Indexing(_) => "Indexing",
             JobResultType::Thumbnail(_) => "Thumbnail",
             JobResultType::VideoPackaging(_) => "VideoPackaging",
+            JobResultType::ImageConversion(_) => "ImageConversion",
         };
         write!(f, "{}Result", s)
     }

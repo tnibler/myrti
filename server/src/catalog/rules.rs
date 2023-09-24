@@ -15,9 +15,13 @@ use crate::{
     },
 };
 
-use super::operation::{
-    create_thumbnail::{CreateThumbnail, ThumbnailToCreate},
-    package_video::PackageVideo,
+use super::{
+    image_conversion_target::{heif::AvifTarget, ImageConversionTarget},
+    operation::{
+        convert_image::ConvertImage,
+        create_thumbnail::{CreateThumbnail, ThumbnailToCreate},
+        package_video::PackageVideo,
+    },
 };
 
 #[instrument(skip(pool))]
@@ -175,6 +179,28 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
     todo!()
 }
 
-pub async fn image_conversion_due(pool: &DbPool) -> Result<Vec<()>> {
-    todo!()
+pub async fn image_conversion_due(pool: &DbPool) -> Result<Vec<ConvertImage>> {
+    let acceptable_formats = ["jpeg", "avif", "png", "webp"];
+    let assets_no_good_repr = repository::asset::get_image_assets_with_no_acceptable_repr(
+        pool,
+        acceptable_formats.into_iter(),
+    )
+    .await?;
+    let ops = assets_no_good_repr
+        .into_iter()
+        .map(|asset_id| {
+            let target = ImageConversionTarget {
+                scale: None,
+                format: super::image_conversion_target::ImageFormatTarget::AVIF(
+                    AvifTarget::default(),
+                ),
+            };
+            ConvertImage {
+                asset_id,
+                output_key: storage_key::image_represenation(asset_id, &target),
+                target,
+            }
+        })
+        .collect();
+    Ok(ops)
 }

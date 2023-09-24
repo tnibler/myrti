@@ -2,6 +2,8 @@ use std::fmt;
 
 use crate::model::{AssetId, ThumbnailFormat, ThumbnailType};
 
+use super::image_conversion_target::{ImageConversionTarget, ImageFormatTarget};
+
 pub fn dash_file(asset_id: AssetId, filename: fmt::Arguments) -> String {
     format!("dash/{}/{}", asset_id.0, filename)
 }
@@ -21,4 +23,23 @@ pub fn thumbnail(asset_id: AssetId, ty: ThumbnailType, format: ThumbnailFormat) 
         ThumbnailFormat::Avif => format_args!("avif"),
     };
     format!("thumb/{}{}.{}", asset_id.0, size, extension)
+}
+
+pub fn image_represenation(asset_id: AssetId, target: &ImageConversionTarget) -> String {
+    match target.scale {
+        None => format!("{}.{}", asset_id.0, image_file_extension(&target.format)),
+        Some(scale) => format!(
+            "{}_{}x.{}",
+            asset_id.0,
+            scale,
+            image_file_extension(&target.format)
+        ),
+    }
+}
+
+fn image_file_extension(target: &ImageFormatTarget) -> &'static str {
+    match target {
+        ImageFormatTarget::JPEG(_) => "jpg",
+        ImageFormatTarget::AVIF(_) => "avif",
+    }
 }

@@ -41,12 +41,26 @@ typedef struct Scale {
   double scale;
 } Scale;
 
-int convert_heif(const char *, const char *, HeifSaveParams, Scale);
+typedef struct ConvertHeifResult {
+  int err;
+  int width;
+  int height;
+} ConvertHeifResult;
+
+ConvertHeifResult convert_heif(const char *, const char *, HeifSaveParams,
+                               Scale);
 
 typedef struct JpegSaveParams {
   int quality;
 } JpegSaveParams;
 
-int convert_jpeg(const char *, const char *, JpegSaveParams, Scale);
+typedef struct ConvertJpegResult {
+  int err;
+  int width;
+  int height;
+} ConvertJpegResult;
+
+ConvertJpegResult convert_jpeg(const char *, const char *, JpegSaveParams,
+                               Scale);
 
 #endif // __VIPS_WRAPPER_H

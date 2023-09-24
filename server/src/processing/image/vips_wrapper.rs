@@ -128,7 +128,12 @@ pub fn get_image_size(path: &Path) -> Result<Size> {
     }
 }
 
-pub fn convert_image(input: &Path, output: &Path, target: &ImageConversionTarget) -> Result<()> {
+#[tracing::instrument(level = "debug")]
+pub fn convert_image(
+    input: &Path,
+    output: &Path,
+    target: &ImageConversionTarget,
+) -> Result<Option<Size>> {
     let c_in_path = CString::new(input.as_os_str().as_bytes()).wrap_err(format!(
         "Could not convert path {} to bytes",
         input.display()
@@ -166,8 +171,14 @@ pub fn convert_image(input: &Path, output: &Path, target: &ImageConversionTarget
                     c_scale,
                 )
             };
-            match ret {
-                0 => Ok(()),
+            match ret.err {
+                0 => match target.scale {
+                    None => Ok(None),
+                    Some(_size) => Ok(Some(Size {
+                        width: ret.width,
+                        height: ret.height,
+                    })),
+                },
                 _ => Err(eyre!("Error converting image to HEIF with libvips")),
             }
         }
@@ -183,9 +194,15 @@ pub fn convert_image(input: &Path, output: &Path, target: &ImageConversionTarget
                     c_scale,
                 )
             };
-            match ret {
-                0 => Ok(()),
-                _ => Err(eyre!("Error converting image to JPEG with libvips")),
+            match ret.err {
+                0 => match target.scale {
+                    None => Ok(None),
+                    Some(_size) => Ok(Some(Size {
+                        width: ret.width,
+                        height: ret.height,
+                    })),
+                },
+                _ => Err(eyre!("Error converting image to HEIF with libvips")),
             }
         }
     }

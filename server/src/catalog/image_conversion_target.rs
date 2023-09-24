@@ -110,3 +110,10 @@ pub mod heif {
         }
     }
 }
+
+pub fn image_format_name(format_target: &ImageFormatTarget) -> &'static str {
+    match format_target {
+        ImageFormatTarget::AVIF(_) => "avif",
+        ImageFormatTarget::JPEG(_) => "jpeg",
+    }
+}

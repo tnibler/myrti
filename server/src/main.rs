@@ -1,4 +1,4 @@
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc};
 
 use axum::{
     extract::{Query, State},
@@ -7,6 +7,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use camino::Utf8PathBuf as PathBuf;
 use color_eyre::eyre::Context;
 use config::Config;
 use eyre::{self, Result};
@@ -143,7 +144,7 @@ async fn main() -> Result<()> {
 
     info!("Starting up...");
     processing_global_init();
-    let config = config::read_config(PathBuf::from_str("config.toml").unwrap().as_path())
+    let config = config::read_config(PathBuf::from_str("server/config.toml").unwrap().as_path())
         .await
         .unwrap();
     let pool = db_setup().await.unwrap();

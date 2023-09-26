@@ -1,9 +1,7 @@
+use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use color_eyre::eyre::{bail, Context, Result};
 use serde::Deserialize;
-use std::{
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 struct TomlAssetDir {
@@ -22,20 +20,28 @@ struct TomlDataDir {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+struct TomlBinPaths {
+    pub mpd_generator: Option<String>,
+    pub shaka_packager: Option<String>,
+    pub ffmpeg: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 struct TomlConfig {
     #[serde(rename = "AssetDirs")]
     pub asset_dirs: Vec<TomlAssetDir>,
     #[serde(rename = "DataDir")]
     pub data_dir: TomlDataDir,
+    pub bin_paths: Option<TomlBinPaths>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssetDir {
     pub path: PathBuf,
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataDir {
     pub path: PathBuf,
     pub name: Option<String>,
@@ -43,16 +49,24 @@ pub struct DataDir {
     pub max_disk_usage: Option<i32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BinPaths {
+    pub mpd_generator: Option<PathBuf>,
+    pub shaka_packager: Option<PathBuf>,
+    pub ffmpeg: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub asset_dirs: Vec<AssetDir>,
     pub data_dir: DataDir,
+    pub bin_paths: Option<BinPaths>,
 }
 
 pub async fn read_config(path: &Path) -> Result<Config> {
     let toml_str = tokio::fs::read_to_string(path)
         .await
-        .context(format!("Error reading config file {}", path.display()))?;
+        .context(format!("Error reading config file {}", path))?;
     let toml_config: TomlConfig = toml::from_str(&toml_str).context("Error parsing config file")?;
     let asset_dirs: Vec<AssetDir> = toml_config
         .asset_dirs
@@ -88,8 +102,14 @@ pub async fn read_config(path: &Path) -> Result<Config> {
             max_disk_usage,
         }
     };
+    let bin_paths = toml_config.bin_paths.map(|bin_paths| BinPaths {
+        mpd_generator: bin_paths.mpd_generator.map(PathBuf::from),
+        shaka_packager: bin_paths.shaka_packager.map(PathBuf::from),
+        ffmpeg: bin_paths.ffmpeg.map(PathBuf::from),
+    });
     Ok(Config {
         asset_dirs,
         data_dir,
+        bin_paths,
     })
 }

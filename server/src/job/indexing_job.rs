@@ -1,6 +1,5 @@
 use async_trait::async_trait;
-
-use std::path::PathBuf;
+use camino::Utf8PathBuf as PathBuf;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -44,10 +43,7 @@ impl IndexingJob {
         status_tx
             .send(JobProgress {
                 percent: None,
-                description: format!(
-                    "Indexing asset root {}",
-                    self.params.asset_root.path.to_string_lossy()
-                ),
+                description: format!("Indexing asset root {}", &self.params.asset_root.path),
             })
             .await
             .unwrap();

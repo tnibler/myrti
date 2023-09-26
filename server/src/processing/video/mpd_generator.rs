@@ -1,6 +1,5 @@
-use std::path::PathBuf;
-
 use async_trait::async_trait;
+use camino::Utf8PathBuf as PathBuf;
 use eyre::{eyre, Context, Result};
 use tokio::process::Command;
 use tracing::{debug, instrument, Instrument};
@@ -51,14 +50,16 @@ impl MpdGeneratorTrait for MpdGenerator {
         let input_str = paths
             .iter()
             .map(|p| match p {
-                MediaInfoPath::Local(path) => path.to_str().unwrap(),
-                MediaInfoPath::Tempfile(temp_path) => temp_path.to_str().unwrap(),
+                MediaInfoPath::Local(path) => path.as_str(),
+                MediaInfoPath::Tempfile(temp_path) => camino::Utf8Path::from_path(&temp_path)
+                    .expect("tempfile path should be utf8")
+                    .as_str(),
             })
             .collect::<Vec<_>>()
             .join(",");
-        let mpd_out_str = command_out_file.path().to_str().unwrap();
+        let mpd_out_str = command_out_file.path().as_str();
         // TODO don't hardcode this path
-        let mut command = Command::new("./mpd_generator");
+        let mut command = Command::new("/home/thomas/p/mediathingy/shaka-bin/mpd_generator");
         command
             .arg(format!("--input={}", input_str))
             .arg(format!("--output={}", mpd_out_str));

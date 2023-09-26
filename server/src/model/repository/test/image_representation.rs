@@ -1,16 +1,16 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::collections::HashSet;
 
+use camino::Utf8PathBuf as PathBuf;
 use chrono::Months;
 use claims::assert_ok;
 
 use crate::model::{
     repository::{
         self,
-        representation::get_image_representations,
         test::{create_db, utc_now_millis_zero},
     },
-    Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType, CreateAsset,
-    Image, ImageRepresentation, ImageRepresentationId, Size, TimestampInfo,
+    AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType, CreateAsset, Image,
+    ImageRepresentation, ImageRepresentationId, Size, TimestampInfo,
 };
 
 #[tokio::test]

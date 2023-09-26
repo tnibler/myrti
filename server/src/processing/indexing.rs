@@ -1,5 +1,4 @@
-use std::path::Path;
-
+use camino::Utf8Path as Path;
 use chrono::{DateTime, Local, Utc};
 use color_eyre::eyre::Result;
 use eyre::{eyre, Context};
@@ -25,11 +24,13 @@ pub async fn index_asset_root(asset_root: &AssetRootDir, pool: &DbPool) -> Resul
         match entry {
             Ok(e) => {
                 if e.file_type().is_file() {
-                    if let Some(id) = index_file(e.path(), asset_root, pool)
-                        .in_current_span()
-                        .await?
-                    {
-                        new_asset_ids.push(id);
+                    let utf8_path = camino::Utf8Path::from_path(e.path());
+                    if let Some(path) = utf8_path {
+                        if let Some(id) =
+                            index_file(path, asset_root, pool).in_current_span().await?
+                        {
+                            new_asset_ids.push(id);
+                        }
                     }
                 }
             }
@@ -39,7 +40,7 @@ pub async fn index_asset_root(asset_root: &AssetRootDir, pool: &DbPool) -> Resul
                 } else {
                     error!(
                         "Error during indexing of asset root dir {}",
-                        asset_root.path.as_path().display()
+                        &asset_root.path
                     )
                 }
             }
@@ -74,7 +75,7 @@ async fn index_file(
     let file_type = match &metadata.file.file_type {
         Some(ft) => ft.to_ascii_lowercase(),
         None => {
-            debug!(path=%path.display(), "No file type in exiftool output, ignoring");
+            debug!(%path, "No file type in exiftool output, ignoring");
             return Ok(None);
         }
     };
@@ -132,7 +133,7 @@ async fn index_file(
             (AssetType::Image, image_info, size)
         }
         None | Some(_) => {
-            debug!(path=%path.display(), "Ignoring file");
+            debug!(%path, "Ignoring file");
             return Ok(None);
         }
     };

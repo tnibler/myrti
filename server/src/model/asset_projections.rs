@@ -1,12 +1,11 @@
-use std::path::PathBuf;
+use camino::Utf8PathBuf as PathBuf;
+use serde::Serialize;
 
 use super::{
     repository::db_entity::{DbAssetPathOnDisk, DbAssetThumbnails},
     util::bool_to_int,
     AssetId, AssetType,
 };
-
-use serde::Serialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AssetThumbnails {

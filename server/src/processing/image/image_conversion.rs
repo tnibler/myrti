@@ -1,6 +1,5 @@
-use std::path::PathBuf;
-
 use async_trait::async_trait;
+use camino::Utf8PathBuf as PathBuf;
 use eyre::{Context, Result};
 
 use crate::{

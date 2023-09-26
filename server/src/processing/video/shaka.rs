@@ -1,9 +1,7 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Stdio,
-};
+use std::process::Stdio;
 
 use async_trait::async_trait;
+use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use eyre::{eyre, Context, Result};
 use tokio::process::Command;
 use tracing::{debug, instrument};
@@ -70,17 +68,16 @@ impl ShakaPackagerWithLocalOutputTrait for ShakaPackager {
         if !input.is_file() {
             return Err(eyre!("input paths for segmenting must be files"));
         }
-        let path_str = input.to_str().unwrap();
         let stream = match repr_type {
             RepresentationType::Video => "video",
             RepresentationType::Audio => "audio",
         };
         command.arg(format!(
             "in={},stream={},output={}",
-            path_str,
+            input,
             stream,
-            command_out_filename.to_str().unwrap() // only filename as out path because cwd ==
-                                                   // command_out_dir
+            command_out_filename // only filename as out path because cwd ==
+                                 // command_out_dir
         ));
         command.arg("--output_media_info");
 

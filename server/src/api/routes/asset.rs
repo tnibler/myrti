@@ -209,8 +209,8 @@ async fn get_timeline(
     }))
 }
 
-fn guess_mime_type(path: &std::path::Path) -> Option<&'static str> {
-    let ext = path.extension()?.to_ascii_lowercase().to_str()?.to_string();
+fn guess_mime_type(path: &camino::Utf8Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_ascii_lowercase();
     match ext.as_str() {
         "mp4" => Some("video/mp4"),
         "avif" => Some("image/avif"),
@@ -222,7 +222,7 @@ fn guess_mime_type(path: &std::path::Path) -> Option<&'static str> {
                 "can't guess MIME type for filename '{}'",
                 &path
                     .file_name()
-                    .map(|p| p.to_string_lossy().to_string())
+                    .map(|p| p.to_string())
                     .unwrap_or(String::new())
             );
             None

@@ -1,10 +1,7 @@
-use std::{
-    ffi::{OsStr, OsString},
-    path::Path,
-    process::Stdio,
-};
+use std::{ffi::OsString, process::Stdio};
 
 use async_trait::async_trait;
+use camino::Utf8Path as Path;
 use eyre::{eyre, Context, Result};
 use tokio::process::Command;
 use tracing::{debug, instrument, Instrument};

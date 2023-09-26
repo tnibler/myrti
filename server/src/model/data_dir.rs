@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use camino::Utf8PathBuf as PathBuf;
 
 use super::{repository::db_entity::DbDataDir, util::path_to_string, DataDirId};
 

@@ -1,9 +1,11 @@
-use super::{AssetMetadata, AssetRootId};
-use crate::model;
+use camino::Utf8PathBuf as PathBuf;
 use chrono::{DateTime, Utc};
 use eyre::bail;
 use serde::Serialize;
-use std::path::PathBuf;
+
+use crate::model;
+
+use super::{AssetMetadata, AssetRootId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AssetId(pub String);

@@ -1,9 +1,10 @@
-use std::path::Path;
+use camino::Utf8Path as Path;
+use eyre::{eyre, Context, Result};
+
+use crate::model::{util::path_to_string, AssetRootDir, AssetRootDirId};
 
 use super::db_entity::DbAssetRootDir;
 use super::pool::DbPool;
-use crate::model::{util::path_to_string, AssetRootDir, AssetRootDirId};
-use eyre::{eyre, Context, Result};
 
 pub async fn get_asset_root(pool: &DbPool, id: AssetRootDirId) -> Result<AssetRootDir> {
     match sqlx::query_as!(DbAssetRootDir, "SELECT * FROM AssetRootDir WHERE id=?", id)

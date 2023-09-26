@@ -1,5 +1,6 @@
-use std::{path::Path, process::Stdio};
+use std::process::Stdio;
 
+use camino::Utf8Path as Path;
 use eyre::{eyre, Context, Result};
 use tokio::process::Command;
 use tracing::instrument;

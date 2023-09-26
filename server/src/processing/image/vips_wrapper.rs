@@ -1,10 +1,11 @@
-use eyre::{eyre, Context, Result};
 use std::{
     ffi::{c_char, CString},
     os::unix::prelude::OsStrExt,
-    path::{Path, PathBuf},
     sync::Once,
 };
+
+use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
+use eyre::{eyre, Context, Result};
 use tracing::{debug_span, error, info_span};
 
 use crate::catalog::image_conversion_target::{
@@ -59,17 +60,15 @@ pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<()> {
     // let _enter = span.enter();
     let c_path = CString::new(params.in_path.as_os_str().as_bytes()).wrap_err(format!(
         "Could not convert path {} to bytes",
-        params.in_path.display()
+        &params.in_path
     ))?;
     // c_out_paths has to stay alive for as long as c_out_path_ptrs is used
     let c_out_paths = params
         .out_paths
         .into_iter()
         .map(|path| {
-            CString::new(path.as_os_str().as_bytes()).wrap_err(format!(
-                "Could not convert path {} to bytes",
-                path.display()
-            ))
+            CString::new(path.as_os_str().as_bytes())
+                .wrap_err(format!("Could not convert path {} to bytes", &path))
         })
         .collect::<Result<Vec<_>>>()?;
     let c_out_path_ptrs: Vec<*const c_char> =
@@ -110,10 +109,8 @@ pub struct Size {
 }
 
 pub fn get_image_size(path: &Path) -> Result<Size> {
-    let c_path = CString::new(path.as_os_str().as_bytes()).wrap_err(format!(
-        "Could not convert path {} to bytes",
-        path.display()
-    ))?;
+    let c_path = CString::new(path.as_os_str().as_bytes())
+        .wrap_err(format!("Could not convert path {} to bytes", &path))?;
     let mut out = wrapper::ImageInfo {
         width: 0,
         height: 0,
@@ -134,14 +131,10 @@ pub fn convert_image(
     output: &Path,
     target: &ImageConversionTarget,
 ) -> Result<Option<Size>> {
-    let c_in_path = CString::new(input.as_os_str().as_bytes()).wrap_err(format!(
-        "Could not convert path {} to bytes",
-        input.display()
-    ))?;
-    let c_out_path = CString::new(output.as_os_str().as_bytes()).wrap_err(format!(
-        "Could not convert path {} to bytes",
-        output.display()
-    ))?;
+    let c_in_path = CString::new(input.as_os_str().as_bytes())
+        .wrap_err(format!("Could not convert path {} to bytes", input))?;
+    let c_out_path = CString::new(output.as_os_str().as_bytes())
+        .wrap_err(format!("Could not convert path {} to bytes", output))?;
     let c_scale = wrapper::Scale {
         do_scale: target.scale.is_some(),
         scale: target.scale.unwrap_or(0.0),

@@ -1,5 +1,4 @@
-use std::path::Path;
-
+use camino::Utf8Path as Path;
 use eyre::{Context, Result};
 use tracing::Instrument;
 

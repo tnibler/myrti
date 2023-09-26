@@ -1,5 +1,6 @@
-use std::{path::Path, process::Stdio};
+use std::process::Stdio;
 
+use camino::Utf8Path as Path;
 use chrono::{DateTime, FixedOffset, NaiveDateTime, ParseResult, Utc};
 use eyre::{eyre, Context, Result};
 use tokio::process::Command;

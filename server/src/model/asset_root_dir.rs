@@ -1,7 +1,6 @@
 use super::{repository::db_entity::DbAssetRootDir, AssetRootDirId};
-use eyre::eyre;
+use camino::Utf8PathBuf as PathBuf;
 use serde::Serialize;
-use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AssetRootDir {
@@ -32,11 +31,7 @@ impl TryFrom<&AssetRootDir> for DbAssetRootDir {
     type Error = eyre::Report;
 
     fn try_from(value: &AssetRootDir) -> Result<Self, Self::Error> {
-        let path = value
-            .path
-            .to_str()
-            .ok_or_else(|| eyre!("non unicode file path not supported"))?
-            .to_string();
+        let path = value.path.to_string();
         Ok(DbAssetRootDir { id: value.id, path })
     }
 }

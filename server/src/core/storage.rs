@@ -1,6 +1,5 @@
-use std::path::{Path, PathBuf};
-
 use async_trait::async_trait;
+use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use enum_dispatch::enum_dispatch;
 use eyre::{Context, Result};
 use tokio::io::{AsyncRead, AsyncWrite};

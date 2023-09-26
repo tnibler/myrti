@@ -1,5 +1,6 @@
-use std::{ffi::OsString, path::PathBuf};
+use std::ffi::OsString;
 
+use camino::Utf8PathBuf as PathBuf;
 use eyre::{eyre, Context, Result};
 use tracing::{error, instrument, Instrument};
 

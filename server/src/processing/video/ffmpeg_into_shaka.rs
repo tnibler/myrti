@@ -1,6 +1,5 @@
-use std::path::PathBuf;
-
 use async_trait::async_trait;
+use camino::Utf8PathBuf as PathBuf;
 use eyre::{Context, Result};
 use tracing::Instrument;
 
@@ -11,7 +10,7 @@ use super::{
     shaka::{RepresentationType, ShakaPackager, ShakaPackagerTrait, ShakaResult},
     streams::FFProbeStreamsTrait,
     transcode::{ffmpeg_audio_flags, ffmpeg_video_flags, ProduceAudio, ProduceVideo},
-    FFProbe, FFProbeStreams, VideoStream,
+    FFProbe, FFProbeStreams,
 };
 
 #[async_trait]
@@ -66,8 +65,12 @@ impl FFmpegIntoShakaFFmpegTrait for FFmpegIntoShaka {
             .tempfile()
             .wrap_err("error creating temp directory")?
             .into_temp_path();
+        let utf8_path: camino::Utf8PathBuf = ffmpeg_out_path
+            .to_path_buf()
+            .try_into()
+            .expect("temp files should have utf8 paths");
         self.ffmpeg
-            .run_with_local_output(&self.input, &ffmpeg_out_path)
+            .run_with_local_output(&self.input, &utf8_path)
             .await?;
         Ok(FFmpegIntoShakaAfterFFmpeg { ffmpeg_out_path })
     }
@@ -85,13 +88,15 @@ impl FFmpegIntoShakaTrait for FFmpegIntoShakaAfterFFmpeg {
         output_key: &str,
         storage: &Storage,
     ) -> Result<ShakaResult> {
-        ShakaPackager::run(&self.ffmpeg_out_path, repr_type, output_key, storage).await
+        let utf8_path = camino::Utf8Path::from_path(&self.ffmpeg_out_path)
+            .expect("tempfile path should be utf8");
+        ShakaPackager::run(utf8_path, repr_type, output_key, storage).await
     }
 
     async fn ffprobe_get_streams(&self) -> Result<FFProbeStreams> {
-        FFProbe::streams(&self.ffmpeg_out_path)
-            .in_current_span()
-            .await
+        let utf8_path = camino::Utf8Path::from_path(&self.ffmpeg_out_path)
+            .expect("tempfile path should be utf8");
+        FFProbe::streams(utf8_path).in_current_span().await
     }
 }
 

@@ -1,5 +1,6 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::collections::HashSet;
 
+use camino::Utf8PathBuf as PathBuf;
 use chrono::Months;
 use claims::assert_ok;
 use pretty_assertions::assert_eq;

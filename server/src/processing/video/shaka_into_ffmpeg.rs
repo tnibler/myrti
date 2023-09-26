@@ -1,6 +1,5 @@
-use std::path::{Path, PathBuf};
-
 use async_trait::async_trait;
+use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use eyre::{Context, Result};
 use tokio::fs::File;
 use tracing::{instrument, Instrument};
@@ -48,11 +47,16 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
                 .expect("output key must have a filename")
                 .to_owned()
         };
-        let shaka_out_path = tempdir.path().join(&out_filename);
+        let utf8_temp_path: camino::Utf8PathBuf = tempdir
+            .path()
+            .to_path_buf()
+            .try_into()
+            .expect("tempfile path should be utf8");
+        let shaka_out_path = utf8_temp_path.join(&out_filename);
         ShakaPackager::run_with_local_output(input, repr_type, &shaka_out_path)
             .in_current_span()
             .await?;
-        let media_info_filename = format!("{}.media_info", out_filename.to_str().unwrap());
+        let media_info_filename = format!("{}.media_info", &out_filename);
         let media_info_key = format!("{}.media_info", output_key);
         let mut write_media_info = storage
             .open_write_stream(&media_info_key)

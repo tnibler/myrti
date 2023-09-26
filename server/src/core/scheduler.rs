@@ -1,25 +1,32 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
+
+use camino::Utf8PathBuf as PathBuf;
+use sqlx::SqlitePool;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, info, instrument};
+
+use crate::{
+    catalog::{
+        operation::{convert_image::ConvertImage, package_video::PackageVideo},
+        rules,
+    },
+    core::job::JobType,
+    eyre::Result,
+    job::{
+        dash_segmenting_job::{VideoPackagingJob, VideoPackagingJobParams},
+        image_conversion_job::{ImageConversionJob, ImageConversionParams},
+        indexing_job::{IndexingJob, IndexingJobParams},
+        thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
+    },
+    model::repository,
+};
 
 use super::{
     job::{Job, JobId, JobResultType},
     monitor::MonitorMessage,
     storage::Storage,
 };
-use crate::{
-    catalog::{operation::package_video::PackageVideo, rules},
-    core::job::JobType,
-    eyre::Result,
-    job::{
-        dash_segmenting_job::{VideoPackagingJob, VideoPackagingJobParams},
-        indexing_job::{IndexingJob, IndexingJobParams},
-        thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
-    },
-    model::repository,
-};
-use sqlx::SqlitePool;
-use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, instrument};
 
 #[derive(Debug)]
 pub enum SchedulerMessage {
@@ -136,6 +143,7 @@ impl SchedulerImpl {
             JobResultType::Indexing(_) => {}
             JobResultType::Thumbnail(_) => {}
             JobResultType::VideoPackaging(_) => {}
+            JobResultType::ImageConversion(_) => {}
         }
         self.start_any_job_if_required().await;
     }
@@ -156,7 +164,8 @@ impl SchedulerImpl {
     async fn start_any_job_if_required(&self) -> bool {
         let thumbnail = self.thumbnail_if_required().await;
         let package_video = self.package_video_if_required().await;
-        return thumbnail || package_video;
+        let convert_image = self.convert_image_if_required().await;
+        return thumbnail || package_video || convert_image;
     }
 
     async fn thumbnail_if_required(&self) -> bool {
@@ -203,7 +212,7 @@ impl SchedulerImpl {
         }
 
         let videos_to_package: Vec<PackageVideo> =
-            rules::video_packaging_due(&self.pool).await.unwrap();
+            rules::video_packaging_due(&self.pool).await.unwrap(); // TODO
         if videos_to_package.is_empty() {
             return false;
         }
@@ -216,6 +225,34 @@ impl SchedulerImpl {
             .send(MonitorMessage::AddJob {
                 handle,
                 ty: JobType::VideoPackaging { params },
+            })
+            .await
+            .unwrap();
+        return true;
+    }
+
+    async fn convert_image_if_required(&self) -> bool {
+        // Only run one job of a given type at a time. In the future, we might want to run multiple,
+        // in which case we'll need to compute the diff between the params of currently running
+        // jobs and the output of rules::video_packaging_due
+        let any_running_image_convert_job = self
+            .running_jobs
+            .values()
+            .any(|job_type| matches!(job_type, JobType::ImageConversion { params: _ }));
+        let images_to_convert: Vec<ConvertImage> =
+            rules::image_conversion_due(&self.pool).await.unwrap(); // TODO error handling
+        if images_to_convert.is_empty() {
+            return false;
+        }
+        let params = ImageConversionParams {
+            ops: images_to_convert,
+        };
+        let job = ImageConversionJob::new(params.clone(), self.storage.clone(), self.pool.clone());
+        let handle = job.start();
+        self.monitor_tx
+            .send(MonitorMessage::AddJob {
+                handle,
+                ty: JobType::ImageConversion { params },
             })
             .await
             .unwrap();

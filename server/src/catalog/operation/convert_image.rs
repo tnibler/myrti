@@ -1,9 +1,7 @@
 use eyre::{Context, Result};
 
 use crate::{
-    catalog::image_conversion_target::{
-        image_format_name, ImageConversionTarget, ImageFormatTarget,
-    },
+    catalog::image_conversion_target::{image_format_name, ImageConversionTarget},
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
     model::{
         repository::{self, pool::DbPool},

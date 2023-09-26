@@ -1,5 +1,4 @@
-use std::path::Path;
-
+use camino::Utf8Path as Path;
 use chrono::{DateTime, SubsecRound, Utc};
 use color_eyre::eyre;
 use eyre::{eyre, Context, Result};
@@ -100,7 +99,7 @@ pub async fn asset_or_duplicate_with_path_exists(
     asset_root_dir_id: AssetRootDirId,
     path: &Path,
 ) -> Result<bool> {
-    let path = path.to_str().unwrap();
+    let path = path.as_str();
     Ok(sqlx::query!(
         r#"
 SELECT (1) as a

@@ -1,6 +1,5 @@
-use std::path::PathBuf;
-
 use async_trait::async_trait;
+use camino::Utf8PathBuf as PathBuf;
 use eyre::{Context, Result};
 use tracing::Instrument;
 
@@ -60,18 +59,19 @@ impl GenerateThumbnailTrait for GenerateThumbnail {
             .tempfile()
             .wrap_err("could not create temp file")?
             .into_temp_path();
-        tracing::debug!(out_path=%snapshot_path.display(), "taking ffmpeg snapshot");
-        ffmpeg_snapshot(&params.in_path, &snapshot_path)
+        let utf8_snapshot_path: camino::Utf8PathBuf = snapshot_path
+            .to_path_buf()
+            .try_into()
+            .expect("tempfile paths should be UTF8");
+        ffmpeg_snapshot(&params.in_path, &utf8_snapshot_path)
             .in_current_span()
             .await?;
-        tracing::debug!("done taking snapshot");
         Self::generate_thumbnail(ThumbnailParams {
-            in_path: snapshot_path.to_path_buf(),
+            in_path: utf8_snapshot_path,
             ..params
         })
         .in_current_span()
         .await?;
-        tracing::debug!("done with vips image thumb");
         snapshot_path
             .persist(PathBuf::from("/tmp/snap.webp"))
             .unwrap();

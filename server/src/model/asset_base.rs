@@ -1,7 +1,7 @@
+use camino::Utf8PathBuf as PathBuf;
 use chrono::{DateTime, FixedOffset, Utc};
 use eyre::{eyre, Context, Result};
 use serde::Serialize;
-use std::path::PathBuf;
 
 use super::{
     repository::db_entity::{DbAsset, DbAssetType, DbTimestampInfo},

@@ -181,6 +181,15 @@ impl Monitor {
                         };
                         self.set_status(job_id, status).await;
                     }
+                    JobResultType::ImageConversion(ref image_convert_results) => {
+                        let status = if image_convert_results.failed.is_empty() {
+                            JobStatus::Complete
+                        } else {
+                            warn!("ImageConversion failures");
+                            JobStatus::CompleteWithErrors
+                        };
+                        self.set_status(job_id, status).await;
+                    }
                 }
                 self.scheduler_tx
                     .send(SchedulerMessage::JobComplete {

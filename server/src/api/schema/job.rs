@@ -11,6 +11,7 @@ pub enum JobType {
     Indexing,
     Thumbnail,
     VideoPackaging,
+    ImageConversion,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -52,6 +53,7 @@ pub fn api_job_type(job_type: &core::job::JobType) -> JobType {
         core::job::JobType::Indexing { params: _ } => JobType::Indexing,
         core::job::JobType::Thumbnail { params: _ } => JobType::Thumbnail,
         core::job::JobType::VideoPackaging { params: _ } => JobType::VideoPackaging,
+        core::job::JobType::ImageConversion { params: _ } => JobType::ImageConversion,
     }
 }
 

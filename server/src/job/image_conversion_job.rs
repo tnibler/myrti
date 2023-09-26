@@ -37,8 +37,8 @@ pub struct FailedImageConversion {
 impl ImageConversionJob {
     pub fn new(
         params: ImageConversionParams,
-        pool: DbPool,
         storage: Storage,
+        pool: DbPool,
     ) -> ImageConversionJob {
         ImageConversionJob {
             params,
@@ -51,14 +51,14 @@ impl ImageConversionJob {
         self,
         status_tx: mpsc::Sender<JobProgress>,
         cancel: CancellationToken,
-    ) -> Result<ImageConversionJobResult> {
+    ) -> ImageConversionJobResult {
         todo!()
     }
 }
 
 #[async_trait]
 impl Job for ImageConversionJob {
-    type Result = Result<ImageConversionJobResult>;
+    type Result = ImageConversionJobResult;
 
     fn start(self) -> JobHandle {
         let (tx, rx) = mpsc::channel::<JobProgress>(1000);

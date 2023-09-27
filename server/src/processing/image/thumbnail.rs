@@ -63,7 +63,7 @@ impl GenerateThumbnailTrait for GenerateThumbnail {
             .to_path_buf()
             .try_into()
             .expect("tempfile paths should be UTF8");
-        ffmpeg_snapshot(&params.in_path, &utf8_snapshot_path)
+        ffmpeg_snapshot(&params.in_path, &utf8_snapshot_path, Some("ffmpeg"))
             .in_current_span()
             .await?;
         Self::generate_thumbnail(ThumbnailParams {

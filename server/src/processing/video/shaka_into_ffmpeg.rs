@@ -20,6 +20,8 @@ pub trait ShakaIntoFFmpegTrait {
         ffmpeg: &Self::FFmpeg,
         output_key: &str,
         storage: &Storage,
+        shaka_bin_path: Option<&str>,
+        ffmpeg_bin_path: Option<&str>,
     ) -> Result<ShakaResult>;
 }
 
@@ -36,6 +38,8 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
         ffmpeg: &Self::FFmpeg,
         output_key: &str,
         storage: &Storage,
+        shaka_bin_path: Option<&str>,
+        ffmpeg_bin_path: Option<&str>,
     ) -> Result<ShakaResult> {
         let tempdir = tempfile::tempdir().wrap_err("error creating temp directory")?;
         // we need the filename from output_key (it will be written into the media_info fiel
@@ -53,7 +57,7 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
             .try_into()
             .expect("tempfile path should be utf8");
         let shaka_out_path = utf8_temp_path.join(&out_filename);
-        ShakaPackager::run_with_local_output(input, repr_type, &shaka_out_path)
+        ShakaPackager::run_with_local_output(input, repr_type, &shaka_out_path, shaka_bin_path)
             .in_current_span()
             .await?;
         let media_info_filename = format!("{}.media_info", &out_filename);
@@ -71,7 +75,7 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
             .await?;
 
         ffmpeg
-            .run(&shaka_out_path, output_key, storage)
+            .run(&shaka_out_path, output_key, storage, ffmpeg_bin_path)
             .in_current_span()
             .await?;
         Ok(ShakaResult { media_info_key })
@@ -96,9 +100,16 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpegMock {
         ffmpeg: &Self::FFmpeg,
         output_key: &str,
         storage: &Storage,
+        shaka_bin_path: Option<&str>,
+        ffmpeg_bin_path: Option<&str>,
     ) -> Result<ShakaResult> {
         ffmpeg
-            .run(&PathBuf::from("MOCK_PATH"), output_key, storage)
+            .run(
+                &PathBuf::from("MOCK_PATH"),
+                output_key,
+                storage,
+                ffmpeg_bin_path,
+            )
             .in_current_span()
             .await?;
         let media_info_key = format!("{}.media_info", output_key);

@@ -12,13 +12,24 @@ pub trait CommandInputOutput {}
 
 #[async_trait]
 pub trait FFmpegLocalOutputTrait {
-    async fn run_with_local_output(&self, input: &Path, output: &Path) -> Result<()>;
+    async fn run_with_local_output(
+        &self,
+        input: &Path,
+        output: &Path,
+        ffmpeg_bin_path: Option<&str>,
+    ) -> Result<()>;
 }
 
 #[async_trait]
 pub trait FFmpegTrait {
     fn new(pre_input_flags: Vec<OsString>, flags: Vec<OsString>) -> Self;
-    async fn run(&self, input: &Path, output_key: &str, storage: &Storage) -> Result<()>;
+    async fn run(
+        &self,
+        input: &Path,
+        output_key: &str,
+        storage: &Storage,
+        ffmpeg_bin_path: Option<&str>,
+    ) -> Result<()>;
 }
 
 pub struct FFmpeg {
@@ -29,8 +40,13 @@ pub struct FFmpeg {
 #[async_trait]
 impl FFmpegLocalOutputTrait for FFmpeg {
     #[instrument(name = "ffmpeg", skip(self))]
-    async fn run_with_local_output(&self, input: &Path, output: &Path) -> Result<()> {
-        let mut command = Command::new("ffmpeg");
+    async fn run_with_local_output(
+        &self,
+        input: &Path,
+        output: &Path,
+        ffmpeg_bin_path: Option<&str>,
+    ) -> Result<()> {
+        let mut command = Command::new(ffmpeg_bin_path.unwrap_or("ffmpeg"));
         command
             .arg("-nostdin")
             .arg("-y")
@@ -65,9 +81,15 @@ impl FFmpegTrait for FFmpeg {
         }
     }
 
-    async fn run(&self, input: &Path, output_key: &str, storage: &Storage) -> Result<()> {
+    async fn run(
+        &self,
+        input: &Path,
+        output_key: &str,
+        storage: &Storage,
+        ffmpeg_bin_path: Option<&str>,
+    ) -> Result<()> {
         let command_out_file = storage.new_command_out_file(output_key).await?;
-        self.run_with_local_output(input, command_out_file.path())
+        self.run_with_local_output(input, command_out_file.path(), ffmpeg_bin_path)
             .in_current_span()
             .await?;
         command_out_file.flush_to_storage().await?;
@@ -85,7 +107,13 @@ impl FFmpegTrait for FFmpegMock {
         Self {}
     }
 
-    async fn run(&self, input: &Path, output_key: &str, storage: &Storage) -> Result<()> {
+    async fn run(
+        &self,
+        input: &Path,
+        output_key: &str,
+        storage: &Storage,
+        ffmpeg_bin_path: Option<&str>,
+    ) -> Result<()> {
         let command_out_file = storage.new_command_out_file(output_key).await?;
         command_out_file.flush_to_storage().await?;
         Ok(())

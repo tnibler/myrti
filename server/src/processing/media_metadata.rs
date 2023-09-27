@@ -90,8 +90,11 @@ pub mod exiftool {
     }
 }
 
-pub async fn read_media_metadata(path: &Path) -> Result<exiftool::Output> {
-    let mut command = Command::new("exiftool");
+pub async fn read_media_metadata(
+    path: &Path,
+    exiftool_bin_path: Option<&str>,
+) -> Result<exiftool::Output> {
+    let mut command = Command::new(exiftool_bin_path.unwrap_or("exiftool"));
     command
         .args(["-j", "-g", "-n"])
         .arg(path)

@@ -6,8 +6,12 @@ use tokio::process::Command;
 use tracing::instrument;
 
 #[instrument]
-pub async fn ffmpeg_snapshot(video_path: &Path, output: &Path) -> Result<()> {
-    let exit_status = Command::new("ffmpeg")
+pub async fn ffmpeg_snapshot(
+    video_path: &Path,
+    output: &Path,
+    ffmpeg_bin_path: Option<&str>,
+) -> Result<()> {
+    let exit_status = Command::new(ffmpeg_bin_path.unwrap_or("ffmpeg"))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .arg("-nostdin")

@@ -9,8 +9,11 @@ use tracing::{instrument, warn};
 use super::{AudioStream, FFProbeStreams, VideoStream};
 
 #[instrument]
-pub async fn ffprobe_get_streams(path: &Path) -> Result<FFProbeStreams> {
-    let ffprobe_result = Command::new("ffprobe")
+pub async fn ffprobe_get_streams(
+    path: &Path,
+    ffprobe_bin_path: Option<&str>,
+) -> Result<FFProbeStreams> {
+    let ffprobe_result = Command::new(ffprobe_bin_path.unwrap_or("ffprobe"))
         .args(&["-v", "error", "-show_streams", "-of", "json"])
         .arg(path)
         .stdout(Stdio::piped())

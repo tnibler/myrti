@@ -12,6 +12,7 @@ pub trait MpdGeneratorTrait {
         media_info_keys: impl Iterator<Item = &str> + Send,
         output_key: &str,
         storage: &Storage,
+        mpd_generator_bin_path: Option<&str>,
     ) -> Result<()>;
 }
 
@@ -24,6 +25,7 @@ impl MpdGeneratorTrait for MpdGenerator {
         media_info_keys: impl Iterator<Item = &str> + Send,
         output_key: &str,
         storage: &Storage,
+        mpd_generator_bin_path: Option<&str>,
     ) -> Result<()> {
         enum MediaInfoPath {
             Tempfile(tempfile::TempPath),
@@ -59,7 +61,7 @@ impl MpdGeneratorTrait for MpdGenerator {
             .join(",");
         let mpd_out_str = command_out_file.path().as_str();
         // TODO don't hardcode this path
-        let mut command = Command::new("/home/thomas/p/mediathingy/shaka-bin/mpd_generator");
+        let mut command = Command::new(mpd_generator_bin_path.unwrap_or("mpd_generator"));
         command
             .arg(format!("--input={}", input_str))
             .arg(format!("--output={}", mpd_out_str));
@@ -91,6 +93,7 @@ impl MpdGeneratorTrait for MpdGeneratorMock {
         media_info_keys: impl Iterator<Item = &str> + Send,
         output_key: &str,
         storage: &Storage,
+        mpd_generator_bin_path: Option<&str>,
     ) -> Result<()> {
         let command_out_file = storage.new_command_out_file(output_key).await?;
         command_out_file.flush_to_storage().await?;

@@ -68,7 +68,7 @@ async fn index_file(
     if existing {
         return Ok(None);
     }
-    let metadata = read_media_metadata(path)
+    let metadata = read_media_metadata(path, Some("exiftool"))
         .in_current_span()
         .await
         .wrap_err("could not read file metadata")?;
@@ -81,7 +81,7 @@ async fn index_file(
     };
     let (ty, full, size): (AssetType, AssetSpe, Size) = match metadata.file.mime_type.as_ref() {
         Some(mime) if mime.starts_with("video") => {
-            let streams = FFProbe::streams(path)
+            let streams = FFProbe::streams(path, Some("ffprobe"))
                 .await
                 .wrap_err("error getting stream info from file")?;
             let video = streams.video;

@@ -245,7 +245,7 @@ pub async fn perform_side_effects_package_video(
             ffmpeg_video_op.as_ref(),
             ffmpeg_audio_op.as_ref(),
         );
-        Some(ffmpeg_into_shaka.run_ffmpeg().await?)
+        Some(ffmpeg_into_shaka.run_ffmpeg(Some("ffmpeg")).await?)
     } else {
         None
     };
@@ -260,6 +260,7 @@ pub async fn perform_side_effects_package_video(
                 RepresentationType::Audio,
                 &output_key,
                 storage,
+                Some("/home/thomas/p/mediathingy/shaka-bin/packager"),
             )
             .await
             .wrap_err("could not shaka package audio stream")?;
@@ -281,7 +282,12 @@ pub async fn perform_side_effects_package_video(
                 }
             };
             let shaka_result = ffmpeg_into_shaka
-                .run_shaka_packager(RepresentationType::Audio, &transcode.output_key, &storage)
+                .run_shaka_packager(
+                    RepresentationType::Audio,
+                    &transcode.output_key,
+                    &storage,
+                    Some("/home/thomas/p/mediathingy/shaka-bin/packager"),
+                )
                 .in_current_span()
                 .await?;
             Some(CreatedAudioRepr::Transcode(AudioTranscodeResult {
@@ -304,7 +310,8 @@ pub async fn perform_side_effects_package_video(
             // the shaka-packager output filename needs to be the same as the final ffmpeg
             // output.
             // TODO calling ffprobe yet again, ideally once is enough? Or not I'm not sure
-            let rotation = FFProbe::video_rotation(&asset_path.path_on_disk()).await?;
+            let rotation =
+                FFProbe::video_rotation(&asset_path.path_on_disk(), Some("ffprobe")).await?;
             if let Some(rotation) = rotation {
                 let pre_input_flags: Vec<OsString> =
                     vec!["-display_rotation".into(), rotation.to_string().into()];
@@ -316,6 +323,8 @@ pub async fn perform_side_effects_package_video(
                     &correct_rotation_ffmpeg,
                     output_key,
                     storage,
+                    Some("/home/thomas/p/mediathingy/shaka-bin/packager"),
+                    Some("ffmpeg"),
                 )
                 .await?;
 
@@ -329,6 +338,7 @@ pub async fn perform_side_effects_package_video(
                     RepresentationType::Video,
                     output_key,
                     storage,
+                    Some("/home/thomas/p/mediathingy/shaka-bin/packager"),
                 )
                 .await
                 .wrap_err("could not shaka package audio stream")?;
@@ -350,10 +360,18 @@ pub async fn perform_side_effects_package_video(
                 }
             };
             let shaka_result = ffmpeg_into_shaka
-                .run_shaka_packager(RepresentationType::Video, &transcode.output_key, &storage)
+                .run_shaka_packager(
+                    RepresentationType::Video,
+                    &transcode.output_key,
+                    &storage,
+                    Some("/home/thomas/p/mediathingy/shaka-bin/packager"),
+                )
                 .in_current_span()
                 .await?;
-            let probe = ffmpeg_into_shaka.ffprobe_get_streams().await?.video;
+            let probe = ffmpeg_into_shaka
+                .ffprobe_get_streams(Some("ffprobe"))
+                .await?
+                .video;
             CreatedVideoRepr::Transcode(VideoTranscodeResult {
                 target: transcode.target.clone(),
                 final_size: Size {
@@ -392,9 +410,14 @@ pub async fn perform_side_effects_package_video(
         media_info_keys.push(video_repr.media_info_key.clone());
     }
     let mpd_key = storage_key::mpd_manifest(asset_id);
-    MpdGenerator::run(media_info_keys.iter().map(AsRef::as_ref), &mpd_key, storage)
-        .await
-        .wrap_err("could not generate mpd manifest")?;
+    MpdGenerator::run(
+        media_info_keys.iter().map(AsRef::as_ref),
+        &mpd_key,
+        storage,
+        Some("/home/thomas/p/mediathingy/shaka-bin/mpd_generator"),
+    )
+    .await
+    .wrap_err("could not generate mpd manifest")?;
     Ok(CompletedPackageVideo {
         asset_id,
         created_video_repr,

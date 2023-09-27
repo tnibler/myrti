@@ -7,12 +7,14 @@ use super::{command::ffprobe_get_streams, FFProbe, FFProbeStreams};
 
 #[async_trait]
 pub trait FFProbeStreamsTrait {
-    async fn streams(path: &Path) -> Result<FFProbeStreams>;
+    async fn streams(path: &Path, ffprobe_bin_path: Option<&str>) -> Result<FFProbeStreams>;
 }
 
 #[async_trait]
 impl FFProbeStreamsTrait for FFProbe {
-    async fn streams(path: &Path) -> Result<FFProbeStreams> {
-        ffprobe_get_streams(path).in_current_span().await
+    async fn streams(path: &Path, ffprobe_bin_path: Option<&str>) -> Result<FFProbeStreams> {
+        ffprobe_get_streams(path, ffprobe_bin_path)
+            .in_current_span()
+            .await
     }
 }

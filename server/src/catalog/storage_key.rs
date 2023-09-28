@@ -25,15 +25,11 @@ pub fn thumbnail(asset_id: AssetId, ty: ThumbnailType, format: ThumbnailFormat) 
     format!("thumb/{}{}.{}", asset_id.0, size, extension)
 }
 
-pub fn image_represenation(asset_id: AssetId, target: &ImageConversionTarget) -> String {
+pub fn image_representation(asset_id: AssetId, target: &ImageConversionTarget) -> String {
+    let ext = image_file_extension(&target.format);
     match target.scale {
-        None => format!("{}.{}", asset_id.0, image_file_extension(&target.format)),
-        Some(scale) => format!(
-            "{}_{}x.{}",
-            asset_id.0,
-            scale,
-            image_file_extension(&target.format)
-        ),
+        None => format!("image/{}.{}", asset_id.0, ext),
+        Some(scale) => format!("image/{}_{}x.{}", asset_id.0, scale, ext),
     }
 }
 

@@ -197,7 +197,7 @@ pub async fn image_conversion_due(pool: &DbPool) -> Result<Vec<ConvertImage>> {
             };
             ConvertImage {
                 asset_id,
-                output_key: storage_key::image_represenation(asset_id, &target),
+                output_key: storage_key::image_representation(asset_id, &target),
                 target,
             }
         })

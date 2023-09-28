@@ -117,7 +117,7 @@ async fn index_file(
                 .file_type
                 .as_ref()
                 .ok_or(eyre!("no file type in exiftool output"))?
-                .to_ascii_uppercase();
+                .to_ascii_lowercase();
             let image_info = AssetSpe::Image(Image {
                 image_format_name: format,
             });

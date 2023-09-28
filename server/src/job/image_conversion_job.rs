@@ -2,9 +2,12 @@ use async_trait::async_trait;
 use eyre::{Report, Result};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 
 use crate::{
-    catalog::operation::convert_image::ConvertImage,
+    catalog::operation::convert_image::{
+        apply_convert_image, perform_side_effects_convert_image, ConvertImage,
+    },
     core::{
         job::{Job, JobHandle, JobProgress, JobResultType},
         storage::Storage,
@@ -52,7 +55,45 @@ impl ImageConversionJob {
         status_tx: mpsc::Sender<JobProgress>,
         cancel: CancellationToken,
     ) -> ImageConversionJobResult {
-        todo!()
+        // TODO send progress updates
+        status_tx
+            .send(JobProgress {
+                percent: None,
+                description: "".to_string(),
+            })
+            .await
+            .unwrap();
+        let mut failed: Vec<FailedImageConversion> = Vec::default();
+        for op in &self.params.ops {
+            // TODO check past failed jobs
+            // let past_failed_job =
+            //     repository::failed_job::get_failed_image_conversion_job_for_asset(&self.pool, op.asset_id)
+            //         .await?;
+            let size = match perform_side_effects_convert_image(op, &self.pool, &self.storage)
+                .in_current_span()
+                .await
+            {
+                Err(err) => {
+                    failed.push(FailedImageConversion {
+                        op: op.clone(),
+                        err,
+                    });
+                    continue;
+                }
+                Ok(r) => r,
+            };
+            let apply_result = apply_convert_image(&self.pool, op, size)
+                .in_current_span()
+                .await;
+            if let Err(err) = apply_result {
+                failed.push(FailedImageConversion {
+                    op: op.clone(),
+                    err,
+                });
+                continue;
+            }
+        }
+        ImageConversionJobResult { failed }
     }
 }
 

@@ -1,8 +1,8 @@
 use crate::job::{
-    dash_segmenting_job::{VideoPackagingJob, VideoPackagingJobParams},
     image_conversion_job::{ImageConversionJob, ImageConversionParams},
     indexing_job::{IndexingJob, IndexingJobParams},
     thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
+    video_packaging_job::{VideoPackagingJob, VideoPackagingJobParams},
 };
 use async_trait::async_trait;
 

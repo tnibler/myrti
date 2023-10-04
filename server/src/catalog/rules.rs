@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use eyre::{Context, Result};
 use tracing::instrument;
 
@@ -186,6 +188,15 @@ pub async fn image_conversion_due(pool: &DbPool) -> Result<Vec<ConvertImage>> {
         acceptable_formats.into_iter(),
     )
     .await?;
+    // there should be no duplicates
+    debug_assert!(
+        assets_no_good_repr.len()
+            == assets_no_good_repr
+                .clone()
+                .into_iter()
+                .collect::<HashSet<_>>()
+                .len()
+    );
     let ops = assets_no_good_repr
         .into_iter()
         .map(|asset_id| {

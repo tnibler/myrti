@@ -239,6 +239,9 @@ impl SchedulerImpl {
             .running_jobs
             .values()
             .any(|job_type| matches!(job_type, JobType::ImageConversion { params: _ }));
+        if any_running_image_convert_job {
+            return false;
+        }
         let images_to_convert: Vec<ConvertImage> =
             rules::image_conversion_due(&self.pool).await.unwrap(); // TODO error handling
         if images_to_convert.is_empty() {

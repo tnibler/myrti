@@ -3,7 +3,7 @@ use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use enum_dispatch::enum_dispatch;
 use eyre::{Context, Result};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::instrument;
+use tracing::{instrument, Instrument};
 
 // TODO define error type for errors like file not found,
 // no storage space?,
@@ -16,7 +16,10 @@ use tracing::instrument;
 #[async_trait]
 #[enum_dispatch(Storage)]
 pub trait StorageProvider: Clone {
-    async fn open_read_stream(&self, key: &str) -> Result<Box<dyn AsyncRead + Send + Unpin>>;
+    async fn open_read_stream(
+        &self,
+        key: &str,
+    ) -> Result<Box<dyn AsyncRead + Send + Unpin>, StorageReadError>;
     async fn open_write_stream(&self, key: &str) -> Result<Box<dyn AsyncWrite + Send + Unpin>>;
     async fn exists(&self, key: &str) -> Result<bool>;
     async fn new_command_out_file(&self, key: &str) -> Result<CommandOutputFile>;
@@ -25,6 +28,22 @@ pub trait StorageProvider: Clone {
     /// If `key` doesn't exist or the `StorageProvider` is not local,
     /// returns None.
     async fn local_path(&self, key: &str) -> Result<Option<PathBuf>>;
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum StorageReadError {
+    #[error("File with key '{0}' does not exist")]
+    FileNotFound(String),
+    #[error(transparent)]
+    IOError {
+        #[from]
+        source: tokio::io::Error,
+    },
+    #[error(transparent)]
+    Unknown {
+        #[from]
+        source: eyre::Report,
+    },
 }
 
 /// External commands (like ffmpeg) expect a local file path to write their output to,
@@ -102,14 +121,23 @@ impl Drop for LocalOutputFile {
 #[async_trait]
 impl StorageProvider for LocalFileStorage {
     #[instrument(skip(self), level = "debug")]
-    async fn open_read_stream(&self, key: &str) -> Result<Box<dyn AsyncRead + Send + Unpin>> {
-        Ok(Box::new(
-            tokio::fs::OpenOptions::new()
-                .read(true)
-                .open(self.root.join(key))
-                .await
-                .wrap_err("error opening file for reading")?,
-        ))
+    async fn open_read_stream(
+        &self,
+        key: &str,
+    ) -> Result<Box<dyn AsyncRead + Send + Unpin>, StorageReadError> {
+        use tokio::io::ErrorKind;
+        let open = tokio::fs::OpenOptions::new()
+            .read(true)
+            .open(self.root.join(key))
+            .in_current_span()
+            .await;
+        match open {
+            Ok(f) => Ok(Box::new(f)),
+            Err(err) => Err(match err.kind() {
+                ErrorKind::NotFound => StorageReadError::FileNotFound(key.to_owned()),
+                err => StorageReadError::IOError { source: err.into() },
+            }),
+        }
     }
 
     #[instrument(skip(self), level = "debug")]

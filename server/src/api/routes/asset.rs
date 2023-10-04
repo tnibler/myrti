@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, Query, State},
     http::{
         header::{self, CONTENT_TYPE},
-        HeaderMap, HeaderValue,
+        HeaderMap, HeaderValue, StatusCode,
     },
     response::{IntoResponse, Response},
     routing::get,
@@ -29,7 +29,8 @@ use crate::{
     },
     app_state::SharedState,
     catalog::storage_key,
-    core::storage::StorageProvider,
+    core::storage::{StorageProvider, StorageReadError},
+    http_error::HttpError,
     model::{self, repository},
 };
 
@@ -112,8 +113,22 @@ async fn get_thumbnail(
             "image/webp",
         ),
     };
-    // TODO 404 if not found not 503
-    let read = app_state.storage.open_read_stream(&thumb_key).await?;
+    let read = app_state.storage.open_read_stream(&thumb_key).await;
+    let read = match read {
+        Err(err) => match err {
+            StorageReadError::FileNotFound(_) => {
+                return Ok((
+                    StatusCode::NOT_FOUND,
+                    HttpError::from(eyre!("no such object")),
+                )
+                    .into_response());
+            }
+            _ => {
+                return Err(eyre!("could not open object for reading").into());
+            }
+        },
+        Ok(r) => r,
+    };
     let headers = [(CONTENT_TYPE, content_type)];
     let body = AsyncReadBody::new(read);
     // TODO add size hint for files https://github.com/tokio-rs/axum/discussions/2074

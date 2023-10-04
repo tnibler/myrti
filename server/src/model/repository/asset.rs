@@ -158,7 +158,6 @@ has_dash as "has_dash: _"
 FROM Asset;
     "#
     )
-    // TODO don't collect into vec before mapping
     .fetch_all(pool)
     .in_current_span()
     .await?

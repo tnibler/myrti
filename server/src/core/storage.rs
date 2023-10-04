@@ -5,9 +5,6 @@ use eyre::{Context, Result};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::{instrument, Instrument};
 
-// TODO define error type for errors like file not found,
-// no storage space?,
-
 /// Abstraction for storing data files in any backing store.
 /// This interface is basically a blob store, where every object has
 /// a `key` used to store and retrieve it.

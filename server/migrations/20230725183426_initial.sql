@@ -111,8 +111,10 @@ CREATE TABLE ImageRepresentation (
   format_name TEXT NOT NULL,
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
+  file_size INTEGER NOT NULL,
   file_key TEXT NOT NULL,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id)
+  FOREIGN KEY (asset_id) REFERENCES Asset(id),
+  UNIQUE (asset_id, format_name, width, height)
 ) STRICT;
 
 CREATE TABLE Album (

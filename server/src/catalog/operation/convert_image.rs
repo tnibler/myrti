@@ -18,14 +18,19 @@ pub struct ConvertImage {
 }
 
 #[tracing::instrument(skip(pool))]
-pub async fn apply_convert_image(pool: &DbPool, op: &ConvertImage, final_size: Size) -> Result<()> {
+pub async fn apply_convert_image(
+    pool: &DbPool,
+    op: &ConvertImage,
+    result: ImageConversionSideEffectResult,
+) -> Result<()> {
     let image_representation = ImageRepresentation {
         id: ImageRepresentationId(0),
         asset_id: op.asset_id,
         format_name: image_format_name(&op.target.format).to_owned(),
         file_key: op.output_key.clone(),
-        width: final_size.width,
-        height: final_size.height,
+        file_size: result.file_size,
+        width: result.final_size.width,
+        height: result.final_size.height,
     };
     repository::representation::insert_image_representation(pool, &image_representation)
         .await
@@ -33,12 +38,18 @@ pub async fn apply_convert_image(pool: &DbPool, op: &ConvertImage, final_size: S
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageConversionSideEffectResult {
+    pub final_size: Size,
+    pub file_size: i64,
+}
+
 #[tracing::instrument(skip(storage))]
 pub async fn perform_side_effects_convert_image(
     op: &ConvertImage,
     pool: &DbPool,
     storage: &Storage,
-) -> Result<Size> {
+) -> Result<ImageConversionSideEffectResult> {
     let command_out_file = storage.new_command_out_file(&op.output_key).await?;
     // FIXME (low) unnecessarily querying same row twice
     let asset = repository::asset::get_asset(pool, op.asset_id).await?;
@@ -53,6 +64,10 @@ pub async fn perform_side_effects_convert_image(
     )
     .await
     .wrap_err("error converting image")?;
+    let file_size = command_out_file.size().await?;
     command_out_file.flush_to_storage().await?;
-    Ok(scaled_size.unwrap_or(asset.base.size))
+    Ok(ImageConversionSideEffectResult {
+        final_size: scaled_size.unwrap_or(asset.base.size),
+        file_size: file_size as i64,
+    })
 }

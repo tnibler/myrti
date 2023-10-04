@@ -31,6 +31,7 @@ pub struct ImageRepresentation {
     pub format_name: String,
     pub width: i64,
     pub height: i64,
+    pub file_size: i64,
     pub file_key: String,
 }
 

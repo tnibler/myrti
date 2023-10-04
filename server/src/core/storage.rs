@@ -55,6 +55,7 @@ pub enum StorageReadError {
 #[enum_dispatch(CommandOutputFile)]
 pub trait StorageCommandOutput {
     fn path(&self) -> &Path;
+    async fn size(&self) -> Result<u64>;
     async fn flush_to_storage(self) -> Result<()>;
 }
 
@@ -97,6 +98,13 @@ impl LocalFileStorage {
 impl StorageCommandOutput for LocalOutputFile {
     fn path(&self) -> &Path {
         &self.path
+    }
+
+    async fn size(&self) -> Result<u64> {
+        let file_meta = tokio::fs::metadata(&self.path)
+            .await
+            .wrap_err("error getting file metadata")?;
+        Ok(file_meta.len())
     }
 
     #[instrument(skip(self), level = "debug")]

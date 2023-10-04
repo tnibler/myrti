@@ -125,13 +125,14 @@ pub async fn insert_image_representation(
     let result = sqlx::query!(
         r#"
 INSERT INTO ImageRepresentation
-(id, asset_id, format_name, width, height, file_key)
-VALUES (NULL, ?, ?, ?, ?, ?);
+(id, asset_id, format_name, width, height, file_size, file_key)
+VALUES (NULL, ?, ?, ?, ?, ?, ?);
     "#,
         repr.asset_id,
         repr.format_name,
         repr.width,
         repr.height,
+        repr.file_size,
         repr.file_key
     )
     .execute(pool)
@@ -155,6 +156,7 @@ asset_id,
 format_name,
 width,
 height,
+file_size,
 file_key
 FROM ImageRepresentation
 WHERE asset_id = ?;

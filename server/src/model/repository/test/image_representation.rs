@@ -51,6 +51,7 @@ async fn insert_retrieve_image_representation() {
         format_name: "avif".into(),
         width: 1024,
         height: 1023,
+        file_size: 123123,
         file_key: "img/some_key".into(),
     };
     let repr1_id =
@@ -141,6 +142,7 @@ async fn get_images_with_no_acceptable_repr() {
         format_name: "avif".into(),
         width: 100,
         height: 100,
+        file_size: 94949494,
         file_key: "img/key2".into(),
     };
     assert_ok!(repository::representation::insert_image_representation(&pool, &asset2_repr).await);

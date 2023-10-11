@@ -9,7 +9,6 @@ use color_eyre::{
 use futures::StreamExt;
 use geo::{Contains, Coord, Geometry};
 use geojson::GeoJson;
-use geoname_schema::PopFeatureType;
 use serde::Deserialize;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use thiserror::Error;

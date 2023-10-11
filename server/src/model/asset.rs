@@ -3,7 +3,8 @@ use chrono::{DateTime, Utc};
 use eyre::{eyre, Report};
 
 use super::{
-    repository::db_entity::DbAsset, AssetBase, AssetRootDirId, AssetType, Size, TimestampInfo,
+    repository::db_entity::DbAsset, AssetBase, AssetRootDirId, AssetType, GpsCoordinates, Size,
+    TimestampInfo,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -57,6 +58,7 @@ pub struct CreateAsset {
     /// Seahash of the file, if already computed
     pub hash: Option<u64>,
     pub sp: AssetSpe,
+    pub gps_coordinates: Option<GpsCoordinates>,
 }
 
 impl From<&ImageAsset> for Asset {

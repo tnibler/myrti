@@ -26,6 +26,7 @@ pub struct AssetBase {
     pub size: Size,
     /// degrees clockwise
     pub rotation_correction: Option<i32>,
+    pub gps_coordinates: Option<GpsCoordinates>,
     /// Seahash of the file, if already computed
     pub hash: Option<u64>,
     pub thumb_small_square_avif: bool,
@@ -72,6 +73,14 @@ pub enum ThumbnailFormat {
     Avif,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GpsCoordinates {
+    /// multiplied by 10e8
+    pub lat: i64,
+    /// multiplied by 10e8
+    pub lon: i64,
+}
+
 impl AssetBase {
     pub fn taken_date_local(&self) -> DateTime<FixedOffset> {
         match self.timestamp_info {
@@ -116,6 +125,8 @@ impl TryFrom<&Asset> for DbAsset {
             width: value.base.size.width,
             height: value.base.size.height,
             rotation_correction: value.base.rotation_correction,
+            gps_latitude: value.base.gps_coordinates.map(|c| c.lat),
+            gps_longitude: value.base.gps_coordinates.map(|c| c.lon),
             thumb_small_square_avif: bool_to_int(value.base.thumb_small_square_avif),
             thumb_small_square_webp: bool_to_int(value.base.thumb_small_square_webp),
             thumb_large_orig_avif: bool_to_int(value.base.thumb_large_orig_avif),
@@ -196,6 +207,10 @@ impl TryFrom<&DbAsset> for Asset {
             .as_ref()
             .map(|a| hash_vec8_to_u64(&a))
             .transpose()?;
+        let coords = match (value.gps_latitude, value.gps_longitude) {
+            (Some(lat), Some(lon)) => Some(GpsCoordinates { lat, lon }),
+            _ => None,
+        };
         Ok(Asset {
             sp,
             base: AssetBase {
@@ -214,6 +229,7 @@ impl TryFrom<&DbAsset> for Asset {
                     height: value.height,
                 },
                 rotation_correction: value.rotation_correction,
+                gps_coordinates: coords,
                 thumb_small_square_avif: value.thumb_small_square_avif != 0,
                 thumb_small_square_webp: value.thumb_small_square_webp != 0,
                 thumb_large_orig_avif: value.thumb_large_orig_avif != 0,

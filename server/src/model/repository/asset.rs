@@ -34,6 +34,8 @@ timezone_info as "timezone_info: _",
 width,
 height,
 rotation_correction as "rotation_correction: _",
+gps_latitude as "gps_latitude: _",
+gps_longitude as "gps_longitude: _",
 thumb_small_square_avif as "thumb_small_square_avif: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
 thumb_large_orig_avif as "thumb_large_orig_avif: _",
@@ -142,6 +144,8 @@ timezone_info as "timezone_info: _",
 width,
 height,
 rotation_correction as "rotation_correction: _",
+gps_latitude as "gps_latitude: _",
+gps_longitude as "gps_longitude: _",
 thumb_small_square_avif as "thumb_small_square_avif: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
 thumb_large_orig_avif as "thumb_large_orig_avif: _",
@@ -222,77 +226,6 @@ WHERE
         .map(|r| r.try_into())
         .collect()
     }
-}
-
-#[instrument(skip(conn))]
-pub async fn update_asset(conn: &mut SqliteConnection, asset: &Asset) -> Result<()> {
-    assert!(asset.base.id.0 != 0);
-    let db_asset: DbAsset = asset.try_into()?;
-    let has_dash: Option<i64> = db_asset.has_dash.map(|d| d.into());
-    sqlx::query!(
-        "
-UPDATE Asset SET 
-ty=?,
-root_dir_id=?,
-file_path=?,
-file_type=?,
-hash=?,
-is_hidden=?,
-added_at=?,
-taken_date=?,
-timezone_offset=?,
-timezone_info=?,
-width=?,
-height=?,
-rotation_correction=?,
-thumb_small_square_avif=?,
-thumb_small_square_webp=?,
-thumb_large_orig_avif=?,
-thumb_large_orig_webp=?,
-thumb_small_square_width=?,
-thumb_small_square_height=?,
-thumb_large_orig_width=?,
-thumb_large_orig_height=?,
-image_format_name=?,
-video_codec_name=?,
-video_bitrate=?,
-audio_codec_name=?,
-has_dash=?
-WHERE id=?;
-",
-        db_asset.ty,
-        db_asset.root_dir_id.0,
-        db_asset.file_path,
-        db_asset.file_type,
-        db_asset.hash,
-        db_asset.is_hidden,
-        db_asset.added_at,
-        db_asset.taken_date,
-        db_asset.timezone_offset,
-        db_asset.timezone_info,
-        db_asset.width,
-        db_asset.height,
-        db_asset.rotation_correction,
-        db_asset.thumb_small_square_avif,
-        db_asset.thumb_small_square_webp,
-        db_asset.thumb_large_orig_avif,
-        db_asset.thumb_large_orig_webp,
-        db_asset.thumb_small_square_width,
-        db_asset.thumb_small_square_height,
-        db_asset.thumb_large_orig_width,
-        db_asset.thumb_large_orig_height,
-        db_asset.image_format_name,
-        db_asset.video_codec_name,
-        db_asset.video_bitrate,
-        db_asset.audio_codec_name,
-        has_dash,
-        asset.base.id.0
-    )
-    .execute(conn)
-    .in_current_span()
-    .await
-    .wrap_err("could not update table Asset")?;
-    Ok(())
 }
 
 #[instrument(skip(pool))]
@@ -408,6 +341,7 @@ pub async fn create_asset(pool: &DbPool, create_asset: CreateAsset) -> Result<As
         timestamp_info: create_asset.timestamp_info,
         size: create_asset.size,
         rotation_correction: create_asset.rotation_correction,
+        gps_coordinates: create_asset.gps_coordinates,
         hash: create_asset.hash,
         thumb_small_square_avif: false,
         thumb_small_square_webp: false,
@@ -439,6 +373,27 @@ WHERE id=?;
     "#,
         thumb_small_square_avif,
         thumb_small_square_webp,
+        asset_id
+    )
+    .execute(conn)
+    .await
+    .wrap_err("could not update table Assets")?;
+    Ok(())
+}
+
+#[instrument(skip(conn))]
+pub async fn set_asset_has_dash(
+    conn: &mut SqliteConnection,
+    asset_id: AssetId,
+    has_dash: bool,
+) -> Result<()> {
+    sqlx::query!(
+        r#"
+UPDATE ASSET SET
+has_dash=?
+WHERE id=?;
+    "#,
+        has_dash,
         asset_id
     )
     .execute(conn)
@@ -491,6 +446,8 @@ timezone_info as "timezone_info: _",
 width,
 height,
 rotation_correction as "rotation_correction: _",
+gps_latitude as "gps_latitude: _",
+gps_longitude as "gps_longitude: _",
 thumb_small_square_avif as "thumb_small_square_avif: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
 thumb_large_orig_avif as "thumb_large_orig_avif: _",
@@ -546,6 +503,8 @@ timezone_info as "timezone_info: _",
 width,
 height,
 rotation_correction as "rotation_correction: _",
+gps_latitude as "gps_latitude: _",
+gps_longitude as "gps_longitude: _",
 thumb_small_square_avif as "thumb_small_square_avif: _",
 thumb_small_square_webp as "thumb_small_square_webp: _",
 thumb_large_orig_avif as "thumb_large_orig_avif: _",
@@ -603,6 +562,8 @@ timezone_info ,
 Asset.width as width,
 Asset.height as height,
 Asset.rotation_correction as rotation_correction,
+Asset.gps_latitude as gps_latidude,
+Asset.gps_longitude as gps_longitude,
 Asset.thumb_small_square_avif as thumb_small_square_avif,
 Asset.thumb_small_square_webp as thumb_small_square_webp,
 Asset.thumb_large_orig_avif as thumb_large_orig_avif,
@@ -682,6 +643,8 @@ timezone_info,
 width,
 height,
 rotation_correction,
+gps_latitude,
+gps_longitude,
 thumb_small_square_avif,
 thumb_small_square_webp,
 thumb_large_orig_avif,

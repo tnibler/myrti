@@ -143,7 +143,7 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
         },
         ..asset
     };
-    repository::asset::update_asset(tx.as_mut(), &(&asset).into()).await?;
+    repository::asset::set_asset_has_dash(tx.as_mut(), op.asset_id, true).await?;
     match &op.created_audio_repr {
         Some(CreatedAudioRepr::Transcode(audio_transcode)) => {
             let audio_representation = AudioRepresentation {

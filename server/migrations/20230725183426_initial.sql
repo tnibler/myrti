@@ -31,6 +31,12 @@ CREATE TABLE Asset (
   height INTEGER NOT NULL,
   -- rotation correction applied after exif/metadata rotation if that's still wrong
   rotation_correction INTEGER,
+
+  -- Metadata
+  -- latitude and longitude are stored multipled by 10e8
+  gps_latitude INTEGER,
+  gps_longitude INTEGER,
+
   thumb_small_square_avif INTEGER NOT NULL,
   thumb_small_square_webp INTEGER NOT NULL,
   thumb_large_orig_avif INTEGER NOT NULL,
@@ -70,7 +76,9 @@ CREATE TABLE Asset (
       AND video_bitrate IS NOT NULL 
       AND has_dash IS NOT NULL
       -- audio_codec_name can be null if there's no audio stream
-  ))
+  )),
+
+  CHECK(gps_latitude IS NULL = gps_latitude IS NULL)
 ) STRICT;
 
 CREATE TABLE DuplicateAsset (

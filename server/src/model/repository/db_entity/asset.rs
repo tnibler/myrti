@@ -17,6 +17,8 @@ pub struct DbAsset {
     pub width: i64,
     pub height: i64,
     pub rotation_correction: Option<i32>,
+    pub gps_latitude: Option<i64>,
+    pub gps_longitude: Option<i64>,
     pub thumb_small_square_avif: i64,
     pub thumb_small_square_webp: i64,
     pub thumb_large_orig_avif: i64,

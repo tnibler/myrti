@@ -170,6 +170,16 @@ async fn index_file(
             TimestampInfo::TzGuessedLocal(*Local::now().offset()),
         ),
     };
+    let coordinates = metadata
+        .composite
+        .map(|comp| match (comp.gps_latitude, comp.gps_longitude) {
+            (Some(lat), Some(lon)) => Some(GpsCoordinates {
+                lat: (lat * 10e8) as i64,
+                lon: (lon * 10e8) as i64,
+            }),
+            _ => None,
+        })
+        .flatten();
     let create_asset = CreateAsset {
         ty,
         root_dir_id: asset_root.id,
@@ -181,6 +191,7 @@ async fn index_file(
         rotation_correction: None,
         hash: Some(hash),
         sp: full,
+        gps_coordinates: coordinates,
     };
     let id = repository::asset::create_asset(pool, create_asset).await?;
     Ok(Some(id))

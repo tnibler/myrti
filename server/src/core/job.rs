@@ -1,4 +1,5 @@
 use crate::job::{
+    geo_tagging_job::{GeoTaggingJob, GeoTaggingJobResult, GeoTaggingParams},
     image_conversion_job::{ImageConversionJob, ImageConversionParams},
     indexing_job::{IndexingJob, IndexingJobParams},
     thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
@@ -25,6 +26,7 @@ pub enum JobResultType {
     Thumbnail(<ThumbnailJob as Job>::Result),
     VideoPackaging(<VideoPackagingJob as Job>::Result),
     ImageConversion(<ImageConversionJob as Job>::Result),
+    Geotagging(eyre::Result<GeoTaggingJobResult>),
 }
 
 #[derive(Debug, Clone)]
@@ -33,6 +35,7 @@ pub enum JobType {
     Thumbnail { params: ThumbnailJobParams },
     VideoPackaging { params: VideoPackagingJobParams },
     ImageConversion { params: ImageConversionParams },
+    GeoTagging { params: GeoTaggingParams },
 }
 
 impl Display for JobType {
@@ -42,6 +45,7 @@ impl Display for JobType {
             JobType::Thumbnail { params: _ } => "Thumbnail",
             JobType::VideoPackaging { params: _ } => "VideoPackaging",
             JobType::ImageConversion { params: _ } => "ImageConversion",
+            JobType::GeoTagging { params } => "GeoTagging",
         };
         write!(f, "{}", s)
     }
@@ -54,6 +58,7 @@ impl Display for JobResultType {
             JobResultType::Thumbnail(_) => "Thumbnail",
             JobResultType::VideoPackaging(_) => "VideoPackaging",
             JobResultType::ImageConversion(_) => "ImageConversion",
+            JobResultType::Geotagging(_) => "GeoTagging",
         };
         write!(f, "{}Result", s)
     }

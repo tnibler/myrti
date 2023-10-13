@@ -13,10 +13,12 @@ use serde::Deserialize;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use thiserror::Error;
 use tracing::info;
+use usearch_index::UsearchIndex;
 
 mod download;
 pub mod geoname_schema;
 mod ingest;
+mod usearch_index;
 
 type DbPool = sqlx::Pool<Sqlite>;
 
@@ -25,7 +27,7 @@ pub struct GeonameId(pub i64);
 
 pub struct ReverseGeocoder {
     pool: DbPool,
-    index: usearch::Index,
+    index: UsearchIndex,
     countries_in_index: RefCell<HashSet<GeonameId>>,
 }
 
@@ -57,6 +59,9 @@ pub struct LookupResult {
 }
 
 impl ReverseGeocoder {
+    // usearch index may or may not be safe to be moved around to other threads by tokio
+    // so I'm taking the safe way and just putting it in its own thread. maybe unnecessary
+    // but cost should be negligible
     pub async fn new(db_path: &Path) -> Result<ReverseGeocoder> {
         let db_url = format!("sqlite://{}", db_path);
         if !Sqlite::database_exists(&db_url).await.unwrap_or(false) {
@@ -67,17 +72,9 @@ impl ReverseGeocoder {
         let pool = SqlitePool::connect(&db_url).await?;
         sqlx::migrate!("./migrations").run(&pool).await?;
 
-        let index_options = usearch::ffi::IndexOptions {
-            multi: false,
-            dimensions: 2,
-            metric: usearch::ffi::MetricKind::Haversine,
-            quantization: usearch::ffi::ScalarKind::F16,
-            connectivity: 0,
-            expansion_add: 0,
-            expansion_search: 0,
-        };
-        let index = usearch::new_index(&index_options).unwrap();
-        index.reserve(100000).unwrap();
+        let index = UsearchIndex::new()
+            .await
+            .wrap_err("error creating search index")?;
         Ok(ReverseGeocoder {
             pool,
             index,
@@ -90,7 +87,7 @@ impl ReverseGeocoder {
     }
 
     pub async fn lookup(
-        &self,
+        &mut self,
         coord: Coordinates,
     ) -> Result<Option<LookupResult>, ReverseGeocodeError> {
         let base_data_exists = country_list_exists(&self.pool)
@@ -125,16 +122,18 @@ impl ReverseGeocoder {
             return Err(ReverseGeocodeError::CountryDataNotPresent { country_id });
         }
         if !self.countries_in_index.borrow().contains(&country_id) {
-            add_country_to_index(country_id, &self.pool, &self.index)
+            add_country_to_index(country_id, &self.pool, &mut self.index)
                 .await
                 .wrap_err("error adding country data to index")?;
             self.countries_in_index.borrow_mut().insert(country_id);
         }
         let result_geoname_id = self
             .index
-            .search(&[coord.lat, coord.lon], 1)
-            .wrap_err("error searching usearch index")?
-            .keys[0] as i64;
+            .search(coord.clone(), 1)
+            .await
+            .wrap_err("error searching usearch index")?[0]
+            .geoname_id
+            .0;
         let geoname_row = sqlx::query!(
             r#"
 SELECT * FROM Geoname 
@@ -260,7 +259,7 @@ INSERT INTO CountryDataPresent VALUES (?, ?);
 async fn add_country_to_index(
     country_id: GeonameId,
     pool: &DbPool,
-    index: &usearch::Index,
+    index: &mut UsearchIndex,
 ) -> Result<()> {
     let country_code = sqlx::query!(
         r#"
@@ -286,16 +285,15 @@ AND feature_code IN ('PPL', 'PPLL', 'PPLS', 'PPLA', 'PPLA2', 'PPLA3', 'PPLA4', '
         let row = row.wrap_err("error querying table Geoname")?;
         match row {
             sqlx::Either::Right(row) => {
-                if index.size() == index.capacity() {
-                    index
-                        .reserve(index.size() + 10000)
-                        .wrap_err("error growing index capacity")?;
-                }
                 index
-                    .add(
+                    .add_to_index(
                         row.geoname_id as u64,
-                        &[row.latitude as f32, row.longitude as f32],
+                        Coordinates {
+                            lat: row.latitude as f32,
+                            lon: row.longitude as f32,
+                        },
                     )
+                    .await
                     .wrap_err("error adding entry to index")?;
             }
             sqlx::Either::Left(_) => {}

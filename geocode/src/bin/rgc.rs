@@ -19,7 +19,7 @@ fn parse_lat_lon(s: &str) -> Result<(f32, f32)> {
 #[tokio::main]
 async fn main() {
     eprintln!("initializing");
-    let rgc = ReverseGeocoder::new("geodata.db".into()).await.unwrap();
+    let mut rgc = ReverseGeocoder::new("geodata.db".into()).await.unwrap();
     if rgc.base_data_present().await.unwrap().is_none() {
         eprintln!("downloading country list");
         rgc.download_base_data().await.unwrap();

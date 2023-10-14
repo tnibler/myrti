@@ -145,7 +145,24 @@ CREATE TABLE AlbumEntry (
   FOREIGN KEY (asset_id) REFERENCES Asset(id)
 ) STRICT;
 
+CREATE TABLE TimelineGroup (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  name TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  changed_at TEXT NOT NULL
+) STRICT;
+
 CREATE INDEX album_id_index ON AlbumEntry(album_id);
+
+CREATE TABLE TimelineGroupEntry (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  timeline_group_id INTEGER NOT NULL,
+  asset_id INTEGER NOT NULL,
+  FOREIGN KEY (timeline_group_id) REFERENCES TimelineGroup(id),
+  FOREIGN KEY (asset_id) REFERENCES Asset(id),
+  -- assets can only be in one group
+  UNIQUE(asset_id)
+) STRICT;
 
 CREATE TABLE FailedThumbnailJob (
   asset_id INTEGER PRIMARY KEY NOT NULL,

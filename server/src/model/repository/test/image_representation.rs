@@ -40,6 +40,7 @@ async fn insert_retrieve_image_representation() {
         },
         rotation_correction: None,
         hash: Some(0x56a28ebc104e84),
+        gps_coordinates: None,
     };
     let asset_id = assert_ok!(repository::asset::create_asset(&pool, asset).await);
     let image_reprs =
@@ -93,6 +94,7 @@ async fn get_images_with_no_acceptable_repr() {
         },
         rotation_correction: None,
         hash: Some(0x56a28ebc104e84),
+        gps_coordinates: None,
     };
     let asset1_id = assert_ok!(repository::asset::create_asset(&pool, asset1).await);
     let asset2 = CreateAsset {
@@ -113,6 +115,7 @@ async fn get_images_with_no_acceptable_repr() {
         },
         rotation_correction: None,
         hash: Some(0x123),
+        gps_coordinates: None,
     };
     let asset2_id = assert_ok!(repository::asset::create_asset(&pool, asset2).await);
 

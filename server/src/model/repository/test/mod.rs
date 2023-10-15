@@ -3,6 +3,7 @@ use sqlx::SqlitePool;
 
 use super::pool::DbPool;
 
+pub mod proptest_arb;
 pub mod asset;
 pub mod asset_root_dir;
 pub mod data_dir;

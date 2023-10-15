@@ -174,9 +174,12 @@ impl TryFrom<&DbAsset> for Asset {
                 TimestampInfo::TzInferredLocation(tz)
             }
             (DbTimestampInfo::TzGuessedLocal, Some(tz)) => TimestampInfo::TzGuessedLocal(tz),
+            (DbTimestampInfo::NoTimestamp, _) => TimestampInfo::NoTimestamp,
             _ => {
                 return Err(eyre!(
-                    "Invalid combination of timezone_info and timezone_offset columns"
+                    "Invalid combination of timezone_info and timezone_offset columns: {:?}, {:?}",
+                    value.timezone_info,
+                    timezone_offset
                 ))
             }
         };

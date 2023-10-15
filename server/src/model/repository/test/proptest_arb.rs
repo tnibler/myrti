@@ -2,23 +2,25 @@ use camino::Utf8PathBuf as PathBuf;
 use proptest::prelude::*;
 
 use crate::model::{
-    Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, AssetType, GpsCoordinates, Image,
-    ImageAsset, Size, TimestampInfo, Video, VideoAsset,
+    Album, AlbumId, Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, AssetType, GpsCoordinates,
+    Image, ImageAsset, Size, TimestampInfo, Video, VideoAsset,
 };
 
 fn path_strategy() -> BoxedStrategy<PathBuf> {
-    any::<String>().prop_map(|s| PathBuf::from(s)).boxed()
+    r"[^\\0].{5,}".prop_map(|s| PathBuf::from(s)).boxed()
 }
 
 fn fixed_offset_strategy() -> BoxedStrategy<chrono::FixedOffset> {
     prop_oneof![
-        (-86_399..=86_399).prop_map(|secs| chrono::FixedOffset::east_opt(secs).unwrap()),
-        (-86_399..=86_399).prop_map(|secs| chrono::FixedOffset::west_opt(secs).unwrap()),
+        (-86_399..=86_399)
+            .prop_map(|secs| chrono::FixedOffset::east_opt(secs - (secs % 60)).unwrap()),
+        (-86_399..=86_399)
+            .prop_map(|secs| chrono::FixedOffset::west_opt(secs - (secs % 60)).unwrap()),
     ]
     .boxed()
 }
 
-fn datetime_utc_strategy() -> BoxedStrategy<chrono::DateTime<chrono::Utc>> {
+pub fn arb_datetime_utc() -> BoxedStrategy<chrono::DateTime<chrono::Utc>> {
     let future = (chrono::Utc::now() + chrono::Duration::weeks(52 * 100)).timestamp();
     (0..future)
         .prop_map(|seconds| chrono::DateTime::from_timestamp(seconds, 0).unwrap())
@@ -53,10 +55,10 @@ prop_compose! {
         file_type: String,
     )
     (
-        file_path in path_strategy(),
+        file_path in path_strategy().no_shrink(),
         is_hidden in any::<bool>(),
-        added_at in datetime_utc_strategy(),
-        taken_date in datetime_utc_strategy(),
+        added_at in arb_datetime_utc(),
+        taken_date in arb_datetime_utc(),
         timestamp_info in timestamp_info_strategy(),
         size in (200..4000_i64, 200..4000_i64).prop_map(|(w, h)| Size { width: w, height: h}),
         rotation_correction in prop_oneof![
@@ -69,7 +71,7 @@ prop_compose! {
             Just(None),
             gps_coords_strategy().prop_map(|coords| Some(coords))
         ],
-        hash in any::<Option<u64>>(),
+        hash in any::<Option<u64>>().no_shrink(),
     ) -> AssetBase {
         AssetBase {
             id: AssetId(0),
@@ -144,4 +146,22 @@ pub fn arb_new_asset(asset_root_dir_id: AssetRootDirId) -> BoxedStrategy<Asset> 
         arb_new_video_asset(asset_root_dir_id).prop_map(|video| video.into())
     ]
     .boxed()
+}
+
+prop_compose! {
+    pub fn arb_new_album()
+    (
+        name in ".+",
+        description in prop::option::of(".*"),
+        created_at in arb_datetime_utc(),
+        changed_at in arb_datetime_utc(),
+    ) -> Album {
+        Album {
+            id: AlbumId(0),
+            name,
+            description,
+            created_at,
+            changed_at,
+        }
+    }
 }

@@ -3,11 +3,12 @@ use sqlx::SqlitePool;
 
 use super::pool::DbPool;
 
-pub mod proptest_arb;
+pub mod album;
 pub mod asset;
 pub mod asset_root_dir;
 pub mod data_dir;
 pub mod image_representation;
+pub mod proptest_arb;
 pub mod representation;
 
 pub async fn create_db() -> DbPool {

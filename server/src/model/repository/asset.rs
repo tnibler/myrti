@@ -264,6 +264,8 @@ timezone_info,
 width,
 height,
 rotation_correction,
+gps_latitude,
+gps_longitude,
 thumb_small_square_avif,
 thumb_small_square_webp,
 thumb_large_orig_avif,
@@ -279,7 +281,7 @@ audio_codec_name,
 has_dash 
 )
 VALUES
-(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 "#,
         db_asset.ty,
         db_asset.root_dir_id.0,
@@ -294,6 +296,8 @@ VALUES
         db_asset.width,
         db_asset.height,
         db_asset.rotation_correction,
+        db_asset.gps_latitude,
+        db_asset.gps_longitude,
         db_asset.thumb_small_square_avif,
         db_asset.thumb_small_square_webp,
         db_asset.thumb_large_orig_avif,
@@ -562,7 +566,7 @@ timezone_info ,
 Asset.width as width,
 Asset.height as height,
 Asset.rotation_correction as rotation_correction,
-Asset.gps_latitude as gps_latidude,
+Asset.gps_latitude as gps_latitude,
 Asset.gps_longitude as gps_longitude,
 Asset.thumb_small_square_avif as thumb_small_square_avif,
 Asset.thumb_small_square_webp as thumb_small_square_webp,
@@ -583,32 +587,65 @@ WHERE Asset.ty = "#,
     query_builder.push_bind(DbAssetType::Video);
     query_builder.push(
         r#"
-AND NOT EXISTS
-(
-    SELECT 1 FROM VideoRepresentation vr, AudioRepresentation ar
-    WHERE 
-    vr.asset_id = Asset.id
-    AND ar.asset_id = Asset.id
-    AND vr.codec_name IN
-    "#,
+AND ((
+       Asset.audio_codec_name IS NULL 
+       OR
+       SELECT COUNT(*) FROM 
+       (
+         (
+          SELECT Asset.audio_codec_name 
+          UNION 
+          SELECT ar.codec_name FROM AudioRepresentation WHERE ar.asset_id = Asset.id
+         )
+         INTERSECT SELECT * FROM 
+         "#,
     );
-    query_builder.push_tuples(acceptable_video_codecs, |mut b, s| {
+    query_builder.push_values(acceptable_audio_codecs, |mut b, s| {
         b.push_bind(s);
     });
     query_builder.push(
         r#"
-    AND ar.codec_name IN 
+       ) = 0
+     )
+OR (
+  SELECT COUNT(*) FROM 
+  (
+    (
+      SELECT Asset.video_codec_name
+      UNION
+      SELECT vr.codec_name FROM VideoRepresentation WHERE vr.asset_id = Asset.id
+    )
+    INTERSECT SELECT * FROM
     "#,
     );
-    query_builder.push_tuples(acceptable_audio_codecs, |mut b, s| {
+    query_builder.push_values(acceptable_video_codecs, |mut b, s| {
         b.push_bind(s);
     });
     query_builder.push(
         r#"
-);
+  ) = 0
+));
     "#,
     );
-    debug!(query = query_builder.sql());
+    // query_builder.push_tuples(acceptable_audio_codecs, |mut b, s| {
+    //     b.push_bind(s);
+    // });
+    /*
+     * SELECT Asset.id FROM Asset
+     * WHERE Asset.ty = video
+     * AND (Asset.audio_codec_name IS NULL OR
+     *                   SELECT COUNT(*) FROM
+     *                   ((SELECT Asset.audio_codec_name UNION
+     *                   SELECT ar.codec_name FROM AudioRepresentation ar WHERE
+     *                   ar.asset_id=Asset.id)
+     *                   INTERSECT SELECT * FROM (VALUES (codec1, codec2)) = 0)
+     * OR (SELECT COUNT(*) FROM
+     *                   ((SELECT Asset.video_codec_name UNION
+     *                   SELECT vr.codec_name FROM VideoRepresentation vr WHERE
+     *                   vr.asset_id=Asset.id)
+     *                   INTERSECT SELECT * FROM (VALUES (codec1, codec2)) = 0)
+     */
+    // panic!("{}", query_builder.sql());
     query_builder
         .build_query_as::<DbAsset>()
         .fetch_all(pool)

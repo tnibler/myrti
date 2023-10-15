@@ -1,5 +1,6 @@
 pub mod repository;
 
+mod album;
 mod asset;
 mod asset_base;
 mod asset_projections;
@@ -9,6 +10,7 @@ mod data_dir;
 mod failed_job;
 mod id_types;
 mod representation;
+pub use album::*;
 pub use asset::*;
 pub use asset_base::*;
 pub use asset_projections::*;

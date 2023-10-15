@@ -190,6 +190,16 @@ impl Monitor {
                         };
                         self.set_status(job_id, status).await;
                     }
+                    JobResultType::Geotagging(ref geotagging_results) => {
+                        todo!()
+                        // let status = if geotagging_results.failed.is_empty() {
+                        //     JobStatus::Complete
+                        // } else {
+                        //     warn!("ImageConversion failures");
+                        //     JobStatus::CompleteWithErrors
+                        // };
+                        // self.set_status(job_id, status).await;
+                    }
                 }
                 self.scheduler_tx
                     .send(SchedulerMessage::JobComplete {

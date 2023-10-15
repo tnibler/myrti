@@ -58,8 +58,8 @@ CREATE TABLE Asset (
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(id),
   UNIQUE(root_dir_id, file_path),
 
-  -- timezone_offset NULL is only valid for timezone_info=UtcCertain
-  CHECK (timezone_info IN (1, 2, 3, 4, 5, 6) AND (timezone_info = 2 OR timezone_offset IS NOT NULL)),
+  -- timezone_offset NULL is only valid for timezone_info=UtcCertain, and NoTimestamp I guess?
+  CHECK (timezone_info IN (1, 2, 3, 4, 5, 6) AND (timezone_info IN (2, 6) OR timezone_offset IS NOT NULL)),
 
   CHECK(has_dash IN (0, 1)),
   -- valid Image or Video
@@ -78,7 +78,7 @@ CREATE TABLE Asset (
       -- audio_codec_name can be null if there's no audio stream
   )),
 
-  CHECK(gps_latitude IS NULL = gps_latitude IS NULL)
+  CHECK((gps_latitude IS NULL AND gps_longitude IS NULL) OR (gps_latitude IS NOT NULL AND gps_longitude IS NOT NULL))
 ) STRICT;
 
 CREATE TABLE DuplicateAsset (
@@ -129,8 +129,10 @@ CREATE TABLE Album (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   name TEXT,
   description TEXT,
-  created_at TEXT NOT NULL,
-  changed_at TEXT NOT NULL
+  -- UTC timestamp in milliseconds since UNIX epoch
+  created_at INTEGER NOT NULL,
+  -- UTC timestamp in milliseconds since UNIX epoch
+  changed_at INTEGER NOT NULL
 ) STRICT;
 
 -- -- surrogate key here because
@@ -148,8 +150,10 @@ CREATE TABLE AlbumEntry (
 CREATE TABLE TimelineGroup (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   name TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  changed_at TEXT NOT NULL
+  -- UTC timestamp in milliseconds since UNIX epoch
+  created_at INTEGER NOT NULL,
+  -- UTC timestamp in milliseconds since UNIX epoch
+  changed_at INTEGER NOT NULL
 ) STRICT;
 
 CREATE INDEX album_id_index ON AlbumEntry(album_id);

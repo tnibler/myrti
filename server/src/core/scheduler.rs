@@ -138,13 +138,7 @@ impl SchedulerImpl {
         }
     }
 
-    async fn on_job_complete(&self, _job_id: JobId, result: JobResultType) {
-        match result {
-            JobResultType::Indexing(_) => {}
-            JobResultType::Thumbnail(_) => {}
-            JobResultType::VideoPackaging(_) => {}
-            JobResultType::ImageConversion(_) => {}
-        }
+    async fn on_job_complete(&self, _job_id: JobId, _result: JobResultType) {
         self.start_any_job_if_required().await;
     }
 

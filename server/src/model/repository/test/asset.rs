@@ -20,16 +20,16 @@ use super::*;
 #[test]
 fn prop_insert_retrieve_asset() {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let pool = rt.block_on(async { create_db().await });
-    let asset_root_dir = AssetRootDir {
-        id: AssetRootDirId(0),
-        path: PathBuf::from("/path/to/assets"),
-    };
-    let root_dir_id = assert_ok!(rt.block_on(async {
-        repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await
-    }));
-    proptest!(|(asset in arb_new_asset(root_dir_id))| {
+    proptest!(|(asset in arb_new_asset(AssetRootDirId(1)))| {
         rt.block_on(async {
+            let pool = create_db().await;
+            let asset_root_dir = AssetRootDir {
+                id: AssetRootDirId(0),
+                path: PathBuf::from("/path/to/assets"),
+            };
+            let root_dir_id = assert_ok!(
+                repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await
+            );
             let path_exists = repository::asset::asset_or_duplicate_with_path_exists(&pool, root_dir_id, &asset.base.file_path).await;
             prop_assert!(path_exists.is_ok());
             if path_exists.unwrap() {
@@ -451,14 +451,6 @@ async fn get_videos_in_acceptable_codec_without_dash() {
 #[test]
 fn prop_get_videos_with_no_acceptable_codec_repr() {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let pool = rt.block_on(async { create_db().await });
-    let asset_root_dir = AssetRootDir {
-        id: AssetRootDirId(0),
-        path: PathBuf::from("/path/to/assets"),
-    };
-    let root_dir_id = assert_ok!(rt.block_on(async {
-        repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await
-    }));
     prop_compose! {
         fn arb_new_video_repr(
             codec_name: String
@@ -520,11 +512,16 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
             (asset, video_reprs, audio_repr)
         }
     }
-    proptest!(|(assets_and_reprs in prop::collection::vec(arb_video_asset_with_some_reprs(root_dir_id), 0..20),
+    proptest!(|(assets_and_reprs in prop::collection::vec(arb_video_asset_with_some_reprs(AssetRootDirId(1)), 0..20),
                 acceptable_video_codecs in prop::collection::hash_set("h264|hevc|av1|vp9", 0..5),
                 acceptable_audio_codecs in prop::collection::hash_set("mp3|aac|opus|flac", 0..5))| {
         let _ = rt.block_on(async {
-            sqlx::query!(r#"DELETE FROM VideoRepresentation; DELETE FROM AudioRepresentation; DELETE FROM Asset;"#).execute(&pool).await.unwrap();
+            let pool = create_db().await;
+            let asset_root_dir = AssetRootDir {
+                id: AssetRootDirId(0),
+                path: PathBuf::from("/path/to/assets"),
+            };
+            let root_dir_id = assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
             let mut assets_with_ids: Vec<VideoAsset> = Vec::default();
             for (asset, video_reprs, audio_repr) in &assets_and_reprs {
                 let path_exists = repository::asset::asset_or_duplicate_with_path_exists(&pool, root_dir_id, &asset.base.file_path).await;

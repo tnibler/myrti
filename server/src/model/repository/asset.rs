@@ -557,14 +557,15 @@ acceptable_audio_codecs AS
    SELECT * FROM (
         "#,
     );
-    // FIXME dirty, just need to make sure there's at least one el ("") in both iterators
-    let mut acceptable_audio_codecs: Vec<&str> = acceptable_audio_codecs.into_iter().collect();
-    acceptable_audio_codecs.push("");
-    let mut acceptable_video_codecs: Vec<&str> = acceptable_video_codecs.into_iter().collect();
-    acceptable_video_codecs.push("");
-    query_builder.push_values(acceptable_audio_codecs.into_iter(), |mut b, s| {
-        b.push(format!("'{}'", s));
-    });
+
+    query_builder.push_values(
+        // need to make sure there's at least one el ("") in the iterator
+        // otherwise the VALUES clause is empty and won't parse
+        acceptable_audio_codecs.chain(std::iter::once("")),
+        |mut b, s| {
+            b.push(format!("'{}'", s));
+        },
+    );
     query_builder.push(
         r#"
    )
@@ -574,9 +575,14 @@ acceptable_video_codecs AS
    SELECT * FROM (
     "#,
     );
-    query_builder.push_values(acceptable_video_codecs.into_iter(), |mut b, s| {
-        b.push(format!("'{}'", s));
-    });
+    query_builder.push_values(
+        // need to make sure there's at least one el ("") in the iterator
+        // otherwise the VALUES clause is empty and won't parse
+        acceptable_video_codecs.chain(std::iter::once("")),
+        |mut b, s| {
+            b.push(format!("'{}'", s));
+        },
+    );
     query_builder.push(
         r#"
    )
@@ -645,7 +651,6 @@ WHERE Asset.ty =
     );
              "#,
     );
-    // panic!("{}", query_builder.sql());
     query_builder
         .build_query_as::<DbAsset>()
         .fetch_all(pool)

@@ -13,6 +13,8 @@ fn path_strategy() -> BoxedStrategy<PathBuf> {
 fn fixed_offset_strategy() -> BoxedStrategy<chrono::FixedOffset> {
     prop_oneof![
         (-86_399..=86_399)
+            // only whole minute offset because FixedOffset::from_str() somehow throws away the
+            // seconds part
             .prop_map(|secs| chrono::FixedOffset::east_opt(secs - (secs % 60)).unwrap()),
         (-86_399..=86_399)
             .prop_map(|secs| chrono::FixedOffset::west_opt(secs - (secs % 60)).unwrap()),

@@ -551,6 +551,36 @@ pub async fn get_video_assets_with_no_acceptable_repr(
 ) -> Result<Vec<VideoAsset>> {
     let mut query_builder: QueryBuilder<Sqlite> = QueryBuilder::new(
         r#"
+WITH
+acceptable_audio_codecs AS 
+   (
+   SELECT * FROM (
+        "#,
+    );
+    // FIXME dirty, just need to make sure there's at least one el ("") in both iterators
+    let mut acceptable_audio_codecs: Vec<&str> = acceptable_audio_codecs.into_iter().collect();
+    acceptable_audio_codecs.push("");
+    let mut acceptable_video_codecs: Vec<&str> = acceptable_video_codecs.into_iter().collect();
+    acceptable_video_codecs.push("");
+    query_builder.push_values(acceptable_audio_codecs.into_iter(), |mut b, s| {
+        b.push(format!("'{}'", s));
+    });
+    query_builder.push(
+        r#"
+   )
+   ),
+acceptable_video_codecs AS 
+   (
+   SELECT * FROM (
+    "#,
+    );
+    query_builder.push_values(acceptable_video_codecs.into_iter(), |mut b, s| {
+        b.push(format!("'{}'", s));
+    });
+    query_builder.push(
+        r#"
+   )
+   )
 SELECT 
 Asset.id as id,
 Asset.ty as ty,
@@ -582,69 +612,39 @@ Asset.video_bitrate as video_bitrate,
 Asset.audio_codec_name as audio_codec_name,
 Asset.has_dash as has_dash
 FROM Asset
-WHERE Asset.ty = "#,
+WHERE Asset.ty =
+    "#,
     );
     query_builder.push_bind(DbAssetType::Video);
     query_builder.push(
         r#"
-AND ((
-       Asset.audio_codec_name IS NULL 
-       OR
-       SELECT COUNT(*) FROM 
-       (
-         (
-          SELECT Asset.audio_codec_name 
-          UNION 
-          SELECT ar.codec_name FROM AudioRepresentation WHERE ar.asset_id = Asset.id
-         )
-         INTERSECT SELECT * FROM 
-         "#,
-    );
-    query_builder.push_values(acceptable_audio_codecs, |mut b, s| {
-        b.push_bind(s);
-    });
-    query_builder.push(
-        r#"
-       ) = 0
-     )
-OR (
-  SELECT COUNT(*) FROM 
-  (
+    AND
     (
-      SELECT Asset.video_codec_name
-      UNION
-      SELECT vr.codec_name FROM VideoRepresentation WHERE vr.asset_id = Asset.id
-    )
-    INTERSECT SELECT * FROM
-    "#,
+      (Asset.audio_codec_name IS NOT NULL
+      AND
+      NOT EXISTS (SELECT * FROM
+      (
+         SELECT Asset.audio_codec_name
+         UNION
+         SELECT ar.codec_name FROM AudioRepresentation ar
+         WHERE ar.asset_id = Asset.id
+         INTERSECT SELECT * FROM acceptable_audio_codecs
+      )))
+      OR
+      (
+      NOT EXISTS (SELECT * FROM
+      (
+         SELECT Asset.video_codec_name
+         UNION
+         SELECT vr.codec_name FROM VideoRepresentation vr
+         WHERE vr.asset_id = Asset.id
+         INTERSECT
+         SELECT * FROM acceptable_video_codecs
+      ))
+      )
     );
-    query_builder.push_values(acceptable_video_codecs, |mut b, s| {
-        b.push_bind(s);
-    });
-    query_builder.push(
-        r#"
-  ) = 0
-));
-    "#,
+             "#,
     );
-    // query_builder.push_tuples(acceptable_audio_codecs, |mut b, s| {
-    //     b.push_bind(s);
-    // });
-    /*
-     * SELECT Asset.id FROM Asset
-     * WHERE Asset.ty = video
-     * AND (Asset.audio_codec_name IS NULL OR
-     *                   SELECT COUNT(*) FROM
-     *                   ((SELECT Asset.audio_codec_name UNION
-     *                   SELECT ar.codec_name FROM AudioRepresentation ar WHERE
-     *                   ar.asset_id=Asset.id)
-     *                   INTERSECT SELECT * FROM (VALUES (codec1, codec2)) = 0)
-     * OR (SELECT COUNT(*) FROM
-     *                   ((SELECT Asset.video_codec_name UNION
-     *                   SELECT vr.codec_name FROM VideoRepresentation vr WHERE
-     *                   vr.asset_id=Asset.id)
-     *                   INTERSECT SELECT * FROM (VALUES (codec1, codec2)) = 0)
-     */
     // panic!("{}", query_builder.sql());
     query_builder
         .build_query_as::<DbAsset>()

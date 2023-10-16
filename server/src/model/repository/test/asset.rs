@@ -521,27 +521,11 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
         }
     }
     proptest!(|(assets_and_reprs in prop::collection::vec(arb_video_asset_with_some_reprs(root_dir_id), 0..20),
-                acceptable_video_codecs in prop::collection::hash_set("h264|hevc|av1|vp9", 1..4),
-                acceptable_audio_codecs in prop::collection::hash_set("mp3|aac|opus|flac", 1..3))| {
+                acceptable_video_codecs in prop::collection::hash_set("h264|hevc|av1|vp9", 0..5),
+                acceptable_audio_codecs in prop::collection::hash_set("mp3|aac|opus|flac", 0..5))| {
         let _ = rt.block_on(async {
-            sqlx::query!(r#"DELETE FROM Asset; DELETE FROM VideoRepresentation; DELETE FROM AudioRepresentation;"#).execute(&pool).await.unwrap();
-            let expected_no_acceptable_reprs: HashSet<AssetId> = assets_and_reprs.iter()
-                .filter(|(asset, video_reprs, audio_repr)| {
-                    let mut video_repr_codecs: HashSet<String> = video_reprs.iter().map(|repr| repr.codec_name.clone()).collect::<HashSet<_>>();
-                    video_repr_codecs.insert(asset.video.video_codec_name.clone());
-                    let video_ok = acceptable_video_codecs.intersection(&video_repr_codecs).collect_vec().is_empty().not();
-                    let audio_ok = match &asset.video.audio_codec_name {
-                        None => true,
-                        Some(orig_codec) => {
-                            let mut audio_repr_codecs: HashSet<String> = audio_repr.iter().map(|repr| repr.codec_name.clone()).collect();
-                            audio_repr_codecs.insert(orig_codec.clone());
-                            audio_repr_codecs.intersection(&acceptable_audio_codecs).collect_vec().is_empty().not()
-                        }
-                    };
-                    video_ok && audio_ok
-            })
-                .map(|(asset, _video_reprs, _audio_repr)| asset.base.id)
-                .collect();
+            sqlx::query!(r#"DELETE FROM VideoRepresentation; DELETE FROM AudioRepresentation; DELETE FROM Asset;"#).execute(&pool).await.unwrap();
+            let mut assets_with_ids: Vec<VideoAsset> = Vec::default();
             for (asset, video_reprs, audio_repr) in &assets_and_reprs {
                 let path_exists = repository::asset::asset_or_duplicate_with_path_exists(&pool, root_dir_id, &asset.base.file_path).await;
                 prop_assert!(path_exists.is_ok());
@@ -551,9 +535,17 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
                 let asset_insert_result = repository::asset::insert_asset(&pool, &asset.into()).await;
                 prop_assert!(asset_insert_result.is_ok());
                 let asset_id = asset_insert_result.unwrap();
+                assets_with_ids.push(VideoAsset {
+                    base:AssetBase {
+                        id: asset_id,
+                        ..asset.base.clone()
+                    },
+                    ..asset.clone()
+                });
+                let mut tx = pool.begin().await.unwrap();
                 for repr in video_reprs {
                     let repr_insert_result = repository::representation::insert_video_representation(
-                        pool.begin().await.unwrap().as_mut(), 
+                        tx.as_mut(), 
                         &VideoRepresentation {
                             asset_id: asset_id,
                             ..repr.clone()
@@ -562,14 +554,32 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
                 }
                 if let Some(repr) = audio_repr {
                     let repr_insert_result = repository::representation::insert_audio_representation(
-                        pool.begin().await.unwrap().as_mut(), 
+                        tx.as_mut(), 
                         &AudioRepresentation {
                             asset_id: asset_id,
                             ..repr.clone()
                     }).await;
                     prop_assert!(repr_insert_result.is_ok());
                 }
+                prop_assert!(tx.commit().await.is_ok());
             }
+            let expected_no_acceptable_reprs: HashSet<AssetId> = assets_with_ids.iter().zip(assets_and_reprs.iter())
+                .filter(|(asset, (_, video_reprs, audio_repr))| {
+                    let mut video_repr_codecs: HashSet<String> = video_reprs.iter().map(|repr| repr.codec_name.clone()).collect::<HashSet<_>>();
+                    video_repr_codecs.insert(asset.video.video_codec_name.clone());
+                    let video_repr_missing = acceptable_video_codecs.intersection(&video_repr_codecs).collect_vec().is_empty();
+                    let audio_repr_missing = match &asset.video.audio_codec_name {
+                        None => false,
+                        Some(orig_codec) => {
+                            let mut audio_repr_codecs: HashSet<String> = audio_repr.iter().map(|repr| repr.codec_name.clone()).collect();
+                            audio_repr_codecs.insert(orig_codec.clone());
+                            audio_repr_codecs.intersection(&acceptable_audio_codecs).collect_vec().is_empty()
+                        }
+                    };
+                    video_repr_missing || audio_repr_missing
+            })
+                .map(|(asset, (_, _video_reprs, _audio_repr))| asset.base.id)
+                .collect();
             let actual = repository::asset::get_video_assets_with_no_acceptable_repr(
                 &pool,
                 acceptable_video_codecs.iter().map(|s| s.as_ref()),

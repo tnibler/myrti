@@ -1,5 +1,7 @@
+use std::str::FromStr;
+
 use chrono::SubsecRound;
-use sqlx::SqlitePool;
+use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 
 use super::pool::DbPool;
 
@@ -12,8 +14,8 @@ pub mod proptest_arb;
 pub mod representation;
 
 pub async fn create_db() -> DbPool {
-    let db_url = "sqlite::memory:";
-    let pool = SqlitePool::connect(db_url).await.unwrap();
+    let connect_options = SqliteConnectOptions::from_str("sqlite::memory:").unwrap();
+    let pool = SqlitePool::connect_with(connect_options).await.unwrap();
     sqlx::migrate!("./migrations").run(&pool).await.unwrap();
     pool
 }

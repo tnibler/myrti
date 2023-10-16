@@ -56,7 +56,8 @@ WHERE id=?;
     )
     .fetch_one(pool)
     .in_current_span()
-    .await?
+    .await
+    .wrap_err("error getting asset by id")?
     .try_into()
 }
 

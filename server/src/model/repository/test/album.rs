@@ -1,19 +1,10 @@
-use std::collections::HashSet;
-
-use claims::{assert_ok};
 use camino::Utf8PathBuf as PathBuf;
+use claims::assert_ok;
 use proptest::prelude::*;
 
-use super::proptest_arb::{arb_new_asset, arb_new_album};
+use super::proptest_arb::{arb_new_album, arb_new_asset};
 
-use crate::{
-    catalog::storage_key,
-    core::storage,
-    model::{
-        repository, Album, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType,
-        CreateAsset, Image
-    },
-};
+use crate::model::{repository, Album, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId};
 
 use super::*;
 
@@ -68,20 +59,31 @@ fn prop_create_retrieve_albums() {
                 };
                 albums_with_ids.push(album_with_id);
             }
-            for album in &albums_with_ids {
-                let append_result = repository::album::append_assets_to_album(&pool, album.id, assets_with_ids.iter().map(|a| a.base.id)).await;
-                prop_assert!(append_result.is_ok());
+            let mut albums_assets_with_ids: Vec<(Album, Vec<Asset>)> = Vec::default();
+            for (album, (_album_no_id, asset_idxs)) in albums_with_ids.iter().zip(albums_asset_idxs.iter()) {
+                let assets_to_append: Vec<Asset> = asset_idxs.iter().map(|idx| idx.get(&assets_with_ids).clone()).collect();
+                let asset_ids_to_append: Vec<AssetId> = assets_to_append.iter().map(|asset| asset.base.id).collect();
+                let append_chunks: Vec<&[AssetId]> = asset_ids_to_append.chunks(3).collect();
+                for chunk in append_chunks {
+                    let append_result = repository::album::append_assets_to_album(&pool, album.id, chunk.iter().cloned()).await;
+                    prop_assert!(append_result.is_ok());
+                }
+                albums_assets_with_ids.push((album.clone(), assets_to_append));
             }
-            // for (album, (album_no_id, asset_idxs)) in albums_with_ids.iter().zip(albums_asset_idxs.iter()) {
-            //     let asset_ids_to_append: Vec<AssetId> = asset_idxs.iter().map(|idx| idx.get(&assets_with_ids).base.id).collect();
-            //     let append_result = repository::album::append_assets_to_album(&pool, album.id, asset_ids_to_append).await;
-            //     // let append_chunks: Vec<&[AssetId]> = asset_ids_to_append.chunks(3).collect();
-            //     prop_assert!(append_result.is_ok());
-            //     // for chunk in append_chunks {
-            //     //     let append_result = repository::album::append_assets_to_album(&pool, album.id, chunk.iter().cloned()).await;
-            //     //     prop_assert!(append_result.is_ok());
-            //     // }
-            // }
+            for (album, expected_assets) in albums_assets_with_ids {
+                let retrieve_result = repository::album::get_assets_in_album(album.id, &pool).await;
+                prop_assert!(retrieve_result.is_ok());
+                let actual_assets_in_album: Vec<Asset> = retrieve_result.unwrap();
+                let expected_indices: Vec<usize> = (0..expected_assets.len()).collect();
+                prop_assert_eq!(expected_assets, actual_assets_in_album);
+                let actual_indices: Vec<usize> = sqlx::query!(r#"
+                SELECT ae.idx as idx FROM Album, AlbumEntry ae WHERE ae.album_id=Album.id ORDER BY ae.idx;
+                "#).fetch_all(&pool)
+                    .await
+                    .map(|rows| rows.into_iter().map(|row| row.idx as usize).collect::<Vec<_>>())
+                    .unwrap();
+                prop_assert_eq!(expected_indices, actual_indices);
+            }
             Ok(())
         })?;
     })

@@ -28,9 +28,9 @@ pub async fn insert_album(pool: &DbPool, album: &Album) -> Result<AlbumId> {
     let changed_at = album.changed_at.timestamp();
     let result = sqlx::query!(
         r#"
-INSERT INTO Album(id, name, description, created_at, changed_at)
+INSERT INTO Album(id, name, description, is_timeline_group, created_at, changed_at)
 VALUES
-(NULL, ?, ?, ?, ?);
+(NULL, ?, ?, 0, ?, ?);
     "#,
         album.name,
         album.description,
@@ -45,6 +45,7 @@ VALUES
     Ok(id)
 }
 
+/// Get assets in album ordered by the index of their AlbumEntry index
 pub async fn get_assets_in_album(album_id: AlbumId, pool: &DbPool) -> Result<Vec<Asset>> {
     sqlx::query_as!(
         DbAsset,

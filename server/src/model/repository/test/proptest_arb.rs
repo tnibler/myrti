@@ -151,6 +151,7 @@ pub fn arb_new_asset(asset_root_dir_id: AssetRootDirId) -> BoxedStrategy<Asset> 
 }
 
 prop_compose! {
+    /// Arbitrary album with is_timeline_group=false
     pub fn arb_new_album()
     (
         name in ".+",

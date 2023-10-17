@@ -34,6 +34,16 @@ Ideas:
  - Groups are displayed in traditional albums view as well?
  - Display temporally contained albums next to timeline (to the side maybe)
 
+Difference between album and timeline group:
+ - timeline groups are always displayed in timeline, albums are not
+ - timeline groups should probably mostly contiguous in time
+ - assets in album can be sorted arbitratily, timeline groups are chronological
+
+Commonalities between album and timeline group:
+ - both contain assets
+ - both have a title/description
+ - both are displayed in album view
+
 ## Timeline
 
 The timeline is grouped by year, month and days as well as groups.

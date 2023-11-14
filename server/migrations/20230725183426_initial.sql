@@ -130,6 +130,8 @@ CREATE TABLE Album (
   name TEXT,
   description TEXT,
   is_timeline_group INTEGER NOT NULL CHECK(is_timeline_group IN (0, 1)),
+  -- UTC timestamp of date used to position the group in the timeline
+  timeline_group_display_date INTEGER CHECK (is_timeline_group = 0 OR timeline_group_display_date IS NOT NULL),
   -- UTC timestamp in milliseconds since UNIX epoch
   created_at INTEGER NOT NULL,
   -- UTC timestamp in milliseconds since UNIX epoch

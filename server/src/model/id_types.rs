@@ -30,4 +30,3 @@ impl_id!(DuplicateAssetId);
 impl_id!(VideoRepresentationId);
 impl_id!(AudioRepresentationId);
 impl_id!(ImageRepresentationId);
-impl_id!(TimelineGroupId);

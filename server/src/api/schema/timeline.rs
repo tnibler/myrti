@@ -3,6 +3,10 @@ use serde::{Deserialize, Serialize};
 
 use super::Asset;
 
+/// Response for a request for the next part of the timeline to display
+///
+/// `groups` are always whole, not sliced in the middle. Either TimelineGroup or Day
+/// `date` is the date before queries are made
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineChunk {
@@ -33,7 +37,8 @@ pub enum TimelineGroupType {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineRequest {
-    pub start: Option<String>,
+    /// date of the last group the client already has
+    pub last_date: Option<String>,
     pub start_id: Option<String>,
     pub max_count: i32,
     pub last_fetch: String,

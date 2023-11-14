@@ -9,4 +9,4 @@ pub mod pool;
 pub mod representation;
 #[cfg(test)]
 mod test;
-pub mod timeline_group;
+pub mod timeline;

@@ -3,7 +3,7 @@ use proptest::prelude::*;
 
 use crate::model::{
     Album, AlbumId, Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, AssetType, GpsCoordinates,
-    Image, ImageAsset, Size, TimestampInfo, Video, VideoAsset,
+    Image, ImageAsset, Size, TimelineGroup, TimestampInfo, Video, VideoAsset,
 };
 
 fn path_strategy() -> BoxedStrategy<PathBuf> {
@@ -154,15 +154,17 @@ prop_compose! {
     /// Arbitrary album with is_timeline_group=false
     pub fn arb_new_album()
     (
-        name in ".+",
+        name in prop::option::of(".+"),
         description in prop::option::of(".*"),
         created_at in arb_datetime_utc(),
         changed_at in arb_datetime_utc(),
+        timeline_group_display_date in prop::option::of(arb_datetime_utc())
     ) -> Album {
         Album {
             id: AlbumId(0),
             name,
             description,
+            timeline_group: timeline_group_display_date.map(|display_date| TimelineGroup { display_date }),
             created_at,
             changed_at,
         }

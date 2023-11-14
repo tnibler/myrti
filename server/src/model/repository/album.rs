@@ -1,7 +1,10 @@
 use eyre::{Context, Result};
 use tracing::Instrument;
 
-use crate::model::{repository::db_entity::DbAsset, Album, AlbumEntryId, AlbumId, Asset, AssetId};
+use crate::model::{
+    repository::db_entity::DbAsset, util::datetime_from_db_repr, Album, AlbumEntryId, AlbumId,
+    AlbumType, Asset, AssetId, TimelineGroup, TimelineGroupAlbum,
+};
 
 use super::pool::DbPool;
 
@@ -11,29 +14,68 @@ pub struct CreateAlbum {
     pub description: Option<String>,
 }
 
+pub async fn get_album(pool: &DbPool, album_id: AlbumId) -> Result<AlbumType> {
+    let row = sqlx::query!(
+        r#"
+SELECT Album.* FROM Album WHERE id = ?;
+    "#,
+        album_id
+    )
+    .fetch_one(pool)
+    .await
+    .wrap_err("could not query single row from table Album")?;
+    let album_base = Album {
+        id: AlbumId(row.id),
+        name: row.name,
+        description: row.description,
+        created_at: datetime_from_db_repr(row.created_at)?,
+        changed_at: datetime_from_db_repr(row.changed_at)?,
+    };
+    let timeline_group = row
+        .timeline_group_display_date
+        .map(|d| datetime_from_db_repr(d))
+        .transpose()?
+        .map(|d| TimelineGroup { display_date: d });
+    let album_type = match timeline_group {
+        None => AlbumType::Album(album_base),
+        Some(tg) => AlbumType::TimelineGroup(TimelineGroupAlbum {
+            album: album_base,
+            group: tg,
+        }),
+    };
+    Ok(album_type)
+}
+
 pub async fn create_album(pool: &DbPool, create_album: CreateAlbum) -> Result<AlbumId> {
     let now = chrono::Utc::now();
     let album = Album {
         id: AlbumId(0),
-        name: create_album.name,
+        name: Some(create_album.name),
         description: create_album.description,
         created_at: now,
         changed_at: now,
     };
-    insert_album(pool, &album).await
+    insert_album(pool, &AlbumType::Album(album)).await
 }
 
-pub async fn insert_album(pool: &DbPool, album: &Album) -> Result<AlbumId> {
-    let created_at = album.created_at.timestamp();
-    let changed_at = album.changed_at.timestamp();
+pub async fn insert_album(pool: &DbPool, album: &AlbumType) -> Result<AlbumId> {
+    let album_base = album.album_base();
+    let created_at = album_base.created_at.timestamp();
+    let changed_at = album_base.changed_at.timestamp();
+    let (is_timeline_group, timeline_group_display_date) = match album {
+        AlbumType::Album(_) => (0, None),
+        AlbumType::TimelineGroup(ag) => (1, Some(ag.group.display_date.timestamp())),
+    };
     let result = sqlx::query!(
         r#"
-INSERT INTO Album(id, name, description, is_timeline_group, created_at, changed_at)
+INSERT INTO Album(id, name, description, is_timeline_group, timeline_group_display_date, created_at, changed_at)
 VALUES
-(NULL, ?, ?, 0, ?, ?);
+(NULL, ?, ?, ?, ?, ?, ?);
     "#,
-        album.name,
-        album.description,
+        album_base.name,
+        album_base.description,
+        is_timeline_group,
+        timeline_group_display_date,
         created_at,
         changed_at,
     )

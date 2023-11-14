@@ -40,7 +40,7 @@ pub fn router() -> Router<SharedState> {
         .route("/:id", get(get_asset))
         .route("/thumbnail/:id/:size/:format", get(get_thumbnail))
         .route("/file/:id", get(get_asset_file))
-        .route("/timeline", get(get_timeline))
+    // .route("/timeline", get(get_timeline))
 }
 
 async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Asset>>> {
@@ -184,7 +184,7 @@ async fn get_timeline(
     Query(req_body): Query<TimelineRequest>,
 ) -> ApiResult<Json<TimelineChunk>> {
     // ignore last_fetch for now
-    let start: DateTime<Utc> = match req_body.start {
+    let last_date: DateTime<Utc> = match req_body.last_date {
         // FIXME make start date optional, as this here can lead to assets not
         // appearing if they're "in the future"
         None => Utc::now(),

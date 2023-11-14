@@ -482,68 +482,6 @@ AND has_dash = 0;
     .collect::<Result<Vec<_>>>()
 }
 
-#[instrument(skip(pool))]
-pub async fn get_asset_timeline_chunk(
-    pool: &DbPool,
-    start: &DateTime<Utc>,
-    start_id: Option<AssetId>,
-    count: i32,
-) -> Result<Vec<Asset>> {
-    let start_naive = start.naive_utc();
-    sqlx::query_as!(
-        DbAsset,
-        r#"
-SELECT
-id,
-ty as "ty: _",
-root_dir_id,
-file_type,
-file_path,
-hash,
-is_hidden,
-added_at,
-taken_date,
-timezone_offset,
-timezone_info as "timezone_info: _",
-width,
-height,
-rotation_correction as "rotation_correction: _",
-gps_latitude as "gps_latitude: _",
-gps_longitude as "gps_longitude: _",
-thumb_small_square_avif as "thumb_small_square_avif: _",
-thumb_small_square_webp as "thumb_small_square_webp: _",
-thumb_large_orig_avif as "thumb_large_orig_avif: _",
-thumb_large_orig_webp as "thumb_large_orig_webp: _",
-thumb_small_square_width,
-thumb_small_square_height,
-thumb_large_orig_width,
-thumb_large_orig_height,
-image_format_name,
-video_codec_name,
-video_bitrate,
-audio_codec_name,
-has_dash as "has_dash: _"
-FROM Asset 
-WHERE
-taken_date < ? 
-AND (id < ? OR ? IS NULL)
-ORDER BY taken_date DESC, id DESC
-LIMIT ?;
-    "#,
-        start_naive,
-        start_id,
-        start_id,
-        count
-    )
-    .fetch_all(pool)
-    .in_current_span()
-    .await
-    .wrap_err("could not query for timeline chunk")?
-    .into_iter()
-    .map(|a| a.try_into())
-    .collect::<Result<Vec<_>>>()
-}
-
 #[instrument(skip(pool, acceptable_video_codecs, acceptable_audio_codecs))]
 pub async fn get_video_assets_with_no_acceptable_repr(
     pool: &DbPool,

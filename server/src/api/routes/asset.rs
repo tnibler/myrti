@@ -12,9 +12,8 @@ use axum::{
     Json, Router,
 };
 use axum_extra::body::AsyncReadBody;
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
+use chrono::{DateTime, Utc};
 use eyre::{eyre, Context};
-use itertools::Itertools;
 use serde::Deserialize;
 use tokio_util::io::ReaderStream;
 use tracing::{instrument, warn, Instrument};
@@ -22,16 +21,17 @@ use tracing::{instrument, warn, Instrument};
 use crate::{
     api::{
         self,
-        schema::{
-            Asset, AssetId, TimelineChunk, TimelineGroup, TimelineGroupType, TimelineRequest,
-        },
+        schema::{Asset, AssetId, TimelineChunk, TimelineGroupType, TimelineRequest},
         ApiResult,
     },
     app_state::SharedState,
     catalog::storage_key,
     core::storage::{StorageProvider, StorageReadError},
     http_error::HttpError,
-    model::{self, repository},
+    model::{
+        self,
+        repository::{self, timeline::TimelineElement},
+    },
 };
 
 pub fn router() -> Router<SharedState> {
@@ -40,7 +40,7 @@ pub fn router() -> Router<SharedState> {
         .route("/:id", get(get_asset))
         .route("/thumbnail/:id/:size/:format", get(get_thumbnail))
         .route("/file/:id", get(get_asset_file))
-    // .route("/timeline", get(get_timeline))
+        .route("/timeline", get(get_timeline))
 }
 
 async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Asset>>> {
@@ -192,35 +192,46 @@ async fn get_timeline(
             .wrap_err("bad datetime format")?
             .into(),
     };
+    // TODO use
     let start_id = match req_body.start_id {
         Some(s) => Some(model::AssetId(s.parse().wrap_err("bad asset id")?)),
         None => None,
     };
-    let results = repository::asset::get_asset_timeline_chunk(
+    let groups = repository::timeline::get_timeline_chunk(
         &app_state.pool,
-        &start,
-        start_id,
-        req_body.max_count,
+        &last_date,
+        // start_id, // TODO handle equal dates by differentiating with last id
+        req_body.max_count.into(),
     )
     .in_current_span()
     .await?;
-    let grouped_by_date: Vec<(NaiveDate, Vec<_>)> = results
+    let api_groups: Vec<api::schema::TimelineGroup> = groups
         .into_iter()
-        .group_by(|asset| asset.base.taken_date_local().date_naive())
-        .into_iter()
-        .map(|(date, group)| (date, group.collect()))
-        .collect();
-    let groups: Vec<TimelineGroup> = grouped_by_date
-        .into_iter()
-        .map(|(date, group)| TimelineGroup {
-            assets: group.into_iter().map(|a| a.into()).collect(),
-            ty: TimelineGroupType::Day(date.and_time(NaiveTime::default()).and_utc()),
+        .filter(|group| match group {
+            TimelineElement::DayGrouped(assets) => !assets.is_empty(),
+            TimelineElement::Group { group, assets } => !assets.is_empty(),
+        })
+        .map(|group| match group {
+            TimelineElement::DayGrouped(assets) => api::schema::TimelineGroup {
+                ty: TimelineGroupType::Day(assets.last().unwrap().base.taken_date),
+                assets: assets.into_iter().map(|a| a.into()).collect(),
+            },
+            TimelineElement::Group { group, assets } => api::schema::TimelineGroup {
+                ty: TimelineGroupType::Group {
+                    title: group.album.name.unwrap_or(String::from("NONAME")),
+                    // unwrap is ok because empty asset vecs are filtered out above
+                    start: assets.first().unwrap().base.taken_date,
+                    // FIXME these should maybe not be UTC but local dates
+                    end: assets.last().unwrap().base.taken_date,
+                },
+                assets: assets.into_iter().map(|a| a.into()).collect(),
+            },
         })
         .collect();
     Ok(Json(TimelineChunk {
         date: Utc::now(),
         changed_since_last_fetch: false,
-        groups,
+        groups: api_groups,
     }))
 }
 

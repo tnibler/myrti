@@ -10,7 +10,7 @@ use super::{album::get_assets_in_album, pool::DbPool};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TimelineElement {
-    Asset(Asset),
+    DayGrouped(Vec<Asset>),
     Group {
         group: TimelineGroupAlbum,
         assets: Vec<Asset>,
@@ -21,7 +21,7 @@ pub enum TimelineElement {
 /// TODO add id of last asset as parma in case to dates are equal to start_date+1
 pub async fn get_timeline_chunk(
     pool: &DbPool,
-    start_date: DateTime<Utc>,
+    start_date: &DateTime<Utc>,
     count: i64,
 ) -> Result<Vec<TimelineElement>> {
     // get assets starting at start_date, limit count
@@ -113,12 +113,19 @@ ORDER BY Album.timeline_group_display_date DESC, Album.id DESC;
     let mut group_iter = groups_in_timespan.into_iter().peekable();
     let mut chunk_size: usize = 0;
     let mut next_group = group_iter.next();
+    // collect assets belonging to the same day(for now, this is the only grouping key) in here
+    let mut current_day_grouped: Vec<Asset> = Vec::default();
     for asset in &all_assets {
         if chunk_size > count as usize {
             break;
         }
         match next_group {
             Some(ng) if ng.group.display_date < asset.base.taken_date => {
+                // push the assets already grouped by date first
+                if !current_day_grouped.is_empty() {
+                    let d = std::mem::replace(&mut current_day_grouped, Vec::default());
+                    chunk.push(TimelineElement::DayGrouped(d));
+                }
                 let mut group_assets = get_assets_in_album(ng.album.id, pool).await?;
                 group_assets.sort_by_key(|a| a.base.taken_date);
                 chunk_size += group_assets.len();
@@ -129,10 +136,31 @@ ORDER BY Album.timeline_group_display_date DESC, Album.id DESC;
                 next_group = group_iter.next();
             }
             _ => {
-                chunk.push(TimelineElement::Asset(asset.clone()));
+                // don't need to push group album
                 chunk_size += 1;
+                match current_day_grouped.last() {
+                    None => {
+                        current_day_grouped.push(asset.clone());
+                    }
+                    Some(date_grouped_asset) => {
+                        let current_group_date =
+                            date_grouped_asset.base.taken_date_local().date_naive();
+                        let asset_date = asset.base.taken_date_local().date_naive();
+                        if current_group_date == asset_date {
+                            current_day_grouped.push(asset.clone());
+                        } else {
+                            // push current grouping and start new one
+                            let d =
+                                std::mem::replace(&mut current_day_grouped, vec![asset.clone()]);
+                            chunk.push(TimelineElement::DayGrouped(d));
+                        }
+                    }
+                }
             }
         };
+    }
+    if !current_day_grouped.is_empty() {
+        chunk.push(TimelineElement::DayGrouped(current_day_grouped));
     }
     return Ok(chunk);
 }

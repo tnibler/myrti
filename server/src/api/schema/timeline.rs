@@ -26,6 +26,7 @@ pub struct TimelineGroup {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TimelineGroupType {
+    // TODO should this really by Utc and not NaiveDatempty asset vecs are filtered out above
     Day(DateTime<Utc>),
     Group {
         title: String,

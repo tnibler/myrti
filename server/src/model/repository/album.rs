@@ -1,4 +1,6 @@
+use chrono::{DateTime, Utc};
 use eyre::{Context, Result};
+use sqlx::SqliteConnection;
 use tracing::Instrument;
 
 use crate::model::{
@@ -9,9 +11,15 @@ use crate::model::{
 use super::pool::DbPool;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub struct CreateTimelineGroup {
+    pub display_date: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CreateAlbum {
     pub name: String,
     pub description: Option<String>,
+    pub timeline_group: Option<CreateTimelineGroup>,
 }
 
 pub async fn get_album(pool: &DbPool, album_id: AlbumId) -> Result<AlbumType> {
@@ -46,19 +54,41 @@ SELECT Album.* FROM Album WHERE id = ?;
     Ok(album_type)
 }
 
-pub async fn create_album(pool: &DbPool, create_album: CreateAlbum) -> Result<AlbumId> {
+pub async fn create_album(
+    pool: &DbPool,
+    create_album: CreateAlbum,
+    assets: &[AssetId],
+) -> Result<AlbumId> {
+    let mut tx = pool
+        .begin()
+        .await
+        .wrap_err("could not begin db transaction")?;
     let now = chrono::Utc::now();
-    let album = Album {
+    let album_base = Album {
         id: AlbumId(0),
         name: Some(create_album.name),
         description: create_album.description,
         created_at: now,
         changed_at: now,
     };
-    insert_album(pool, &AlbumType::Album(album)).await
+    let album = match create_album.timeline_group {
+        None => AlbumType::Album(album_base),
+        Some(tg) => AlbumType::TimelineGroup(TimelineGroupAlbum {
+            album: album_base,
+            group: TimelineGroup {
+                display_date: tg.display_date,
+            },
+        }),
+    };
+    let album_id = insert_album(&album, tx.as_mut()).await?;
+    if !assets.is_empty() {
+        append_assets_to_album(tx.as_mut(), album_id, assets).await?;
+    }
+    tx.commit().await?;
+    Ok(album_id)
 }
 
-pub async fn insert_album(pool: &DbPool, album: &AlbumType) -> Result<AlbumId> {
+async fn insert_album(album: &AlbumType, conn: &mut SqliteConnection) -> Result<AlbumId> {
     let album_base = album.album_base();
     let created_at = album_base.created_at.timestamp();
     let changed_at = album_base.changed_at.timestamp();
@@ -79,7 +109,7 @@ VALUES
         created_at,
         changed_at,
     )
-    .execute(pool)
+    .execute(conn)
     .in_current_span()
     .await
     .wrap_err("could not insert into table Album")?;
@@ -138,13 +168,10 @@ ORDER BY AlbumEntry.idx;
 }
 
 pub async fn append_assets_to_album(
-    pool: &DbPool,
+    tx: &mut SqliteConnection,
     album_id: AlbumId,
-    asset_ids: impl IntoIterator<Item = AssetId>,
+    asset_ids: &[AssetId],
 ) -> Result<()> {
-    return Err(eyre::eyre!("some error"));
-
-    let mut tx = pool.begin().await?;
     let last_index = sqlx::query!(
         r#"
 SELECT MAX(AlbumEntry.idx) as max_index FROM AlbumEntry WHERE AlbumEntry.album_id = ?;
@@ -152,7 +179,7 @@ SELECT MAX(AlbumEntry.idx) as max_index FROM AlbumEntry WHERE AlbumEntry.album_i
         album_id
     )
     // we get one value, either index or null
-    .fetch_one(tx.as_mut())
+    .fetch_one(&mut *tx)
     .await
     .wrap_err("could not query table AlbumEntry")?
     .max_index;
@@ -172,7 +199,7 @@ INSERT INTO AlbumEntry(id, album_id, asset_id, idx)
     query_builder.push(r#";"#);
     query_builder
         .build()
-        .execute(tx.as_mut())
+        .execute(&mut *tx)
         .await
         .wrap_err("could not insert into table AlbumEntry")?;
 
@@ -185,11 +212,8 @@ UPDATE Album SET changed_at=? WHERE id = ?;
         now,
         album_id
     )
-    .execute(tx.as_mut())
+    .execute(&mut *tx)
     .await
     .wrap_err("could not update column Album.changed_at")?;
-    tx.commit()
-        .await
-        .wrap_err("could not insert into table AlbumEntry")?;
     Ok(())
 }

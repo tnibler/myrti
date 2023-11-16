@@ -14,7 +14,7 @@ use crate::model::{
 use super::db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType};
 use super::pool::DbPool;
 
-#[instrument(skip(pool))]
+#[instrument(skip(pool), level = "debug")]
 pub async fn get_asset(pool: &DbPool, id: AssetId) -> Result<Asset> {
     sqlx::query_as!(
         DbAsset,
@@ -96,7 +96,7 @@ WHERE Asset.id = ?;
     .map(|r| r.try_into())?
 }
 
-#[instrument(skip(pool))]
+#[instrument(skip(pool), level = "debug")]
 pub async fn asset_or_duplicate_with_path_exists(
     pool: &DbPool,
     asset_root_dir_id: AssetRootDirId,
@@ -362,7 +362,7 @@ pub async fn create_asset(pool: &DbPool, create_asset: CreateAsset) -> Result<As
     insert_asset(pool, &asset).await
 }
 
-#[instrument(skip(conn))]
+#[instrument(skip(conn), level = "debug")]
 pub async fn set_asset_small_thumbnails(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
@@ -386,7 +386,7 @@ WHERE id=?;
     Ok(())
 }
 
-#[instrument(skip(conn))]
+#[instrument(skip(conn), level = "debug")]
 pub async fn set_asset_has_dash(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
@@ -407,7 +407,7 @@ WHERE id=?;
     Ok(())
 }
 
-#[instrument(skip(conn))]
+#[instrument(skip(conn), level = "debug")]
 pub async fn set_asset_large_thumbnails(
     conn: &mut SqliteConnection,
     asset_id: AssetId,
@@ -482,7 +482,10 @@ AND has_dash = 0;
     .collect::<Result<Vec<_>>>()
 }
 
-#[instrument(skip(pool, acceptable_video_codecs, acceptable_audio_codecs))]
+#[instrument(
+    skip(pool, acceptable_video_codecs, acceptable_audio_codecs),
+    level = "debug"
+)]
 pub async fn get_video_assets_with_no_acceptable_repr(
     pool: &DbPool,
     acceptable_video_codecs: impl Iterator<Item = &str>,
@@ -601,7 +604,10 @@ WHERE Asset.ty =
         .collect::<Result<Vec<_>>>()
 }
 
-#[instrument(skip(pool, acceptable_video_codecs, acceptable_audio_codecs))]
+#[instrument(
+    skip(pool, acceptable_video_codecs, acceptable_audio_codecs),
+    level = "debug"
+)]
 pub async fn get_videos_in_acceptable_codec_without_dash(
     pool: &DbPool,
     acceptable_video_codecs: impl IntoIterator<Item = &str>,

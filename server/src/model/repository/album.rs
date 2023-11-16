@@ -17,7 +17,7 @@ pub struct CreateTimelineGroup {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CreateAlbum {
-    pub name: String,
+    pub name: Option<String>,
     pub description: Option<String>,
     pub timeline_group: Option<CreateTimelineGroup>,
 }
@@ -66,7 +66,7 @@ pub async fn create_album(
     let now = chrono::Utc::now();
     let album_base = Album {
         id: AlbumId(0),
-        name: Some(create_album.name),
+        name: create_album.name,
         description: create_album.description,
         created_at: now,
         changed_at: now,

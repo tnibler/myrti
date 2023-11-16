@@ -107,7 +107,7 @@ impl StorageCommandOutput for LocalOutputFile {
         Ok(file_meta.len())
     }
 
-    #[instrument(skip(self), level = "debug")]
+    #[instrument(skip(self), level = "trace")]
     async fn flush_to_storage(mut self) -> Result<()> {
         self.debug_only_flushed_to_storage = true;
         Ok(())

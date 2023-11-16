@@ -2,8 +2,9 @@ use camino::Utf8PathBuf as PathBuf;
 use proptest::prelude::*;
 
 use crate::model::{
-    Album, AlbumId, Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, AssetType, GpsCoordinates,
-    Image, ImageAsset, Size, TimelineGroup, TimestampInfo, Video, VideoAsset,
+    Album, AlbumId, AlbumType, Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, AssetType,
+    GpsCoordinates, Image, ImageAsset, Size, TimelineGroup, TimelineGroupAlbum, TimestampInfo,
+    Video, VideoAsset,
 };
 
 fn path_strategy() -> BoxedStrategy<PathBuf> {
@@ -159,14 +160,23 @@ prop_compose! {
         created_at in arb_datetime_utc(),
         changed_at in arb_datetime_utc(),
         timeline_group_display_date in prop::option::of(arb_datetime_utc())
-    ) -> Album {
-        Album {
+    ) -> AlbumType {
+        let base = Album {
             id: AlbumId(0),
             name,
             description,
-            timeline_group: timeline_group_display_date.map(|display_date| TimelineGroup { display_date }),
             created_at,
             changed_at,
+        };
+        match timeline_group_display_date {
+            None => AlbumType::Album(base),
+            Some(tgdd) => AlbumType::TimelineGroup(
+                TimelineGroupAlbum {
+                    album: base,
+                    group: TimelineGroup { display_date: tgdd }
+                }
+            )
+
         }
     }
 }

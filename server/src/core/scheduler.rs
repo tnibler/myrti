@@ -96,7 +96,6 @@ struct SchedulerImpl {
 }
 
 impl SchedulerImpl {
-    #[instrument(name = "event_loop", skip(self))]
     async fn run(&mut self) {
         info!("Scheduler starting");
         self.on_startup().await;
@@ -126,10 +125,12 @@ impl SchedulerImpl {
                         }
                         SchedulerMessage::JobComplete {id, result }=> {
                             self.on_job_complete(id, result).await;
-                            debug_assert!(self.running_jobs.remove(&id).is_some(), "Scheduler did not know about job that completed");
+                            let removed = self.running_jobs.remove(&id);
+                            debug_assert!(removed.is_some(), "Scheduler did not know about job that completed");
                         },
                         SchedulerMessage::JobFailed { id } => {
-                            debug_assert!(self.running_jobs.remove(&id).is_some(), "Scheduler did not know about job that completed");
+                            let removed = self.running_jobs.remove(&id);
+                            debug_assert!(removed.is_some(), "Scheduler did not know about job that completed");
                         }
                         SchedulerMessage::ConfigChange => todo!(),
                     }
@@ -210,6 +211,7 @@ impl SchedulerImpl {
         if videos_to_package.is_empty() {
             return false;
         }
+        debug!(?videos_to_package, "videos need processing");
         let params = VideoPackagingJobParams {
             tasks: videos_to_package,
         };

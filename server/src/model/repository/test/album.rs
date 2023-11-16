@@ -4,7 +4,13 @@ use proptest::prelude::*;
 
 use super::proptest_arb::{arb_new_album, arb_new_asset};
 
-use crate::model::{repository, Album, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId};
+use crate::model::{
+    repository::{
+        self,
+        album::{CreateAlbum, CreateTimelineGroup},
+    },
+    Album, AlbumType, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId,
+};
 
 use super::*;
 
@@ -28,7 +34,7 @@ fn prop_create_retrieve_albums() {
         (
             albums_asset_idxs in albums.into_iter().map(|album| (Just(album), prop::collection::vec(any::<prop::sample::Index>(), 0..30))).collect::<Vec<_>>(),
             assets in Just(assets),
-        ) -> (Vec<Asset>, Vec<(Album, Vec<prop::sample::Index>)>) {
+        ) -> (Vec<Asset>, Vec<(AlbumType, Vec<prop::sample::Index>)>) {
             (assets, albums_asset_idxs)
         }
     }
@@ -50,12 +56,22 @@ fn prop_create_retrieve_albums() {
             }
             let mut albums_with_ids: Vec<Album> = Vec::default();
             for (album, _) in &albums_asset_idxs {
-                let album_insert_result = repository::album::insert_album(&pool, album).await;
+                let (album_base, timeline_group) = match album {
+                    AlbumType::Album(album) => (album, None),
+                    AlbumType::TimelineGroup(tg) => (&tg.album, Some(&tg.group)),
+                };
+                let create_album = CreateAlbum {
+                    name: album_base.name.clone(),
+                    description: album_base.description.clone(),
+                    timeline_group: timeline_group.map(|tg|CreateTimelineGroup { display_date: tg.display_date })
+                };
+                // TODO initial creation with assets to insert right away not tested here
+                let album_insert_result = repository::album::create_album(&pool, create_album, &[]).await;
                 prop_assert!(album_insert_result.is_ok());
                 let album_id = album_insert_result.unwrap();
                 let album_with_id = Album {
                     id: album_id,
-                    ..album.clone()
+                    ..album_base.clone()
                 };
                 albums_with_ids.push(album_with_id);
             }
@@ -65,7 +81,8 @@ fn prop_create_retrieve_albums() {
                 let asset_ids_to_append: Vec<AssetId> = assets_to_append.iter().map(|asset| asset.base.id).collect();
                 let append_chunks: Vec<&[AssetId]> = asset_ids_to_append.chunks(3).collect();
                 for chunk in append_chunks {
-                    let append_result = repository::album::append_assets_to_album(&pool, album.id, chunk.iter().cloned()).await;
+                    let mut tx = pool.begin().await.unwrap();
+                    let append_result = repository::album::append_assets_to_album(tx.as_mut(), album.id, chunk).await;
                     prop_assert!(append_result.is_ok());
                 }
                 albums_assets_with_ids.push((album.clone(), assets_to_append));

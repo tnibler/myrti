@@ -50,7 +50,7 @@ pub async fn index_asset_root(asset_root: &AssetRootDir, pool: &DbPool) -> Resul
 }
 
 /// Returns Some(AssetId) if a new, non duplicate asset was indexed and added to the database
-#[instrument(skip(pool))]
+#[instrument(skip(pool), level = "debug")]
 async fn index_file(
     path: &Path,
     asset_root: &AssetRootDir,

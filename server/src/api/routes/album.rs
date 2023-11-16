@@ -49,7 +49,7 @@ pub async fn post_create_album(
         None
     };
     let create_album = repository::album::CreateAlbum {
-        name: request.name,
+        name: Some(request.name),
         description: request.description,
         timeline_group: create_timeline_group,
     };

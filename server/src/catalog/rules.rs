@@ -119,6 +119,7 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
         )
         .await
         .unwrap();
+    tracing::info!(?no_good_reprs, "videos with no good reprs");
     if !no_good_reprs.is_empty() {
         use crate::catalog::encoding_target::av1;
         return Ok(no_good_reprs

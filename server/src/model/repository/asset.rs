@@ -582,7 +582,7 @@ WHERE Asset.ty =
       (
       NOT EXISTS (SELECT * FROM
       (
-         SELECT Asset.video_codec_name
+         SELECT * FROM (SELECT Asset.video_codec_name WHERE Asset.file_type='mp4')
          UNION
          SELECT vr.codec_name FROM VideoRepresentation vr
          WHERE vr.asset_id = Asset.id
@@ -593,6 +593,10 @@ WHERE Asset.ty =
     );
              "#,
     );
+    // ^^!! for a video asset, the available codecs are: the union of the codecs of its
+    // representation, plus the codec of the original *only* if the original file is an mp4, which
+    // is what shaka-packager requires as input to segment for DASH. If the original is not an mp4,
+    // we consider it as if it had no suitable representation regardless of its codec.
     query_builder
         .build_query_as::<DbAsset>()
         .fetch_all(pool)
@@ -647,6 +651,7 @@ audio_codec_name,
 has_dash
 FROM Asset 
 WHERE has_dash = 0
+AND Asset.file_type = 'mp4'
 AND Asset.ty ="#,
     );
     query_builder.push_bind(DbAssetType::Video);

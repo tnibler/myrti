@@ -563,7 +563,9 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
             let expected_no_acceptable_reprs: HashSet<AssetId> = assets_with_ids.iter().zip(assets_and_reprs.iter())
                 .filter(|(asset, (_, video_reprs, audio_repr))| {
                     let mut video_repr_codecs: HashSet<String> = video_reprs.iter().map(|repr| repr.codec_name.clone()).collect::<HashSet<_>>();
-                    video_repr_codecs.insert(asset.video.video_codec_name.clone());
+                    if asset.base.file_type == "mp4" {
+                        video_repr_codecs.insert(asset.video.video_codec_name.clone());
+                    }
                     let video_repr_missing = acceptable_video_codecs.intersection(&video_repr_codecs).collect_vec().is_empty();
                     let audio_repr_missing = match &asset.video.audio_codec_name {
                         None => false,

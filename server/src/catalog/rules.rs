@@ -119,7 +119,6 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
         )
         .await
         .unwrap();
-    tracing::info!(?no_good_reprs, "videos with no good reprs");
     if !no_good_reprs.is_empty() {
         use crate::catalog::encoding_target::av1;
         return Ok(no_good_reprs
@@ -130,7 +129,9 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
                     format_args!("{}x{}.mp4", asset.base.size.width, asset.base.size.height),
                 );
                 let create_video_repr = match asset.video.video_codec_name.as_str() {
-                    // TODO replace with target codec from config
+                    // TODO replace with target codec from config and only transcode if the
+                    // original codec is unacceptable. Or maybe transcode anyway, provide a config
+                    // option etc..
                     "av1" => CreateVideoRepr::PackageOriginalFile {
                         output_key: video_out_key,
                     },

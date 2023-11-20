@@ -180,7 +180,8 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
     //     for every video, ql = quality_ladder(video):
     //       if rung in ql and no repr for video at that rung:
     //         transcode to that rung
-    todo!()
+    // TODO
+    return Ok(Vec::default());
 }
 
 pub async fn image_conversion_due(pool: &DbPool) -> Result<Vec<ConvertImage>> {

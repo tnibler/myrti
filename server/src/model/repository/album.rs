@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use eyre::{eyre, Context, Result};
 use sqlx::SqliteConnection;
-use tracing::{debug, Instrument};
+use tracing::{debug, error, Instrument};
 
 use crate::model::{
     repository::db_entity::DbAsset, util::datetime_from_db_repr, Album, AlbumEntryId, AlbumId,
@@ -247,4 +247,47 @@ UPDATE Album SET changed_at=? WHERE id = ?;
     .await
     .wrap_err("could not update column Album.changed_at")?;
     Ok(())
+}
+
+pub async fn get_timeline_group_album_for_asset(
+    asset_id: AssetId,
+    conn: &mut SqliteConnection,
+) -> Result<Option<TimelineGroupAlbum>> {
+    let opt_row = sqlx::query!(
+        r#"
+SELECT Album.* FROM
+Album INNER JOIN AlbumEntry
+ON AlbumEntry.album_id = Album.id
+WHERE AlbumEntry.asset_id = ?
+AND Album.is_timeline_group != 0;
+    "#,
+        asset_id
+    )
+    .fetch_optional(&mut *conn)
+    .await
+    .wrap_err(
+        "get timeline group for asset: could not query optional single row from table Album",
+    )?;
+    let row = match opt_row {
+        Some(row) => row,
+        None => return Ok(None),
+    };
+    // must be a valid timeline_group row at this point
+    if let Some(row_date) = row.timeline_group_display_date {
+        let album_base = Album {
+            id: AlbumId(row.id),
+            name: row.name,
+            description: row.description,
+            created_at: datetime_from_db_repr(row.created_at)?,
+            changed_at: datetime_from_db_repr(row.changed_at)?,
+        };
+        let date = datetime_from_db_repr(row_date)?;
+        return Ok(Some(TimelineGroupAlbum {
+            album: album_base,
+            group: TimelineGroup { display_date: date },
+        }));
+    } else {
+        error!(?asset_id, ?row, "BUG: album is not a timeline group");
+        return Err(eyre!("BUG: album is not a timeline group"));
+    }
 }

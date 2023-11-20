@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
-use eyre::{Context, Result};
+use eyre::{eyre, Context, Result};
 use sqlx::SqliteConnection;
-use tracing::Instrument;
+use tracing::{debug, Instrument};
 
 use crate::model::{
     repository::db_entity::DbAsset, util::datetime_from_db_repr, Album, AlbumEntryId, AlbumId,
@@ -172,6 +172,37 @@ pub async fn append_assets_to_album(
     album_id: AlbumId,
     asset_ids: &[AssetId],
 ) -> Result<()> {
+    // if album is a group, first check that no asset is already part of a group (can only be part
+    // of 1)
+    let if_group_assets_already_in_group: Vec<AssetId> = sqlx::query!(
+        r#"
+WITH album_were_adding_to AS
+    (
+    SELECT * FROM Album WHERE Album.id=$1
+    )
+SELECT Asset.id AS asset_id FROM Asset 
+INNER JOIN AlbumEntry ON AlbumEntry.asset_id = Asset.id
+INNER JOIN Album ON AlbumEntry.album_id=Album.id
+WHERE Album.is_timeline_group != 0
+AND (SELECT is_timeline_group FROM album_were_adding_to) != 0;
+    "#,
+        album_id
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .wrap_err("check assets not already in group query failed")?
+    .into_iter()
+    .map(|row| AssetId(row.asset_id))
+    .collect();
+    // if the album we're adding to is a group and some assets to add are already in a group,
+    // they will be in this Vec
+    if !if_group_assets_already_in_group.is_empty() {
+        debug!(
+            ?if_group_assets_already_in_group,
+            "Attempting to add some assets already in group to another group"
+        );
+        return Err(eyre!("some assets are already in a group"));
+    }
     let last_index = sqlx::query!(
         r#"
 SELECT MAX(AlbumEntry.idx) as max_index FROM AlbumEntry WHERE AlbumEntry.album_id = ?;

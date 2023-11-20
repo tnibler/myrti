@@ -16,7 +16,7 @@ use chrono::{DateTime, Utc};
 use eyre::{eyre, Context};
 use serde::Deserialize;
 use tokio_util::io::ReaderStream;
-use tracing::{instrument, warn, Instrument};
+use tracing::{debug, instrument, warn, Instrument};
 
 use crate::{
     api::{
@@ -183,24 +183,15 @@ async fn get_timeline(
     State(app_state): State<SharedState>,
     Query(req_body): Query<TimelineRequest>,
 ) -> ApiResult<Json<TimelineChunk>> {
-    // ignore last_fetch for now
-    let last_date: DateTime<Utc> = match req_body.last_date {
-        // FIXME make start date optional, as this here can lead to assets not
-        // appearing if they're "in the future"
-        None => Utc::now(),
-        Some(ref d) => DateTime::parse_from_rfc3339(d)
-            .wrap_err("bad datetime format")?
-            .into(),
-    };
-    // TODO use
-    let start_id = match req_body.start_id {
+    debug!(?req_body);
+    let now = Utc::now();
+    let last_asset_id = match req_body.last_asset_id {
         Some(s) => Some(model::AssetId(s.parse().wrap_err("bad asset id")?)),
         None => None,
     };
     let groups = repository::timeline::get_timeline_chunk(
         &app_state.pool,
-        &last_date,
-        // start_id, // TODO handle equal dates by differentiating with last id
+        last_asset_id,
         req_body.max_count.into(),
     )
     .in_current_span()
@@ -209,7 +200,7 @@ async fn get_timeline(
         .into_iter()
         .filter(|group| match group {
             TimelineElement::DayGrouped(assets) => !assets.is_empty(),
-            TimelineElement::Group { group, assets } => !assets.is_empty(),
+            TimelineElement::Group { group: _, assets } => !assets.is_empty(),
         })
         .map(|group| match group {
             TimelineElement::DayGrouped(assets) => api::schema::TimelineGroup {
@@ -229,7 +220,7 @@ async fn get_timeline(
         })
         .collect();
     Ok(Json(TimelineChunk {
-        date: Utc::now(),
+        date: now,
         changed_since_last_fetch: false,
         groups: api_groups,
     }))

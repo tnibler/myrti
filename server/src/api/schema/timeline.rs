@@ -38,9 +38,7 @@ pub enum TimelineGroupType {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineRequest {
-    /// date of the last group the client already has
-    pub last_date: Option<String>,
-    pub start_id: Option<String>,
+    pub last_asset_id: Option<String>,
     pub max_count: i32,
     pub last_fetch: String,
 }

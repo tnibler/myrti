@@ -76,6 +76,11 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
     )
     .await?;
     if !acceptable_codecs_no_dash.is_empty() {
+        // FIXME shaka into ffmpeg does not work!
+        // adding stream rotation tag with ffmpeg messes up offsets in mpd manifest and playback
+        // breaks.
+        // segmenting without reencoding only works if there is no stream rotation metadata tag,
+        // we'll need to reencode in that case
         return Ok(acceptable_codecs_no_dash
             .into_iter()
             .map(|asset| {

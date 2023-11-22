@@ -46,7 +46,18 @@ pub struct ImageAsset {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CreateAsset {
-    pub ty: AssetType,
+    pub base: CreateAssetBase,
+    pub spe: CreateAssetSpe,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum CreateAssetSpe {
+    Image(CreateAssetImage),
+    Video(CreateAssetVideo),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CreateAssetBase {
     pub root_dir_id: AssetRootDirId,
     pub file_type: String,
     pub file_path: PathBuf,
@@ -57,8 +68,21 @@ pub struct CreateAsset {
     pub rotation_correction: Option<i32>,
     /// Seahash of the file, if already computed
     pub hash: Option<u64>,
-    pub sp: AssetSpe,
     pub gps_coordinates: Option<GpsCoordinates>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CreateAssetImage {
+    pub image_format_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CreateAssetVideo {
+    pub ffprobe_output: Vec<u8>,
+    pub video_codec_name: String,
+    pub video_bitrate: i64,
+    pub audio_codec_name: Option<String>,
+    pub has_dash: bool,
 }
 
 impl From<&ImageAsset> for Asset {

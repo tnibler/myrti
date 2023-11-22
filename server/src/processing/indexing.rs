@@ -79,20 +79,21 @@ async fn index_file(
             return Ok(None);
         }
     };
-    let (ty, full, size): (AssetType, AssetSpe, Size) = match metadata.file.mime_type.as_ref() {
+    let (create_asset_spe, size): (CreateAssetSpe, Size) = match metadata.file.mime_type.as_ref() {
         Some(mime) if mime.starts_with("video") => {
             let streams = FFProbe::streams(path, Some("ffprobe"))
                 .await
                 .wrap_err("error getting stream info from file")?;
             let video = streams.video;
-            let video_info = AssetSpe::Video(Video {
+            let create_video = CreateAssetVideo {
                 video_codec_name: video.codec_name.to_ascii_lowercase(),
                 video_bitrate: video.bitrate,
                 audio_codec_name: streams
                     .audio
                     .map(|audio| audio.codec_name.to_ascii_lowercase()),
                 has_dash: false,
-            });
+                ffprobe_output: streams.raw_ffprobe_output,
+            };
             let swap = match video.rotation {
                 Some(n) if n % 180 == 0 => false,
                 Some(n) if n % 90 == 0 => true,
@@ -109,7 +110,7 @@ async fn index_file(
                     height: video.height.into(),
                 }
             };
-            (AssetType::Video, video_info, size)
+            (CreateAssetSpe::Video(create_video), size)
         }
         Some(mime) if mime.starts_with("image") => {
             let format = metadata
@@ -118,9 +119,9 @@ async fn index_file(
                 .as_ref()
                 .ok_or(eyre!("no file type in exiftool output"))?
                 .to_ascii_lowercase();
-            let image_info = AssetSpe::Image(Image {
+            let create_image = CreateAssetImage {
                 image_format_name: format,
-            });
+            };
             let p = path.to_owned();
             let s = tokio::task::spawn_blocking(move || {
                 processing::image::get_image_size(&p).wrap_err("could not read image size")
@@ -130,7 +131,7 @@ async fn index_file(
                 width: s.width.into(),
                 height: s.height.into(),
             };
-            (AssetType::Image, image_info, size)
+            (CreateAssetSpe::Image(create_image), size)
         }
         None | Some(_) => {
             debug!(%path, "Ignoring file");
@@ -180,8 +181,7 @@ async fn index_file(
             _ => None,
         })
         .flatten();
-    let create_asset = CreateAsset {
-        ty,
+    let create_asset_base = CreateAssetBase {
         root_dir_id: asset_root.id,
         file_type: file_type.clone(),
         file_path: path.strip_prefix(&asset_root.path)?.to_owned(),
@@ -190,8 +190,11 @@ async fn index_file(
         size,
         rotation_correction: None,
         hash: Some(hash),
-        sp: full,
         gps_coordinates: coordinates,
+    };
+    let create_asset = CreateAsset {
+        base: create_asset_base,
+        spe: create_asset_spe,
     };
     let id = repository::asset::create_asset(pool, create_asset).await?;
     Ok(Some(id))

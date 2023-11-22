@@ -50,6 +50,7 @@ CREATE TABLE Asset (
   image_format_name TEXT,
 
   -- columns for videos only
+  ffprobe BLOB,
   video_codec_name TEXT,
   video_bitrate INTEGER,
   audio_codec_name TEXT,
@@ -65,6 +66,7 @@ CREATE TABLE Asset (
   -- valid Image or Video
   CHECK((ty = 1
       AND image_format_name IS NOT NULL
+      AND ffprobe IS NULL
       AND video_codec_name IS NULL
       AND video_bitrate IS NULL
       AND audio_codec_name IS NULL
@@ -72,6 +74,7 @@ CREATE TABLE Asset (
     OR (
       ty = 2 
       AND image_format_name IS NULL
+      AND ffprobe IS NOT NULL
       AND video_codec_name IS NOT NULL
       AND video_bitrate IS NOT NULL 
       AND has_dash IS NOT NULL

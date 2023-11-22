@@ -8,7 +8,7 @@ use tracing::{debug, error, instrument, Instrument};
 use crate::model::util::hash_u64_to_vec8;
 use crate::model::{
     Asset, AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetThumbnails,
-    AssetType, CreateAsset, VideoAsset,
+    AssetType, CreateAsset, CreateAssetBase, CreateAssetSpe, Image, ImageAsset, Video, VideoAsset,
 };
 
 use super::db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType};
@@ -230,6 +230,7 @@ WHERE
 }
 
 #[instrument(skip(pool))]
+#[deprecated]
 pub async fn insert_asset(pool: &DbPool, asset: &Asset) -> Result<AssetId> {
     if asset.base.id.0 != 0 {
         error!("attempting to insert Asset with non-zero id");
@@ -323,31 +324,39 @@ VALUES
 
 #[instrument(skip(pool))]
 pub async fn create_asset(pool: &DbPool, create_asset: CreateAsset) -> Result<AssetId> {
-    if create_asset.ty
-        != match create_asset.sp {
-            AssetSpe::Image(_) => AssetType::Image,
-            AssetSpe::Video(_) => AssetType::Video,
-        }
-    {
-        error!("attempting to insert Asset with mismatching type and sp fields");
-        return Err(eyre!(
-            "attempting to insert Asset with mismatching type and sp fields"
-        ));
-    }
+    let (ty, sp, ffprobe_output) = match &create_asset.spe {
+        CreateAssetSpe::Image(image) => (
+            AssetType::Image,
+            AssetSpe::Image(Image {
+                image_format_name: image.image_format_name.clone(),
+            }),
+            None,
+        ),
+        CreateAssetSpe::Video(video) => (
+            AssetType::Video,
+            AssetSpe::Video(Video {
+                video_codec_name: video.video_codec_name.clone(),
+                video_bitrate: video.video_bitrate,
+                audio_codec_name: video.audio_codec_name.clone(),
+                has_dash: video.has_dash,
+            }),
+            Some(video.ffprobe_output.clone()),
+        ),
+    };
     let asset_base = AssetBase {
         id: AssetId(0),
-        ty: create_asset.ty,
-        root_dir_id: create_asset.root_dir_id,
-        file_type: create_asset.file_type,
-        file_path: create_asset.file_path,
+        ty,
+        root_dir_id: create_asset.base.root_dir_id,
+        file_type: create_asset.base.file_type,
+        file_path: create_asset.base.file_path,
         is_hidden: false,
         added_at: Utc::now().trunc_subsecs(3), // db stores milliseconds only
-        taken_date: create_asset.taken_date,
-        timestamp_info: create_asset.timestamp_info,
-        size: create_asset.size,
-        rotation_correction: create_asset.rotation_correction,
-        gps_coordinates: create_asset.gps_coordinates,
-        hash: create_asset.hash,
+        taken_date: create_asset.base.taken_date,
+        timestamp_info: create_asset.base.timestamp_info,
+        size: create_asset.base.size,
+        rotation_correction: create_asset.base.rotation_correction,
+        gps_coordinates: create_asset.base.gps_coordinates,
+        hash: create_asset.base.hash,
         thumb_small_square_avif: false,
         thumb_small_square_webp: false,
         thumb_large_orig_avif: false,
@@ -357,9 +366,83 @@ pub async fn create_asset(pool: &DbPool, create_asset: CreateAsset) -> Result<As
     };
     let asset = Asset {
         base: asset_base,
-        sp: create_asset.sp,
+        sp,
     };
-    insert_asset(pool, &asset).await
+    let db_asset: DbAsset = asset.try_into()?;
+    let has_dash: Option<i64> = db_asset.has_dash.map(|d| d.into());
+    let result = sqlx::query!(
+        r#"
+INSERT INTO Asset
+(id,
+ty,
+root_dir_id,
+file_path,
+file_type,
+hash,
+is_hidden,
+added_at,
+taken_date,
+timezone_offset,
+timezone_info,
+width,
+height,
+rotation_correction,
+gps_latitude,
+gps_longitude,
+thumb_small_square_avif,
+thumb_small_square_webp,
+thumb_large_orig_avif,
+thumb_large_orig_webp,
+thumb_small_square_width,
+thumb_small_square_height,
+thumb_large_orig_width,
+thumb_large_orig_height,
+image_format_name,
+ffprobe,
+video_codec_name,
+video_bitrate,
+audio_codec_name,
+has_dash 
+)
+VALUES
+(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+"#,
+        db_asset.ty,
+        db_asset.root_dir_id.0,
+        db_asset.file_path,
+        db_asset.file_type,
+        db_asset.hash,
+        db_asset.is_hidden,
+        db_asset.added_at,
+        db_asset.taken_date,
+        db_asset.timezone_offset,
+        db_asset.timezone_info,
+        db_asset.width,
+        db_asset.height,
+        db_asset.rotation_correction,
+        db_asset.gps_latitude,
+        db_asset.gps_longitude,
+        db_asset.thumb_small_square_avif,
+        db_asset.thumb_small_square_webp,
+        db_asset.thumb_large_orig_avif,
+        db_asset.thumb_large_orig_webp,
+        db_asset.thumb_small_square_width,
+        db_asset.thumb_small_square_height,
+        db_asset.thumb_large_orig_width,
+        db_asset.thumb_large_orig_height,
+        db_asset.image_format_name,
+        ffprobe_output,
+        db_asset.video_codec_name,
+        db_asset.video_bitrate,
+        db_asset.audio_codec_name,
+        has_dash
+    )
+    .execute(pool)
+    .in_current_span()
+    .await
+    .wrap_err("could not insert into table Assets")?;
+    let rowid = result.last_insert_rowid();
+    Ok(AssetId(rowid))
 }
 
 #[instrument(skip(conn), level = "debug")]

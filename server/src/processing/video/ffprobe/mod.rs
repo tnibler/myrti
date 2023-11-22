@@ -6,6 +6,7 @@ pub mod video_rotation;
 pub struct FFProbeStreams {
     pub video: VideoStream,
     pub audio: Option<AudioStream>,
+    pub raw_ffprobe_output: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

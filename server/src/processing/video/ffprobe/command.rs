@@ -49,6 +49,7 @@ pub async fn ffprobe_get_streams(
     Ok(FFProbeStreams {
         video: video_stream.ok_or(eyre!("no video stream found in file"))?,
         audio: audio_stream,
+        raw_ffprobe_output: ffprobe_result.stdout,
     })
 }
 

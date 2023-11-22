@@ -14,7 +14,7 @@ pub async fn ffprobe_get_streams(
     ffprobe_bin_path: Option<&str>,
 ) -> Result<FFProbeStreams> {
     let ffprobe_result = Command::new(ffprobe_bin_path.unwrap_or("ffprobe"))
-        .args(&["-v", "error", "-show_streams", "-of", "json"])
+        .args(&["-v", "error", "-show_streams", "-of", "json=compact=1"])
         .arg(path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

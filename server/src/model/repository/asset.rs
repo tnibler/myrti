@@ -818,3 +818,18 @@ AND NOT EXISTS
         .into_iter()
         .collect::<Vec<_>>())
 }
+
+#[instrument(skip(pool), level = "trace")]
+pub async fn get_ffprobe_output(pool: &DbPool, asset_id: AssetId) -> Result<Vec<u8>> {
+    let row = sqlx::query!(
+        r#"SELECT ffprobe FROM Asset WHERE Asset.id = ? AND Asset.ty = 2;"#,
+        asset_id
+    )
+    .fetch_one(pool)
+    .await
+    .wrap_err("could not query single row from table Asset")?;
+    let ffprobe_output = row
+        .ffprobe
+        .ok_or(eyre!("no ffprobe output value for row"))?;
+    return Ok(ffprobe_output);
+}

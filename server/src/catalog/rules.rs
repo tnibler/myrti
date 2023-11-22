@@ -15,6 +15,7 @@ use crate::{
         repository::{self, pool::DbPool},
         AssetThumbnails, ThumbnailType, VideoAsset,
     },
+    processing,
 };
 
 use super::{
@@ -75,13 +76,29 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
         acceptable_audio_codecs.into_iter(),
     )
     .await?;
-    if !acceptable_codecs_no_dash.is_empty() {
+    let mut acceptable_codecs_no_dash_and_no_rotation_metadata: Vec<VideoAsset> = Vec::default();
+    let mut must_reencode_because_rotation_metadata: Vec<VideoAsset> = Vec::default();
+    for asset in acceptable_codecs_no_dash {
+        let ffprobe_output = repository::asset::get_ffprobe_output(pool, asset.base.id).await?;
+        let streams = processing::video::ffprobe_get_streams_from_json(&ffprobe_output)
+            .wrap_err("failed to parse ffprobe output stored in db")?;
+        match streams.video.rotation {
+            None | Some(0) => {
+                acceptable_codecs_no_dash_and_no_rotation_metadata.push(asset);
+            }
+            // have to reencode, as shaka packager discards stream tags like rotation
+            Some(_rot) => {
+                must_reencode_because_rotation_metadata.push(asset);
+            }
+        }
+    }
+    if !acceptable_codecs_no_dash_and_no_rotation_metadata.is_empty() {
         // FIXME shaka into ffmpeg does not work!
         // adding stream rotation tag with ffmpeg messes up offsets in mpd manifest and playback
         // breaks.
         // segmenting without reencoding only works if there is no stream rotation metadata tag,
         // we'll need to reencode in that case
-        return Ok(acceptable_codecs_no_dash
+        return Ok(acceptable_codecs_no_dash_and_no_rotation_metadata
             .into_iter()
             .map(|asset| {
                 // if there is no dash resource directory then there can not already be an audio
@@ -124,10 +141,11 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
         )
         .await
         .unwrap();
-    if !no_good_reprs.is_empty() {
+    if !no_good_reprs.is_empty() || !must_reencode_because_rotation_metadata.is_empty() {
         use crate::catalog::encoding_target::av1;
         return Ok(no_good_reprs
             .into_iter()
+            .chain(must_reencode_because_rotation_metadata.into_iter())
             .map(|asset| {
                 let video_out_key = storage_key::dash_file(
                     asset.base.id,

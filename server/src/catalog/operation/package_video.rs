@@ -313,6 +313,9 @@ pub async fn perform_side_effects_package_video(
             let rotation =
                 FFProbe::video_rotation(&asset_path.path_on_disk(), Some("ffprobe")).await?;
             if let Some(rotation) = rotation {
+                if rotation % 360 != 0 {
+                    error!("SHOULD NOT HAPPEN: packaging original video file, but it has nonzero rotation in stream metadata");
+                }
                 let pre_input_flags: Vec<OsString> =
                     vec!["-display_rotation".into(), rotation.to_string().into()];
                 let flags: Vec<OsString> = vec!["-c:v".into(), "copy".into()];

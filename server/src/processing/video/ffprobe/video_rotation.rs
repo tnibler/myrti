@@ -13,9 +13,9 @@ pub trait FFProbeRotationTrait {
 #[async_trait]
 impl FFProbeRotationTrait for FFProbe {
     async fn video_rotation(path: &Path, ffprobe_bin_path: Option<&str>) -> Result<Option<i32>> {
-        let streams = ffprobe_get_streams(path, ffprobe_bin_path)
+        let ffprobe_result = ffprobe_get_streams(path, ffprobe_bin_path)
             .in_current_span()
             .await;
-        streams.map(|streams| streams.video.rotation)
+        ffprobe_result.map(|(_raw_output, streams)| streams.video.rotation)
     }
 }

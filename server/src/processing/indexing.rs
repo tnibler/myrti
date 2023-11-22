@@ -81,7 +81,7 @@ async fn index_file(
     };
     let (create_asset_spe, size): (CreateAssetSpe, Size) = match metadata.file.mime_type.as_ref() {
         Some(mime) if mime.starts_with("video") => {
-            let streams = FFProbe::streams(path, Some("ffprobe"))
+            let (ffprobe_output, streams) = FFProbe::streams(path, Some("ffprobe"))
                 .await
                 .wrap_err("error getting stream info from file")?;
             let video = streams.video;
@@ -92,7 +92,7 @@ async fn index_file(
                     .audio
                     .map(|audio| audio.codec_name.to_ascii_lowercase()),
                 has_dash: false,
-                ffprobe_output: streams.raw_ffprobe_output,
+                ffprobe_output,
             };
             let swap = match video.rotation {
                 Some(n) if n % 180 == 0 => false,

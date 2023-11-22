@@ -102,12 +102,13 @@ impl FFmpegIntoShakaTrait for FFmpegIntoShakaAfterFFmpeg {
         .await
     }
 
-    async fn ffprobe_get_streams(&self, ffmpeg_bin_path: Option<&str>) -> Result<FFProbeStreams> {
+    async fn ffprobe_get_streams(&self, ffprobe_bin_path: Option<&str>) -> Result<FFProbeStreams> {
         let utf8_path = camino::Utf8Path::from_path(&self.ffmpeg_out_path)
             .expect("tempfile path should be utf8");
-        FFProbe::streams(utf8_path, Some("ffprobe"))
+        FFProbe::streams(utf8_path, ffprobe_bin_path)
             .in_current_span()
             .await
+            .map(|(_raw_output, streams)| streams)
     }
 }
 

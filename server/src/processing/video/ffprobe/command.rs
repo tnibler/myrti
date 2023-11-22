@@ -8,22 +8,8 @@ use tracing::{instrument, warn};
 
 use super::{AudioStream, FFProbeStreams, VideoStream};
 
-#[instrument]
-pub async fn ffprobe_get_streams(
-    path: &Path,
-    ffprobe_bin_path: Option<&str>,
-) -> Result<FFProbeStreams> {
-    let ffprobe_result = Command::new(ffprobe_bin_path.unwrap_or("ffprobe"))
-        .args(&["-v", "error", "-show_streams", "-of", "json=compact=1"])
-        .arg(path)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .wrap_err("failed to call ffprobe")?
-        .wait_with_output()
-        .await
-        .wrap_err("ffprobe error")?;
-    let parsed_streams = parse_ffprobe_output(&ffprobe_result.stdout)?;
+pub fn ffprobe_get_streams_from_json(json: &[u8]) -> Result<FFProbeStreams> {
+    let parsed_streams = parse_ffprobe_output(json)?;
     let mut video_stream: Option<VideoStream> = None;
     let mut audio_stream: Option<AudioStream> = None;
     for stream in parsed_streams {
@@ -49,8 +35,26 @@ pub async fn ffprobe_get_streams(
     Ok(FFProbeStreams {
         video: video_stream.ok_or(eyre!("no video stream found in file"))?,
         audio: audio_stream,
-        raw_ffprobe_output: ffprobe_result.stdout,
     })
+}
+
+#[instrument]
+pub async fn ffprobe_get_streams(
+    path: &Path,
+    ffprobe_bin_path: Option<&str>,
+) -> Result<(Vec<u8>, FFProbeStreams)> {
+    let ffprobe_result = Command::new(ffprobe_bin_path.unwrap_or("ffprobe"))
+        .args(&["-v", "error", "-show_streams", "-of", "json=compact=1"])
+        .arg(path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .wrap_err("failed to call ffprobe")?
+        .wait_with_output()
+        .await
+        .wrap_err("ffprobe error")?;
+    let parsed_streams = ffprobe_get_streams_from_json(&ffprobe_result.stdout)?;
+    Ok((ffprobe_result.stdout, parsed_streams))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

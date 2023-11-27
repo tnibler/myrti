@@ -32,12 +32,48 @@ pub struct Asset {
     pub metadata: Option<AssetMetadata>,
 }
 
-impl From<model::Asset> for Asset {
-    fn from(value: model::Asset) -> Self {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetWithSpe {
+    #[serde(flatten)]
+    pub asset: Asset,
+    #[serde(flatten)]
+    pub spe: AssetSpe,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum AssetSpe {
+    Image(Image),
+    Video(Video),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Image {
+    pub representations: Vec<ImageRepresentation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageRepresentation {
+    pub id: String,
+    pub format: String,
+    pub width: i64,
+    pub height: i64,
+    pub size: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Video {}
+
+impl From<&model::Asset> for Asset {
+    fn from(value: &model::Asset) -> Self {
         Asset {
             id: value.base.id.into(),
             asset_root_id: value.base.root_dir_id.into(),
-            path_in_root: value.base.file_path,
+            path_in_root: value.base.file_path.clone(),
             ty: value.base.ty.into(),
             width: value.base.size.width as i32,
             height: value.base.size.height as i32,
@@ -45,6 +81,12 @@ impl From<model::Asset> for Asset {
             taken_date: value.base.taken_date,
             metadata: None,
         }
+    }
+}
+
+impl From<model::Asset> for Asset {
+    fn from(value: model::Asset) -> Self {
+        (&value).into()
     }
 }
 

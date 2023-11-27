@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::Asset;
+use super::AssetWithSpe;
 
 /// Response for a request for the next part of the timeline to display
 ///
@@ -20,7 +20,7 @@ pub struct TimelineChunk {
 pub struct TimelineGroup {
     #[serde(rename = "type")]
     pub ty: TimelineGroupType,
-    pub assets: Vec<Asset>,
+    pub assets: Vec<AssetWithSpe>,
 }
 
 #[derive(Debug, Clone, Serialize)]

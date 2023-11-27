@@ -21,7 +21,7 @@ use tracing::{debug, instrument, warn, Instrument};
 use crate::{
     api::{
         self,
-        schema::{Asset, AssetId, TimelineChunk, TimelineGroupType, TimelineRequest},
+        schema::{Asset, AssetId, AssetWithSpe, TimelineChunk, TimelineGroupType, TimelineRequest},
         ApiResult,
     },
     app_state::SharedState,
@@ -30,7 +30,7 @@ use crate::{
     http_error::HttpError,
     model::{
         self,
-        repository::{self, timeline::TimelineElement},
+        repository::{self, pool::DbPool, timeline::TimelineElement},
     },
 };
 
@@ -41,6 +41,7 @@ pub fn router() -> Router<SharedState> {
         .route("/thumbnail/:id/:size/:format", get(get_thumbnail))
         .route("/original/:id", get(get_asset_file))
         .route("/timeline", get(get_timeline))
+    // .route("/:asset_id/repr/:repr_id")
 }
 
 async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Asset>>> {
@@ -206,16 +207,24 @@ async fn get_timeline(
     )
     .in_current_span()
     .await?;
-    let api_groups: Vec<api::schema::TimelineGroup> = groups
-        .into_iter()
-        .filter(|group| match group {
-            TimelineElement::DayGrouped(assets) => !assets.is_empty(),
-            TimelineElement::Group { group: _, assets } => !assets.is_empty(),
-        })
-        .map(|group| match group {
+    let filtered_nonempty_groups = groups.into_iter().filter(|group| match group {
+        TimelineElement::DayGrouped(assets) => !assets.is_empty(),
+        TimelineElement::Group { group: _, assets } => !assets.is_empty(),
+    });
+    let mut api_groups: Vec<api::schema::TimelineGroup> = Vec::default();
+    for group in filtered_nonempty_groups {
+        let mut api_assets_with_spe: Vec<api::schema::AssetWithSpe> = Vec::default();
+        let assets = match &group {
+            TimelineElement::DayGrouped(assets) => assets,
+            TimelineElement::Group { group: _, assets } => assets,
+        };
+        for asset in assets {
+            api_assets_with_spe.push(asset_with_spe(&app_state.pool, asset).await?);
+        }
+        let api_group = match group {
             TimelineElement::DayGrouped(assets) => api::schema::TimelineGroup {
                 ty: TimelineGroupType::Day(assets.last().unwrap().base.taken_date),
-                assets: assets.into_iter().map(|a| a.into()).collect(),
+                assets: api_assets_with_spe,
             },
             TimelineElement::Group { group, assets } => api::schema::TimelineGroup {
                 ty: TimelineGroupType::Group {
@@ -225,15 +234,48 @@ async fn get_timeline(
                     // FIXME these should maybe not be UTC but local dates
                     end: assets.last().unwrap().base.taken_date,
                 },
-                assets: assets.into_iter().map(|a| a.into()).collect(),
+                assets: api_assets_with_spe,
             },
-        })
-        .collect();
+        };
+        api_groups.push(api_group);
+    }
     Ok(Json(TimelineChunk {
         date: now,
         changed_since_last_fetch: false,
         groups: api_groups,
     }))
+}
+
+async fn asset_with_spe(
+    pool: &DbPool,
+    asset: &model::Asset,
+) -> eyre::Result<api::schema::AssetWithSpe> {
+    match &asset.sp {
+        model::AssetSpe::Image(_image) => {
+            let reprs =
+                repository::representation::get_image_representations(pool, asset.base.id).await?;
+            let api_reprs = reprs
+                .into_iter()
+                .map(|repr| api::schema::ImageRepresentation {
+                    id: repr.id.0.to_string(),
+                    format: repr.format_name,
+                    width: repr.width,
+                    height: repr.height,
+                    size: repr.file_size,
+                })
+                .collect();
+            Ok(AssetWithSpe {
+                asset: asset.into(),
+                spe: api::schema::AssetSpe::Image(api::schema::Image {
+                    representations: api_reprs,
+                }),
+            })
+        }
+        model::AssetSpe::Video(_video) => Ok(AssetWithSpe {
+            asset: asset.into(),
+            spe: api::schema::AssetSpe::Video(api::schema::Video {}),
+        }),
+    }
 }
 
 fn guess_mime_type(path: &camino::Utf8Path) -> Option<&'static str> {

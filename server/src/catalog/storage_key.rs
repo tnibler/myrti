@@ -1,6 +1,8 @@
 use std::fmt;
 
-use crate::model::{AssetId, ThumbnailFormat, ThumbnailType};
+use crate::model::{
+    AssetId, ImageRepresentation, ImageRepresentationId, ThumbnailFormat, ThumbnailType,
+};
 
 use super::image_conversion_target::{ImageConversionTarget, ImageFormatTarget};
 
@@ -25,12 +27,13 @@ pub fn thumbnail(asset_id: AssetId, ty: ThumbnailType, format: ThumbnailFormat) 
     format!("thumb/{}{}.{}", asset_id.0, size, extension)
 }
 
-pub fn image_representation(asset_id: AssetId, target: &ImageConversionTarget) -> String {
+pub fn image_representation(
+    asset_id: AssetId,
+    repr_id: ImageRepresentationId,
+    target: &ImageConversionTarget,
+) -> String {
     let ext = image_file_extension(&target.format);
-    match target.scale {
-        None => format!("image/{}.{}", asset_id.0, ext),
-        Some(scale) => format!("image/{}_{}x.{}", asset_id.0, scale, ext),
-    }
+    format!("image/{}_{}.{}", asset_id.0, repr_id.0, ext)
 }
 
 fn image_file_extension(target: &ImageFormatTarget) -> &'static str {

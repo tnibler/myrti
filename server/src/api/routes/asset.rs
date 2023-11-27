@@ -39,7 +39,7 @@ pub fn router() -> Router<SharedState> {
         .route("/", get(get_all_assets))
         .route("/:id", get(get_asset))
         .route("/thumbnail/:id/:size/:format", get(get_thumbnail))
-        .route("/file/:id", get(get_asset_file))
+        .route("/original/:id", get(get_asset_file))
         .route("/timeline", get(get_timeline))
 }
 
@@ -178,6 +178,16 @@ async fn get_asset_file(
     Ok((headers, body).into_response())
 }
 
+async fn get_image_asset_representation(
+    Path((id, repr_id)): Path<(String, String)>,
+    State(app_state): State<SharedState>,
+) -> ApiResult<Response> {
+    let id: model::ImageRepresentationId =
+        model::ImageRepresentationId(id.parse().wrap_err("invalid id")?);
+    let repr = repository::representation::get_image_representation(&app_state.pool, id).await?;
+    todo!()
+}
+
 #[instrument(skip(app_state))]
 async fn get_timeline(
     State(app_state): State<SharedState>,
@@ -234,6 +244,8 @@ fn guess_mime_type(path: &camino::Utf8Path) -> Option<&'static str> {
         "webp" => Some("image/webp"),
         "jpg" | "jpeg" => Some("image/jpeg"),
         "png" => Some("image/png"),
+        "heif" => Some("image/heif"),
+        "heic" => Some("image/heic"),
         _ => {
             warn!(
                 "can't guess MIME type for filename '{}'",

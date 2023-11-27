@@ -97,14 +97,37 @@ CREATE TABLE DuplicateAsset (
 CREATE TABLE VideoRepresentation (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   asset_id INTEGER NOT NULL,
+  -- columns that aren't known until encoding is done can be null if is_preallocated_dummy is true
   codec_name TEXT NOT NULL,
-  width INTEGER NOT NULL,
-  height INTEGER NOT NULL,
-  bitrate INTEGER NOT NULL,
-  file_key TEXT NOT NULL,
-  media_info_key TEXT NOT NULL,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id)
+  width INTEGER,
+  height INTEGER,
+  bitrate INTEGER,
+  file_key TEXT,
+  media_info_key TEXT,
+  is_preallocated_dummy INTEGER NOT NULL,
+  FOREIGN KEY (asset_id) REFERENCES Asset(id),
+  CHECK (
+    is_preallocated_dummy != 0 
+    OR
+    (
+      width IS NOT NULL AND
+      height IS NOT NULL AND
+      bitrate IS NOT NULL AND
+      file_key IS NOT NULL AND
+      media_info_key IS NOT NULL
+    )
+  )
 ) STRICT;
+
+CREATE TRIGGER update_video_representation_must_set_is_dummy_false
+AFTER UPDATE
+ON VideoRepresentation
+BEGIN
+  SELECT
+    CASE WHEN NEW.is_preallocated_dummy != 0 THEN
+      RAISE (ABORT, 'Preallocated dummy row can not be updated without setting is_preallocated_dummy=0')
+    END;
+END;
 
 CREATE TABLE AudioRepresentation (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -120,13 +143,37 @@ CREATE TABLE ImageRepresentation (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   asset_id INTEGER NOT NULL,
   format_name TEXT NOT NULL,
-  width INTEGER NOT NULL,
-  height INTEGER NOT NULL,
-  file_size INTEGER NOT NULL,
-  file_key TEXT NOT NULL,
+  -- columns that aren't known until encoding is done can be null if is_preallocated_dummy is true
+  width INTEGER,
+  height INTEGER,
+  file_size INTEGER,
+  file_key TEXT,
+  -- reserved to row to populate once width, height etc are known
+  is_preallocated_dummy INTEGER NOT NULL,
   FOREIGN KEY (asset_id) REFERENCES Asset(id),
-  UNIQUE (asset_id, format_name, width, height)
+  UNIQUE (asset_id, format_name, width, height),
+  CHECK (
+    is_preallocated_dummy != 0 
+    OR
+    (
+      width IS NOT NULL AND
+      height IS NOT NULL AND
+      file_size IS NOT NULL AND
+      file_key IS NOT NULL
+    )
+  )
 ) STRICT;
+
+CREATE TRIGGER update_image_representation_must_set_is_dummy_false
+AFTER UPDATE
+ON ImageRepresentation
+BEGIN
+  SELECT
+    CASE WHEN NEW.is_preallocated_dummy != 0 THEN
+      RAISE (ABORT, 'Preallocated dummy row can not be updated without setting is_preallocated_dummy=0')
+    END;
+END;
+
 
 CREATE TABLE Album (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,

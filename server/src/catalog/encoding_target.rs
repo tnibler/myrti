@@ -227,12 +227,11 @@ pub mod av1 {
 }
 
 /// name used by ffmpeg
-pub fn codec_name(target: &CodecTarget) -> String {
+pub fn codec_name(target: &CodecTarget) -> &'static str {
     match target {
         CodecTarget::AVC(_) => "h264",
         CodecTarget::AV1(_) => "av1",
     }
-    .to_string()
 }
 
 pub fn audio_codec_name(target: &AudioEncodingTarget) -> String {

@@ -36,7 +36,11 @@ pub async fn preallocate_dummy_image_repr_rows(
         image_format_name(&op.target.format),
     )
     .await?;
-    let file_key = storage_key::image_representation(op.asset_id, repr_id, &op.target);
+    let file_key = storage_key::image_representation(
+        op.asset_id,
+        repr_id,
+        storage_key::image_file_extension(&op.target.format),
+    );
     Ok(ConvertImagePrereserveResult {
         image_representation_id: repr_id,
         output_file_key: file_key,

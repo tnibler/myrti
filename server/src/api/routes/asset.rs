@@ -41,7 +41,10 @@ pub fn router() -> Router<SharedState> {
         .route("/thumbnail/:id/:size/:format", get(get_thumbnail))
         .route("/original/:id", get(get_asset_file))
         .route("/timeline", get(get_timeline))
-    // .route("/:asset_id/repr/:repr_id")
+        .route(
+            "/repr/:asset_id/:repr_id",
+            get(get_image_asset_representation),
+        )
 }
 
 async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Asset>>> {
@@ -167,7 +170,7 @@ async fn get_asset_file(
                 .wrap_err("error setting content-disposition header")?,
         );
     }
-    let content_type = guess_mime_type(&path);
+    let content_type = guess_mime_type_path(&path);
     if let Some(content_type) = content_type {
         headers.insert(
             header::CONTENT_TYPE,
@@ -180,13 +183,55 @@ async fn get_asset_file(
 }
 
 async fn get_image_asset_representation(
-    Path((id, repr_id)): Path<(String, String)>,
+    Path((asset_id, repr_id)): Path<(String, String)>,
+    Query(query): Query<HashMap<String, String>>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Response> {
-    let id: model::ImageRepresentationId =
-        model::ImageRepresentationId(id.parse().wrap_err("invalid id")?);
-    let repr = repository::representation::get_image_representation(&app_state.pool, id).await?;
-    todo!()
+    let asset_id = model::AssetId(asset_id.parse().wrap_err("invalid asset_id")?);
+    let repr_id = model::ImageRepresentationId(repr_id.parse().wrap_err("invalid repr_id")?);
+    // removing format name/file extension from storage key would make this query unnecessary but
+    // it's nice to have for now
+    // Or maybe not since we need to set a MIME type?
+    let repr = repository::representation::get_image_representation(&app_state.pool, repr_id)
+        .await
+        .wrap_err("no such repr_id")?;
+    let storage_key = storage_key::image_representation(asset_id, repr_id, &repr.format_name);
+    let read_stream = app_state
+        .storage
+        .open_read_stream(&storage_key)
+        .await
+        .wrap_err("error opening read stream")?;
+    let stream = ReaderStream::new(read_stream);
+    let body = StreamBody::new(stream);
+    let download = query
+        .get("download")
+        .map(|s| s.to_lowercase() == "true")
+        .unwrap_or(false);
+    let mut headers = HeaderMap::new();
+
+    let file_name = format!("{}.{}", repr.asset_id.0, &repr.format_name);
+    let mut s = match download {
+        true => OsString::from("attachment; filename=\""),
+        false => OsString::from("inline; filename=\""),
+    };
+    s.push(file_name);
+    s.push("\"");
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_bytes(s.as_bytes())
+            .wrap_err("error setting content-disposition header")?,
+    );
+
+    let content_type = guess_mime_type(&repr.format_name);
+    if let Some(content_type) = content_type {
+        headers.insert(
+            header::CONTENT_TYPE,
+            content_type
+                .try_into()
+                .wrap_err("error setting content-type header")?,
+        );
+    }
+    Ok((headers, body).into_response())
 }
 
 #[instrument(skip(app_state))]
@@ -278,9 +323,8 @@ async fn asset_with_spe(
     }
 }
 
-fn guess_mime_type(path: &camino::Utf8Path) -> Option<&'static str> {
-    let ext = path.extension()?.to_ascii_lowercase();
-    match ext.as_str() {
+fn guess_mime_type(ext: &str) -> Option<&'static str> {
+    match ext {
         "mp4" => Some("video/mp4"),
         "avif" => Some("image/avif"),
         "webp" => Some("image/webp"),
@@ -288,7 +332,15 @@ fn guess_mime_type(path: &camino::Utf8Path) -> Option<&'static str> {
         "png" => Some("image/png"),
         "heif" => Some("image/heif"),
         "heic" => Some("image/heic"),
-        _ => {
+        _ => None,
+    }
+}
+
+fn guess_mime_type_path(path: &camino::Utf8Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_ascii_lowercase();
+    match guess_mime_type(&ext) {
+        Some(m) => Some(m),
+        None => {
             warn!(
                 "can't guess MIME type for filename '{}'",
                 &path

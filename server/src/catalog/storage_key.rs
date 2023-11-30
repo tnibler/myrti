@@ -27,16 +27,18 @@ pub fn thumbnail(asset_id: AssetId, ty: ThumbnailType, format: ThumbnailFormat) 
     format!("thumb/{}{}.{}", asset_id.0, size, extension)
 }
 
+// format_name is not really needed, and forces us to do a db query for every
+// image represenation API request
+// It can be removed at some point, but for now I like having the file extension
 pub fn image_representation(
     asset_id: AssetId,
     repr_id: ImageRepresentationId,
-    target: &ImageConversionTarget,
+    format_name: &str,
 ) -> String {
-    let ext = image_file_extension(&target.format);
-    format!("image/{}_{}.{}", asset_id.0, repr_id.0, ext)
+    format!("image/{}_{}.{}", asset_id.0, repr_id.0, format_name)
 }
 
-fn image_file_extension(target: &ImageFormatTarget) -> &'static str {
+pub fn image_file_extension(target: &ImageFormatTarget) -> &'static str {
     match target {
         ImageFormatTarget::JPEG(_) => "jpg",
         ImageFormatTarget::AVIF(_) => "avif",

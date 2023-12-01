@@ -15,7 +15,7 @@ pub trait ShakaPackagerTrait {
         repr_type: RepresentationType,
         output_key: &str,
         storage: &Storage,
-        shaka_packager_bin_path: Option<&str>,
+        shaka_packager_bin_path: Option<&Path>,
     ) -> Result<ShakaResult>;
 }
 
@@ -25,7 +25,7 @@ pub trait ShakaPackagerWithLocalOutputTrait {
         input: &Path,
         repr_type: RepresentationType,
         output: &Path,
-        shaka_packager_bin_path: Option<&str>,
+        shaka_packager_bin_path: Option<&Path>,
     ) -> Result<()>;
 }
 
@@ -55,7 +55,7 @@ impl ShakaPackagerWithLocalOutputTrait for ShakaPackager {
         input: &Path,
         repr_type: RepresentationType,
         output: &Path,
-        shaka_packager_bin_path: Option<&str>,
+        shaka_packager_bin_path: Option<&Path>,
     ) -> Result<()> {
         let command_out_dir = output
             .parent()
@@ -64,7 +64,7 @@ impl ShakaPackagerWithLocalOutputTrait for ShakaPackager {
             .file_name()
             .expect("CommandOutputFile must have a filename");
 
-        let mut command = Command::new(shaka_packager_bin_path.unwrap_or("packager"));
+        let mut command = Command::new(shaka_packager_bin_path.unwrap_or("packager".into()));
         // paths in media_info file are always written as absolute, so we cd into the output
         // directory so that the path is just the filename
         command.current_dir(command_out_dir);
@@ -106,7 +106,7 @@ impl ShakaPackagerTrait for ShakaPackager {
         repr_type: RepresentationType,
         output_key: &str,
         storage: &Storage,
-        shaka_packager_bin_path: Option<&str>,
+        shaka_packager_bin_path: Option<&Path>,
     ) -> Result<ShakaResult> {
         let mp4_out_file = storage.new_command_out_file(output_key).await?;
         let media_info_key = format!("{}.media_info", output_key);
@@ -143,7 +143,7 @@ impl ShakaPackagerTrait for ShakaPackagerMock {
         _repr_type: RepresentationType,
         output_key: &str,
         storage: &Storage,
-        shaka_packager_bin_path: Option<&str>,
+        shaka_packager_bin_path: Option<&Path>,
     ) -> Result<ShakaResult> {
         let mp4_out_file = storage.new_command_out_file(output_key).await?;
         let media_info_key = format!("{}.media_info", output_key);

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use camino::Utf8PathBuf as PathBuf;
+use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use eyre::{eyre, Context, Result};
 use tokio::process::Command;
 use tracing::{debug, instrument, Instrument};
@@ -12,7 +12,7 @@ pub trait MpdGeneratorTrait {
         media_info_keys: impl Iterator<Item = &str> + Send,
         output_key: &str,
         storage: &Storage,
-        mpd_generator_bin_path: Option<&str>,
+        mpd_generator_bin_path: Option<&Path>,
     ) -> Result<()>;
 }
 
@@ -25,7 +25,7 @@ impl MpdGeneratorTrait for MpdGenerator {
         media_info_keys: impl Iterator<Item = &str> + Send,
         output_key: &str,
         storage: &Storage,
-        mpd_generator_bin_path: Option<&str>,
+        mpd_generator_bin_path: Option<&Path>,
     ) -> Result<()> {
         enum MediaInfoPath {
             Tempfile(tempfile::TempPath),
@@ -60,15 +60,15 @@ impl MpdGeneratorTrait for MpdGenerator {
             .collect::<Vec<_>>()
             .join(",");
         let mpd_out_str = command_out_file.path().as_str();
-        // TODO don't hardcode this path
-        let mut command = Command::new(mpd_generator_bin_path.unwrap_or("mpd_generator"));
+        let mpd_generator = mpd_generator_bin_path.unwrap_or("mpd_generator".into());
+        let mut command = Command::new(mpd_generator);
         command
             .arg(format!("--input={}", input_str))
             .arg(format!("--output={}", mpd_out_str));
         debug!(?command, "Invoking mpd_generator");
         let result = command
             .spawn()
-            .wrap_err("error calling mpd_generator")?
+            .wrap_err(format!("error calling mpd_generator ({})", mpd_generator))?
             .wait()
             .in_current_span()
             .await?;
@@ -93,7 +93,7 @@ impl MpdGeneratorTrait for MpdGeneratorMock {
         media_info_keys: impl Iterator<Item = &str> + Send,
         output_key: &str,
         storage: &Storage,
-        mpd_generator_bin_path: Option<&str>,
+        mpd_generator_bin_path: Option<&Path>,
     ) -> Result<()> {
         let command_out_file = storage.new_command_out_file(output_key).await?;
         command_out_file.flush_to_storage().await?;

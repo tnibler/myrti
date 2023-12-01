@@ -20,8 +20,8 @@ pub trait ShakaIntoFFmpegTrait {
         ffmpeg: &Self::FFmpeg,
         output_key: &str,
         storage: &Storage,
-        shaka_bin_path: Option<&str>,
-        ffmpeg_bin_path: Option<&str>,
+        shaka_bin_path: Option<&Path>,
+        ffmpeg_bin_path: Option<&Path>,
     ) -> Result<ShakaResult>;
 }
 
@@ -38,8 +38,8 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
         ffmpeg: &Self::FFmpeg,
         output_key: &str,
         storage: &Storage,
-        shaka_bin_path: Option<&str>,
-        ffmpeg_bin_path: Option<&str>,
+        shaka_bin_path: Option<&Path>,
+        ffmpeg_bin_path: Option<&Path>,
     ) -> Result<ShakaResult> {
         let tempdir = tempfile::tempdir().wrap_err("error creating temp directory")?;
         // we need the filename from output_key (it will be written into the media_info fiel
@@ -100,8 +100,8 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpegMock {
         ffmpeg: &Self::FFmpeg,
         output_key: &str,
         storage: &Storage,
-        shaka_bin_path: Option<&str>,
-        ffmpeg_bin_path: Option<&str>,
+        shaka_bin_path: Option<&Path>,
+        ffmpeg_bin_path: Option<&Path>,
     ) -> Result<ShakaResult> {
         ffmpeg
             .run(

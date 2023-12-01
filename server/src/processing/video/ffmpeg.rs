@@ -16,7 +16,7 @@ pub trait FFmpegLocalOutputTrait {
         &self,
         input: &Path,
         output: &Path,
-        ffmpeg_bin_path: Option<&str>,
+        ffmpeg_bin_path: Option<&Path>,
     ) -> Result<()>;
 }
 
@@ -28,7 +28,7 @@ pub trait FFmpegTrait {
         input: &Path,
         output_key: &str,
         storage: &Storage,
-        ffmpeg_bin_path: Option<&str>,
+        ffmpeg_bin_path: Option<&Path>,
     ) -> Result<()>;
 }
 
@@ -44,9 +44,9 @@ impl FFmpegLocalOutputTrait for FFmpeg {
         &self,
         input: &Path,
         output: &Path,
-        ffmpeg_bin_path: Option<&str>,
+        ffmpeg_bin_path: Option<&Path>,
     ) -> Result<()> {
-        let mut command = Command::new(ffmpeg_bin_path.unwrap_or("ffmpeg"));
+        let mut command = Command::new(ffmpeg_bin_path.unwrap_or("ffmpeg".into()));
         command
             .arg("-nostdin")
             .arg("-y")
@@ -86,7 +86,7 @@ impl FFmpegTrait for FFmpeg {
         input: &Path,
         output_key: &str,
         storage: &Storage,
-        ffmpeg_bin_path: Option<&str>,
+        ffmpeg_bin_path: Option<&Path>,
     ) -> Result<()> {
         let command_out_file = storage.new_command_out_file(output_key).await?;
         self.run_with_local_output(input, command_out_file.path(), ffmpeg_bin_path)
@@ -112,7 +112,7 @@ impl FFmpegTrait for FFmpegMock {
         input: &Path,
         output_key: &str,
         storage: &Storage,
-        ffmpeg_bin_path: Option<&str>,
+        ffmpeg_bin_path: Option<&Path>,
     ) -> Result<()> {
         let command_out_file = storage.new_command_out_file(output_key).await?;
         command_out_file.flush_to_storage().await?;

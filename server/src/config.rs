@@ -24,6 +24,8 @@ struct TomlBinPaths {
     pub mpd_generator: Option<String>,
     pub shaka_packager: Option<String>,
     pub ffmpeg: Option<String>,
+    pub ffprobe: Option<String>,
+    pub exiftool: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -32,6 +34,7 @@ struct TomlConfig {
     pub asset_dirs: Vec<TomlAssetDir>,
     #[serde(rename = "DataDir")]
     pub data_dir: TomlDataDir,
+    #[serde(rename = "BinPaths")]
     pub bin_paths: Option<TomlBinPaths>,
 }
 
@@ -54,6 +57,8 @@ pub struct BinPaths {
     pub mpd_generator: Option<PathBuf>,
     pub shaka_packager: Option<PathBuf>,
     pub ffmpeg: Option<PathBuf>,
+    pub ffprobe: Option<PathBuf>,
+    pub exiftool: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +111,8 @@ pub async fn read_config(path: &Path) -> Result<Config> {
         mpd_generator: bin_paths.mpd_generator.map(PathBuf::from),
         shaka_packager: bin_paths.shaka_packager.map(PathBuf::from),
         ffmpeg: bin_paths.ffmpeg.map(PathBuf::from),
+        ffprobe: bin_paths.ffprobe.map(PathBuf::from),
+        exiftool: bin_paths.exiftool.map(PathBuf::from),
     });
     Ok(Config {
         asset_dirs,

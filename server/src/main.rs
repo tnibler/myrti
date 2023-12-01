@@ -151,10 +151,10 @@ async fn main() -> Result<()> {
     store_asset_roots_from_config(&config, &pool).await?;
     // run it with hyper on localhost:3000
     let (monitor_tx, monitor_rx) = mpsc::channel::<MonitorMessage>(1000);
-    let storage_path = config.data_dir.path;
+    let storage_path = config.data_dir.path.clone();
     std::fs::create_dir_all(&storage_path).unwrap();
     let storage: Storage = LocalFileStorage::new(storage_path).into();
-    let scheduler = Scheduler::start(monitor_tx, pool.clone(), storage.clone());
+    let scheduler = Scheduler::start(monitor_tx, pool.clone(), storage.clone(), config);
     let monitor_cancel = CancellationToken::new();
     let monitor = Monitor::new(monitor_rx, scheduler.tx.clone(), monitor_cancel.clone());
     let shared_state: SharedState = Arc::new(AppState {

@@ -6,6 +6,7 @@ use tracing::{debug, error, instrument, Instrument};
 use walkdir::WalkDir;
 
 use crate::{
+    config,
     model::{repository::duplicate_asset::NewDuplicateAsset, *},
     processing::{self, hash::hash_file},
     repository::{self, pool::DbPool},
@@ -17,7 +18,11 @@ use super::{
 };
 
 #[instrument(skip(pool))]
-pub async fn index_asset_root(asset_root: &AssetRootDir, pool: &DbPool) -> Result<Vec<AssetId>> {
+pub async fn index_asset_root(
+    asset_root: &AssetRootDir,
+    pool: &DbPool,
+    bin_paths: Option<&config::BinPaths>,
+) -> Result<Vec<AssetId>> {
     let mut new_asset_ids: Vec<AssetId> = vec![];
     // FIXME if a datadir is subdir of assetroot it should obviously not be indexed
     for entry in WalkDir::new(asset_root.path.as_path()).follow_links(true) {
@@ -26,8 +31,9 @@ pub async fn index_asset_root(asset_root: &AssetRootDir, pool: &DbPool) -> Resul
                 if e.file_type().is_file() {
                     let utf8_path = camino::Utf8Path::from_path(e.path());
                     if let Some(path) = utf8_path {
-                        if let Some(id) =
-                            index_file(path, asset_root, pool).in_current_span().await?
+                        if let Some(id) = index_file(path, asset_root, pool, bin_paths)
+                            .in_current_span()
+                            .await?
                         {
                             new_asset_ids.push(id);
                         }
@@ -55,6 +61,7 @@ async fn index_file(
     path: &Path,
     asset_root: &AssetRootDir,
     pool: &DbPool,
+    bin_paths: Option<&config::BinPaths>,
 ) -> Result<Option<AssetId>> {
     let path_in_asset_root = path
         .strip_prefix(&asset_root.path)
@@ -68,7 +75,15 @@ async fn index_file(
     if existing {
         return Ok(None);
     }
-    let metadata = read_media_metadata(path, Some("exiftool"))
+    let exiftool_path = bin_paths
+        .map(|bp| bp.exiftool.as_ref())
+        .flatten()
+        .map(|p| p.as_path());
+    let ffprobe_path = bin_paths
+        .map(|bp| bp.ffprobe.as_ref())
+        .flatten()
+        .map(|p| p.as_path());
+    let metadata = read_media_metadata(path, exiftool_path)
         .in_current_span()
         .await
         .wrap_err("could not read file metadata")?;
@@ -81,7 +96,8 @@ async fn index_file(
     };
     let (create_asset_spe, size): (CreateAssetSpe, Size) = match metadata.file.mime_type.as_ref() {
         Some(mime) if mime.starts_with("video") => {
-            let (ffprobe_output, streams) = FFProbe::streams(path, Some("ffprobe"))
+            // FIXME ffprobe path should come from config
+            let (ffprobe_output, streams) = FFProbe::streams(path, ffprobe_path)
                 .await
                 .wrap_err("error getting stream info from file")?;
             let video = streams.video;

@@ -4,6 +4,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    config,
     core::job::{Job, JobHandle, JobProgress, JobResultType},
     model::repository::pool::DbPool,
     model::{AssetId, AssetRootDir, AssetRootDirId},
@@ -13,6 +14,7 @@ use crate::{
 pub struct IndexingJob {
     params: IndexingJobParams,
     pool: DbPool,
+    config: config::Config,
 }
 
 // This type doesn't have to be this way as an IndexingJob only indexes one
@@ -30,8 +32,12 @@ pub struct IndexingJobParams {
 }
 
 impl IndexingJob {
-    pub fn new(params: IndexingJobParams, pool: DbPool) -> IndexingJob {
-        IndexingJob { params, pool }
+    pub fn new(params: IndexingJobParams, pool: DbPool, config: config::Config) -> IndexingJob {
+        IndexingJob {
+            params,
+            pool,
+            config,
+        }
     }
 
     async fn run(
@@ -49,7 +55,13 @@ impl IndexingJob {
             .unwrap();
         let mut failed = Vec::<(AssetRootDirId, eyre::Report)>::new();
         let mut new_asset_ids = Vec::<AssetId>::new();
-        match indexing::index_asset_root(&self.params.asset_root, &self.pool).await {
+        match indexing::index_asset_root(
+            &self.params.asset_root,
+            &self.pool,
+            self.config.bin_paths.as_ref(),
+        )
+        .await
+        {
             Ok(mut asset_ids) => {
                 new_asset_ids.append(&mut asset_ids);
             }

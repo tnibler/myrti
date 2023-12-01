@@ -8,6 +8,7 @@ use crate::{
         apply_package_video, perform_side_effects_package_video, preallocate_dummy_video_repr_rows,
         PackageVideo,
     },
+    config,
     core::{
         job::{Job, JobHandle, JobProgress, JobResultType},
         storage::Storage,
@@ -22,6 +23,7 @@ pub struct VideoPackagingJobParams {
 
 pub struct VideoPackagingJob {
     params: VideoPackagingJobParams,
+    bin_paths: Option<config::BinPaths>,
     storage: Storage,
     pool: DbPool,
 }
@@ -35,11 +37,13 @@ pub struct VideoPackagingJobResult {
 impl VideoPackagingJob {
     pub fn new(
         params: VideoPackagingJobParams,
+        bin_paths: Option<config::BinPaths>,
         storage: Storage,
         pool: DbPool,
     ) -> VideoPackagingJob {
         VideoPackagingJob {
             params,
+            bin_paths,
             storage,
             pool,
         }
@@ -73,11 +77,15 @@ impl VideoPackagingJob {
         let reserved = preallocate_dummy_video_repr_rows(&self.pool, &package_video)
             .await
             .wrap_err("error reserving db rows for package_video")?;
-        let completed_package_video =
-            perform_side_effects_package_video(&self.pool, &self.storage, &package_video)
-                .in_current_span()
-                .await
-                .wrap_err("error packaging video asset")?;
+        let completed_package_video = perform_side_effects_package_video(
+            &self.pool,
+            &self.storage,
+            &package_video,
+            self.bin_paths.as_ref(),
+        )
+        .in_current_span()
+        .await
+        .wrap_err("error packaging video asset")?;
         apply_package_video(&self.pool, reserved, &completed_package_video)
             .in_current_span()
             .await

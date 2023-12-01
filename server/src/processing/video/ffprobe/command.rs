@@ -41,9 +41,9 @@ pub fn ffprobe_get_streams_from_json(json: &[u8]) -> Result<FFProbeStreams> {
 #[instrument]
 pub async fn ffprobe_get_streams(
     path: &Path,
-    ffprobe_bin_path: Option<&str>,
+    ffprobe_bin_path: Option<&Path>,
 ) -> Result<(Vec<u8>, FFProbeStreams)> {
-    let ffprobe_result = Command::new(ffprobe_bin_path.unwrap_or("ffprobe"))
+    let ffprobe_result = Command::new(ffprobe_bin_path.unwrap_or("ffprobe".into()))
         .args(&["-v", "error", "-show_streams", "-of", "json=compact=1"])
         .arg(path)
         .stdout(Stdio::piped())

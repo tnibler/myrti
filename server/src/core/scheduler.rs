@@ -11,6 +11,7 @@ use crate::{
         operation::{convert_image::ConvertImage, package_video::PackageVideo},
         rules,
     },
+    config,
     core::job::JobType,
     eyre::Result,
     job::{
@@ -55,6 +56,7 @@ impl Scheduler {
         monitor_tx: mpsc::Sender<MonitorMessage>,
         pool: SqlitePool,
         storage: Storage,
+        config: config::Config,
     ) -> Scheduler {
         let (tx, rx) = mpsc::channel::<SchedulerMessage>(1000);
         let cancel = CancellationToken::new();
@@ -66,6 +68,7 @@ impl Scheduler {
                 events_rx: rx,
                 cancel,
                 pool,
+                config,
                 monitor_tx,
                 storage,
                 running_jobs: HashMap::default(),
@@ -91,6 +94,7 @@ struct SchedulerImpl {
     pool: SqlitePool,
     monitor_tx: mpsc::Sender<MonitorMessage>,
     storage: Storage,
+    config: config::Config,
 
     running_jobs: HashMap<JobId, JobType>,
 }
@@ -215,7 +219,12 @@ impl SchedulerImpl {
         let params = VideoPackagingJobParams {
             tasks: videos_to_package,
         };
-        let job = VideoPackagingJob::new(params.clone(), self.storage.clone(), self.pool.clone());
+        let job = VideoPackagingJob::new(
+            params.clone(),
+            self.config.bin_paths.clone(),
+            self.storage.clone(),
+            self.pool.clone(),
+        );
         let handle = job.start();
         self.monitor_tx
             .send(MonitorMessage::AddJob {
@@ -270,7 +279,7 @@ impl SchedulerImpl {
             return false;
         }
 
-        let job = IndexingJob::new(params.clone(), self.pool.clone());
+        let job = IndexingJob::new(params.clone(), self.pool.clone(), self.config.clone());
         let handle = job.start();
         self.monitor_tx
             .send(MonitorMessage::AddJob {

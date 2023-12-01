@@ -9,6 +9,7 @@ use crate::{
         encoding_target::{audio_codec_name, codec_name, VideoEncodingTarget},
         storage_key,
     },
+    config,
     core::storage::Storage,
     model::{
         repository::{self, pool::DbPool},
@@ -258,9 +259,23 @@ pub async fn perform_side_effects_package_video(
     pool: &DbPool,
     storage: &Storage,
     package_video: &PackageVideo,
+    bin_paths: Option<&config::BinPaths>,
 ) -> Result<CompletedPackageVideo> {
     let asset_id = package_video.asset_id;
     let asset_path = repository::asset::get_asset_path_on_disk(pool, asset_id).await?;
+
+    let ffmpeg_path = bin_paths
+        .map(|bp| bp.ffmpeg.as_ref().map(|p| p.as_path()))
+        .flatten();
+    let ffprobe_path = bin_paths
+        .map(|bp| bp.ffprobe.as_ref().map(|p| p.as_path()))
+        .flatten();
+    let shaka_packager_path = bin_paths
+        .map(|bp| bp.shaka_packager.as_ref().map(|p| p.as_path()))
+        .flatten();
+    let mpd_generator_path = bin_paths
+        .map(|bp| bp.mpd_generator.as_ref().map(|p| p.as_path()))
+        .flatten();
 
     let ffmpeg_video_op: Option<ProduceVideo> = match package_video.create_video_repr.clone() {
         CreateVideoRepr::Transcode(video_transcode) => {
@@ -281,7 +296,7 @@ pub async fn perform_side_effects_package_video(
             ffmpeg_video_op.as_ref(),
             ffmpeg_audio_op.as_ref(),
         );
-        Some(ffmpeg_into_shaka.run_ffmpeg(Some("ffmpeg")).await?)
+        Some(ffmpeg_into_shaka.run_ffmpeg(ffmpeg_path).await?)
     } else {
         None
     };
@@ -296,7 +311,7 @@ pub async fn perform_side_effects_package_video(
                 RepresentationType::Audio,
                 &output_key,
                 storage,
-                Some("/home/thomas/p/mediathingy/shaka-bin/packager"),
+                shaka_packager_path,
             )
             .await
             .wrap_err("could not shaka package audio stream")?;
@@ -322,7 +337,7 @@ pub async fn perform_side_effects_package_video(
                     RepresentationType::Audio,
                     &transcode.output_key,
                     &storage,
-                    Some("/home/thomas/p/mediathingy/shaka-bin/packager"),
+                    shaka_packager_path,
                 )
                 .in_current_span()
                 .await?;
@@ -347,7 +362,8 @@ pub async fn perform_side_effects_package_video(
             // output.
             // TODO calling ffprobe yet again, ideally once is enough? Or not I'm not sure
             let rotation =
-                FFProbe::video_rotation(&asset_path.path_on_disk(), Some("ffprobe")).await?;
+            // FIXME ffprobe path should come from from config
+                FFProbe::video_rotation(&asset_path.path_on_disk(), ffprobe_path).await?;
             if let Some(rotation) = rotation {
                 if rotation % 360 != 0 {
                     error!("SHOULD NOT HAPPEN: packaging original video file, but it has nonzero rotation in stream metadata");
@@ -362,8 +378,8 @@ pub async fn perform_side_effects_package_video(
                     &correct_rotation_ffmpeg,
                     output_key,
                     storage,
-                    Some("/home/thomas/p/mediathingy/shaka-bin/packager"),
-                    Some("ffmpeg"),
+                    shaka_packager_path,
+                    ffmpeg_path,
                 )
                 .await?;
 
@@ -377,7 +393,7 @@ pub async fn perform_side_effects_package_video(
                     RepresentationType::Video,
                     output_key,
                     storage,
-                    Some("/home/thomas/p/mediathingy/shaka-bin/packager"),
+                    shaka_packager_path,
                 )
                 .await
                 .wrap_err("could not shaka package audio stream")?;
@@ -403,12 +419,12 @@ pub async fn perform_side_effects_package_video(
                     RepresentationType::Video,
                     &transcode.output_key,
                     &storage,
-                    Some("/home/thomas/p/mediathingy/shaka-bin/packager"),
+                    shaka_packager_path,
                 )
                 .in_current_span()
                 .await?;
             let probe = ffmpeg_into_shaka
-                .ffprobe_get_streams(Some("ffprobe"))
+                .ffprobe_get_streams(ffprobe_path)
                 .await?
                 .video;
             CreatedVideoRepr::Transcode(VideoTranscodeResult {
@@ -453,7 +469,7 @@ pub async fn perform_side_effects_package_video(
         media_info_keys.iter().map(AsRef::as_ref),
         &mpd_key,
         storage,
-        Some("/home/thomas/p/mediathingy/shaka-bin/mpd_generator"),
+        mpd_generator_path,
     )
     .await
     .wrap_err("could not generate mpd manifest")?;

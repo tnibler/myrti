@@ -65,12 +65,6 @@ pub struct PackageVideo {
     pub mpd_out_key: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct ConvertVideoPrereserveResult {
-    pub video_representation_id: VideoRepresentationId,
-    pub output_file_key: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CreatedVideoRepr {
     PackagedOriginalFile {
@@ -128,35 +122,8 @@ pub struct AudioTranscodeResult {
     pub out_media_info_key: String,
 }
 
-#[tracing::instrument(skip(pool))]
-pub async fn preallocate_dummy_video_repr_rows(
-    pool: &DbPool,
-    op: &PackageVideo,
-) -> Result<Option<ConvertVideoPrereserveResult>> {
-    match &op.create_video_repr {
-        CreateVideoRepr::Transcode(transcode) => {
-            let repr_id = repository::representation::reserve_video_representation(
-                pool,
-                op.asset_id,
-                codec_name(&transcode.target.codec),
-            )
-            .await?;
-            Ok(Some(ConvertVideoPrereserveResult {
-                video_representation_id: repr_id,
-                output_file_key: transcode.output_key.clone(),
-            }))
-        }
-        // no need to reserve db rows
-        CreateVideoRepr::Existing(_) | CreateVideoRepr::PackageOriginalFile { .. } => Ok(None),
-    }
-}
-
 #[instrument(skip(pool))]
-pub async fn apply_package_video(
-    pool: &DbPool,
-    reserved: Option<ConvertVideoPrereserveResult>,
-    op: &CompletedPackageVideo,
-) -> Result<()> {
+pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> Result<()> {
     let asset: VideoAsset = repository::asset::get_asset(pool, op.asset_id)
         .await?
         .try_into()?;
@@ -206,48 +173,37 @@ pub async fn apply_package_video(
         }
         None | Some(CreatedAudioRepr::Existing(_)) => {}
     }
-    match &op.created_video_repr {
+    let created_video_repr = match &op.created_video_repr {
         CreatedVideoRepr::PackagedOriginalFile {
             out_file_key,
             out_media_info_key,
-        } => {
-            // no row preallocated in db for PackageOriginalFile
-            // so construct new one and insert it
-            let video_repr = VideoRepresentation {
-                id: VideoRepresentationId(0),
-                asset_id: asset.base.id,
-                codec_name: asset.video.video_codec_name,
-                width: asset.base.size.width,
-                height: asset.base.size.height,
-                bitrate: asset.video.video_bitrate,
-                file_key: out_file_key.clone(),
-                media_info_key: out_media_info_key.clone(),
-            };
-            repository::representation::insert_video_representation(tx.as_mut(), &video_repr)
-                .await
-                .wrap_err("error inserting VideoRepresentation")?;
-        }
-        CreatedVideoRepr::Transcode(transcode) => {
-            // preallocated db row has to exist for transcode
-            let reserved = reserved.ok_or(eyre!(
-                "BUG: VideoRepresentation db rows must be reserved for PackageVideo with Transcode"
-            ))?;
-            let video_repr = VideoRepresentation {
-                // use id from preallocated db row
-                id: reserved.video_representation_id,
-                asset_id: asset.base.id,
-                codec_name: codec_name(&transcode.target.codec).to_owned(),
-                width: transcode.final_size.width,
-                height: transcode.final_size.height,
-                bitrate: transcode.bitrate,
-                file_key: transcode.out_file_key.clone(),
-                media_info_key: transcode.out_media_info_key.clone(),
-            };
-            repository::representation::update_dummy_video_representation(tx.as_mut(), &video_repr)
-                .await?;
-        }
-        CreatedVideoRepr::Existing(_) => { /* nothing to do */ }
+        } => Some(VideoRepresentation {
+            id: VideoRepresentationId(0),
+            asset_id: asset.base.id,
+            codec_name: asset.video.video_codec_name,
+            width: asset.base.size.width,
+            height: asset.base.size.height,
+            bitrate: asset.video.video_bitrate,
+            file_key: out_file_key.clone(),
+            media_info_key: out_media_info_key.clone(),
+        }),
+        CreatedVideoRepr::Transcode(transcode) => Some(VideoRepresentation {
+            id: VideoRepresentationId(0),
+            asset_id: asset.base.id,
+            codec_name: codec_name(&transcode.target.codec).to_owned(),
+            width: transcode.final_size.width,
+            height: transcode.final_size.height,
+            bitrate: transcode.bitrate,
+            file_key: transcode.out_file_key.clone(),
+            media_info_key: transcode.out_media_info_key.clone(),
+        }),
+        CreatedVideoRepr::Existing(_) => None,
     };
+    if let Some(video_repr) = created_video_repr {
+        let _video_repr_id =
+            repository::representation::insert_video_representation(tx.as_mut(), &video_repr)
+                .await?;
+    }
     tx.commit()
         .await
         .wrap_err("could not commit db transaction")?;

@@ -195,7 +195,7 @@ async fn get_image_asset_representation(
     let repr = repository::representation::get_image_representation(&app_state.pool, repr_id)
         .await
         .wrap_err("no such repr_id")?;
-    let storage_key = storage_key::image_representation(asset_id, repr_id, &repr.format_name);
+    let storage_key = repr.file_key;
     let read_stream = app_state
         .storage
         .open_read_stream(&storage_key)

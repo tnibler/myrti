@@ -27,11 +27,9 @@ width,
 height,
 bitrate,
 file_key,
-media_info_key,
-is_preallocated_dummy
+media_info_key
 FROM VideoRepresentation 
-WHERE asset_id=?
-AND is_preallocated_dummy=0;
+WHERE asset_id=?;
     "#,
         asset_id
     )
@@ -79,8 +77,8 @@ pub async fn insert_video_representation(
     let result = sqlx::query!(
         r#"
 INSERT INTO VideoRepresentation
-(id, asset_id, codec_name, width, height, bitrate, file_key, media_info_key, is_preallocated_dummy)
-VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, 0);
+(id, asset_id, codec_name, width, height, bitrate, file_key, media_info_key)
+VALUES(NULL, ?, ?, ?, ?, ?, ?, ?);
     "#,
         db_val.asset_id,
         db_val.codec_name,
@@ -94,111 +92,6 @@ VALUES(NULL, ?, ?, ?, ?, ?, ?, ?, 0);
     .await
     .wrap_err("could not insert into table VideoRepresentation")?;
     Ok(VideoRepresentationId(result.last_insert_rowid()))
-}
-
-#[instrument(skip(pool), level = "debug")]
-pub async fn reserve_video_representation(
-    pool: &DbPool,
-    asset_id: AssetId,
-    codec_name: &str,
-) -> Result<VideoRepresentationId> {
-    let result = sqlx::query!(
-        r#"
-INSERT INTO VideoRepresentation(id, asset_id, codec_name, width, height, bitrate, file_key, media_info_key, is_preallocated_dummy)
-VALUES (NULL, ?, ?, NULL, NULL, NULL, NULL, NULL, 1);
-    "#,
-        asset_id,
-        codec_name
-    )
-        .execute(pool)
-        .await
-        .wrap_err("could not insert dummy row into table VideoRepresentation")?;
-    Ok(VideoRepresentationId(result.last_insert_rowid()))
-}
-
-#[instrument(skip(pool), level = "debug")]
-pub async fn reserve_image_representation(
-    pool: &DbPool,
-    asset_id: AssetId,
-    format_name: &str,
-) -> Result<ImageRepresentationId> {
-    let result = sqlx::query!(
-        r#"
-INSERT INTO ImageRepresentation(id, asset_id, format_name, width, height, file_size, file_key, is_preallocated_dummy)
-VALUES (NULL, ?, ?, NULL, NULL, NULL, NULL, 1);
-    "#,
-        asset_id,
-        format_name
-    )
-        .execute(pool)
-        .await
-        .wrap_err("could not insert dummy row into table VideoRepresentation")?;
-    Ok(ImageRepresentationId(result.last_insert_rowid()))
-}
-
-#[instrument(skip(conn), level = "debug")]
-pub async fn update_dummy_video_representation(
-    conn: &mut SqliteConnection,
-    video_representation: &VideoRepresentation,
-) -> Result<()> {
-    let db_repr: DbVideoRepresentation = video_representation.try_into()?;
-    let result = sqlx::query!(
-        r#"
-UPDATE VideoRepresentation
-SET width=?, height=?, bitrate=?, file_key=?, media_info_key=?, is_preallocated_dummy=0
-WHERE id = ?
-AND asset_id = ?
-AND is_preallocated_dummy != 0;
-    "#,
-        db_repr.width,
-        db_repr.height,
-        db_repr.bitrate,
-        db_repr.file_key,
-        db_repr.media_info_key,
-        // make sure the row id and referenced asset_id still match the values the row was reserved_or
-        db_repr.id,
-        db_repr.asset_id
-    )
-    .execute(conn)
-    .await
-    .wrap_err("could not update dummy row in table VideoRepresentation")?;
-    // id is invalid, or the ids and asset_id got mixed up or the row is not a dummy
-    if result.rows_affected() != 1 {
-        return Err(eyre!("no matching dummy row found to update"));
-    }
-    Ok(())
-}
-
-#[instrument(skip(pool), level = "debug")]
-pub async fn update_dummy_image_representation(
-    pool: &DbPool,
-    image_representation: &ImageRepresentation,
-) -> Result<()> {
-    let db_repr: DbImageRepresentation = image_representation.try_into()?;
-    let result = sqlx::query!(
-        r#"
-UPDATE ImageRepresentation
-SET width=?, height=?, file_size=?, file_key=?, is_preallocated_dummy=0
-WHERE id = ?
-AND asset_id = ?
-AND is_preallocated_dummy != 0;
-    "#,
-        db_repr.width,
-        db_repr.height,
-        db_repr.file_size,
-        db_repr.file_key,
-        // make sure the row id and referenced asset_id still match the values the row was reserved_or
-        db_repr.id,
-        db_repr.asset_id
-    )
-    .execute(pool)
-    .await
-    .wrap_err("could not update dummy row in table ImageRepresentation")?;
-    // id is invalid, or the ids and asset_id got mixed up or the row is not a dummy
-    if result.rows_affected() != 1 {
-        return Err(eyre!("no matching dummy row found to update"));
-    }
-    Ok(())
 }
 
 #[instrument(skip(conn))]
@@ -233,8 +126,8 @@ pub async fn insert_image_representation(
     let result = sqlx::query!(
         r#"
 INSERT INTO ImageRepresentation
-(id, asset_id, format_name, width, height, file_size, file_key, is_preallocated_dummy)
-VALUES (NULL, ?, ?, ?, ?, ?, ?, 0);
+(id, asset_id, format_name, width, height, file_size, file_key)
+VALUES (NULL, ?, ?, ?, ?, ?, ?);
     "#,
         repr.asset_id,
         repr.format_name,
@@ -265,8 +158,7 @@ format_name,
 width,
 height,
 file_size,
-file_key,
-is_preallocated_dummy
+file_key
 FROM ImageRepresentation
 WHERE id = ?;
     "#,
@@ -294,8 +186,7 @@ format_name,
 width,
 height,
 file_size,
-file_key,
-is_preallocated_dummy
+file_key
 FROM ImageRepresentation
 WHERE asset_id = ?;
     "#,

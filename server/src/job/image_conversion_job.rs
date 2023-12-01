@@ -6,8 +6,7 @@ use tracing::Instrument;
 
 use crate::{
     catalog::operation::convert_image::{
-        apply_convert_image, perform_side_effects_convert_image, preallocate_dummy_image_repr_rows,
-        ConvertImage,
+        apply_convert_image, perform_side_effects_convert_image, ConvertImage,
     },
     core::{
         job::{Job, JobHandle, JobProgress, JobResultType},
@@ -70,7 +69,10 @@ impl ImageConversionJob {
             // let past_failed_job =
             //     repository::failed_job::get_failed_image_conversion_job_for_asset(&self.pool, op.asset_id)
             //         .await?;
-            let reserved = match preallocate_dummy_image_repr_rows(&self.pool, op).await {
+            let size = match perform_side_effects_convert_image(op, &self.pool, &self.storage)
+                .in_current_span()
+                .await
+            {
                 Err(err) => {
                     failed.push(FailedImageConversion {
                         op: op.clone(),
@@ -80,21 +82,7 @@ impl ImageConversionJob {
                 }
                 Ok(r) => r,
             };
-            let size =
-                match perform_side_effects_convert_image(&reserved, op, &self.pool, &self.storage)
-                    .in_current_span()
-                    .await
-                {
-                    Err(err) => {
-                        failed.push(FailedImageConversion {
-                            op: op.clone(),
-                            err,
-                        });
-                        continue;
-                    }
-                    Ok(r) => r,
-                };
-            let apply_result = apply_convert_image(&self.pool, op, &reserved, size)
+            let apply_result = apply_convert_image(&self.pool, op, size)
                 .in_current_span()
                 .await;
             if let Err(err) = apply_result {

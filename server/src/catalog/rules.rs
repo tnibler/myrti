@@ -232,7 +232,12 @@ pub async fn image_conversion_due(pool: &DbPool) -> Result<Vec<ConvertImage>> {
                     AvifTarget::default(),
                 ),
             };
-            ConvertImage { asset_id, target }
+            let output_file_key = storage_key::image_representation(asset_id, &target);
+            ConvertImage {
+                asset_id,
+                target,
+                output_file_key,
+            }
         })
         .collect();
     Ok(ops)

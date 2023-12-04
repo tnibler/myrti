@@ -20,8 +20,8 @@ impl TryFrom<&DbAlbum> for AlbumType {
     type Error = eyre::Report;
 
     fn try_from(value: &DbAlbum) -> Result<Self, Self::Error> {
-        let created_at = datetime_from_db_repr(value.created_at)?;
-        let changed_at = datetime_from_db_repr(value.changed_at)?;
+        let created_at = datetime_from_db_repr(value.created_at * 1000)?;
+        let changed_at = datetime_from_db_repr(value.changed_at * 1000)?;
         let album_base = Album {
             id: value.id,
             name: value.name.clone(),

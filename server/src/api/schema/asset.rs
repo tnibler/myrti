@@ -1,14 +1,10 @@
 use camino::Utf8PathBuf as PathBuf;
 use chrono::{DateTime, Utc};
-use eyre::bail;
 use serde::Serialize;
 
 use crate::model;
 
-use super::{AssetMetadata, AssetRootId};
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct AssetId(pub String);
+use super::{AssetId, AssetMetadata, AssetRootDirId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,7 +17,7 @@ pub enum AssetType {
 #[serde(rename_all = "camelCase")]
 pub struct Asset {
     pub id: AssetId,
-    pub asset_root_id: AssetRootId,
+    pub asset_root_id: AssetRootDirId,
     pub path_in_root: PathBuf,
     #[serde(rename = "type")]
     pub ty: AssetType,
@@ -87,22 +83,6 @@ impl From<&model::Asset> for Asset {
 impl From<model::Asset> for Asset {
     fn from(value: model::Asset) -> Self {
         (&value).into()
-    }
-}
-
-impl From<model::AssetId> for AssetId {
-    fn from(value: model::AssetId) -> Self {
-        AssetId(value.0.to_string())
-    }
-}
-
-impl TryFrom<AssetId> for model::AssetId {
-    type Error = eyre::Report;
-    fn try_from(value: AssetId) -> Result<Self, Self::Error> {
-        match value.0.parse::<i64>() {
-            Ok(id) => Ok(model::AssetId(id)),
-            Err(_) => bail!("Invalid AssetId {}", value.0),
-        }
     }
 }
 

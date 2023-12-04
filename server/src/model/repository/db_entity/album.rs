@@ -13,6 +13,7 @@ pub struct DbAlbum {
     pub timeline_group_display_date: Option<i64>,
     pub created_at: i64,
     pub changed_at: i64,
+    pub num_assets: Option<i64>,
 }
 
 impl TryFrom<&DbAlbum> for AlbumType {
@@ -47,6 +48,14 @@ impl TryFrom<&DbAlbum> for AlbumType {
                 group: tg,
             })),
         }
+    }
+}
+
+impl TryFrom<DbAlbum> for AlbumType {
+    type Error = eyre::Report;
+
+    fn try_from(value: DbAlbum) -> Result<Self, Self::Error> {
+        (&value).try_into()
     }
 }
 

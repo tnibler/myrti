@@ -218,7 +218,7 @@ LIMIT $4;
     let groups_in_timespan: Vec<TimelineGroupAlbum> = sqlx::query_as!(
         DbAlbum,
         r#"
-SELECT Album.* FROM Album
+SELECT Album.*, NULL as "num_assets: _" FROM Album
 WHERE Album.is_timeline_group != 0
 AND Album.timeline_group_display_date > ?
 AND Album.timeline_group_display_date <= ?

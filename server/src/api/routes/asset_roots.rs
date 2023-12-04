@@ -4,15 +4,13 @@ use axum::{
     Json, Router,
 };
 
-
 use crate::{
     api::{
-        schema::{AssetRoot, AssetRootId},
+        schema::{AssetRoot, AssetRootDirId},
         ApiResult,
     },
     app_state::SharedState,
-    model::repository,
-    model::AssetRootDirId,
+    model::{self, repository},
 };
 
 pub fn router() -> Router<SharedState> {
@@ -40,7 +38,7 @@ async fn get_asset_root_by_id(
     Path(path_id): Path<String>,
     app_state: State<SharedState>,
 ) -> ApiResult<Json<AssetRoot>> {
-    let id: AssetRootDirId = AssetRootId(path_id).try_into()?;
+    let id: model::AssetRootDirId = AssetRootDirId(path_id).try_into()?;
     let model = repository::asset_root_dir::get_asset_root(&app_state.pool, id).await?;
     Ok(AssetRoot {
         id: model.id.into(),

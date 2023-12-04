@@ -4,8 +4,9 @@ use sqlx::{QueryBuilder, Row, SqliteConnection};
 use tracing::{debug, error, Instrument};
 
 use crate::model::{
-    repository::db_entity::DbAsset, util::datetime_from_db_repr, Album, AlbumEntryId, AlbumId,
-    AlbumType, Asset, AssetId, TimelineGroup, TimelineGroupAlbum,
+    repository::db_entity::{DbAlbum, DbAsset},
+    util::datetime_from_db_repr,
+    Album, AlbumEntryId, AlbumId, AlbumType, Asset, AssetId, TimelineGroup, TimelineGroupAlbum,
 };
 
 use super::pool::DbPool;
@@ -20,6 +21,32 @@ pub struct CreateAlbum {
     pub name: Option<String>,
     pub description: Option<String>,
     pub timeline_group: Option<CreateTimelineGroup>,
+}
+
+/// Get all albums (albums and timeline groups),
+/// ordered by changed_at (descending)
+pub async fn get_all_albums_with_asset_count(pool: &DbPool) -> Result<Vec<(AlbumType, i64)>> {
+    sqlx::query_as!(
+        DbAlbum,
+        r#"
+SELECT Album.*, COUNT(AlbumEntry.asset_id) as num_assets FROM Album
+INNER JOIN AlbumEntry ON AlbumEntry.album_id = Album.id
+GROUP BY AlbumEntry.album_id
+ORDER BY Album.changed_at DESC;
+    "#
+    )
+    .fetch_all(pool)
+    .await
+    .wrap_err("could not query table Album")?
+    .into_iter()
+    .map(|db_album| {
+        let num_assets = db_album
+            .num_assets
+            .ok_or(eyre!("column num_assets must be non-null"))?;
+        let model_album: AlbumType = db_album.try_into()?;
+        Ok((model_album, num_assets))
+    })
+    .collect::<Result<Vec<_>>>()
 }
 
 pub async fn get_album(pool: &DbPool, album_id: AlbumId) -> Result<AlbumType> {

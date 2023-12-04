@@ -35,8 +35,8 @@ pub fn datetime_to_db_repr(d: &DateTime<Utc>) -> i64 {
 }
 
 /// From milliseconds since UNIX epoch
-pub fn datetime_from_db_repr(s: i64) -> Result<DateTime<Utc>> {
-    match Utc.timestamp_millis_opt(s) {
+pub fn datetime_from_db_repr(unix_millis: i64) -> Result<DateTime<Utc>> {
+    match Utc.timestamp_millis_opt(unix_millis) {
         chrono::LocalResult::Single(dt) => Ok(dt),
         _ => Err(eyre!("error parsing RFC3339 datetime")),
     }

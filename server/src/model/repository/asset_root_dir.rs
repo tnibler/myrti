@@ -5,16 +5,15 @@ use crate::model::{util::path_to_string, AssetRootDir, AssetRootDirId};
 
 use super::db_entity::DbAssetRootDir;
 use super::pool::DbPool;
+use super::DbError;
 
 pub async fn get_asset_root(pool: &DbPool, id: AssetRootDirId) -> Result<AssetRootDir> {
-    match sqlx::query_as!(DbAssetRootDir, "SELECT * FROM AssetRootDir WHERE id=?", id)
-        .fetch_optional(pool)
+    sqlx::query_as!(DbAssetRootDir, "SELECT * FROM AssetRootDir WHERE id=?", id)
+        .fetch_one(pool)
         .await
-    {
-        Ok(Some(r)) => r.try_into(),
-        Ok(None) => Err(eyre!("no AssetRootDir with id {}", id)),
-        Err(e) => Err(e).wrap_err("failed to query table AssetRootDirs"),
-    }
+        .map_err(DbError::from)
+        .map(|db_asset_root| db_asset_root.try_into())
+        .wrap_err("failed to query table AssetRootDirs")?
 }
 
 pub async fn get_asset_roots(pool: &DbPool) -> Result<Vec<AssetRootDir>> {

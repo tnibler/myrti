@@ -13,6 +13,7 @@ use crate::model::{
 
 use super::db_entity::{DbAsset, DbAssetPathOnDisk, DbAssetThumbnails, DbAssetType};
 use super::pool::DbPool;
+use super::DbError;
 
 #[instrument(skip(pool), level = "debug")]
 pub async fn get_asset(pool: &DbPool, id: AssetId) -> Result<Asset> {
@@ -57,6 +58,7 @@ WHERE id=?;
     .fetch_one(pool)
     .in_current_span()
     .await
+    .map_err(DbError::from)
     .wrap_err("error getting asset by id")?
     .try_into()
 }
@@ -72,6 +74,7 @@ WHERE hash = ?;
     )
     .fetch_optional(pool)
     .await
+    .map_err(DbError::from)
     .wrap_err("could not query table Asset")?
     .map(|r| AssetId(r.id));
     Ok(maybe_id)
@@ -93,6 +96,7 @@ WHERE Asset.id = ?;
     )
     .fetch_one(pool)
     .await
+    .map_err(DbError::from)
     .map(|r| r.try_into())?
 }
 
@@ -121,7 +125,8 @@ LIMIT 1;
     )
     .fetch_optional(pool)
     .in_current_span()
-    .await?
+    .await
+    .map_err(DbError::from)?
     .is_some())
 }
 
@@ -165,7 +170,8 @@ FROM Asset;
     )
     .fetch_all(pool)
     .in_current_span()
-    .await?
+    .await
+    .map_err(DbError::from)?
     .into_iter()
     .map(|a| a.try_into())
     .collect()
@@ -198,7 +204,8 @@ LIMIT ?;
         )
         .fetch_all(pool)
         .in_current_span()
-        .await?
+        .await
+        .map_err(DbError::from)?
         .into_iter()
         .map(|r| r.try_into())
         .collect()
@@ -222,7 +229,8 @@ WHERE
         )
         .fetch_all(pool)
         .in_current_span()
-        .await?
+        .await
+        .map_err(DbError::from)?
         .into_iter()
         .map(|r| r.try_into())
         .collect()
@@ -827,6 +835,7 @@ pub async fn get_ffprobe_output(pool: &DbPool, asset_id: AssetId) -> Result<Vec<
     )
     .fetch_one(pool)
     .await
+    .map_err(DbError::from)
     .wrap_err("could not query single row from table Asset")?;
     let ffprobe_output = row
         .ffprobe

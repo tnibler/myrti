@@ -8,7 +8,7 @@ use crate::model::{
     ImageRepresentationId, VideoRepresentation, VideoRepresentationId,
 };
 
-use super::pool::DbPool;
+use super::{pool::DbPool, DbError};
 
 #[instrument(skip(pool))]
 /// get all valid (not reserved) representations for a video asset
@@ -167,6 +167,7 @@ WHERE id = ?;
     .fetch_one(pool)
     .in_current_span()
     .await
+    .map_err(DbError::from)
     .wrap_err("could not query table ImageRepresentation")?
     .try_into()
 }

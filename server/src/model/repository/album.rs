@@ -9,7 +9,7 @@ use crate::model::{
     Album, AlbumEntryId, AlbumId, AlbumType, Asset, AssetId, TimelineGroup, TimelineGroupAlbum,
 };
 
-use super::pool::DbPool;
+use super::{pool::DbPool, DbError};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CreateTimelineGroup {
@@ -58,6 +58,7 @@ SELECT Album.* FROM Album WHERE id = ?;
     )
     .fetch_one(pool)
     .await
+    .map_err(DbError::from)
     .wrap_err("could not query single row from table Album")?;
     let album_base = Album {
         id: AlbumId(row.id),
@@ -250,6 +251,7 @@ SELECT MAX(AlbumEntry.idx) as max_index FROM AlbumEntry WHERE AlbumEntry.album_i
     // we get one value, either index or null
     .fetch_one(&mut *tx)
     .await
+    .map_err(DbError::from)
     .wrap_err("could not query table AlbumEntry")?
     .max_index;
     let first_insert_index = last_index.map_or(0, |last| last + 1);

@@ -11,7 +11,7 @@ use crate::model::{
     AlbumId, AlbumType, Asset, AssetId, TimelineGroupAlbum,
 };
 
-use super::{album::get_assets_in_album, pool::DbPool};
+use super::{album::get_assets_in_album, pool::DbPool, DbError};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TimelineElement {
@@ -122,6 +122,7 @@ LIMIT $3;
                 )
                 .fetch_one(pool)
                 .await
+                .map_err(DbError::from)
                 .wrap_err("get group album for last asset query failed")?
                 .id
                 .into();

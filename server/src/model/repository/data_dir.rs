@@ -1,4 +1,4 @@
-use super::pool::DbPool;
+use super::{pool::DbPool, DbError};
 use crate::model::{repository::db_entity::DbDataDir, DataDir, DataDirId};
 use eyre::{Context, Result};
 use tracing::{instrument, Instrument};
@@ -14,6 +14,7 @@ SELECT id, path FROM DataDir WHERE id=?;
     )
     .fetch_one(pool)
     .await
+    .map_err(DbError::from)
     .map(|d| d.try_into())?
     .wrap_err("could not query table DataDir")
 }
@@ -28,6 +29,7 @@ SELECT id, path FROM DataDir ORDER BY RANDOM() LIMIT 1;
     )
     .fetch_one(pool)
     .await
+    .map_err(DbError::from)
     .map(|d| d.try_into())?
     .wrap_err("could not query table DataDirs for random row")
 }

@@ -4,13 +4,12 @@ use axum::{
     Json, Router,
 };
 
+use core::model::{self, repository};
+
 use crate::{
-    api::{
-        schema::{AssetRoot, AssetRootDirId},
-        ApiResult,
-    },
     app_state::SharedState,
-    model::{self, repository},
+    http_error::ApiResult,
+    schema::{AssetRoot, AssetRootDirId},
 };
 
 pub fn router() -> Router<SharedState> {

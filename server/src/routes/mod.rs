@@ -1,3 +1,9 @@
+use core::{
+    core::scheduler::{SchedulerMessage, UserRequest},
+    job::indexing_job::IndexingJobParams,
+    model::{self, repository},
+};
+
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
@@ -8,15 +14,13 @@ use eyre::Context;
 use serde::Deserialize;
 use tracing::info;
 
-use crate::{
-    app_state::SharedState,
-    core::scheduler::{SchedulerMessage, UserRequest},
-    eyre::Result,
-    http_error::HttpError,
-    job::indexing_job::IndexingJobParams,
-    model::repository,
-    model::AssetRootDirId,
-};
+use crate::{app_state::SharedState, http_error::HttpError};
+
+pub mod album;
+pub mod asset;
+pub mod asset_roots;
+pub mod dash;
+pub mod jobs;
 
 #[derive(Deserialize)]
 struct QueryIndexAssetRoot {
@@ -27,7 +31,7 @@ async fn post_index_asset_root(
     asset_root_dir_id: Query<QueryIndexAssetRoot>,
     app_state: State<SharedState>,
 ) -> Result<impl IntoResponse, HttpError> {
-    let id = AssetRootDirId(asset_root_dir_id.0.id);
+    let id = model::AssetRootDirId(asset_root_dir_id.0.id);
     info!("reindex dir {}", id);
     // let asset_root_dir = repository::asset_root_dir::get_asset_root(&app_state.pool, id).await?;
     // dbg!(&asset_root_dir);

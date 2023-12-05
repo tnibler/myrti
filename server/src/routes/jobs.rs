@@ -1,11 +1,9 @@
 use axum::{extract::State, routing::get, Json, Router};
 
 use crate::{
-    api::{
-        schema::{api_job_status, api_job_type, JobInfo},
-        ApiResult,
-    },
-    app_state::{SharedState},
+    app_state::SharedState,
+    http_error::ApiResult,
+    schema::{api_job_status, api_job_type, JobInfo},
 };
 
 pub fn router() -> Router<SharedState> {

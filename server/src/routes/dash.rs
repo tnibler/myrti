@@ -11,13 +11,9 @@ use serde::Deserialize;
 use tower::ServiceExt;
 use tracing::{instrument, Instrument};
 
-use crate::{
-    api::{schema::AssetId, ApiResult},
-    app_state::SharedState,
-    catalog::storage_key,
-    core::storage::StorageProvider,
-    model,
-};
+use core::{catalog::storage_key, core::storage::StorageProvider, model};
+
+use crate::{app_state::SharedState, http_error::ApiResult, schema::AssetId};
 
 pub fn router() -> Router<SharedState> {
     Router::new().route("/:id/*path", get(get_dash_file).options(get_dash_file))

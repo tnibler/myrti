@@ -12,25 +12,27 @@ use axum::{
     Json, Router,
 };
 use axum_extra::body::AsyncReadBody;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use eyre::{eyre, Context};
 use serde::Deserialize;
 use tokio_util::io::ReaderStream;
 use tracing::{debug, instrument, warn, Instrument};
 
-use crate::{
-    api::{
-        self,
-        schema::{Asset, AssetId, AssetWithSpe, TimelineChunk, TimelineGroupType, TimelineRequest},
-        ApiResult,
-    },
-    app_state::SharedState,
+use core::{
     catalog::storage_key,
     core::storage::{StorageProvider, StorageReadError},
-    http_error::HttpError,
     model::{
         self,
         repository::{self, pool::DbPool, timeline::TimelineElement},
+    },
+};
+
+use crate::{
+    app_state::SharedState,
+    http_error::{ApiResult, HttpError},
+    schema::{
+        Asset, AssetId, AssetSpe, AssetWithSpe, Image, ImageRepresentation, TimelineChunk,
+        TimelineGroup, TimelineGroupType, TimelineRequest, Video,
     },
 };
 
@@ -48,7 +50,7 @@ pub fn router() -> Router<SharedState> {
 }
 
 async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Asset>>> {
-    let assets: Vec<api::schema::Asset> = repository::asset::get_assets(&app_state.pool)
+    let assets: Vec<Asset> = repository::asset::get_assets(&app_state.pool)
         .await?
         .into_iter()
         .map(|a| a.into())
@@ -256,9 +258,9 @@ async fn get_timeline(
         TimelineElement::DayGrouped(assets) => !assets.is_empty(),
         TimelineElement::Group { group: _, assets } => !assets.is_empty(),
     });
-    let mut api_groups: Vec<api::schema::TimelineGroup> = Vec::default();
+    let mut api_groups: Vec<TimelineGroup> = Vec::default();
     for group in filtered_nonempty_groups {
-        let mut api_assets_with_spe: Vec<api::schema::AssetWithSpe> = Vec::default();
+        let mut api_assets_with_spe: Vec<AssetWithSpe> = Vec::default();
         let assets = match &group {
             TimelineElement::DayGrouped(assets) => assets,
             TimelineElement::Group { group: _, assets } => assets,
@@ -267,11 +269,11 @@ async fn get_timeline(
             api_assets_with_spe.push(asset_with_spe(&app_state.pool, asset).await?);
         }
         let api_group = match group {
-            TimelineElement::DayGrouped(assets) => api::schema::TimelineGroup {
+            TimelineElement::DayGrouped(assets) => TimelineGroup {
                 ty: TimelineGroupType::Day(assets.last().unwrap().base.taken_date),
                 assets: api_assets_with_spe,
             },
-            TimelineElement::Group { group, assets } => api::schema::TimelineGroup {
+            TimelineElement::Group { group, assets } => TimelineGroup {
                 ty: TimelineGroupType::Group {
                     title: group.album.name.unwrap_or(String::from("NONAME")),
                     // unwrap is ok because empty asset vecs are filtered out above
@@ -291,17 +293,14 @@ async fn get_timeline(
     }))
 }
 
-async fn asset_with_spe(
-    pool: &DbPool,
-    asset: &model::Asset,
-) -> eyre::Result<api::schema::AssetWithSpe> {
+async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<AssetWithSpe> {
     match &asset.sp {
         model::AssetSpe::Image(_image) => {
             let reprs =
                 repository::representation::get_image_representations(pool, asset.base.id).await?;
             let api_reprs = reprs
                 .into_iter()
-                .map(|repr| api::schema::ImageRepresentation {
+                .map(|repr| ImageRepresentation {
                     id: repr.id.0.to_string(),
                     format: repr.format_name,
                     width: repr.width,
@@ -311,14 +310,14 @@ async fn asset_with_spe(
                 .collect();
             Ok(AssetWithSpe {
                 asset: asset.into(),
-                spe: api::schema::AssetSpe::Image(api::schema::Image {
+                spe: AssetSpe::Image(Image {
                     representations: api_reprs,
                 }),
             })
         }
         model::AssetSpe::Video(_video) => Ok(AssetWithSpe {
             asset: asset.into(),
-            spe: api::schema::AssetSpe::Video(api::schema::Video {}),
+            spe: AssetSpe::Video(Video {}),
         }),
     }
 }

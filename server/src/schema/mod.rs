@@ -2,7 +2,7 @@ use chrono::NaiveDateTime;
 use eyre::eyre;
 use serde::{Deserialize, Serialize};
 
-use crate::model;
+use core::model;
 
 mod album;
 mod asset;

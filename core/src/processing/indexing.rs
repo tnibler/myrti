@@ -7,9 +7,8 @@ use walkdir::WalkDir;
 
 use crate::{
     config,
-    model::{repository::duplicate_asset::NewDuplicateAsset, *},
+    model::{self, repository::duplicate_asset::NewDuplicateAsset, repository::pool::DbPool, *},
     processing::{self, hash::hash_file},
-    repository::{self, pool::DbPool},
 };
 
 use super::{

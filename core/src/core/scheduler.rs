@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use camino::Utf8PathBuf as PathBuf;
+use eyre::Result;
 use sqlx::SqlitePool;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -13,7 +14,6 @@ use crate::{
     },
     config,
     core::job::JobType,
-    eyre::Result,
     job::{
         image_conversion_job::{ImageConversionJob, ImageConversionParams},
         indexing_job::{IndexingJob, IndexingJobParams},

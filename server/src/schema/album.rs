@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use crate::model;
+use core::model;
 
 use super::AlbumId;
 

@@ -1,7 +1,7 @@
 use eyre::bail;
 use serde::Serialize;
 
-use crate::core;
+use core::core;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct JobId(pub String);

@@ -6,13 +6,12 @@ use axum::{
 use eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
 
+use core::model::{self, repository};
+
 use crate::{
-    api::{
-        schema::{Album, AssetId},
-        ApiResult,
-    },
     app_state::SharedState,
-    model::{self, repository},
+    http_error::ApiResult,
+    schema::{Album, AssetId},
 };
 
 pub fn router() -> Router<SharedState> {

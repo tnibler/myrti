@@ -1,5 +1,6 @@
 use std::{str::FromStr, sync::Arc};
 
+use app_state::SharedState;
 use axum::{
     extract::{Query, State},
     http::Method,
@@ -8,11 +9,8 @@ use axum::{
     Router,
 };
 use camino::Utf8PathBuf as PathBuf;
-use color_eyre::eyre::Context;
-use config::Config;
-use eyre::{self, Result};
+use eyre::{self, Context, Result};
 use http_error::HttpError;
-use model::repository::{self, pool::DbPool};
 use serde::Deserialize;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use tokio::{signal, sync::mpsc};
@@ -29,27 +27,26 @@ use tracing_error::ErrorLayer;
 use tracing_forest::ForestLayer;
 use tracing_subscriber::{prelude::*, EnvFilter};
 
-use crate::{
-    app_state::{AppState, SharedState},
+use core::{
+    config::Config,
     core::{
         job::JobId,
         monitor::{Monitor, MonitorMessage},
         scheduler::Scheduler,
         storage::{LocalFileStorage, Storage},
     },
-    model::{AssetRootDir, AssetRootDirId},
+    model::{
+        repository::{self, pool::DbPool},
+        AssetRootDir, AssetRootDirId,
+    },
 };
 
-mod api;
+use crate::app_state::AppState;
+
 mod app_state;
-mod catalog;
-mod config;
-mod core;
 mod http_error;
-mod job;
-mod model;
-mod processing;
 mod routes;
+mod schema;
 
 async fn db_setup() -> Result<SqlitePool> {
     let db_url = "sqlite://mediathingy.db";
@@ -64,7 +61,7 @@ async fn db_setup() -> Result<SqlitePool> {
     // }
 
     let pool = SqlitePool::connect(db_url).await?;
-    sqlx::migrate!("./migrations").run(&pool).await?;
+    sqlx::migrate!("../core/migrations").run(&pool).await?;
     Ok(pool)
 }
 
@@ -115,10 +112,6 @@ async fn get_status(
     Ok(format!("{:#?}", status))
 }
 
-fn processing_global_init() {
-    processing::image::vips_init();
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::var("RUST_LIB_BACKTRACE").is_err() {
@@ -143,10 +136,11 @@ async fn main() -> Result<()> {
         .init();
 
     info!("Starting up...");
-    processing_global_init();
-    let config = config::read_config(PathBuf::from_str("server/config.toml").unwrap().as_path())
-        .await
-        .unwrap();
+    core::global_init();
+    let config =
+        core::config::read_config(PathBuf::from_str("server/config.toml").unwrap().as_path())
+            .await
+            .unwrap();
     let pool = db_setup().await.unwrap();
     store_asset_roots_from_config(&config, &pool).await?;
     // run it with hyper on localhost:3000
@@ -169,11 +163,11 @@ async fn main() -> Result<()> {
         // allow requests from any origin
         .allow_origin(Any);
     let app = Router::new()
-        .nest("/api/album", api::routes::album::router())
-        .nest("/api/asset", api::routes::asset::router())
-        .nest("/api/assetRoots", api::routes::asset_roots::router())
-        .nest("/api/dash", api::routes::dash::router())
-        .nest("/api/jobs", api::routes::jobs::router())
+        .nest("/api/album", routes::album::router())
+        .nest("/api/asset", routes::asset::router())
+        .nest("/api/assetRoots", routes::asset_roots::router())
+        .nest("/api/dash", routes::dash::router())
+        .nest("/api/jobs", routes::jobs::router())
         .nest("/api", routes::api_router())
         .route("/cancel", post(post_cancel))
         .route("/status", get(get_status))

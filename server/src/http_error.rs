@@ -27,3 +27,5 @@ macro_rules! impl_from {
 
 impl_from!(std::io::Error);
 impl_from!(color_eyre::Report);
+
+pub type ApiResult<T> = Result<T, HttpError>;

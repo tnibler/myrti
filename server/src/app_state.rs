@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use core::core::{monitor::Monitor, scheduler::Scheduler, storage::Storage};
-
-use crate::repository::pool::DbPool;
+use core::{
+    core::{monitor::Monitor, scheduler::Scheduler, storage::Storage},
+    model::repository::pool::DbPool,
+};
 
 pub struct AppState {
     pub pool: DbPool,

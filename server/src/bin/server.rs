@@ -1,6 +1,5 @@
 use std::{str::FromStr, sync::Arc};
 
-use app_state::SharedState;
 use axum::{
     extract::{Query, State},
     http::Method,
@@ -10,7 +9,11 @@ use axum::{
 };
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{self, Context, Result};
-use http_error::HttpError;
+use mediathingyrust::{
+    app_state::{AppState, SharedState},
+    http_error::HttpError,
+    routes,
+};
 use serde::Deserialize;
 use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use tokio::{signal, sync::mpsc};
@@ -40,13 +43,6 @@ use core::{
         AssetRootDir, AssetRootDirId,
     },
 };
-
-use crate::app_state::AppState;
-
-mod app_state;
-mod http_error;
-mod routes;
-mod schema;
 
 async fn db_setup() -> Result<SqlitePool> {
     let db_url = "sqlite://mediathingy.db";

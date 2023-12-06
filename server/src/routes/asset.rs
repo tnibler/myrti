@@ -31,8 +31,8 @@ use crate::{
     app_state::SharedState,
     http_error::{ApiResult, HttpError},
     schema::{
-        Asset, AssetId, AssetSpe, AssetWithSpe, Image, ImageRepresentation, TimelineChunk,
-        TimelineGroup, TimelineGroupType, TimelineRequest, Video,
+        asset::{Asset, AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
+        AssetId, TimelineChunk, TimelineGroup, TimelineGroupType, TimelineRequest,
     },
 };
 
@@ -49,6 +49,11 @@ pub fn router() -> Router<SharedState> {
         )
 }
 
+#[utoipa::path(get, path = "/api/asset",
+responses(
+    (status = 200, body=[Asset])
+        ),
+)]
 async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Asset>>> {
     let assets: Vec<Asset> = repository::asset::get_assets(&app_state.pool)
         .await?

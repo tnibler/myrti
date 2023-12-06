@@ -5,12 +5,11 @@ use serde::{Deserialize, Serialize};
 use core::model;
 
 mod album;
-mod asset;
+pub mod asset;
 mod asset_root_dir;
 mod job;
 mod timeline;
 pub use album::*;
-pub use asset::*;
 pub use asset_root_dir::*;
 pub use job::*;
 pub use timeline::*;

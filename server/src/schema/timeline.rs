@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use super::AssetWithSpe;
+use super::asset::AssetWithSpe;
 
 /// Response for a request for the next part of the timeline to display
 ///

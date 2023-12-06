@@ -21,6 +21,7 @@ pub mod asset;
 pub mod asset_roots;
 pub mod dash;
 pub mod jobs;
+pub mod timeline;
 
 #[derive(Deserialize)]
 struct QueryIndexAssetRoot {

@@ -17,23 +17,18 @@ use eyre::{eyre, Context};
 use serde::Deserialize;
 use tokio_util::io::ReaderStream;
 use tracing::{debug, instrument, warn, Instrument};
+use utoipa::ToSchema;
 
 use core::{
     catalog::storage_key,
     core::storage::{StorageProvider, StorageReadError},
-    model::{
-        self,
-        repository::{self, pool::DbPool, timeline::TimelineElement},
-    },
+    model::{self, repository},
 };
 
 use crate::{
     app_state::SharedState,
     http_error::{ApiResult, HttpError},
-    schema::{
-        asset::{Asset, AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
-        AssetId, TimelineChunk, TimelineGroup, TimelineGroupType, TimelineRequest,
-    },
+    schema::{asset::Asset, AssetId},
 };
 
 pub fn router() -> Router<SharedState> {
@@ -42,7 +37,7 @@ pub fn router() -> Router<SharedState> {
         .route("/:id", get(get_asset))
         .route("/thumbnail/:id/:size/:format", get(get_thumbnail))
         .route("/original/:id", get(get_asset_file))
-        .route("/timeline", get(get_timeline))
+        .route("/timeline", get(super::timeline::get_timeline))
         .route(
             "/repr/:asset_id/:repr_id",
             get(get_image_asset_representation),
@@ -63,6 +58,16 @@ async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<
     Ok(Json(assets))
 }
 
+#[utoipa::path(get, path = "/api/asset/{id}",
+responses(
+    (status = 200, body = Asset),
+    (status = NOT_FOUND, description = "Asset not found")
+),
+    params(
+        ("id" = String, Path, description = "AssetId")
+    )
+)
+]
 async fn get_asset(
     Path(_id): Path<String>,
     State(_app_state): State<SharedState>,
@@ -70,21 +75,31 @@ async fn get_asset(
     Err(eyre!("not implemented"))?
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-enum ThumbnailSize {
+pub enum ThumbnailSize {
     Small,
     Large,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-enum ThumbnailFormat {
+pub enum ThumbnailFormat {
     Avif,
     Webp,
 }
 
 #[instrument(name = "Get Asset thumbnail", skip(app_state))]
+#[utoipa::path(get, path = "/api/thumbnail/{id}/{size}/{format}",
+responses(
+    (status = 200, body=String, content_type = "application/octet")
+        ),
+    params(
+        ("id" = String, Path, description = "AssetId to get thumbnail for"),
+        ("size" = ThumbnailSize, Path, description = "Thumbnail size"),
+        ("format" = ThumbnailFormat, Path, description = "Image format for thumbnail")
+    )
+)]
 async fn get_thumbnail(
     Path((id, size, format)): Path<(String, ThumbnailSize, ThumbnailFormat)>,
     State(app_state): State<SharedState>,
@@ -146,6 +161,15 @@ async fn get_thumbnail(
     return Ok((headers, body).into_response());
 }
 
+#[utoipa::path(get, path = "/api/original/{id}",
+responses(
+    (status = 200, body=String, content_type = "application/octet"),
+    (status = NOT_FOUND, body=String, description = "Asset not found")
+        ),
+    params(
+        ("id" = String, Path, description = "AssetId"),
+    )
+)]
 #[instrument(name = "Get Asset file", skip(app_state))]
 async fn get_asset_file(
     Path(id): Path<String>,
@@ -189,6 +213,16 @@ async fn get_asset_file(
     Ok((headers, body).into_response())
 }
 
+#[utoipa::path(get, path = "/api/repr/{assetId}/{reprId}",
+responses(
+    (status = 200, body=String, content_type = "application/octet"),
+    (status = NOT_FOUND, body=String, description = "Asset or Representation not found")
+        ),
+    params(
+        ("assetId" = String, Path, description = "AssetId"),
+        ("reprId" = String, Path, description = "ImageRepresentationId"),
+    )
+)]
 async fn get_image_asset_representation(
     Path((asset_id, repr_id)): Path<(String, String)>,
     Query(query): Query<HashMap<String, String>>,
@@ -239,92 +273,6 @@ async fn get_image_asset_representation(
         );
     }
     Ok((headers, body).into_response())
-}
-
-#[instrument(skip(app_state))]
-async fn get_timeline(
-    State(app_state): State<SharedState>,
-    Query(req_body): Query<TimelineRequest>,
-) -> ApiResult<Json<TimelineChunk>> {
-    debug!(?req_body);
-    let now = Utc::now();
-    let last_asset_id = match req_body.last_asset_id {
-        Some(s) => Some(model::AssetId(s.parse().wrap_err("bad asset id")?)),
-        None => None,
-    };
-    let groups = repository::timeline::get_timeline_chunk(
-        &app_state.pool,
-        last_asset_id,
-        req_body.max_count.into(),
-    )
-    .in_current_span()
-    .await?;
-    let filtered_nonempty_groups = groups.into_iter().filter(|group| match group {
-        TimelineElement::DayGrouped(assets) => !assets.is_empty(),
-        TimelineElement::Group { group: _, assets } => !assets.is_empty(),
-    });
-    let mut api_groups: Vec<TimelineGroup> = Vec::default();
-    for group in filtered_nonempty_groups {
-        let mut api_assets_with_spe: Vec<AssetWithSpe> = Vec::default();
-        let assets = match &group {
-            TimelineElement::DayGrouped(assets) => assets,
-            TimelineElement::Group { group: _, assets } => assets,
-        };
-        for asset in assets {
-            api_assets_with_spe.push(asset_with_spe(&app_state.pool, asset).await?);
-        }
-        let api_group = match group {
-            TimelineElement::DayGrouped(assets) => TimelineGroup {
-                ty: TimelineGroupType::Day(assets.last().unwrap().base.taken_date),
-                assets: api_assets_with_spe,
-            },
-            TimelineElement::Group { group, assets } => TimelineGroup {
-                ty: TimelineGroupType::Group {
-                    title: group.album.name.unwrap_or(String::from("NONAME")),
-                    // unwrap is ok because empty asset vecs are filtered out above
-                    start: assets.first().unwrap().base.taken_date,
-                    // FIXME these should maybe not be UTC but local dates
-                    end: assets.last().unwrap().base.taken_date,
-                },
-                assets: api_assets_with_spe,
-            },
-        };
-        api_groups.push(api_group);
-    }
-    Ok(Json(TimelineChunk {
-        date: now,
-        changed_since_last_fetch: false,
-        groups: api_groups,
-    }))
-}
-
-async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<AssetWithSpe> {
-    match &asset.sp {
-        model::AssetSpe::Image(_image) => {
-            let reprs =
-                repository::representation::get_image_representations(pool, asset.base.id).await?;
-            let api_reprs = reprs
-                .into_iter()
-                .map(|repr| ImageRepresentation {
-                    id: repr.id.0.to_string(),
-                    format: repr.format_name,
-                    width: repr.width,
-                    height: repr.height,
-                    size: repr.file_size,
-                })
-                .collect();
-            Ok(AssetWithSpe {
-                asset: asset.into(),
-                spe: AssetSpe::Image(Image {
-                    representations: api_reprs,
-                }),
-            })
-        }
-        model::AssetSpe::Video(_video) => Ok(AssetWithSpe {
-            asset: asset.into(),
-            spe: AssetSpe::Video(Video {}),
-        }),
-    }
 }
 
 fn guess_mime_type(ext: &str) -> Option<&'static str> {

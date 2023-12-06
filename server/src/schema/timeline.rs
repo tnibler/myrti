@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use super::asset::AssetWithSpe;
 
@@ -7,7 +8,7 @@ use super::asset::AssetWithSpe;
 ///
 /// `groups` are always whole, not sliced in the middle. Either TimelineGroup or Day
 /// `date` is the date before queries are made
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineChunk {
     pub date: DateTime<Utc>,
@@ -15,7 +16,7 @@ pub struct TimelineChunk {
     pub groups: Vec<TimelineGroup>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineGroup {
     #[serde(rename = "type")]
@@ -23,7 +24,7 @@ pub struct TimelineGroup {
     pub assets: Vec<AssetWithSpe>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum TimelineGroupType {
     // TODO should this really by Utc and not NaiveDatempty asset vecs are filtered out above
@@ -53,11 +54,3 @@ pub enum TimelineGroupType {
 // if yes get groupa, serve assets from that
 // when done, first asset older than group display date
 // => last date T not even needed?
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TimelineRequest {
-    pub last_asset_id: Option<String>,
-    pub max_count: i32,
-    pub last_fetch: String,
-}

@@ -1,6 +1,7 @@
 use chrono::NaiveDateTime;
 use eyre::eyre;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use core::model;
 
@@ -8,17 +9,13 @@ mod album;
 pub mod asset;
 mod asset_root_dir;
 mod job;
-mod timeline;
+pub mod timeline;
 pub use album::*;
 pub use asset_root_dir::*;
 pub use job::*;
-pub use timeline::*;
 
 macro_rules! impl_api_id {
     ($ident:ident) => {
-        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-        pub struct $ident(pub String);
-
         impl From<&model::$ident> for $ident {
             fn from(value: &model::$ident) -> Self {
                 $ident(value.0.to_string())
@@ -53,11 +50,21 @@ macro_rules! impl_api_id {
     };
 }
 
+// The actual struct type declaration is not part of the macro so that utoipauto
+// picks up the declaration and notices the derive(ToSchema) on it.
+// That doesn't work if the declaration is in a macro.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, ToSchema)]
+pub struct AssetId(pub String);
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, ToSchema)]
+pub struct AlbumId(pub String);
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, ToSchema)]
+pub struct AssetRootDirId(pub String);
+
 impl_api_id!(AlbumId);
 impl_api_id!(AssetId);
 impl_api_id!(AssetRootDirId);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub struct AssetMetadata {
     // exif data doesn't contain timezone info afaik
     pub taken_date: Option<NaiveDateTime>,
@@ -67,7 +74,7 @@ pub struct AssetMetadata {
     pub ty: AssetMetadataType,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 pub enum AssetMetadataType {
     Video { duration: Option<i32> },
     Image { format: Option<String> },

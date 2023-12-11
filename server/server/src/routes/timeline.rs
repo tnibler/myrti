@@ -11,7 +11,7 @@ use chrono::Utc;
 use eyre::Context;
 use serde::Deserialize;
 use tracing::{debug, instrument, Instrument};
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     app_state::SharedState,
@@ -22,14 +22,22 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineRequest {
     pub last_asset_id: Option<String>,
     pub max_count: i32,
-    pub last_fetch: String,
+    pub last_fetch: Option<String>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/asset/timeline",
+    params(TimelineRequest),
+    responses(
+    (status = 200, body=TimelineChunk)
+    )
+)]
 #[instrument(skip(app_state))]
 pub async fn get_timeline(
     State(app_state): State<SharedState>,

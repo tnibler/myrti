@@ -32,6 +32,55 @@
         }
       }
     },
+    "/api/asset/timeline": {
+      "get": {
+        "tags": [
+          "crate::routes::timeline"
+        ],
+        "operationId": "getTimeline",
+        "parameters": [
+          {
+            "name": "lastAssetId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "maxCount",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "lastFetch",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineChunk"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/asset/{id}": {
       "get": {
         "tags": [
@@ -509,26 +558,6 @@
             }
           }
         ]
-      },
-      "TimelineRequest": {
-        "type": "object",
-        "required": [
-          "maxCount",
-          "lastFetch"
-        ],
-        "properties": {
-          "lastAssetId": {
-            "type": "string",
-            "nullable": true
-          },
-          "lastFetch": {
-            "type": "string"
-          },
-          "maxCount": {
-            "type": "integer",
-            "format": "int32"
-          }
-        }
       },
       "Video": {
         "type": "object"

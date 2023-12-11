@@ -1,76 +1,43 @@
 <script lang="ts">
 	// import Gallery from 'svelte-gallery';
-	import Gallery from '$lib/Gallery';
-	import type { Image } from '$lib/Gallery/Gallery.svelte';
 	import { onMount } from 'svelte';
 	import 'photoswipe/photoswipe.css';
 	import PhotoSwipeLightbox from 'photoswipe/lightbox';
 	import PhotoSwipeVideoPlugin from './photoswipe-shaka.esm';
-	import { createApiClient, api } from '$lib/apiclient';
+	import { createAssetStore } from '$lib/store/asset.svelte'
 	import dayjs, { Dayjs } from 'dayjs';
-	type AssetType = 'image' | 'video';
 
-	type Asset = {
-		id: string;
-		assetRootId: string;
-		pathInRoot: string;
-		type: AssetType;
-		width: number;
-		height: number;
-		addedAt: Dayjs;
-		takenDate: Dayjs;
-	};
+	const assetStore = createAssetStore()
+	const imgs = $derived(buildThumbs(assetStore.assetGroups.flatMap((g) => g.assets)))
 
-	type TimelineGroupType =
-		| {
-				day: Dayjs;
-		  }
-		| { title: string; start: Dayjs; end: Dayjs };
+	function buildThumbs(assets): Image[] {
+	  return assets.map((asset, idx) => {
+	  	return {
+	  	  assetId: asset.id,
+	  	  type: asset.type,
+	  	  index: idx,
+	  	  thumbSrc: '/api/asset/thumbnail/' + asset.id + '/large/avif',
+	  	  src: '/api/asset/original/' + asset.id,
+	  	  width: asset.width,
+	  	  height: asset.height,
+	  	  mpdManifestUrl: '/api/dash/' + asset.id + '/stream.mpd'
+	  	}
+	  });
+	}
 
-	type TimelineGroup = {
-		type: TimelineGroupType;
-		assets: Asset[];
-	};
-
-	type TimelineChunk = {
-		lastAssetId: string;
-		changedSinceLastFetch: boolean;
-		groups: TimelineGroup[];
-	};
-
-	let imgs: Image[] = [];
-	let newImgs: Image[] = [];
-	$: imgs = [...imgs, ...newImgs];
-	let lastStartId: string | null = null;
-	let index = 0;
 	async function fetchMore() {
-		api.get('/asset/:id');
-		let startId = lastStartId ? 'lastAssetId=' + lastStartId.toString() + '&' : '';
-		let res = await fetch('/api/asset/timeline?' + startId + 'maxCount=4&lastFetch=null');
-		let json: TimelineChunk = await res.json();
-		if (json.groups.length == 0) {
-			return;
-		}
-		let lastGroup = json['groups'].at(-1);
-		lastStartId = lastGroup['assets'].at(-1).id;
-		let toAdd: Image[] = [];
-		json['groups'].forEach((group: TimelineGroup) =>
-			group['assets']
-				//.filter((asset) => asset['type'] == 'image')
-				.forEach((asset: Asset) => {
-					toAdd.push({
-						type: asset.type,
-						index: index,
-						thumbSrc: '/api/asset/thumbnail/' + asset.id + '/large/avif',
-						src: '/api/asset/original/' + asset.id,
-						width: asset.width,
-						height: asset.height,
-						mpdManifestUrl: '/api/dash/' + asset.id + '/stream.mpd'
-					});
-					index += 1;
-				})
-		);
-		newImgs = toAdd;
+	  	assetStore.fetchMore()
+	}
+
+	function imageClicked(groupIndex, imageIndex) {
+	  let imgsBeforeGroup = 0
+	  if (groupIndex >= assetStore.assetGroups.length) {
+	  	console.error("groupsIndex >= number of groups!")
+	  }
+	  for (let i = 0; i < groupIndex; i++) {
+	  	imgsBeforeGroup += assetStore.assetGroups[i].assets.length
+	  }
+	  lightbox.loadAndOpen(imgsBeforeGroup + imageIndex)
 	}
 
 	let lightbox: PhotoSwipeLightbox;
@@ -78,22 +45,18 @@
 		lightbox = new PhotoSwipeLightbox({
 			//showHideAnimationType: 'none',
 			pswpModule: () => import('photoswipe'),
-			preload: [1, 2]
+			// preload: [1, 2]
 		});
 		const videoPlugin = new PhotoSwipeVideoPlugin(lightbox, {});
 		lightbox.addFilter('numItems', (numItems) => {
 			return imgs.length;
 		});
 		lightbox.addFilter('itemData', (itemData, index) => {
-			console.log(
-				index,
-				imgs.map((img) => img.mpdManifestUrl)
-			);
 			return imgs[index];
 		});
 
 		lightbox.addFilter('thumbEl', (thumbEl, data: Image, index) => {
-			const el = document.querySelector('[data-img-id="' + data.index + '"] img');
+			const el = document.querySelector('[data-img-id="' + data.assetId + '"] img');
 			if (el) {
 				return el;
 			}
@@ -101,51 +64,78 @@
 		});
 		lightbox.addFilter('placeholderSrc', (placeholderSrc, slide) => {
 			let data: Image = slide.data;
-			const el = document.querySelector('[data-img-id="' + data.index + '"] img');
+			const el = document.querySelector('[data-img-id="' + data.assetId + '"] img');
 			if (el) {
 				return el.src;
 			}
 			return placeholderSrc;
 		});
 		lightbox.init();
-		fetchMore();
 	});
 </script>
 
 <button
 	on:click={() => {
-		lightbox.loadAndOpen(2);
-	}}>open sv</button
->
-<button
-	on:click={() => {
 		fetchMore();
-	}}>load more</button
->
+	}}>load more</button>
 
-<Gallery
-	on:imageClick={(event) => {
-		lightbox.loadAndOpen(event.detail.imageIndex);
-	}}
-	images={imgs}
-	rowHeight="120"
-	gutter="2"
-/>
+<div>{assetStore.assetGroups.length}</div>
+
+<section>
+{#each assetStore.assetGroups as group, groupIndex}
+  <div class="container">
+  	<span>
+  	{#if group.type.day !== undefined}
+  		  {group.type.day}
+  	{:else}
+  		  {group.type.group.title}
+  	{/if}
+  	</span>
+	<ul class="image-gallery">
+	  {#each group.assets as asset, assetIndex}
+	  	<li>
+	  		<a href={"/api/asset/original/" + asset.id} 
+	  		  data-img-id={asset.id}
+	  		  on:click={(e) => { e.preventDefault(); imageClicked(groupIndex, assetIndex) } }
+	  		  >
+	  	  	  <img src={"/api/asset/thumbnail/" + asset.id + "/large/avif"} alt=""
+	  	  	  data-img-id={asset.id}/>
+	  		</a>
+	  	</li>
+  	  {/each}
+	</ul>
+  </div>
+{/each}
+</section>
 
 <style>
-	/*
-	.scroll {
-		box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.2), 0px 1px 1px 0px rgba(0, 0, 0, 0.14),
-			0px 2px 1px -1px rgba(0, 0, 0, 0.12);
-		display: flex;
-		flex-direction: column;
-		border-radius: 2px;
-		width: 100%;
-		max-width: 400px;
-		max-height: 400px;
-		background-color: white;
-		overflow-x: scroll;
-		list-style: none;
-		padding: 0;
-	}*/
+
+.image-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.image-gallery::after {
+  content: "";
+  flex-grow: 999;
+}
+
+.image-gallery > li {
+  height: 150px;
+  cursor: pointer;
+  position: relative;
+}
+
+.image-gallery li img {
+  object-fit: cover;
+  width: 100%;
+  height: 100%;
+  vertical-align: middle;
+}
+
+ul {
+  list-style-type: none;
+}
+
 </style>

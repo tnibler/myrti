@@ -294,6 +294,5 @@ ORDER BY Album.timeline_group_display_date DESC, Album.id DESC;
     if !current_day_grouped.is_empty() {
         result.push(TimelineElement::DayGrouped(current_day_grouped));
     }
-    dbg!(&result);
     return Ok(result);
 }

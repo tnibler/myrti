@@ -35,7 +35,6 @@ const Asset = z
 		width: z.number().int()
 	})
 	.passthrough();
-const AlbumId = z.string();
 const ImageRepresentation = z
 	.object({
 		format: z.string(),
@@ -49,8 +48,6 @@ const Image = z.object({ representations: z.array(ImageRepresentation) }).passth
 const Video = z.object({}).partial().passthrough();
 const AssetSpe = z.union([Image, Video]);
 const AssetWithSpe = Asset.and(AssetSpe).and(z.object({}).partial().passthrough());
-const ThumbnailFormat = z.enum(['avif', 'webp']);
-const ThumbnailSize = z.enum(['small', 'large']);
 const TimelineGroupType = z.union([
 	z.object({ day: z.string().datetime({ offset: true }) }).passthrough(),
 	z
@@ -75,9 +72,9 @@ const TimelineChunk = z
 		groups: z.array(TimelineGroup)
 	})
 	.passthrough();
-const TimelineRequest = z
-	.object({ lastAssetId: z.string().nullish(), lastFetch: z.string(), maxCount: z.number().int() })
-	.passthrough();
+const AlbumId = z.string();
+const ThumbnailFormat = z.enum(['avif', 'webp']);
+const ThumbnailSize = z.enum(['small', 'large']);
 
 export const schemas = {
 	AssetRootDirId,
@@ -86,18 +83,17 @@ export const schemas = {
 	AssetMetadata,
 	AssetType,
 	Asset,
-	AlbumId,
 	ImageRepresentation,
 	Image,
 	Video,
 	AssetSpe,
 	AssetWithSpe,
-	ThumbnailFormat,
-	ThumbnailSize,
 	TimelineGroupType,
 	TimelineGroup,
 	TimelineChunk,
-	TimelineRequest
+	AlbumId,
+	ThumbnailFormat,
+	ThumbnailSize
 };
 
 const endpoints = makeApi([
@@ -128,6 +124,30 @@ const endpoints = makeApi([
 				schema: z.void()
 			}
 		]
+	},
+	{
+		method: 'get',
+		path: '/api/asset/timeline',
+		alias: 'getTimeline',
+		requestFormat: 'json',
+		parameters: [
+			{
+				name: 'lastAssetId',
+				type: 'Query',
+				schema: z.string().nullish()
+			},
+			{
+				name: 'maxCount',
+				type: 'Query',
+				schema: z.number().int()
+			},
+			{
+				name: 'lastFetch',
+				type: 'Query',
+				schema: z.string().nullish()
+			}
+		],
+		response: TimelineChunk
 	},
 	{
 		method: 'get',

@@ -35,6 +35,49 @@ const Asset = z
 		width: z.number().int()
 	})
 	.passthrough();
+const AlbumId = z.string();
+const ImageRepresentation = z
+	.object({
+		format: z.string(),
+		height: z.number().int(),
+		id: z.string(),
+		size: z.number().int(),
+		width: z.number().int()
+	})
+	.passthrough();
+const Image = z.object({ representations: z.array(ImageRepresentation) }).passthrough();
+const Video = z.object({}).partial().passthrough();
+const AssetSpe = z.union([Image, Video]);
+const AssetWithSpe = Asset.and(AssetSpe).and(z.object({}).partial().passthrough());
+const ThumbnailFormat = z.enum(['avif', 'webp']);
+const ThumbnailSize = z.enum(['small', 'large']);
+const TimelineGroupType = z.union([
+	z.object({ day: z.string().datetime({ offset: true }) }).passthrough(),
+	z
+		.object({
+			group: z
+				.object({
+					end: z.string().datetime({ offset: true }),
+					start: z.string().datetime({ offset: true }),
+					title: z.string()
+				})
+				.passthrough()
+		})
+		.passthrough()
+]);
+const TimelineGroup = z
+	.object({ assets: z.array(AssetWithSpe), type: TimelineGroupType })
+	.passthrough();
+const TimelineChunk = z
+	.object({
+		changedSinceLastFetch: z.boolean(),
+		date: z.string().datetime({ offset: true }),
+		groups: z.array(TimelineGroup)
+	})
+	.passthrough();
+const TimelineRequest = z
+	.object({ lastAssetId: z.string().nullish(), lastFetch: z.string(), maxCount: z.number().int() })
+	.passthrough();
 
 export const schemas = {
 	AssetRootDirId,
@@ -42,7 +85,19 @@ export const schemas = {
 	AssetMetadataType,
 	AssetMetadata,
 	AssetType,
-	Asset
+	Asset,
+	AlbumId,
+	ImageRepresentation,
+	Image,
+	Video,
+	AssetSpe,
+	AssetWithSpe,
+	ThumbnailFormat,
+	ThumbnailSize,
+	TimelineGroupType,
+	TimelineGroup,
+	TimelineChunk,
+	TimelineRequest
 };
 
 const endpoints = makeApi([

@@ -49,14 +49,14 @@ const endpoints = makeApi([
 	{
 		method: 'get',
 		path: '/api/asset',
-		alias: 'get_all_assets',
+		alias: 'getAllAssets',
 		requestFormat: 'json',
 		response: z.array(Asset)
 	},
 	{
 		method: 'get',
 		path: '/api/asset/:id',
-		alias: 'get_asset',
+		alias: 'getAsset',
 		requestFormat: 'json',
 		parameters: [
 			{
@@ -77,7 +77,7 @@ const endpoints = makeApi([
 	{
 		method: 'get',
 		path: '/api/original/:id',
-		alias: 'get_asset_file',
+		alias: 'getAssetFile',
 		requestFormat: 'json',
 		parameters: [
 			{
@@ -98,7 +98,7 @@ const endpoints = makeApi([
 	{
 		method: 'get',
 		path: '/api/repr/:assetId/:reprId',
-		alias: 'get_image_asset_representation',
+		alias: 'getImageAssetRepresentation',
 		requestFormat: 'json',
 		parameters: [
 			{
@@ -124,7 +124,7 @@ const endpoints = makeApi([
 	{
 		method: 'get',
 		path: '/api/thumbnail/:id/:size/:format',
-		alias: 'get_thumbnail',
+		alias: 'getThumbnail',
 		requestFormat: 'json',
 		parameters: [
 			{

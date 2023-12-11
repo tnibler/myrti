@@ -1,0 +1,543 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "mediathingyrust",
+    "description": "",
+    "license": {
+      "name": ""
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/asset": {
+      "get": {
+        "tags": [
+          "crate::routes::asset"
+        ],
+        "operationId": "getAllAssets",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Asset"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/asset/{id}": {
+      "get": {
+        "tags": [
+          "crate::routes::asset"
+        ],
+        "operationId": "getAsset",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "AssetId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Asset"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Asset not found"
+          }
+        }
+      }
+    },
+    "/api/original/{id}": {
+      "get": {
+        "tags": [
+          "crate::routes::asset"
+        ],
+        "operationId": "getAssetFile",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "AssetId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/octet": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Asset not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repr/{assetId}/{reprId}": {
+      "get": {
+        "tags": [
+          "crate::routes::asset"
+        ],
+        "operationId": "getImageAssetRepresentation",
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "description": "AssetId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "reprId",
+            "in": "path",
+            "description": "ImageRepresentationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/octet": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Asset or Representation not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/thumbnail/{id}/{size}/{format}": {
+      "get": {
+        "tags": [
+          "crate::routes::asset"
+        ],
+        "operationId": "getThumbnail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "AssetId to get thumbnail for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "size",
+            "in": "path",
+            "description": "Thumbnail size",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ThumbnailSize"
+            }
+          },
+          {
+            "name": "format",
+            "in": "path",
+            "description": "Image format for thumbnail",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ThumbnailFormat"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/octet": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AlbumId": {
+        "type": "string"
+      },
+      "Asset": {
+        "type": "object",
+        "required": [
+          "id",
+          "assetRootId",
+          "pathInRoot",
+          "type",
+          "width",
+          "height",
+          "addedAt",
+          "takenDate"
+        ],
+        "properties": {
+          "addedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "assetRootId": {
+            "$ref": "#/components/schemas/AssetRootDirId"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "id": {
+            "$ref": "#/components/schemas/AssetId"
+          },
+          "metadata": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetMetadata"
+              }
+            ],
+            "nullable": true
+          },
+          "pathInRoot": {
+            "type": "string"
+          },
+          "takenDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AssetType"
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "AssetId": {
+        "type": "string"
+      },
+      "AssetMetadata": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AssetMetadataType"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "height": {
+                "type": "integer",
+                "format": "int32",
+                "nullable": true
+              },
+              "taken_date": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "width": {
+                "type": "integer",
+                "format": "int32",
+                "nullable": true
+              }
+            }
+          }
+        ]
+      },
+      "AssetMetadataType": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "Video"
+            ],
+            "properties": {
+              "Video": {
+                "type": "object",
+                "properties": {
+                  "duration": {
+                    "type": "integer",
+                    "format": "int32",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "Image"
+            ],
+            "properties": {
+              "Image": {
+                "type": "object",
+                "properties": {
+                  "format": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "AssetRootDirId": {
+        "type": "string"
+      },
+      "AssetSpe": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Image"
+          },
+          {
+            "$ref": "#/components/schemas/Video"
+          }
+        ]
+      },
+      "AssetType": {
+        "type": "string",
+        "enum": [
+          "image",
+          "video"
+        ]
+      },
+      "AssetWithSpe": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Asset"
+          },
+          {
+            "$ref": "#/components/schemas/AssetSpe"
+          },
+          {
+            "type": "object"
+          }
+        ]
+      },
+      "Image": {
+        "type": "object",
+        "required": [
+          "representations"
+        ],
+        "properties": {
+          "representations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImageRepresentation"
+            }
+          }
+        }
+      },
+      "ImageRepresentation": {
+        "type": "object",
+        "required": [
+          "id",
+          "format",
+          "width",
+          "height",
+          "size"
+        ],
+        "properties": {
+          "format": {
+            "type": "string"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "width": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "ThumbnailFormat": {
+        "type": "string",
+        "enum": [
+          "avif",
+          "webp"
+        ]
+      },
+      "ThumbnailSize": {
+        "type": "string",
+        "enum": [
+          "small",
+          "large"
+        ]
+      },
+      "TimelineChunk": {
+        "type": "object",
+        "description": "Response for a request for the next part of the timeline to display\n\n`groups` are always whole, not sliced in the middle. Either TimelineGroup or Day\n`date` is the date before queries are made",
+        "required": [
+          "date",
+          "changedSinceLastFetch",
+          "groups"
+        ],
+        "properties": {
+          "changedSinceLastFetch": {
+            "type": "boolean"
+          },
+          "date": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimelineGroup"
+            }
+          }
+        }
+      },
+      "TimelineGroup": {
+        "type": "object",
+        "required": [
+          "type",
+          "assets"
+        ],
+        "properties": {
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetWithSpe"
+            }
+          },
+          "type": {
+            "$ref": "#/components/schemas/TimelineGroupType"
+          }
+        }
+      },
+      "TimelineGroupType": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "day"
+            ],
+            "properties": {
+              "day": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "group"
+            ],
+            "properties": {
+              "group": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "start",
+                  "end"
+                ],
+                "properties": {
+                  "end": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "start": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "title": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "TimelineRequest": {
+        "type": "object",
+        "required": [
+          "maxCount",
+          "lastFetch"
+        ],
+        "properties": {
+          "lastAssetId": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastFetch": {
+            "type": "string"
+          },
+          "maxCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "Video": {
+        "type": "object"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "mediathingy"
+    }
+  ]
+}

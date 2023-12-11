@@ -10,5 +10,5 @@ openapi:
   cd ../web && pnpm run openapi
 
 openapi-check:
-  diff web/openapi.json <(cd server && cargo run --bin print-openapi) || echo "MISMATCH"
+  diff server/openapi.json <(cd server && cargo run --bin print-openapi) || echo "MISMATCH"
 

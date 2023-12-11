@@ -1,9 +1,11 @@
 use utoipa::OpenApi;
-use utoipauto::utoipauto;
+use utoipa_discover::utoipa_discover;
 
-#[utoipauto(paths = "./server/src")]
-#[derive(OpenApi)]
-#[openapi(
-    tags((name = "mediathingy")),
+#[utoipa_discover(
+    search_paths = [
+        crate => "./server/src",
+    ],
+    tags((name = "mediathingy"))
 )]
+#[derive(OpenApi)]
 pub struct ApiDoc;

@@ -207,7 +207,8 @@ LIMIT $4;
     .map(|a| a.try_into())
     .collect::<Result<Vec<_>>>()?;
 
-    let max_end_date_timestamp = match all_assets.last() {
+    let min_end_date_timestamp = match all_assets.last() {
+        // no assets to return
         None => return Ok(result),
         Some(a) => a.base.taken_date.timestamp(),
     };
@@ -221,12 +222,12 @@ LIMIT $4;
         r#"
 SELECT Album.*, NULL as "num_assets: _" FROM Album
 WHERE Album.is_timeline_group != 0
-AND Album.timeline_group_display_date > ?
-AND Album.timeline_group_display_date <= ?
+AND Album.timeline_group_display_date < ?
+AND Album.timeline_group_display_date >= ?
 ORDER BY Album.timeline_group_display_date DESC, Album.id DESC;
     "#,
         start_date_timestamp,
-        max_end_date_timestamp
+        min_end_date_timestamp
     )
     .fetch_all(pool)
     .await
@@ -293,5 +294,6 @@ ORDER BY Album.timeline_group_display_date DESC, Album.id DESC;
     if !current_day_grouped.is_empty() {
         result.push(TimelineElement::DayGrouped(current_day_grouped));
     }
+    dbg!(&result);
     return Ok(result);
 }

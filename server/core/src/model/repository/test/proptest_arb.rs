@@ -2,9 +2,9 @@ use camino::Utf8PathBuf as PathBuf;
 use proptest::prelude::*;
 
 use crate::model::{
-    Album, AlbumId, AlbumType, Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, AssetType,
-    GpsCoordinates, Image, ImageAsset, Size, TimelineGroup, TimelineGroupAlbum, TimestampInfo,
-    Video, VideoAsset,
+    Album, AlbumId, AlbumType, Asset, AssetBase, AssetId, AssetRootDirId, AssetType, CreateAsset,
+    CreateAssetBase, CreateAssetImage, CreateAssetSpe, CreateAssetVideo, GpsCoordinates, Image,
+    ImageAsset, Size, TimelineGroup, TimelineGroupAlbum, TimestampInfo, Video, VideoAsset,
 };
 
 fn path_strategy() -> BoxedStrategy<PathBuf> {
@@ -179,4 +179,92 @@ prop_compose! {
 
         }
     }
+}
+
+prop_compose! {
+    pub fn arb_new_create_asset_base(
+        asset_root_id: AssetRootDirId,
+        file_type: String,
+    )
+    (
+        file_path in path_strategy().no_shrink(),
+        taken_date in arb_datetime_utc(),
+        timestamp_info in timestamp_info_strategy(),
+        size in (200..4000_i64, 200..4000_i64).prop_map(|(w, h)| Size { width: w, height: h}),
+        rotation_correction in prop_oneof![
+            Just(None),
+            Just(Some(90)),
+            Just(Some(180)),
+            Just(Some(-90)),
+        ],
+        gps_coordinates in prop_oneof![
+            Just(None),
+            gps_coords_strategy().prop_map(|coords| Some(coords))
+        ],
+        hash in any::<Option<u64>>().no_shrink(),
+    ) -> CreateAssetBase {
+        CreateAssetBase {
+            root_dir_id: asset_root_id,
+            file_type: file_type.clone(),
+            file_path,
+            taken_date,
+            timestamp_info,
+            size,
+            rotation_correction,
+            gps_coordinates,
+            hash,
+        }
+    }
+}
+
+prop_compose! {
+    pub fn arb_new_create_image_asset(asset_root_dir_id: AssetRootDirId)
+    (
+        file_type in "jpeg|png|webp|avif|heic"
+    )
+    (
+        base in arb_new_create_asset_base(asset_root_dir_id, file_type)
+    ) -> CreateAsset {
+        CreateAsset {
+            spe: CreateAssetSpe::Image(CreateAssetImage  {
+                image_format_name: base.file_type.clone()
+            }),
+            base,
+        }
+    }
+}
+
+prop_compose! {
+    pub fn arb_new_create_video_asset(asset_root_dir_id: AssetRootDirId)
+    (
+        file_type in "mp4|mov|avi",
+    )
+    (
+        base in arb_new_create_asset_base(asset_root_dir_id, file_type),
+        video_codec_name in "h264|hevc|av1|vp9|mjpeg",
+        video_bitrate in 800_000_i64..5_000_000,
+        audio_codec_name in prop_oneof![
+            1 => Just(None),
+            4 => "mp3|aac|opus|pcm_u8".prop_map(|codec| Some(codec)),
+        ],
+    ) -> CreateAsset {
+        CreateAsset {
+            base,
+            spe: CreateAssetSpe::Video(CreateAssetVideo {
+                video_codec_name,
+                video_bitrate,
+                audio_codec_name,
+                has_dash: false,
+                ffprobe_output: Vec::default(),
+            })
+        }
+    }
+}
+
+pub fn arb_new_create_asset(asset_root_dir_id: AssetRootDirId) -> BoxedStrategy<CreateAsset> {
+    prop_oneof![
+        arb_new_create_image_asset(asset_root_dir_id).prop_map(|image| image.into()),
+        arb_new_create_video_asset(asset_root_dir_id).prop_map(|video| video.into())
+    ]
+    .boxed()
 }

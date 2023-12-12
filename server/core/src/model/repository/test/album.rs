@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, println};
+use std::collections::{HashMap, HashSet};
 
 use camino::Utf8PathBuf as PathBuf;
 use chrono::{Months, Utc};
@@ -12,6 +12,7 @@ use crate::model::{
         self,
         album::{CreateAlbum, CreateTimelineGroup},
     },
+    CreateAssetBase, CreateAssetSpe, CreateAssetImage, CreateAssetVideo,
     Album, AlbumType, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, TimelineGroupAlbum, CreateAsset, AssetSpe, Image, TimestampInfo, Size, AssetType,
 };
 
@@ -34,20 +35,25 @@ fn prop_create_retrieve_albums() {
             assets in prop::collection::vec(arb_new_asset(root_dir_id), 1..5),
             albums in prop::collection::vec(arb_new_album(), 1..2)
         )
-        (
-            albums_asset_idxs in albums.into_iter().map(|album| (Just(album), prop::collection::vec(any::<prop::sample::Index>(), 0..assets.len()))).collect::<Vec<_>>(),
-            assets in Just(assets),
-        ) -> (Vec<Asset>, Vec<(AlbumType, Vec<prop::sample::Index>)>) {
-            (assets, albums_asset_idxs)
-        }
+            (
+                albums_asset_idxs in albums.into_iter().map(|album| (Just(album), prop::collection::vec(any::<prop::sample::Index>(), 0..assets.len()))).collect::<Vec<_>>(),
+                assets in Just(assets),
+            ) -> (Vec<Asset>, Vec<(AlbumType, Vec<prop::sample::Index>)>) {
+                (assets, albums_asset_idxs)
+            }
     }
     proptest!(|((assets, albums_asset_idxs) in arb_assets_and_albums(root_dir_id),
-                append_chunk_size in 1usize..5)| {
+    append_chunk_size in 1usize..5)| {
         rt.block_on(async {
             sqlx::query!(r#"DELETE FROM AlbumEntry; DELETE FROM Asset; DELETE FROM Album; "#).execute(&pool).await.unwrap();
             let mut assets_with_ids: Vec<Asset> = Vec::default();
             for asset in &assets {
-                let asset_insert_result = repository::asset::insert_asset(&pool, &asset).await;
+                let ffprobe_output: Option<&[u8]> = match &asset.sp {
+                    AssetSpe::Video(video) => Some(&[]),
+                    _ => None
+                };
+                #[allow(deprecated)]
+                let asset_insert_result = repository::asset::insert_asset(&pool, &asset, ffprobe_output).await;
                 prop_assert!(asset_insert_result.is_ok());
                 let asset_id = asset_insert_result.unwrap();
                 let asset_with_id = Asset {
@@ -115,7 +121,7 @@ fn prop_create_retrieve_albums() {
                             },
                             Some(ref mut albums) => albums.push(album.clone())
                         });
-                        
+
                     } else {
                         prop_assert!(append_result.is_err());
                     }
@@ -150,46 +156,48 @@ async fn adding_asset_to_multiple_group_albums_fails() {
         path: PathBuf::from("/path/to/assets"),
     };
     let root_dir_id =
-        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
+    assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
     let asset = CreateAsset {
-        sp: AssetSpe::Image(Image {
+        spe: CreateAssetSpe::Image(CreateAssetImage {
             image_format_name: "jpeg".into(),
         }),
-        ty: AssetType::Image,
-        root_dir_id,
-        file_type: "jpeg".to_owned(),
-        file_path: PathBuf::from("image.jpg"),
-        taken_date: utc_now_millis_zero()
-            .checked_sub_months(Months::new(2))
-            .unwrap(),
-        timestamp_info: TimestampInfo::UtcCertain,
-        size: Size {
-            width: 1024,
-            height: 1024,
-        },
-        rotation_correction: None,
-        hash: None,
-        gps_coordinates: None,
+        base:CreateAssetBase {
+            root_dir_id,
+            file_type: "jpeg".to_owned(),
+            file_path: PathBuf::from("image.jpg"),
+            taken_date: utc_now_millis_zero()
+                .checked_sub_months(Months::new(2))
+                .unwrap(),
+            timestamp_info: TimestampInfo::UtcCertain,
+            size: Size {
+                width: 1024,
+                height: 1024,
+            },
+            rotation_correction: None,
+            hash: None,
+            gps_coordinates: None,
+        }
     };
     let asset2 = CreateAsset {
-        sp: AssetSpe::Image(Image {
+        spe: CreateAssetSpe::Image(CreateAssetImage {
             image_format_name: "jpeg".into(),
         }),
-        ty: AssetType::Image,
-        root_dir_id,
-        file_type: "jpeg".to_owned(),
-        file_path: PathBuf::from("image2.jpg"),
-        taken_date: utc_now_millis_zero()
-            .checked_sub_months(Months::new(2))
-            .unwrap(),
-        timestamp_info: TimestampInfo::UtcCertain,
-        size: Size {
-            width: 1024,
-            height: 1024,
-        },
-        rotation_correction: None,
-        hash: None,
-        gps_coordinates: None,
+        base: CreateAssetBase {
+            root_dir_id,
+            file_type: "jpeg".to_owned(),
+            file_path: PathBuf::from("image2.jpg"),
+            taken_date: utc_now_millis_zero()
+                .checked_sub_months(Months::new(2))
+                .unwrap(),
+            timestamp_info: TimestampInfo::UtcCertain,
+            size: Size {
+                width: 1024,
+                height: 1024,
+            },
+            rotation_correction: None,
+            hash: None,
+            gps_coordinates: None,
+        }
     };
     let asset_id = assert_ok!(repository::asset::create_asset(&pool, asset.clone()).await);
     let asset2_id = assert_ok!(repository::asset::create_asset(&pool, asset2.clone()).await);

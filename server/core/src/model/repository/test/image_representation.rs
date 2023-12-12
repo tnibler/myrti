@@ -9,8 +9,9 @@ use crate::model::{
         self,
         test::{create_db, utc_now_millis_zero},
     },
-    AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType, CreateAsset, Image,
-    ImageRepresentation, ImageRepresentationId, Size, TimestampInfo,
+    AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType, CreateAsset, CreateAssetBase,
+    CreateAssetImage, CreateAssetSpe, CreateAssetVideo, Image, ImageRepresentation,
+    ImageRepresentationId, Size, TimestampInfo,
 };
 
 #[tokio::test]
@@ -23,24 +24,25 @@ async fn insert_retrieve_image_representation() {
     let root_dir_id =
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
     let asset = CreateAsset {
-        sp: AssetSpe::Image(Image {
+        spe: CreateAssetSpe::Image(CreateAssetImage {
             image_format_name: "jpeg".into(),
         }),
-        ty: AssetType::Image,
-        root_dir_id,
-        file_type: "jpeg".to_owned(),
-        file_path: PathBuf::from("image.jpg"),
-        taken_date: utc_now_millis_zero()
-            .checked_sub_months(Months::new(2))
-            .unwrap(),
-        timestamp_info: TimestampInfo::UtcCertain,
-        size: Size {
-            width: 1024,
-            height: 1023,
+        base: CreateAssetBase {
+            root_dir_id,
+            file_type: "jpeg".to_owned(),
+            file_path: PathBuf::from("image.jpg"),
+            taken_date: utc_now_millis_zero()
+                .checked_sub_months(Months::new(2))
+                .unwrap(),
+            timestamp_info: TimestampInfo::UtcCertain,
+            size: Size {
+                width: 1024,
+                height: 1023,
+            },
+            rotation_correction: None,
+            hash: Some(0x56a28ebc104e84),
+            gps_coordinates: None,
         },
-        rotation_correction: None,
-        hash: Some(0x56a28ebc104e84),
-        gps_coordinates: None,
     };
     let asset_id = assert_ok!(repository::asset::create_asset(&pool, asset).await);
     let image_reprs =
@@ -77,45 +79,47 @@ async fn get_images_with_no_acceptable_repr() {
     let root_dir_id =
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
     let asset1 = CreateAsset {
-        sp: AssetSpe::Image(Image {
+        spe: CreateAssetSpe::Image(CreateAssetImage {
             image_format_name: "jpeg".into(),
         }),
-        ty: AssetType::Image,
-        root_dir_id,
-        file_type: "jpeg".to_owned(),
-        file_path: PathBuf::from("image.jpg"),
-        taken_date: utc_now_millis_zero()
-            .checked_sub_months(Months::new(2))
-            .unwrap(),
-        timestamp_info: TimestampInfo::UtcCertain,
-        size: Size {
-            width: 1024,
-            height: 1023,
+        base: CreateAssetBase {
+            root_dir_id,
+            file_type: "jpeg".to_owned(),
+            file_path: PathBuf::from("image.jpg"),
+            taken_date: utc_now_millis_zero()
+                .checked_sub_months(Months::new(2))
+                .unwrap(),
+            timestamp_info: TimestampInfo::UtcCertain,
+            size: Size {
+                width: 1024,
+                height: 1023,
+            },
+            rotation_correction: None,
+            hash: Some(0x56a28ebc104e84),
+            gps_coordinates: None,
         },
-        rotation_correction: None,
-        hash: Some(0x56a28ebc104e84),
-        gps_coordinates: None,
     };
     let asset1_id = assert_ok!(repository::asset::create_asset(&pool, asset1).await);
     let asset2 = CreateAsset {
-        sp: AssetSpe::Image(Image {
+        spe: CreateAssetSpe::Image(CreateAssetImage {
             image_format_name: "heif".into(),
         }),
-        ty: AssetType::Image,
-        root_dir_id,
-        file_type: "heif".to_owned(),
-        file_path: PathBuf::from("image.heif"),
-        taken_date: utc_now_millis_zero()
-            .checked_sub_months(Months::new(2))
-            .unwrap(),
-        timestamp_info: TimestampInfo::UtcCertain,
-        size: Size {
-            width: 1024,
-            height: 1023,
+        base: CreateAssetBase {
+            root_dir_id,
+            file_type: "heif".to_owned(),
+            file_path: PathBuf::from("image.heif"),
+            taken_date: utc_now_millis_zero()
+                .checked_sub_months(Months::new(2))
+                .unwrap(),
+            timestamp_info: TimestampInfo::UtcCertain,
+            size: Size {
+                width: 1024,
+                height: 1023,
+            },
+            rotation_correction: None,
+            hash: Some(0x123),
+            gps_coordinates: None,
         },
-        rotation_correction: None,
-        hash: Some(0x123),
-        gps_coordinates: None,
     };
     let asset2_id = assert_ok!(repository::asset::create_asset(&pool, asset2).await);
 

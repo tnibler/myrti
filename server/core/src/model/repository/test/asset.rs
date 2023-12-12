@@ -10,6 +10,7 @@ use proptest::prelude::*;
 use proptest_arb::{arb_new_asset, arb_new_video_asset};
 
 use crate::model::{
+    CreateAssetBase,CreateAssetImage, CreateAssetVideo,CreateAssetSpe,
     repository, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType,
     AudioRepresentation, AudioRepresentationId, CreateAsset, Image, Size, TimestampInfo, Video,
     VideoAsset, VideoRepresentation, VideoRepresentationId,
@@ -35,7 +36,12 @@ fn prop_insert_retrieve_asset() {
             if path_exists.unwrap() {
                 return Ok(());
             }
-            let insert_result = repository::asset::insert_asset(&pool, &asset).await;
+            let ffprobe_output: Option<&[u8]> = match &asset.sp {
+                AssetSpe::Video(video) => Some(&[]),
+                _ => None
+            };
+            #[allow(deprecated)]
+            let insert_result = repository::asset::insert_asset(&pool, &asset, ffprobe_output).await;
             prop_assert!(insert_result.is_ok(), "insert failed: {:?}", insert_result.unwrap_err());
             let asset_id = insert_result.unwrap();
             let asset_with_id = Asset {
@@ -54,8 +60,8 @@ fn prop_insert_retrieve_asset() {
 }
 
 #[tokio::test]
-#[allow(unused_must_use)]
-async fn create_mismatching_asset_ty_and_spe_fails() {
+#[allow(unused_must_use, deprecated)]
+async fn inserting_mismatching_asset_ty_and_spe_fails() {
     let pool = create_db().await;
     let asset_root_dir = AssetRootDir {
         id: AssetRootDirId(0),
@@ -63,39 +69,55 @@ async fn create_mismatching_asset_ty_and_spe_fails() {
     };
     let root_dir_id =
         assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
-    let asset = CreateAsset {
+    let asset = Asset {
         sp: AssetSpe::Image(Image {
             image_format_name: "jpeg".into(),
         }),
-        ty: AssetType::Video,
-        root_dir_id,
-        file_type: "jpeg".to_owned(),
-        file_path: PathBuf::from("image.jpg"),
-        taken_date: utc_now_millis_zero()
-            .checked_sub_months(Months::new(2))
-            .unwrap(),
-        timestamp_info: TimestampInfo::UtcCertain,
-        size: Size {
-            width: 1024,
-            height: 1024,
-        },
-        rotation_correction: None,
-        hash: None,
-        gps_coordinates: None,
+        base: AssetBase {
+            id: AssetId(0),
+            root_dir_id,
+            ty: AssetType::Video,
+            file_type: "jpeg".to_owned(),
+            file_path: PathBuf::from("image.jpg"),
+            is_hidden: false,
+            added_at: utc_now_millis_zero(),
+            taken_date: utc_now_millis_zero()
+                .checked_sub_months(Months::new(2))
+                .unwrap(),
+            timestamp_info: TimestampInfo::UtcCertain,
+            size: Size {
+                width: 1024,
+                height: 1024,
+            },
+            rotation_correction: None,
+            hash: None,
+            gps_coordinates: None,
+            thumb_small_square_avif: false,
+            thumb_small_square_webp: false,
+            thumb_large_orig_avif: false,
+            thumb_large_orig_webp: false,
+            thumb_large_orig_size: None,
+            thumb_small_square_size: None,
+        }
     };
-    assert_err!(repository::asset::create_asset(&pool, asset.clone()).await);
+    // should fail both with and without ffprobe_output
+    assert_err!(repository::asset::insert_asset(&pool, &asset, None::<&[u8]>).await);
+    assert_err!(repository::asset::insert_asset(&pool, &asset, Some(&[])).await);
 
-    let asset2 = CreateAsset {
+    let asset2 = Asset {
         sp: AssetSpe::Video(Video {
             video_codec_name: "h264".into(),
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
             has_dash: false,
         }),
-        ty: AssetType::Image,
-        ..asset
+        base: AssetBase {
+            ty: AssetType::Image,
+            ..asset.base
+        }
     };
-    assert_err!(repository::asset::create_asset(&pool, asset2).await);
+    assert_err!(repository::asset::insert_asset(&pool, &asset2, Some(&[])).await);
+    assert_err!(repository::asset::insert_asset(&pool, &asset2, None::<&[u8]>).await);
 }
 
 #[test]
@@ -143,7 +165,12 @@ fn prop_get_assets_with_missing_thumbnails() {
         let _ = rt.block_on(async {
             let mut assets_with_ids: Vec<Asset> = Vec::default();
             for asset in assets {
-                let insert_result = repository::asset::insert_asset(&pool, &asset).await;
+                let ffprobe_output: Option<&[u8]> = match &asset.sp {
+                    AssetSpe::Video(video) => Some(&[]),
+                    _ => None
+                };
+                #[allow(deprecated)]
+                let insert_result = repository::asset::insert_asset(&pool, &asset, ffprobe_output).await;
                 prop_assert!(insert_result.is_ok());
                 let asset_id = insert_result.unwrap();
                 let asset_with_id = Asset {
@@ -223,10 +250,10 @@ async fn get_videos_without_dash() {
         },
     };
     let asset2 = CreateAsset {
-        sp: AssetSpe::Image(Image {
+        spe: CreateAssetSpe::Image(CreateAssetImage {
             image_format_name: "jpeg".into(),
         }),
-        ty: AssetType::Image,
+        base: CreateAssetBase {
         root_dir_id,
         file_type: "jpeg".to_owned(),
         file_path: "/path/to/image.jpg".into(),
@@ -241,6 +268,7 @@ async fn get_videos_without_dash() {
         rotation_correction: None,
         hash: None,
         gps_coordinates: None,
+        }
     };
     let asset3 = Asset {
         sp: AssetSpe::Video(Video {
@@ -268,10 +296,16 @@ async fn get_videos_without_dash() {
             ..asset.base.clone()
         },
     };
-    let asset_id = assert_ok!(repository::asset::insert_asset(&pool, &asset).await);
+    let ffprobe_output1: Option<&[u8]> = Some(&[]);
+    let ffprobe_output3: Option<&[u8]> = Some(&[]);
+    let ffprobe_output4: Option<&[u8]> = Some(&[]);
+    #[allow(deprecated)]
+    let asset_id = assert_ok!(repository::asset::insert_asset(&pool, &asset, ffprobe_output1).await);
     let _asset2_id = assert_ok!(repository::asset::create_asset(&pool, asset2).await);
-    let _asset3_id = assert_ok!(repository::asset::insert_asset(&pool, &asset3).await);
-    let asset4_id = assert_ok!(repository::asset::insert_asset(&pool, &asset4).await);
+    #[allow(deprecated)]
+    let _asset3_id = assert_ok!(repository::asset::insert_asset(&pool, &asset3, ffprobe_output3).await);
+    #[allow(deprecated)]
+    let asset4_id = assert_ok!(repository::asset::insert_asset(&pool, &asset4, ffprobe_output4).await);
     let videos_without_dash: HashSet<VideoAsset> =
         assert_ok!(repository::asset::get_video_assets_without_dash(&pool).await)
             .into_iter()
@@ -394,11 +428,16 @@ async fn get_videos_in_acceptable_codec_without_dash() {
             ..asset1.base.clone()
         },
     };
-    let _asset1_id = assert_ok!(repository::asset::insert_asset(&pool, &asset1).await);
-    let asset2_id = assert_ok!(repository::asset::insert_asset(&pool, &asset2).await);
-    let _asset3_id = assert_ok!(repository::asset::insert_asset(&pool, &asset3).await);
-    let asset4_id = assert_ok!(repository::asset::insert_asset(&pool, &asset4).await);
-    let asset5_id = assert_ok!(repository::asset::insert_asset(&pool, &asset5).await);
+    #[allow(deprecated)]
+    let _asset1_id = assert_ok!(repository::asset::insert_asset(&pool, &asset1, Some(&[])).await);
+    #[allow(deprecated)]
+    let asset2_id = assert_ok!(repository::asset::insert_asset(&pool, &asset2, Some(&[])).await);
+    #[allow(deprecated)]
+    let _asset3_id = assert_ok!(repository::asset::insert_asset(&pool, &asset3, Some(&[])).await);
+    #[allow(deprecated)]
+    let asset4_id = assert_ok!(repository::asset::insert_asset(&pool, &asset4, Some(&[])).await);
+    #[allow(deprecated)]
+    let asset5_id = assert_ok!(repository::asset::insert_asset(&pool, &asset5, Some(&[])).await);
     let acceptable_video_codecs1 = ["h264"];
     let acceptable_audio_codecs1 = ["aac", "flac"];
     let result1: HashSet<AssetId> = assert_ok!(
@@ -529,7 +568,9 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
                 if path_exists.unwrap() {
                     continue;
                 }
-                let asset_insert_result = repository::asset::insert_asset(&pool, &asset.into()).await;
+                let ffprobe_output = Some(&[]);
+                #[allow(deprecated)]
+                let asset_insert_result = repository::asset::insert_asset(&pool, &asset.into(), ffprobe_output).await;
                 prop_assert!(asset_insert_result.is_ok());
                 let asset_id = asset_insert_result.unwrap();
                 assets_with_ids.push(VideoAsset {

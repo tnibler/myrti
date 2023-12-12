@@ -237,9 +237,19 @@ WHERE
     }
 }
 
-#[instrument(skip(pool))]
-#[deprecated]
-pub async fn insert_asset(pool: &DbPool, asset: &Asset) -> Result<AssetId> {
+#[instrument(skip(pool, ffprobe_output))]
+#[deprecated = "use create_asset instead"]
+#[doc(hidden)]
+/// Only really used for tests an in create_asset
+/// ffprobe_output is passed separately because adding it as a field to DbAsset would mean we have
+/// to query and pass it around everywhere, even though it's almost never needed.
+/// Later big tables like Asset could probably be divided into important and less important fields
+/// and spread over two different struct types for sqlx queries
+pub async fn insert_asset(
+    pool: &DbPool,
+    asset: &Asset,
+    ffprobe_output: Option<impl AsRef<[u8]>>,
+) -> Result<AssetId> {
     if asset.base.id.0 != 0 {
         error!("attempting to insert Asset with non-zero id");
         return Err(eyre!("attempting to insert Asset with non-zero id"));
@@ -255,6 +265,7 @@ pub async fn insert_asset(pool: &DbPool, asset: &Asset) -> Result<AssetId> {
             "attempting to insert Asset with mismatching type and sp fields"
         ));
     }
+    let ffprobe_output: Option<&[u8]> = ffprobe_output.as_ref().map(|o| o.as_ref());
     let db_asset: DbAsset = asset.try_into()?;
     let has_dash: Option<i64> = db_asset.has_dash.map(|d| d.into());
     let result = sqlx::query!(
@@ -285,13 +296,14 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 image_format_name,
+ffprobe_output,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
 has_dash 
 )
 VALUES
-(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+(null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 "#,
         db_asset.ty,
         db_asset.root_dir_id.0,
@@ -317,6 +329,7 @@ VALUES
         db_asset.thumb_large_orig_width,
         db_asset.thumb_large_orig_height,
         db_asset.image_format_name,
+        ffprobe_output,
         db_asset.video_codec_name,
         db_asset.video_bitrate,
         db_asset.audio_codec_name,
@@ -332,7 +345,7 @@ VALUES
 
 #[instrument(skip(pool))]
 pub async fn create_asset(pool: &DbPool, create_asset: CreateAsset) -> Result<AssetId> {
-    let (ty, sp, ffprobe_output) = match &create_asset.spe {
+    let (ty, sp, ffprobe_output) = match create_asset.spe {
         CreateAssetSpe::Image(image) => (
             AssetType::Image,
             AssetSpe::Image(Image {
@@ -348,7 +361,7 @@ pub async fn create_asset(pool: &DbPool, create_asset: CreateAsset) -> Result<As
                 audio_codec_name: video.audio_codec_name.clone(),
                 has_dash: video.has_dash,
             }),
-            Some(video.ffprobe_output.clone()),
+            Some(video.ffprobe_output),
         ),
     };
     let asset_base = AssetBase {
@@ -406,7 +419,7 @@ thumb_small_square_height,
 thumb_large_orig_width,
 thumb_large_orig_height,
 image_format_name,
-ffprobe,
+ffprobe_output,
 video_codec_name,
 video_bitrate,
 audio_codec_name,
@@ -830,7 +843,7 @@ AND NOT EXISTS
 #[instrument(skip(pool), level = "trace")]
 pub async fn get_ffprobe_output(pool: &DbPool, asset_id: AssetId) -> Result<Vec<u8>> {
     let row = sqlx::query!(
-        r#"SELECT ffprobe FROM Asset WHERE Asset.id = ? AND Asset.ty = 2;"#,
+        r#"SELECT ffprobe_output FROM Asset WHERE Asset.id = ? AND Asset.ty = 2;"#,
         asset_id
     )
     .fetch_one(pool)
@@ -838,7 +851,7 @@ pub async fn get_ffprobe_output(pool: &DbPool, asset_id: AssetId) -> Result<Vec<
     .map_err(DbError::from)
     .wrap_err("could not query single row from table Asset")?;
     let ffprobe_output = row
-        .ffprobe
+        .ffprobe_output
         .ok_or(eyre!("no ffprobe output value for row"))?;
     return Ok(ffprobe_output);
 }

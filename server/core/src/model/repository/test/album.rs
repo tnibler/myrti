@@ -5,7 +5,8 @@ use chrono::{Months, Utc};
 use claims::{assert_ok, assert_err};
 use proptest::prelude::*;
 
-use super::proptest_arb::{arb_new_album, arb_new_asset};
+use super::proptest_arb::{arb_new_album, arb_new_asset };
+use super::util::prop_insert_create_test_assets;
 
 use crate::model::{
     repository::{
@@ -46,25 +47,7 @@ fn prop_create_retrieve_albums() {
     append_chunk_size in 1usize..5)| {
         rt.block_on(async {
             sqlx::query!(r#"DELETE FROM AlbumEntry; DELETE FROM Asset; DELETE FROM Album; "#).execute(&pool).await.unwrap();
-            let mut assets_with_ids: Vec<Asset> = Vec::default();
-            for asset in &assets {
-                let ffprobe_output: Option<&[u8]> = match &asset.sp {
-                    AssetSpe::Video(video) => Some(&[]),
-                    _ => None
-                };
-                #[allow(deprecated)]
-                let asset_insert_result = repository::asset::insert_asset(&pool, &asset, ffprobe_output).await;
-                prop_assert!(asset_insert_result.is_ok());
-                let asset_id = asset_insert_result.unwrap();
-                let asset_with_id = Asset {
-                    base: AssetBase {
-                        id: asset_id,
-                        ..asset.base.clone()
-                    },
-                    ..asset.clone()
-                };
-                assets_with_ids.push(asset_with_id.into());
-            }
+            let assets_with_ids: Vec<Asset> = prop_insert_create_test_assets(&pool, &assets).await?;
             let mut albums_with_ids: Vec<AlbumType> = Vec::default();
             for (album, _) in &albums_asset_idxs {
                 let (album_base, timeline_group) = match album {

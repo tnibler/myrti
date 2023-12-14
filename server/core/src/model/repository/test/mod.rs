@@ -12,6 +12,7 @@ pub mod data_dir;
 pub mod image_representation;
 pub mod proptest_arb;
 pub mod representation;
+pub mod util;
 
 pub async fn create_db() -> DbPool {
     let connect_options = SqliteConnectOptions::from_str("sqlite::memory:").unwrap();

@@ -152,6 +152,29 @@ pub fn arb_new_asset(asset_root_dir_id: AssetRootDirId) -> BoxedStrategy<Asset> 
 }
 
 prop_compose! {
+    pub fn arb_new_album_timeline_group()
+    (
+        name in prop::option::of(".+"),
+        description in prop::option::of(".*"),
+        created_at in arb_datetime_utc(),
+        changed_at in arb_datetime_utc(),
+        timeline_group_display_date in arb_datetime_utc()
+    ) -> TimelineGroupAlbum {
+        let base = Album {
+            id: AlbumId(0),
+            name,
+            description,
+            created_at,
+            changed_at,
+        };
+        TimelineGroupAlbum {
+            album: base,
+            group: TimelineGroup { display_date: timeline_group_display_date }
+        }
+    }
+}
+
+prop_compose! {
     /// Arbitrary album with is_timeline_group=false
     pub fn arb_new_album()
     (

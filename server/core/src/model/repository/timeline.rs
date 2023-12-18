@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use eyre::{eyre, Context, Result};
-use tracing::{debug, error};
+use tracing::error;
 
 use crate::model::{
     repository::{
@@ -20,6 +20,15 @@ pub enum TimelineElement {
         group: TimelineGroupAlbum,
         assets: Vec<Asset>,
     },
+}
+
+impl TimelineElement {
+    pub fn get_assets(&self) -> &[Asset] {
+        match self {
+            TimelineElement::DayGrouped(assets) => &assets,
+            TimelineElement::Group { group: _, assets } => &assets,
+        }
+    }
 }
 
 pub async fn get_timeline_chunk(
@@ -157,6 +166,7 @@ LIMIT $3;
     let start_date_timestamp = datetime_to_db_repr(&start_date.unwrap_or(Utc::now())); // default value
                                                                                        // unused by query if start_from_beginning is true
     let last_asset_id_or_invalid_default = last_id.unwrap_or(AssetId(-1)); // can only be None if start_from_beginning is true
+    let num_assets_left_to_fetch = max_count - (result_assets_size as i64);
     let all_assets: Vec<Asset> = sqlx::query_as!(
         DbAsset,
         r#"
@@ -198,7 +208,7 @@ LIMIT $4;
         start_date_timestamp,
         last_asset_id_or_invalid_default,
         start_from_beginning,
-        max_count
+        num_assets_left_to_fetch
     )
     .fetch_all(pool)
     .await

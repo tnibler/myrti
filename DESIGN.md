@@ -71,6 +71,24 @@ Questions:
  under a single date. Probably assign a date to the group based on start/end/... 
  and make the group an item in the hierarchy at the same level of days
 
+### Timezone handling in timeline
+
+Globally we have to options for sorting the timeline:
+
+ - by the instant a picture was taken
+ - by the local date and time at the place the picture was taken
+
+Similarly for the date used to group assets by day in the timeline:
+
+ - the local date at the place the picture was taken: this approach is incompatible
+ with keeping assets sorted by the instant they were taken at, unless you're okay with repeating and
+ out-of-order day groupings. For example, a picture taken in Japan in the morning of the 12th
+ would appear before one from the evening of the 11th in Europe when sorting by instant. 
+ But grouping would mean breaking the chronological order (moving the Japan picture after that from Europe)
+ or having multiple groups with title "12th", with the 11th in Europe in between. Kind of weird,
+ unless you drop the chronological ordering by UTC timestamp and order by local datetime.
+ - the local date in the user's timezone: this means there is no more order between local datetimes
+ in the timezones where assets were taken.
 
 ## Reverse Geocoding
 

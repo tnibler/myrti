@@ -3,7 +3,19 @@ use std::fmt::Display;
 
 macro_rules! impl_id {
     ($ident:ident) => {
-        #[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Copy, Hash, Serialize, sqlx::FromRow)]
+        #[derive(
+            sqlx::Type,
+            Debug,
+            Clone,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Copy,
+            Hash,
+            Serialize,
+            sqlx::FromRow,
+        )]
         #[sqlx(transparent)]
         pub struct $ident(pub i64);
 

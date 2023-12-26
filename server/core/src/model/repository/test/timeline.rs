@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use camino::Utf8PathBuf as PathBuf;
 use claims::assert_ok;
+use is_sorted::IsSorted;
 
 use proptest::prelude::*;
 
@@ -18,6 +19,7 @@ struct GroupWithAssets {
     pub group: TimelineGroupAlbum,
     pub assets: Vec<Asset>,
 }
+
 
 #[test]
 fn prop_test_timeline() {
@@ -50,11 +52,12 @@ fn prop_test_timeline() {
         }
     }
     proptest!(|(
-        assets_not_in_groups in prop::collection::vec(arb_new_asset(root_dir_id), 1..5),
-        groups_with_assets in prop::collection::vec(arb_timeline_album_with_assets(root_dir_id), 0..3),
-        timeline_chunk_size in 1..3usize,
+        assets_not_in_groups in prop::collection::vec(arb_new_asset(root_dir_id), 0..100),
+        groups_with_assets in prop::collection::vec(arb_timeline_album_with_assets(root_dir_id), 0..10),
+        timeline_chunk_size in 1..100usize,
     )| {
         let _ = rt.block_on(async {
+            let local_tz = &chrono::Local;
             let mut dbgstr = String::new();
             sqlx::query!(r#"DELETE FROM AlbumEntry; DELETE FROM Asset; DELETE FROM Album; "#).execute(&pool).await.unwrap();
             // assets and albums with ids set
@@ -67,12 +70,12 @@ fn prop_test_timeline() {
 
             dbgstr.push_str("\nALL ASSETS\n");
             for a in &assets_not_in_groups {
-                dbgstr.push_str(&format!("{} {}\n", a.base.id, a.base.taken_date));
+                dbgstr.push_str(&format!("{} {} {:?}\n", a.base.id, a.base.taken_date, a.base.timestamp_info));
             }
             for gwa in &groups_with_assets {
                 dbgstr.push_str(&format!("{} {}\n", gwa.group.album.id, gwa.group.group.display_date));
                 for a in &gwa.assets {
-                    dbgstr.push_str(&format!("\t{} {}\n", a.base.id, a.base.taken_date));
+                    dbgstr.push_str(&format!("\t{} {} {:?}\n", a.base.id, a.base.taken_date, a.base.timestamp_info));
                 }
             }
             dbgstr.push_str("/ALL ASSETS\n\n");
@@ -80,6 +83,7 @@ fn prop_test_timeline() {
             let mut last_id: Option<AssetId> = None;
             let mut chunks = Vec::default();
             for chunk_idx in 0..expected_num_chunks {
+                // prop_assert!(chunk_idx < expected_num_chunks);
                 dbgstr.push_str("CHUNK\n");
                 let chunk = {
                     let c = repository::timeline::get_timeline_chunk(&pool, last_id, timeline_chunk_size as i64).await;
@@ -96,7 +100,7 @@ fn prop_test_timeline() {
                             }
                         }
                         TimelineElement::Group { group, assets} => {
-                            dbgstr.push_str(&format!("Alb group: {}\n", group.group.display_date));
+                            dbgstr.push_str(&format!("Alb group({}): {}\n", group.album.id, group.group.display_date));
                             for a in assets {
                                 dbgstr.push_str(&format!("\t{} {}\n", a.base.id, a.base.taken_date));
                             }
@@ -111,16 +115,92 @@ fn prop_test_timeline() {
                 last_id = Some(last_assets.last().unwrap().base.id);
                 chunks.push(chunk);
             }
-            let actual_num_chunks = chunks.len();
-            prop_assert_eq!(expected_num_chunks, actual_num_chunks);
-            let actual_all_assets: HashSet<Asset> = chunks.iter().map(|chunk| chunk.iter().map(|tl_el| tl_el.get_assets().iter()).flatten()).flatten().cloned().collect();
-            prop_assert_eq!(expected_all_assets, actual_all_assets);
             let next_chunk = {
                 let c = repository::timeline::get_timeline_chunk(&pool, last_id, timeline_chunk_size as i64).await;
                 prop_assert!(c.is_ok());
                 c.unwrap() 
             };
             prop_assert!(next_chunk.is_empty());
+
+            // check number of non-empty chunks matches expected
+            let actual_num_chunks = chunks.len();
+            prop_assert_eq!(expected_num_chunks, actual_num_chunks);
+            // check we got all assets
+            let actual_all_assets: HashSet<Asset> = chunks.iter().map(|chunk| chunk.iter().map(|tl_el| tl_el.get_assets().iter()).flatten()).flatten().cloned().collect();
+            prop_assert_eq!(expected_all_assets, actual_all_assets);
+
+            // check TimelineElements are ordered chronologically:
+            //  - Assets in DayGrouped are ordered
+            //  - Asset in Group are ordered
+            //  - Dates of TimelineElement are descending
+            let mut last_timeline_element: Option<&TimelineElement> = None;
+            // A single DayGrouped may be split accross multiple chunks, in which case the two
+            // resulting DayGrouped are allowed to have the same date (<=).
+            // Within a chunk, dates should be strictly decreasing (<)
+            let mut crossed_chunk_boundary = true;
+            for chunk in &chunks {
+                crossed_chunk_boundary = true;
+                for tlel in chunk {
+                    // verify order of assets in tlel
+                    match tlel {
+                        TimelineElement::DayGrouped(assets) => {
+                            prop_assert!(!assets.is_empty());
+                            let date = assets[0].base.taken_date.with_timezone(local_tz).date_naive();
+                            // check assets belong to same day
+                            let all_dates_equal = assets.iter().all(|asset| asset.base.taken_date.with_timezone(local_tz).date_naive() == date);
+                            prop_assert!(all_dates_equal);
+                            // check asset dates are sorted descending
+                            let assets_are_sorted = assets.iter().rev().is_sorted_by_key(|asset| (asset.base.taken_date, asset.base.id));
+                            prop_assert!(assets_are_sorted);
+                        }
+                        TimelineElement::Group { group: _, assets } => {
+                            // check asset dates are sorted descending
+                            let assets_are_sorted = assets.iter().rev().is_sorted_by_key(|asset| (asset.base.taken_date, asset.base.id));
+                            prop_assert!(assets_are_sorted);
+                        }
+                    }
+                    let last_el = match last_timeline_element {
+                        None => { 
+                            last_timeline_element = Some(tlel); 
+                            continue; 
+                        }
+                        Some(last_el) => last_el
+                    };
+                    // verify order of TimelineElements
+                    match (last_el, tlel) {
+                        (TimelineElement::Group { group: last_group, assets: _}, TimelineElement::Group { group, assets: _}) => {
+                            let last_group_date = last_group.group.display_date;
+                            let last_group_id = last_group.album.id;
+                            let cur_group_date = group.group.display_date;
+                            let cur_group_id = group.album.id;
+                            // multiple groups can have the same display_date so less or equal here
+                            prop_assert!((cur_group_date, cur_group_id) <= (last_group_date, last_group_id), "{}", dbgstr);
+                        }
+                        (TimelineElement::Group { group, assets: _}, TimelineElement::DayGrouped(day_assets)) => {
+                            let day_date = day_assets[0].base.taken_date.with_timezone(local_tz).date_naive();
+                            let last_group_date = group.group.display_date.date_naive();
+                            // less or equal because groups come before days in case of equality
+                            prop_assert!(day_date <= last_group_date);
+                        }
+                        (TimelineElement::DayGrouped(last_assets), TimelineElement::DayGrouped(assets)) => {
+                            let cur_date = assets[0].base.taken_date.with_timezone(local_tz).date_naive();
+                            let last_date = last_assets[0].base.taken_date.with_timezone(local_tz).date_naive();
+                            if crossed_chunk_boundary {
+                                prop_assert!(cur_date <= last_date, "DayGrouped not in order: {} not <= {}\n {}", cur_date, last_date, dbgstr);
+                            } else {
+                                prop_assert!(cur_date < last_date, "DayGrouped not in order: {} not < {}\n {}", cur_date, last_date, dbgstr);
+                            }
+                        }
+                        (TimelineElement::DayGrouped(last_assets), TimelineElement::Group { group, assets: _ }) => {
+                            let cur_group_date = group.group.display_date.date_naive();
+                            let last_date = last_assets[0].base.taken_date.with_timezone(local_tz).date_naive();
+                            prop_assert!(cur_group_date < last_date, "group date not < last day date\n {}", dbgstr);
+                        }
+                    }
+                    last_timeline_element = Some(tlel);
+                    crossed_chunk_boundary = false;
+                }
+            }
             Ok(())
         })?;
     });

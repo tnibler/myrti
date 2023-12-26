@@ -39,6 +39,7 @@ tracing-error = "0.2.0"
 tracing-forest = { version = "0.1.6", features = ["ansi", "tokio", "serde", "env-filter"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 walkdir = "2.3.3"
+is_sorted = "0.1.1"
 
 [build-dependencies]
 cc = "1.0.79"

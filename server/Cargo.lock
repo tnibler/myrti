@@ -511,6 +511,7 @@ dependencies = [
  "fasthash",
  "futures",
  "geocode",
+ "is_sorted",
  "itertools 0.11.0",
  "lazy_static",
  "notify",
@@ -1487,6 +1488,12 @@ name = "ipnet"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28b29a3cd74f0f4598934efe3aeba42bae0eb4680554128851ebbecb02af14e6"
+
+[[package]]
+name = "is_sorted"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "357376465c37db3372ef6a00585d336ed3d0f11d4345eef77ebcb05865392b21"
 
 [[package]]
 name = "itertools"

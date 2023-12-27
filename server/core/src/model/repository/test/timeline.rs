@@ -46,14 +46,14 @@ fn prop_test_timeline() {
         fn arb_timeline_album_with_assets(root_dir_id: AssetRootDirId)
         (
             album in arb_new_album_timeline_group(),
-            assets in prop::collection::vec(arb_new_asset(root_dir_id), 1..5)
+            assets in prop::collection::vec(arb_new_asset(root_dir_id), 1..30)
         ) -> GroupWithAssets {
             GroupWithAssets { group: album, assets }
         }
     }
     proptest!(|(
         assets_not_in_groups in prop::collection::vec(arb_new_asset(root_dir_id), 0..100),
-        groups_with_assets in prop::collection::vec(arb_timeline_album_with_assets(root_dir_id), 0..10),
+        groups_with_assets in prop::collection::vec(arb_timeline_album_with_assets(root_dir_id), 0..50),
         timeline_chunk_size in 1..100usize,
     )| {
         let _ = rt.block_on(async {
@@ -70,7 +70,7 @@ fn prop_test_timeline() {
 
             dbgstr.push_str("\nALL ASSETS\n");
             for a in &assets_not_in_groups {
-                dbgstr.push_str(&format!("{} {} {:?}\n", a.base.id, a.base.taken_date, a.base.timestamp_info));
+                dbgstr.push_str(&format!("{} {} {:?} {:?}\n", a.base.id, a.base.taken_date, a.base.timestamp_info, a.base.taken_date.with_timezone(local_tz)));
             }
             for gwa in &groups_with_assets {
                 dbgstr.push_str(&format!("{} {}\n", gwa.group.album.id, gwa.group.group.display_date));
@@ -102,7 +102,7 @@ fn prop_test_timeline() {
                         TimelineElement::Group { group, assets} => {
                             dbgstr.push_str(&format!("Alb group({}): {}\n", group.album.id, group.group.display_date));
                             for a in assets {
-                                dbgstr.push_str(&format!("\t{} {}\n", a.base.id, a.base.taken_date));
+                                dbgstr.push_str(&format!("\t{} {} {:?}\n", a.base.id, a.base.taken_date, a.base.taken_date.with_timezone(local_tz)));
                             }
                         }
                     }
@@ -192,9 +192,12 @@ fn prop_test_timeline() {
                             }
                         }
                         (TimelineElement::DayGrouped(last_assets), TimelineElement::Group { group, assets: _ }) => {
-                            let cur_group_date = group.group.display_date.date_naive();
-                            let last_date = last_assets[0].base.taken_date.with_timezone(local_tz).date_naive();
-                            prop_assert!(cur_group_date < last_date, "group date not < last day date\n {}", dbgstr);
+                            let cur_group_date = group.group.display_date;
+                            let cur_group_date_day = cur_group_date.date_naive();
+                            let last_date_day = last_assets[0].base.taken_date.with_timezone(local_tz).date_naive();
+                            prop_assert!(cur_group_date_day <= last_date_day, "group date not <= last day date {}\n {}", group.group.display_date, dbgstr);
+                            let last_asset_date = last_assets.last().unwrap().base.taken_date;
+                            prop_assert!(cur_group_date < last_asset_date, "group date not < last asset date {}\n{}", group.group.display_date, dbgstr);
                         }
                     }
                     last_timeline_element = Some(tlel);

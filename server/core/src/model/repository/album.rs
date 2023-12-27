@@ -5,7 +5,7 @@ use tracing::{debug, error, Instrument};
 
 use crate::model::{
     repository::db_entity::{DbAlbum, DbAsset},
-    util::datetime_from_db_repr,
+    util::{datetime_from_db_repr, datetime_to_db_repr},
     Album, AlbumEntryId, AlbumId, AlbumType, Asset, AssetId, TimelineGroup, TimelineGroupAlbum,
 };
 
@@ -118,11 +118,11 @@ pub async fn create_album(
 
 async fn insert_album(album: &AlbumType, conn: &mut SqliteConnection) -> Result<AlbumId> {
     let album_base = album.album_base();
-    let created_at = album_base.created_at.timestamp();
-    let changed_at = album_base.changed_at.timestamp();
+    let created_at = datetime_to_db_repr(&album_base.created_at);
+    let changed_at = datetime_to_db_repr(&album_base.changed_at);
     let (is_timeline_group, timeline_group_display_date) = match album {
         AlbumType::Album(_) => (0, None),
-        AlbumType::TimelineGroup(ag) => (1, Some(ag.group.display_date.timestamp())),
+        AlbumType::TimelineGroup(ag) => (1, Some(datetime_to_db_repr(&ag.group.display_date))),
     };
     let result = sqlx::query!(
         r#"

@@ -81,7 +81,7 @@ pub async fn get_timeline_chunk(
 WITH last_asset AS
 (
     SELECT Asset.*, 
-    Album.id AS album_id,
+    CASE WHEN Album.id IS NOT NULL THEN Album.id ELSE 0 END AS album_id,
     CASE WHEN Album.id IS NOT NULL THEN Album.timeline_group_display_date ELSE Asset.taken_date END AS sort_group_date
     FROM Asset
     LEFT JOIN AlbumEntry ON AlbumEntry.asset_id = Asset.id
@@ -119,7 +119,7 @@ Asset.video_codec_name,
 Asset.video_bitrate,
 Asset.audio_codec_name,
 Asset.has_dash,
-Album.id AS album_id,
+CASE WHEN Album.id IS NOT NULL THEN Album.id ELSE 0 END AS album_id,
 CASE WHEN Album.id IS NOT NULL THEN Album.timeline_group_display_date ELSE Asset.taken_date END AS "sort_group_date: i64"
 FROM Asset
 LEFT JOIN AlbumEntry ON AlbumEntry.asset_id = Asset.id
@@ -153,7 +153,7 @@ LIMIT $2;
             let asset = dbasset_from_row!(&row);
             let album_id = match row.album_id {
                 0 => None,
-                id => Some(AlbumId(id))
+                id => Some(AlbumId(id as i64))
             };
             (asset, album_id)
         });

@@ -71,6 +71,12 @@ Questions:
  under a single date. Probably assign a date to the group based on start/end/... 
  and make the group an item in the hierarchy at the same level of days
 
+Actually, I think every grouping whether user created or not follows the same rules
+as groups described above, so they can all be implemented following the same logic.
+An asset can only belong to one group, a group has a sorting key/date under which
+it's shown in the timeline. Whether the group is a mini-album created by the user
+or smarly inferred based on e.g., location, most logic stays the same.
+
 ### Timezone handling in timeline
 
 Globally we have to options for sorting the timeline:

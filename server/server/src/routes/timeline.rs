@@ -9,7 +9,7 @@ use axum::{
 };
 use chrono::Utc;
 use eyre::Context;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument, Instrument};
 use utoipa::{IntoParams, ToSchema};
 
@@ -86,12 +86,12 @@ pub async fn get_timeline(
             },
             TimelineElement::Group { group, assets } => TimelineGroup {
                 ty: TimelineGroupType::Group {
-                    group_title: group.album.name.unwrap_or(String::from("NONAME")),
+                    group_title: group.name.unwrap_or(String::from("NONAME")),
                     // unwrap is ok because empty asset vecs are filtered out above
                     group_start_date: assets.first().unwrap().base.taken_date,
                     // FIXME these should maybe not be UTC but local dates
                     group_end_date: assets.last().unwrap().base.taken_date,
-                    group_id: group.album.id.0.to_string(),
+                    group_id: group.id.0.to_string(),
                 },
                 assets: api_assets_with_spe,
             },
@@ -104,6 +104,27 @@ pub async fn get_timeline(
         groups: api_groups,
     }))
 }
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineSectionsResponse {
+    pub sections: Vec<TimelineSection>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineSection {
+    pub id: String,
+    pub num_assets: i64,
+    pub avg_aspect_ratio: f32,
+}
+
+//
+// pub async fn get_timeline_sections(
+//     State(app_state): State<SharedState>,
+// ) -> ApiResult<Json<TimelineSectionsResponse>> {
+//
+// }
 
 async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<AssetWithSpe> {
     match &asset.sp {

@@ -497,67 +497,83 @@
         }
       },
       "TimelineGroup": {
-        "type": "object",
-        "required": [
-          "type",
-          "assets"
-        ],
-        "properties": {
-          "assets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AssetWithSpe"
-            }
-          },
-          "type": {
+        "allOf": [
+          {
             "$ref": "#/components/schemas/TimelineGroupType"
+          },
+          {
+            "type": "object",
+            "required": [
+              "assets"
+            ],
+            "properties": {
+              "assets": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AssetWithSpe"
+                }
+              }
+            }
           }
-        }
+        ]
       },
       "TimelineGroupType": {
         "oneOf": [
           {
             "type": "object",
             "required": [
-              "day"
+              "date",
+              "type"
             ],
             "properties": {
-              "day": {
+              "date": {
                 "type": "string",
-                "format": "date-time"
+                "format": "date"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "day"
+                ]
               }
             }
           },
           {
             "type": "object",
             "required": [
-              "group"
+              "groupTitle",
+              "groupStartDate",
+              "groupEndDate",
+              "groupId",
+              "type"
             ],
             "properties": {
-              "group": {
-                "type": "object",
-                "required": [
-                  "title",
-                  "start",
-                  "end"
-                ],
-                "properties": {
-                  "end": {
-                    "type": "string",
-                    "format": "date-time"
-                  },
-                  "start": {
-                    "type": "string",
-                    "format": "date-time"
-                  },
-                  "title": {
-                    "type": "string"
-                  }
-                }
+              "groupEndDate": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "groupId": {
+                "type": "string"
+              },
+              "groupStartDate": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "groupTitle": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "group"
+                ]
               }
             }
           }
-        ]
+        ],
+        "discriminator": {
+          "propertyName": "type"
+        }
       },
       "Video": {
         "type": "object"

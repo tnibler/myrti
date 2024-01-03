@@ -35,6 +35,18 @@ const Asset = z
 		width: z.number().int()
 	})
 	.passthrough();
+const TimelineGroupType = z.discriminatedUnion('type', [
+	z.object({ date: z.string(), type: z.literal('day') }).passthrough(),
+	z
+		.object({
+			groupEndDate: z.string().datetime({ offset: true }),
+			groupId: z.string(),
+			groupStartDate: z.string().datetime({ offset: true }),
+			groupTitle: z.string(),
+			type: z.literal('group')
+		})
+		.passthrough()
+]);
 const ImageRepresentation = z
 	.object({
 		format: z.string(),
@@ -48,23 +60,9 @@ const Image = z.object({ representations: z.array(ImageRepresentation) }).passth
 const Video = z.object({}).partial().passthrough();
 const AssetSpe = z.union([Image, Video]);
 const AssetWithSpe = Asset.and(AssetSpe).and(z.object({}).partial().passthrough());
-const TimelineGroupType = z.union([
-	z.object({ day: z.string().datetime({ offset: true }) }).passthrough(),
-	z
-		.object({
-			group: z
-				.object({
-					end: z.string().datetime({ offset: true }),
-					start: z.string().datetime({ offset: true }),
-					title: z.string()
-				})
-				.passthrough()
-		})
-		.passthrough()
-]);
-const TimelineGroup = z
-	.object({ assets: z.array(AssetWithSpe), type: TimelineGroupType })
-	.passthrough();
+const TimelineGroup = TimelineGroupType.and(
+	z.object({ assets: z.array(AssetWithSpe) }).passthrough()
+);
 const TimelineChunk = z
 	.object({
 		changedSinceLastFetch: z.boolean(),
@@ -83,12 +81,12 @@ export const schemas = {
 	AssetMetadata,
 	AssetType,
 	Asset,
+	TimelineGroupType,
 	ImageRepresentation,
 	Image,
 	Video,
 	AssetSpe,
 	AssetWithSpe,
-	TimelineGroupType,
 	TimelineGroup,
 	TimelineChunk,
 	AlbumId,

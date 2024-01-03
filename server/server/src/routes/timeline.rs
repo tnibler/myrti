@@ -44,6 +44,7 @@ pub async fn get_timeline(
     Query(req_body): Query<TimelineRequest>,
 ) -> ApiResult<Json<TimelineChunk>> {
     debug!(?req_body);
+    let local_tz = &chrono::Local; // TODO inject from config
     let now = Utc::now();
     let last_asset_id = match req_body.last_asset_id {
         Some(s) => Some(model::AssetId(s.parse().wrap_err("bad asset id")?)),
@@ -72,16 +73,25 @@ pub async fn get_timeline(
         }
         let api_group = match group {
             TimelineElement::DayGrouped(assets) => TimelineGroup {
-                ty: TimelineGroupType::Day(assets.last().unwrap().base.taken_date),
+                ty: TimelineGroupType::Day {
+                    date: assets
+                        .last()
+                        .unwrap() // groups are nonempty
+                        .base
+                        .taken_date
+                        .with_timezone(local_tz)
+                        .date_naive(),
+                },
                 assets: api_assets_with_spe,
             },
             TimelineElement::Group { group, assets } => TimelineGroup {
                 ty: TimelineGroupType::Group {
-                    title: group.album.name.unwrap_or(String::from("NONAME")),
+                    group_title: group.album.name.unwrap_or(String::from("NONAME")),
                     // unwrap is ok because empty asset vecs are filtered out above
-                    start: assets.first().unwrap().base.taken_date,
+                    group_start_date: assets.first().unwrap().base.taken_date,
                     // FIXME these should maybe not be UTC but local dates
-                    end: assets.last().unwrap().base.taken_date,
+                    group_end_date: assets.last().unwrap().base.taken_date,
+                    group_id: group.album.id.0.to_string(),
                 },
                 assets: api_assets_with_spe,
             },

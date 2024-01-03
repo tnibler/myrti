@@ -1,31 +1,24 @@
 use chrono::{DateTime, Utc};
 use eyre::{eyre, Context, Result};
-use sqlx::{QueryBuilder, Row, SqliteConnection};
-use tracing::{debug, error, Instrument};
+use sqlx::SqliteConnection;
+use tracing::Instrument;
 
 use crate::model::{
     repository::db_entity::{DbAlbum, DbAsset},
     util::{datetime_from_db_repr, datetime_to_db_repr},
-    Album, AlbumEntryId, AlbumId, AlbumType, Asset, AssetId, TimelineGroup, TimelineGroupAlbum,
+    Album, AlbumEntryId, AlbumId, Asset, AssetId,
 };
 
 use super::{pool::DbPool, DbError};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct CreateTimelineGroup {
-    pub display_date: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CreateAlbum {
     pub name: Option<String>,
     pub description: Option<String>,
-    pub timeline_group: Option<CreateTimelineGroup>,
 }
 
-/// Get all albums (albums and timeline groups),
-/// ordered by changed_at (descending)
-pub async fn get_all_albums_with_asset_count(pool: &DbPool) -> Result<Vec<(AlbumType, i64)>> {
+/// Get all albums ordered by changed_at (descending)
+pub async fn get_all_albums_with_asset_count(pool: &DbPool) -> Result<Vec<(Album, i64)>> {
     sqlx::query_as!(
         DbAlbum,
         r#"
@@ -43,13 +36,13 @@ ORDER BY Album.changed_at DESC;
         let num_assets = db_album
             .num_assets
             .ok_or(eyre!("column num_assets must be non-null"))?;
-        let model_album: AlbumType = db_album.try_into()?;
+        let model_album: Album = db_album.try_into()?;
         Ok((model_album, num_assets))
     })
     .collect::<Result<Vec<_>>>()
 }
 
-pub async fn get_album(pool: &DbPool, album_id: AlbumId) -> Result<AlbumType> {
+pub async fn get_album(pool: &DbPool, album_id: AlbumId) -> Result<Album> {
     let row = sqlx::query!(
         r#"
 SELECT Album.* FROM Album WHERE id = ?;
@@ -60,26 +53,14 @@ SELECT Album.* FROM Album WHERE id = ?;
     .await
     .map_err(DbError::from)
     .wrap_err("could not query single row from table Album")?;
-    let album_base = Album {
+    let album = Album {
         id: AlbumId(row.id),
         name: row.name,
         description: row.description,
         created_at: datetime_from_db_repr(row.created_at)?,
         changed_at: datetime_from_db_repr(row.changed_at)?,
     };
-    let timeline_group = row
-        .timeline_group_display_date
-        .map(|d| datetime_from_db_repr(d))
-        .transpose()?
-        .map(|d| TimelineGroup { display_date: d });
-    let album_type = match timeline_group {
-        None => AlbumType::Album(album_base),
-        Some(tg) => AlbumType::TimelineGroup(TimelineGroupAlbum {
-            album: album_base,
-            group: tg,
-        }),
-    };
-    Ok(album_type)
+    Ok(album)
 }
 
 pub async fn create_album(
@@ -92,21 +73,12 @@ pub async fn create_album(
         .await
         .wrap_err("could not begin db transaction")?;
     let now = chrono::Utc::now();
-    let album_base = Album {
+    let album = Album {
         id: AlbumId(0),
         name: create_album.name,
         description: create_album.description,
         created_at: now,
         changed_at: now,
-    };
-    let album = match create_album.timeline_group {
-        None => AlbumType::Album(album_base),
-        Some(tg) => AlbumType::TimelineGroup(TimelineGroupAlbum {
-            album: album_base,
-            group: TimelineGroup {
-                display_date: tg.display_date,
-            },
-        }),
     };
     let album_id = insert_album(&album, tx.as_mut()).await?;
     if !assets.is_empty() {
@@ -116,24 +88,17 @@ pub async fn create_album(
     Ok(album_id)
 }
 
-async fn insert_album(album: &AlbumType, conn: &mut SqliteConnection) -> Result<AlbumId> {
-    let album_base = album.album_base();
-    let created_at = datetime_to_db_repr(&album_base.created_at);
-    let changed_at = datetime_to_db_repr(&album_base.changed_at);
-    let (is_timeline_group, timeline_group_display_date) = match album {
-        AlbumType::Album(_) => (0, None),
-        AlbumType::TimelineGroup(ag) => (1, Some(datetime_to_db_repr(&ag.group.display_date))),
-    };
+async fn insert_album(album: &Album, conn: &mut SqliteConnection) -> Result<AlbumId> {
+    let created_at = datetime_to_db_repr(&album.created_at);
+    let changed_at = datetime_to_db_repr(&album.changed_at);
     let result = sqlx::query!(
         r#"
-INSERT INTO Album(id, name, description, is_timeline_group, timeline_group_display_date, created_at, changed_at)
+INSERT INTO Album(id, name, description, created_at, changed_at)
 VALUES
-(NULL, ?, ?, ?, ?, ?, ?);
+(NULL, ?, ?, ?, ?);
     "#,
-        album_base.name,
-        album_base.description,
-        is_timeline_group,
-        timeline_group_display_date,
+        album.name,
+        album.description,
         created_at,
         changed_at,
     )
@@ -200,48 +165,6 @@ pub async fn append_assets_to_album(
     album_id: AlbumId,
     asset_ids: &[AssetId],
 ) -> Result<()> {
-    // if album is a group, first check that no asset is already part of a group (can only be part
-    // of 1)
-    let mut assets_already_in_group_qb = QueryBuilder::new(
-        r#"
-WITH album_were_adding_to AS
-    (
-    SELECT * FROM Album WHERE Album.id=
-    "#,
-    );
-    assets_already_in_group_qb.push_bind(album_id);
-    assets_already_in_group_qb.push(
-        r#"
-    )
-SELECT Asset.id AS asset_id FROM Asset 
-INNER JOIN AlbumEntry ON AlbumEntry.asset_id = Asset.id
-INNER JOIN Album ON AlbumEntry.album_id=Album.id
-WHERE Album.is_timeline_group != 0
-AND (SELECT is_timeline_group FROM album_were_adding_to) != 0
-AND Asset.id IN 
-    "#,
-    );
-    assets_already_in_group_qb.push_tuples(asset_ids.into_iter(), |mut b, s| {
-        b.push_bind(s);
-    });
-    assets_already_in_group_qb.push(r#";"#);
-    let if_group_assets_already_in_group: Vec<AssetId> = assets_already_in_group_qb
-        .build()
-        .fetch_all(&mut *tx)
-        .await
-        .wrap_err("check assets not already in group query failed")?
-        .into_iter()
-        .map(|row| AssetId(row.get("asset_id")))
-        .collect();
-    // if the album we're adding to is a group and some assets to add are already in a group,
-    // they will be in this Vec
-    if !if_group_assets_already_in_group.is_empty() {
-        debug!(
-            ?if_group_assets_already_in_group,
-            "Attempting to add some assets already in group to another group"
-        );
-        return Err(eyre!("some assets are already in a group"));
-    }
     let last_index = sqlx::query!(
         r#"
 SELECT MAX(AlbumEntry.idx) as max_index FROM AlbumEntry WHERE AlbumEntry.album_id = ?;
@@ -287,47 +210,4 @@ UPDATE Album SET changed_at=? WHERE id = ?;
     .await
     .wrap_err("could not update column Album.changed_at")?;
     Ok(())
-}
-
-pub async fn get_timeline_group_album_for_asset(
-    asset_id: AssetId,
-    conn: &mut SqliteConnection,
-) -> Result<Option<TimelineGroupAlbum>> {
-    let opt_row = sqlx::query!(
-        r#"
-SELECT Album.* FROM
-Album INNER JOIN AlbumEntry
-ON AlbumEntry.album_id = Album.id
-WHERE AlbumEntry.asset_id = ?
-AND Album.is_timeline_group != 0;
-    "#,
-        asset_id
-    )
-    .fetch_optional(&mut *conn)
-    .await
-    .wrap_err(
-        "get timeline group for asset: could not query optional single row from table Album",
-    )?;
-    let row = match opt_row {
-        Some(row) => row,
-        None => return Ok(None),
-    };
-    // must be a valid timeline_group row at this point
-    if let Some(row_date) = row.timeline_group_display_date {
-        let album_base = Album {
-            id: AlbumId(row.id),
-            name: row.name,
-            description: row.description,
-            created_at: datetime_from_db_repr(row.created_at)?,
-            changed_at: datetime_from_db_repr(row.changed_at)?,
-        };
-        let date = datetime_from_db_repr(row_date)?;
-        return Ok(Some(TimelineGroupAlbum {
-            album: album_base,
-            group: TimelineGroup { display_date: date },
-        }));
-    } else {
-        error!(?asset_id, ?row, "BUG: album is not a timeline group");
-        return Err(eyre!("BUG: album is not a timeline group"));
-    }
 }

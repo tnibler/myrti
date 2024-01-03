@@ -131,9 +131,6 @@ CREATE TABLE Album (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   name TEXT,
   description TEXT,
-  is_timeline_group INTEGER NOT NULL CHECK(is_timeline_group IN (0, 1)),
-  -- UTC timestamp of date used to position the group in the timeline
-  timeline_group_display_date INTEGER CHECK (is_timeline_group = 0 OR timeline_group_display_date IS NOT NULL),
   -- UTC timestamp in milliseconds since UNIX epoch
   created_at INTEGER NOT NULL,
   -- UTC timestamp in milliseconds since UNIX epoch
@@ -153,6 +150,27 @@ CREATE TABLE AlbumEntry (
 ) STRICT;
 
 CREATE INDEX album_id_index ON AlbumEntry(album_id);
+
+CREATE TABLE TimelineGroup (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  name TEXT,
+  -- UTC timestamp of date used to position the group in the timeline
+  display_date INTEGER NOT NULL,
+  -- UTC timestamp in milliseconds since UNIX epoch
+  created_at INTEGER NOT NULL,
+  -- UTC timestamp in milliseconds since UNIX epoch
+  changed_at INTEGER NOT NULL
+) STRICT;
+
+CREATE TABLE TimelineGroupEntry (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  group_id INTEGER NOT NULL,
+  asset_id INTEGER NOT NULL,
+  -- an Asset can only belong to one TimelineGroup
+  UNIQUE(asset_id),
+  FOREIGN KEY (group_id) REFERENCES TimelineGroup(id),
+  FOREIGN KEY (asset_id) REFERENCES Asset(id)
+) STRICT;
 
 CREATE TABLE FailedThumbnailJob (
   asset_id INTEGER PRIMARY KEY NOT NULL,

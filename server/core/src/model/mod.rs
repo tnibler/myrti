@@ -10,6 +10,7 @@ mod data_dir;
 mod failed_job;
 mod id_types;
 mod representation;
+mod timeline_group;
 pub use album::*;
 pub use asset::*;
 pub use asset_base::*;
@@ -20,5 +21,6 @@ pub use data_dir::*;
 pub use failed_job::*;
 pub use id_types::*;
 pub use representation::*;
+pub use timeline_group::*;
 
 mod util;

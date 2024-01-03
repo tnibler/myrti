@@ -7,16 +7,16 @@ use is_sorted::IsSorted;
 use proptest::prelude::*;
 
 use crate::model::{
-    repository, repository::timeline::TimelineElement, Album, AlbumType, Asset, AssetId,
-    AssetRootDir, AssetRootDirId, TimelineGroupAlbum,
+    repository, repository::timeline::TimelineElement,  Asset, AssetId,
+    AssetRootDir, AssetRootDirId, TimelineGroup,
 };
-use proptest_arb::{arb_new_album_timeline_group, arb_new_asset};
+use proptest_arb::{arb_new_timeline_group, arb_new_asset};
 
 use super::{util::*, *};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct GroupWithAssets {
-    pub group: TimelineGroupAlbum,
+    pub group: TimelineGroup,
     pub assets: Vec<Asset>,
 }
 
@@ -25,7 +25,7 @@ struct GroupWithAssets {
 fn prop_test_timeline() {
     // generate assets
     // pick random distinct subsets
-    // create group albums from subsets, assigning random display_dates
+    // create groups from subsets, assigning random display_dates
     // query timeline in different chunk sizes
     //
     // invariants in incresing order of complexity:
@@ -43,26 +43,26 @@ fn prop_test_timeline() {
         repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await
     }));
     prop_compose! {
-        fn arb_timeline_album_with_assets(root_dir_id: AssetRootDirId)
+        fn arb_timeline_group_with_assets(root_dir_id: AssetRootDirId)
         (
-            album in arb_new_album_timeline_group(),
+            group in arb_new_timeline_group(),
             assets in prop::collection::vec(arb_new_asset(root_dir_id), 1..30)
         ) -> GroupWithAssets {
-            GroupWithAssets { group: album, assets }
+            GroupWithAssets { group, assets }
         }
     }
     proptest!(|(
         assets_not_in_groups in prop::collection::vec(arb_new_asset(root_dir_id), 0..100),
-        groups_with_assets in prop::collection::vec(arb_timeline_album_with_assets(root_dir_id), 0..50),
+        groups_with_assets in prop::collection::vec(arb_timeline_group_with_assets(root_dir_id), 0..50),
         timeline_chunk_size in 1..100usize,
     )| {
         let _ = rt.block_on(async {
             let local_tz = &chrono::Local;
             let mut dbgstr = String::new();
-            sqlx::query!(r#"DELETE FROM AlbumEntry; DELETE FROM Asset; DELETE FROM Album; "#).execute(&pool).await.unwrap();
-            // assets and albums with ids set
+            sqlx::query!(r#"DELETE FROM TimelineGroupEntry; DELETE FROM Asset; DELETE FROM TimelineGroup; "#).execute(&pool).await.unwrap();
+            // assets and groups with ids set
             let assets_not_in_groups: Vec<Asset> = prop_insert_create_test_assets(&pool, &assets_not_in_groups).await?;
-            let groups_with_assets: Vec<GroupWithAssets> = prop_insert_group_albums_insert_add_assets(&pool, &groups_with_assets).await?;
+            let groups_with_assets: Vec<GroupWithAssets> = prop_insert_timeline_groups_insert_add_assets(&pool, &groups_with_assets).await?;
             let expected_all_assets: HashSet<Asset> = assets_not_in_groups.iter().chain(groups_with_assets.iter().map(|gwa| &gwa.assets).flatten()).cloned().collect();
             let actual_all_assets_in_db: HashSet<Asset> = repository::asset::get_assets(&pool).await.unwrap().into_iter().collect();
             prop_assert_eq!(&expected_all_assets, &actual_all_assets_in_db, "Setup went wrong: not all assets in db");
@@ -73,7 +73,7 @@ fn prop_test_timeline() {
                 dbgstr.push_str(&format!("{} {} {:?} {:?}\n", a.base.id, a.base.taken_date, a.base.timestamp_info, a.base.taken_date.with_timezone(local_tz)));
             }
             for gwa in &groups_with_assets {
-                dbgstr.push_str(&format!("{} {}\n", gwa.group.album.id, gwa.group.group.display_date));
+                dbgstr.push_str(&format!("{} {}\n", gwa.group.id, gwa.group.display_date));
                 for a in &gwa.assets {
                     dbgstr.push_str(&format!("\t{} {} {:?}\n", a.base.id, a.base.taken_date, a.base.timestamp_info));
                 }
@@ -100,7 +100,7 @@ fn prop_test_timeline() {
                             }
                         }
                         TimelineElement::Group { group, assets} => {
-                            dbgstr.push_str(&format!("Alb group({}): {}\n", group.album.id, group.group.display_date));
+                            dbgstr.push_str(&format!("Alb group({}): {}\n", group.id, group.display_date));
                             for a in assets {
                                 dbgstr.push_str(&format!("\t{} {} {:?}\n", a.base.id, a.base.taken_date, a.base.taken_date.with_timezone(local_tz)));
                             }
@@ -169,16 +169,16 @@ fn prop_test_timeline() {
                     // verify order of TimelineElements
                     match (last_el, tlel) {
                         (TimelineElement::Group { group: last_group, assets: _}, TimelineElement::Group { group, assets: _}) => {
-                            let last_group_date = last_group.group.display_date;
-                            let last_group_id = last_group.album.id;
-                            let cur_group_date = group.group.display_date;
-                            let cur_group_id = group.album.id;
+                            let last_group_date = last_group.display_date;
+                            let last_group_id = last_group.id;
+                            let cur_group_date = group.display_date;
+                            let cur_group_id = group.id;
                             // multiple groups can have the same display_date so less or equal here
                             prop_assert!((cur_group_date, cur_group_id) <= (last_group_date, last_group_id), "{}", dbgstr);
                         }
                         (TimelineElement::Group { group, assets: _}, TimelineElement::DayGrouped(day_assets)) => {
                             let day_date = day_assets[0].base.taken_date.with_timezone(local_tz).date_naive();
-                            let last_group_date = group.group.display_date.date_naive();
+                            let last_group_date = group.display_date.date_naive();
                             // less or equal because groups come before days in case of equality
                             prop_assert!(day_date <= last_group_date);
                         }
@@ -192,12 +192,12 @@ fn prop_test_timeline() {
                             }
                         }
                         (TimelineElement::DayGrouped(last_assets), TimelineElement::Group { group, assets: _ }) => {
-                            let cur_group_date = group.group.display_date;
+                            let cur_group_date = group.display_date;
                             let cur_group_date_day = cur_group_date.date_naive();
                             let last_date_day = last_assets[0].base.taken_date.with_timezone(local_tz).date_naive();
-                            prop_assert!(cur_group_date_day <= last_date_day, "group date not <= last day date {}\n {}", group.group.display_date, dbgstr);
+                            prop_assert!(cur_group_date_day <= last_date_day, "group date not <= last day date {}\n {}", group.display_date, dbgstr);
                             let last_asset_date = last_assets.last().unwrap().base.taken_date;
-                            prop_assert!(cur_group_date < last_asset_date, "group date not < last asset date {}\n{}", group.group.display_date, dbgstr);
+                            prop_assert!(cur_group_date < last_asset_date, "group date not < last asset date {}\n{}", group.display_date, dbgstr);
                         }
                     }
                     last_timeline_element = Some(tlel);
@@ -209,25 +209,22 @@ fn prop_test_timeline() {
     });
 }
 
-async fn prop_insert_group_albums_insert_add_assets(
+async fn prop_insert_timeline_groups_insert_add_assets(
     pool: &DbPool,
     groups: &[GroupWithAssets],
 ) -> Result<Vec<GroupWithAssets>, TestCaseError> {
     let mut groups_with_ids: Vec<GroupWithAssets> = Vec::default();
     for group in groups {
         let assets_with_id = prop_insert_create_test_assets(pool, &group.assets).await?;
-        let album_with_id = prop_insert_album_add_assets(
+        let group_with_id = prop_insert_timeline_group_add_assets(
             pool,
-            &AlbumType::TimelineGroup(group.group.clone()),
+                    &group.group.clone(),
             assets_with_id.iter().map(|asset| asset.base.id),
         )
         .await?;
         groups_with_ids.push(GroupWithAssets {
             assets: assets_with_id,
-            group: match album_with_id {
-                AlbumType::TimelineGroup(tg) => tg,
-                _ => unreachable!("wrong album type!"),
-            },
+            group: group_with_id,
         });
     }
     Ok(groups_with_ids)

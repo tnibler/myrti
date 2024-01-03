@@ -1,21 +1,17 @@
 use eyre::{Context, Result};
-use sqlx::{Decode, Row};
 
 use crate::model::{
-    repository::{
-        album,
-        db_entity::{DbAsset, DbAssetType, DbTimestampInfo},
-    },
-    AlbumId, AlbumType, Asset, AssetId, AssetRootDirId, TimelineGroupAlbum,
+    repository::db_entity::{DbAsset, DbAssetType, DbTimestampInfo},
+    Asset, AssetId, AssetRootDirId, TimelineGroup, TimelineGroupId,
 };
 
-use super::{album::get_album, pool::DbPool};
+use super::{pool::DbPool, timeline_group::get_timeline_group};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TimelineElement {
     DayGrouped(Vec<Asset>),
     Group {
-        group: TimelineGroupAlbum,
+        group: TimelineGroup,
         assets: Vec<Asset>,
     },
 }
@@ -76,18 +72,17 @@ pub async fn get_timeline_chunk(
 ) -> Result<Vec<TimelineElement>> {
     // timezone to calculate local dates in
     let timezone = &chrono::Local;
-    let assets_albumid = sqlx::query!(
+    let assets_groupid = sqlx::query!(
         r#"
 WITH last_asset AS
 (
     SELECT Asset.*, 
-    CASE WHEN Album.id IS NOT NULL THEN Album.id ELSE 0 END AS album_id,
-    CASE WHEN Album.id IS NOT NULL THEN Album.timeline_group_display_date ELSE Asset.taken_date END AS sort_group_date
+    CASE WHEN TimelineGroup.id IS NOT NULL THEN TimelineGroup.id ELSE 0 END AS album_id,
+    CASE WHEN TimelineGroup.id IS NOT NULL THEN TimelineGroup.display_date ELSE Asset.taken_date END AS sort_group_date
     FROM Asset
-    LEFT JOIN AlbumEntry ON AlbumEntry.asset_id = Asset.id
-    LEFT JOIN Album ON AlbumEntry.album_id = Album.id
+    LEFT JOIN TimelineGroupEntry ON TimelineGroupEntry.asset_id = Asset.id
+    LEFT JOIN TimelineGroup ON TimelineGroupEntry.group_id = TimelineGroup.id
     WHERE Asset.id = $1
-    AND (Album.is_timeline_group = 1 OR Album.id IS NULL)
 )
 SELECT
 Asset.id,
@@ -119,26 +114,24 @@ Asset.video_codec_name,
 Asset.video_bitrate,
 Asset.audio_codec_name,
 Asset.has_dash,
-CASE WHEN Album.id IS NOT NULL THEN Album.id ELSE 0 END AS album_id,
-CASE WHEN Album.id IS NOT NULL THEN Album.timeline_group_display_date ELSE Asset.taken_date END AS "sort_group_date: i64"
+CASE WHEN TimelineGroup.id IS NOT NULL THEN TimelineGroup.id ELSE 0 END AS group_id,
+CASE WHEN TimelineGroup.id IS NOT NULL THEN TimelineGroup.display_date ELSE Asset.taken_date END AS "sort_group_date: i64"
 FROM Asset
-LEFT JOIN AlbumEntry ON AlbumEntry.asset_id = Asset.id
-LEFT JOIN Album ON AlbumEntry.album_id = Album.id
+LEFT JOIN TimelineGroupEntry ON TimelineGroupEntry.asset_id = Asset.id
+LEFT JOIN TimelineGroup ON TimelineGroupEntry.group_id = TimelineGroup.id
 WHERE
-(Album.is_timeline_group = 1 OR Album.id IS NULL)
-AND
 (
     ($1 IS NULL)
     OR 
-    ("sort_group_date: i64", album_id, Asset.taken_date, Asset.id) < (SELECT sort_group_date, album_id, taken_date, id FROM last_asset)
+    ("sort_group_date: i64", group_id, Asset.taken_date, Asset.id) < (SELECT sort_group_date, album_id, taken_date, id FROM last_asset)
     OR
     (
-    album_id IS NULL AND (SELECT album_id FROM last_asset) IS NULL
+    group_id IS NULL AND (SELECT album_id FROM last_asset) IS NULL
     AND
     ("sort_group_date: i64", Asset.taken_date, Asset.id) < (SELECT sort_group_date, taken_date, id FROM last_asset)
     )
 )
-ORDER BY "sort_group_date: i64" DESC, album_id DESC, Asset.taken_date DESC, Asset.id DESC
+ORDER BY "sort_group_date: i64" DESC, group_id DESC, Asset.taken_date DESC, Asset.id DESC
 LIMIT $2;
     "#,
         last_id,
@@ -151,24 +144,21 @@ LIMIT $2;
         .map(|row| {
             // println!("{:?} {:?} {:?} {:?}", row.id, row.sort_group_date, row.album_id, row.taken_date);
             let asset = dbasset_from_row!(&row);
-            let album_id = match row.album_id {
+            let group_id = match row.group_id {
                 0 => None,
-                id => Some(AlbumId(id as i64))
+                id => Some(TimelineGroupId(id as i64))
             };
-            (asset, album_id)
+            (asset, group_id)
         });
     let mut timeline_els: Vec<TimelineElement> = Vec::default();
-    for (db_asset, album_id) in assets_albumid {
+    for (db_asset, group_id) in assets_groupid {
         let asset: Asset = db_asset.try_into()?;
         let mut last_el = timeline_els.last_mut();
         match &mut last_el {
             None => {
                 // create new TimelineElement
-                let new_el = if let Some(album_id) = album_id {
-                    let group = match get_album(pool, album_id).await? {
-                        AlbumType::TimelineGroup(group) => group,
-                        _ => unreachable!("TODO this is getting removed anyhow"),
-                    };
+                let new_el = if let Some(group_id) = group_id {
+                    let group = get_timeline_group(pool, group_id).await?;
                     TimelineElement::Group {
                         group,
                         assets: vec![asset],
@@ -178,7 +168,7 @@ LIMIT $2;
                 };
                 timeline_els.push(new_el);
             }
-            Some(ref mut last_el) => match (last_el, album_id) {
+            Some(ref mut last_el) => match (last_el, group_id) {
                 // Matching cases: add this asset to last TimelineElement
                 (TimelineElement::DayGrouped(ref mut assets), None)
                     if assets
@@ -192,17 +182,14 @@ LIMIT $2;
                 {
                     assets.push(asset);
                 }
-                (TimelineElement::Group { group, assets }, Some(album_id))
-                    if group.album.id == album_id =>
+                (TimelineElement::Group { group, assets }, Some(group_id))
+                    if group.id == group_id =>
                 {
                     assets.push(asset);
                 }
                 // Need to create new TimelineElement for these cases
-                (_, Some(album_id)) => {
-                    let group = match get_album(pool, album_id).await? {
-                        AlbumType::TimelineGroup(group) => group,
-                        _ => unreachable!("TODO this is getting removed anyhow"),
-                    };
+                (_, Some(group_id)) => {
+                    let group = get_timeline_group(pool, group_id).await?;
                     timeline_els.push(TimelineElement::Group {
                         group,
                         assets: vec![asset],
@@ -215,3 +202,21 @@ LIMIT $2;
     }
     Ok(timeline_els)
 }
+
+// async fn query(pool: &DbPool) -> Result<()> {
+//     sqlx::query!(
+//         r#"
+// SELECT
+// Asset.id,
+// CASE WHEN Album.id IS NOT NULL THEN Album.id ELSE 0 END AS album_id,
+// CASE WHEN Album.id IS NOT NULL THEN Album.timeline_group_display_date ELSE Asset.taken_date END AS "sort_group_date: i64"
+// FROM Asset
+// LEFT JOIN AlbumEntry ON AlbumEntry.asset_id = Asset.id
+// LEFT JOIN Album ON AlbumEntry.album_id = Album.id
+// WHERE
+// (Album.is_timeline_group = 1 OR Album.id IS NULL)
+// ORDER BY "sort_group_date: i64" DESC, album_id DESC, Asset.taken_date DESC, Asset.id DESC;
+//     "#
+//         ).fetch_all(pool).await?;
+//     Ok(())
+// }

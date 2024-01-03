@@ -1,12 +1,8 @@
 use proptest::prelude::*;
 
 use crate::model::{
-    repository::{
-        self,
-        album::{CreateAlbum, CreateTimelineGroup},
-        pool::DbPool,
-    },
-    Album, AlbumId, AlbumType, Asset, AssetBase, AssetId, AssetSpe, TimelineGroupAlbum,
+    repository::{self, pool::DbPool, timeline_group::CreateTimelineGroup},
+    Asset, AssetBase, AssetId, AssetSpe, TimelineGroup, TimelineGroupId,
 };
 
 /// Inserts asset and returns them in the same order, with asset_id set
@@ -45,66 +41,52 @@ pub async fn prop_insert_create_test_assets(
 
 /// Inserts empty albums, then adds assets to them
 /// returns albums in same order with album_id set
-pub async fn prop_insert_albums_add_assets(
+pub async fn prop_insert_timeline_groups_add_assets(
     pool: &DbPool,
     assets: &[Asset],
-    albums_asset_idxs: &[(AlbumType, Vec<prop::sample::Index>)],
-) -> Result<Vec<AlbumType>, TestCaseError> {
-    let mut albums_with_ids: Vec<AlbumType> = Vec::default();
-    for (album, asset_idxs) in albums_asset_idxs {
+    groups_asset_idxs: &[(TimelineGroup, Vec<prop::sample::Index>)],
+) -> Result<Vec<TimelineGroup>, TestCaseError> {
+    let mut groups_with_ids: Vec<TimelineGroup> = Vec::default();
+    for (group, asset_idxs) in groups_asset_idxs {
         let assets: Vec<AssetId> = asset_idxs
             .iter()
             .map(|idx| idx.get(assets).base.id)
             .collect();
-        let album_with_id =
-            prop_insert_album_add_assets(pool, album, assets.iter().copied()).await?;
-        albums_with_ids.push(album_with_id);
+        let group_with_id =
+            prop_insert_timeline_group_add_assets(pool, group, assets.iter().copied()).await?;
+        groups_with_ids.push(group_with_id);
     }
-    Ok(albums_with_ids)
+    Ok(groups_with_ids)
 }
 
-pub async fn prop_insert_album_add_assets(
+pub async fn prop_insert_timeline_group_add_assets(
     pool: &DbPool,
-    album: &AlbumType,
+    group: &TimelineGroup,
     asset_ids: impl Iterator<Item = AssetId>,
-) -> Result<AlbumType, TestCaseError> {
-    let (album_base, timeline_group) = match album {
-        AlbumType::Album(album) => (album, None),
-        AlbumType::TimelineGroup(tg) => (&tg.album, Some(&tg.group)),
-    };
-    let create_album = CreateAlbum {
-        name: album_base.name.clone(),
-        description: album_base.description.clone(),
-        timeline_group: timeline_group.map(|tg| CreateTimelineGroup {
-            display_date: tg.display_date,
-        }),
+) -> Result<TimelineGroup, TestCaseError> {
+    let create_group = CreateTimelineGroup {
+        name: group.name.clone(),
+        display_date: group.display_date,
+        asset_ids: Vec::new(),
     };
     // initial creation with assets to insert right away not tested here
-    let album_insert_result = repository::album::create_album(&pool, create_album, &[]).await;
+    let group_insert_result =
+        repository::timeline_group::create_timeline_group(pool, create_group).await;
     prop_assert!(
-        album_insert_result.is_ok(),
-        "Inserting Album returned error: {}",
-        album_insert_result.unwrap_err()
+        group_insert_result.is_ok(),
+        "Inserting TimelineGroup returned error: {}",
+        group_insert_result.unwrap_err()
     );
-    let album_id = album_insert_result.unwrap();
-    let album_with_id = match album {
-        AlbumType::Album(album) => AlbumType::Album(Album {
-            id: album_id,
-            ..album.clone()
-        }),
-        AlbumType::TimelineGroup(tga) => AlbumType::TimelineGroup(TimelineGroupAlbum {
-            group: tga.group.clone(),
-            album: Album {
-                id: album_id,
-                ..tga.album.clone()
-            },
-        }),
+    let group_id = group_insert_result.unwrap();
+    let group_with_id = TimelineGroup {
+        id: group_id,
+        ..group.clone()
     };
     let mut tx = pool.begin().await.unwrap();
-    prop_assert_ne!(album_with_id.album_base().id, AlbumId(0));
-    let append_result = repository::album::append_assets_to_album(
+    prop_assert_ne!(group_with_id.id, TimelineGroupId(0));
+    let append_result = repository::timeline_group::add_assets_to_group(
         tx.as_mut(),
-        album_with_id.album_base().id,
+        group_with_id.id,
         &asset_ids.collect::<Vec<_>>(),
     )
     .await;
@@ -119,5 +101,5 @@ pub async fn prop_insert_album_add_assets(
         "Committing transaction returned error: {:?}",
         commit_result.unwrap_err()
     );
-    Ok(album_with_id)
+    Ok(group_with_id)
 }

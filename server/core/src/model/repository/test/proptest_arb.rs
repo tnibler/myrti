@@ -2,9 +2,9 @@ use camino::Utf8PathBuf as PathBuf;
 use proptest::prelude::*;
 
 use crate::model::{
-    Album, AlbumId, AlbumType, Asset, AssetBase, AssetId, AssetRootDirId, AssetType, CreateAsset,
+    Album, AlbumId, Asset, AssetBase, AssetId, AssetRootDirId, AssetType, CreateAsset,
     CreateAssetBase, CreateAssetImage, CreateAssetSpe, CreateAssetVideo, GpsCoordinates, Image,
-    ImageAsset, Size, TimelineGroup, TimelineGroupAlbum, TimestampInfo, Video, VideoAsset,
+    ImageAsset, Size, TimelineGroup, TimelineGroupId, TimestampInfo, Video, VideoAsset,
 };
 
 fn path_strategy() -> BoxedStrategy<PathBuf> {
@@ -152,24 +152,19 @@ pub fn arb_new_asset(asset_root_dir_id: AssetRootDirId) -> BoxedStrategy<Asset> 
 }
 
 prop_compose! {
-    pub fn arb_new_album_timeline_group()
+    pub fn arb_new_timeline_group()
     (
         name in prop::option::of(".+"),
-        description in prop::option::of(".*"),
         created_at in arb_datetime_utc(),
         changed_at in arb_datetime_utc(),
-        timeline_group_display_date in arb_datetime_utc()
-    ) -> TimelineGroupAlbum {
-        let base = Album {
-            id: AlbumId(0),
+        display_date in arb_datetime_utc()
+    ) -> TimelineGroup {
+        TimelineGroup {
+            id: TimelineGroupId(0),
             name,
-            description,
             created_at,
             changed_at,
-        };
-        TimelineGroupAlbum {
-            album: base,
-            group: TimelineGroup { display_date: timeline_group_display_date }
+            display_date,
         }
     }
 }
@@ -182,24 +177,13 @@ prop_compose! {
         description in prop::option::of(".*"),
         created_at in arb_datetime_utc(),
         changed_at in arb_datetime_utc(),
-        timeline_group_display_date in prop::option::of(arb_datetime_utc())
-    ) -> AlbumType {
-        let base = Album {
+    ) -> Album {
+        Album {
             id: AlbumId(0),
             name,
             description,
             created_at,
             changed_at,
-        };
-        match timeline_group_display_date {
-            None => AlbumType::Album(base),
-            Some(tgdd) => AlbumType::TimelineGroup(
-                TimelineGroupAlbum {
-                    album: base,
-                    group: TimelineGroup { display_date: tgdd }
-                }
-            )
-
         }
     }
 }

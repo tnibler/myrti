@@ -11,4 +11,5 @@ pub mod representation;
 #[cfg(test)]
 mod test;
 pub mod timeline;
+pub mod timeline_group;
 pub use error::*;

@@ -13,6 +13,7 @@ pub mod image_representation;
 pub mod proptest_arb;
 pub mod representation;
 pub mod timeline;
+pub mod timeline_group;
 pub mod util;
 
 pub async fn create_db() -> DbPool {

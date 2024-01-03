@@ -14,33 +14,17 @@ pub struct Album {
     pub num_assets: i64,
     pub created_at: DateTime<Utc>,
     pub changed_at: DateTime<Utc>,
-    #[serde(rename = "type")]
-    pub ty: AlbumType,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "camelCase")]
-pub enum AlbumType {
-    TimelineGroup { display_date: DateTime<Utc> },
-    Album,
 }
 
 impl Album {
-    pub fn from_model(value: &model::AlbumType, num_assets: i64) -> Album {
-        let base = value.album_base();
+    pub fn from_model(value: &model::Album, num_assets: i64) -> Album {
         Album {
-            id: base.id.into(),
-            name: base.name.clone(),
-            description: base.description.clone(),
+            id: value.id.into(),
+            name: value.name.clone(),
+            description: value.description.clone(),
             num_assets,
-            created_at: base.created_at.clone(),
-            changed_at: base.changed_at.clone(),
-            ty: match value {
-                model::AlbumType::Album(_) => AlbumType::Album,
-                model::AlbumType::TimelineGroup(tg) => AlbumType::TimelineGroup {
-                    display_date: tg.group.display_date,
-                },
-            },
+            created_at: value.created_at.clone(),
+            changed_at: value.changed_at.clone(),
         }
     }
 }

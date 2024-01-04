@@ -1,14 +1,10 @@
-use core::model::{
-    self,
-    repository::{self, pool::DbPool, timeline::TimelineElement},
-};
-
 use axum::{
     extract::{Query, State},
-    Json,
+    routing::get,
+    Json, Router,
 };
-use chrono::Utc;
-use eyre::Context;
+use chrono::{DateTime, Utc};
+use eyre::{eyre, Context};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument, Instrument};
 use utoipa::{IntoParams, ToSchema};
@@ -17,10 +13,25 @@ use crate::{
     app_state::SharedState,
     http_error::ApiResult,
     schema::{
-        asset::{AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
+        asset::{Asset, AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
         timeline::{TimelineChunk, TimelineGroup, TimelineGroupType},
+        TimelineGroupId,
     },
 };
+use core::model::{
+    self,
+    repository::{
+        self,
+        pool::DbPool,
+        timeline::{TimelineElement, TimelineSegmentType},
+    },
+};
+
+pub fn router() -> Router<SharedState> {
+    Router::new()
+        .route("/sections", get(get_timeline_sections))
+        .route("/segments", get(get_timeline_segments))
+}
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
@@ -119,12 +130,105 @@ pub struct TimelineSection {
     pub avg_aspect_ratio: f32,
 }
 
-//
-// pub async fn get_timeline_sections(
-//     State(app_state): State<SharedState>,
-// ) -> ApiResult<Json<TimelineSectionsResponse>> {
-//
-// }
+#[utoipa::path(
+    get,
+    path = "/api/timeline/sections",
+    responses(
+    (status = 200, body=TimelineSectionsResponse)
+    )
+)]
+#[instrument(skip(app_state))]
+pub async fn get_timeline_sections(
+    State(app_state): State<SharedState>,
+) -> ApiResult<Json<TimelineSectionsResponse>> {
+    let sections: Vec<TimelineSection> = repository::timeline::get_sections(&app_state.pool)
+        .await?
+        .into_iter()
+        .map(|section| TimelineSection {
+            id: format!("{}_{}", section.id.segment_min, section.id.segment_max),
+            num_assets: section.num_assets,
+            avg_aspect_ratio: 3.0 / 2.0,
+        })
+        .collect();
+    Ok(Json(TimelineSectionsResponse { sections }))
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", tag = "type")]
+pub enum SegmentType {
+    DateRange {
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    },
+    UserGroup {
+        id: TimelineGroupId,
+        name: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineSegment {
+    #[serde(rename = "segment")]
+    pub segment: SegmentType,
+    pub assets: Vec<Asset>,
+}
+
+#[derive(Debug, Clone, Deserialize, IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineSegmentsRequest {
+    pub section_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct TimelineSegmentsResponse {
+    pub segments: Vec<TimelineSegment>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/timeline/segments/{sectionId}",
+    params(TimelineSegmentsRequest),
+    responses(
+    (status = 200, body=TimelineSegmentsResponse)
+    )
+)]
+#[instrument(skip(app_state))]
+pub async fn get_timeline_segments(
+    Query(query): Query<TimelineSegmentsRequest>,
+    State(app_state): State<SharedState>,
+) -> ApiResult<Json<TimelineSegmentsResponse>> {
+    let (segment_min, segment_max) = query
+        .section_id
+        .split_once("_")
+        .ok_or(eyre!("invalid sectionId"))?;
+    let segment_min: i64 = segment_min.parse().wrap_err("invalid sectionId")?;
+    let segment_max: i64 = segment_max.parse().wrap_err("invalid sectionId")?;
+    let segments =
+        repository::timeline::get_segments_in_section(&app_state.pool, segment_min, segment_max)
+            .await?
+            .into_iter()
+            .map(|segment| TimelineSegment {
+                assets: segment
+                    .assets
+                    .into_iter()
+                    .map(|asset| asset.into())
+                    .collect(),
+                segment: match segment.ty {
+                    TimelineSegmentType::Group(
+                        repository::timeline::TimelineGroupType::UserCreated(group),
+                    ) => SegmentType::UserGroup {
+                        id: TimelineGroupId(group.id.to_string()),
+                        name: group.name,
+                    },
+                    TimelineSegmentType::DateRange { start, end } => {
+                        SegmentType::DateRange { start, end }
+                    }
+                },
+            })
+            .collect();
+    Ok(Json(TimelineSegmentsResponse { segments }))
+}
 
 async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<AssetWithSpe> {
     match &asset.sp {

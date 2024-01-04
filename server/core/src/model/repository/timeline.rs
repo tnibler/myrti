@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use eyre::{Context, Result};
 
 use crate::model::{
@@ -98,7 +99,7 @@ Asset.timezone_offset,
 Asset.timezone_info as "timezone_info: DbTimestampInfo",
 Asset.width,
 Asset.height,
-Asset.rotation_correction as "rotation_correction: i32",
+Asset.rotation_correction as "rotation_correction: i64",
 Asset.gps_latitude as "gps_latitude: i64",
 Asset.gps_longitude as "gps_longitude: i64",
 Asset.thumb_small_square_avif ,
@@ -203,20 +204,230 @@ LIMIT $2;
     Ok(timeline_els)
 }
 
-// async fn query(pool: &DbPool) -> Result<()> {
-//     sqlx::query!(
-//         r#"
-// SELECT
-// Asset.id,
-// CASE WHEN Album.id IS NOT NULL THEN Album.id ELSE 0 END AS album_id,
-// CASE WHEN Album.id IS NOT NULL THEN Album.timeline_group_display_date ELSE Asset.taken_date END AS "sort_group_date: i64"
-// FROM Asset
-// LEFT JOIN AlbumEntry ON AlbumEntry.asset_id = Asset.id
-// LEFT JOIN Album ON AlbumEntry.album_id = Album.id
-// WHERE
-// (Album.is_timeline_group = 1 OR Album.id IS NULL)
-// ORDER BY "sort_group_date: i64" DESC, album_id DESC, Asset.taken_date DESC, Asset.id DESC;
-//     "#
-//         ).fetch_all(pool).await?;
-//     Ok(())
-// }
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TimelineSectionId {
+    /// (inlusive): index of first segment in this section
+    pub segment_min: i64,
+    /// (inlusive): index of last segment in this section
+    pub segment_max: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TimelineSection {
+    pub id: TimelineSectionId,
+    pub num_assets: i64,
+}
+
+#[tracing::instrument(skip(pool), level = "debug")]
+pub async fn get_sections(pool: &DbPool) -> Result<Vec<TimelineSection>> {
+    // Right now a section always contains entire segments,
+    // even if
+    let sections: Vec<TimelineSection> = sqlx::query!(
+        r#"
+WITH segment_cumul_size AS (
+  SELECT *, SUM(1) OVER (ORDER BY sort_date DESC, timeline_group_id DESC, asset_id DESC) AS cumul_segment_size from `TimelineSegment`
+),
+segment AS (
+  SELECT
+  asset_id,
+  sort_date,
+  timeline_group_id,
+  date_day,
+  DENSE_RANK() OVER (ORDER BY segment_idx, cumul_segment_size / 30) AS segment_idx
+  FROM segment_cumul_size
+),
+final_segment_size AS (
+  SELECT
+  segment_idx,
+  COUNT(asset_id) AS asset_count 
+  FROM segment GROUP BY segment_idx 
+),
+segment_sections AS (
+SELECT 
+segment_idx,
+asset_count,
+SUM(asset_count) OVER (PARTITION BY 1 ORDER BY segment_idx ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS c,
+SUM(asset_count) OVER (PARTITION BY 1 ORDER BY segment_idx ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) / 100 AS section_idx
+FROM final_segment_size
+)
+SELECT 
+section_idx as "section_idx: i64",
+MIN(segment_idx) AS "min_segment: i64",
+MAX(segment_idx) AS "max_segment: i64",
+SUM(asset_count) as "asset_count: i64"
+FROM segment_sections
+GROUP BY section_idx;
+    "#
+    ).fetch_all(pool)
+    .await
+    .wrap_err("error in timeline section query")?
+    .into_iter()
+    .map(|row| TimelineSection {
+        id: TimelineSectionId { segment_min: row.min_segment, segment_max: row.max_segment },
+        num_assets: row.asset_count
+         })
+    .collect();
+    Ok(sections)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TimelineGroupType {
+    UserCreated(TimelineGroup),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum TimelineSegmentType {
+    Group(TimelineGroupType),
+    DateRange {
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TimelineSegment {
+    pub ty: TimelineSegmentType,
+    pub assets: Vec<Asset>,
+    pub id: i64,
+}
+
+pub async fn get_segments_in_section(
+    pool: &DbPool,
+    segment_min: i64,
+    segment_max: i64,
+) -> Result<Vec<TimelineSegment>> {
+    let rows = sqlx::query!(
+    // copy-pasted from above, figure out how to keep them in sync later.
+    // probably creating non-temporary views or actual tables
+        r#"
+WITH segment_cumul_size AS (
+  SELECT *, SUM(1) OVER (ORDER BY sort_date DESC, timeline_group_id DESC, asset_id DESC) AS cumul_segment_size from `TimelineSegment`
+),
+segment AS (
+  SELECT
+  asset_id,
+  sort_date,
+  timeline_group_id,
+  date_day,
+  DENSE_RANK() OVER (ORDER BY segment_idx, cumul_segment_size / 30) AS segment_idx
+  FROM segment_cumul_size
+)
+SELECT
+Asset.id,
+Asset.ty as "ty: DbAssetType",
+Asset.root_dir_id,
+Asset.file_path,
+Asset.file_type,
+Asset.hash,
+Asset.is_hidden,
+Asset.added_at,
+Asset.taken_date,
+Asset.timezone_offset,
+Asset.timezone_info as "timezone_info: DbTimestampInfo",
+Asset.width,
+Asset.height,
+Asset.rotation_correction as "rotation_correction: i64",
+Asset.gps_latitude as "gps_latitude: i64",
+Asset.gps_longitude as "gps_longitude: i64",
+Asset.thumb_small_square_avif ,
+Asset.thumb_small_square_webp, 
+Asset.thumb_large_orig_avif ,
+Asset.thumb_large_orig_webp ,
+Asset.thumb_small_square_width,
+Asset.thumb_small_square_height,
+Asset.thumb_large_orig_width,
+Asset.thumb_large_orig_height,
+Asset.image_format_name,
+Asset.video_codec_name,
+Asset.video_bitrate,
+Asset.audio_codec_name,
+Asset.has_dash,
+segment.timeline_group_id as "timeline_group_id?",
+segment.date_day as "date_day: Option<String>",
+segment.segment_idx
+FROM 
+segment INNER JOIN Asset ON Asset.id=asset_id
+WHERE 
+? <= segment_idx AND segment_idx <= ?;
+    "#,
+        segment_min,
+        segment_max
+    ).fetch_all(pool)
+    .await
+    .wrap_err("error in timeline section query")?;
+    let mut segments: Vec<TimelineSegment> = Vec::new();
+    for row in rows {
+        let asset: Asset = dbasset_from_row!(&row).try_into()?;
+        match segments.last_mut() {
+            None => {
+                assert!(row.segment_idx == 1);
+                let ty = match row.timeline_group_id {
+                    None => {
+                        assert!(row.date_day.is_some());
+                        TimelineSegmentType::DateRange {
+                            start: asset.base.taken_date,
+                            end: asset.base.taken_date,
+                        }
+                    }
+                    Some(group_id) => {
+                        assert!(row.date_day.is_none());
+                        let group = get_timeline_group(pool, TimelineGroupId(group_id)).await?;
+                        TimelineSegmentType::Group(TimelineGroupType::UserCreated(group))
+                    }
+                };
+                let segment = TimelineSegment {
+                    ty,
+                    assets: vec![asset],
+                    id: row.segment_idx,
+                };
+                segments.push(segment);
+            }
+            Some(ref mut last_segment) if last_segment.id == row.segment_idx => {
+                match &mut last_segment.ty {
+                    TimelineSegmentType::Group(TimelineGroupType::UserCreated(group)) => {
+                        assert!(
+                            row.timeline_group_id
+                                .expect("column timeline_group_id must not be null")
+                                == group.id.0
+                        );
+                        // nothing to do
+                    }
+                    TimelineSegmentType::DateRange {
+                        start: _,
+                        ref mut end,
+                    } => {
+                        assert!(
+                            asset.base.taken_date <= *end,
+                            "next Asset in segment must have taken_date before the one after it"
+                        );
+                        *end = asset.base.taken_date;
+                    }
+                };
+                last_segment.assets.push(asset);
+            }
+            Some(_) => {
+                let ty = match row.timeline_group_id {
+                    None => {
+                        assert!(row.date_day.is_some());
+                        TimelineSegmentType::DateRange {
+                            start: asset.base.taken_date,
+                            end: asset.base.taken_date,
+                        }
+                    }
+                    Some(group_id) => {
+                        assert!(row.date_day.is_none());
+                        let group = get_timeline_group(pool, TimelineGroupId(group_id)).await?;
+                        TimelineSegmentType::Group(TimelineGroupType::UserCreated(group))
+                    }
+                };
+                let segment = TimelineSegment {
+                    ty,
+                    assets: vec![asset],
+                    id: 0,
+                };
+                segments.push(segment);
+            }
+        }
+    }
+    Ok(segments)
+}

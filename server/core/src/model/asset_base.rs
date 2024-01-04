@@ -25,7 +25,7 @@ pub struct AssetBase {
     pub timestamp_info: TimestampInfo,
     pub size: Size,
     /// degrees clockwise
-    pub rotation_correction: Option<i32>,
+    pub rotation_correction: Option<i64>,
     pub gps_coordinates: Option<GpsCoordinates>,
     /// Seahash of the file, if already computed
     pub hash: Option<u64>,

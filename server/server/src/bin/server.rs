@@ -159,6 +159,7 @@ async fn main() -> Result<()> {
         // allow requests from any origin
         .allow_origin(Any);
     let app = Router::new()
+        .nest("/api/timeline", routes::timeline::router())
         .nest("/api/album", routes::album::router())
         .nest("/api/asset", routes::asset::router())
         .nest("/api/assetRoots", routes::asset_roots::router())

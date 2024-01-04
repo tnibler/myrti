@@ -172,6 +172,40 @@ CREATE TABLE TimelineGroupEntry (
   FOREIGN KEY (asset_id) REFERENCES Asset(id)
 ) STRICT;
 
+CREATE VIEW TimelineSegment (
+  asset_id,
+  timeline_group_id,
+  date_day,
+  sort_date,
+  segment_idx
+) AS 
+WITH timeline AS (
+  SELECT
+  Asset.id AS asset_id,
+  Asset.taken_date AS asset_date,
+  CASE WHEN TimelineGroup.id IS NULL THEN date(Asset.taken_date / 1000, 'unixepoch') ELSE NULL END AS asset_date_day,
+  CASE WHEN TimelineGroup.id IS NOT NULL THEN TimelineGroup.id ELSE NULL END AS group_id,
+  CASE WHEN TimelineGroup.id IS NOT NULL THEN TimelineGroup.display_date ELSE Asset.taken_date END AS sort_date
+  FROM Asset
+  LEFT JOIN TimelineGroupEntry ON TimelineGroupEntry.asset_id = Asset.id
+  LEFT JOIN TimelineGroup ON TimelineGroupEntry.group_id = TimelineGroup.id
+)
+-- assign segment numbers ignoring maximum segment size
+SELECT 
+asset_id,
+group_id AS timeline_group_id,
+asset_date_day AS date_day,
+sort_date,
+DENSE_RANK() OVER 
+(
+  ORDER BY 
+  date(sort_date / 1000, 'unixepoch') DESC, -- we store milliseconds, sqlite uses seconds
+  CASE WHEN timeline.group_id IS NOT NULL THEN timeline.group_id ELSE 0 END,
+  CASE WHEN timeline.group_id IS NOT NULL THEN 0 ELSE timeline.asset_date_day END
+) AS segment_idx_no_max_size
+FROM timeline
+ORDER BY sort_date DESC, timeline_group_id DESC, asset_date DESC, asset_id DESC;
+
 CREATE TABLE FailedThumbnailJob (
   asset_id INTEGER PRIMARY KEY NOT NULL,
   file_hash BLOB NOT NULL,

@@ -254,6 +254,56 @@
           }
         }
       }
+    },
+    "/api/timeline/sections": {
+      "get": {
+        "tags": [
+          "crate::routes::timeline"
+        ],
+        "operationId": "getTimelineSections",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineSectionsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/timeline/segments": {
+      "get": {
+        "tags": [
+          "crate::routes::timeline"
+        ],
+        "operationId": "getTimelineSegments",
+        "parameters": [
+          {
+            "name": "sectionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimelineSegmentsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -458,6 +508,59 @@
           }
         }
       },
+      "SegmentType": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "start",
+              "end",
+              "type"
+            ],
+            "properties": {
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "dateRange"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "type"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/components/schemas/TimelineGroupId"
+              },
+              "name": {
+                "type": "string",
+                "nullable": true
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "userGroup"
+                ]
+              }
+            }
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type"
+        }
+      },
       "ThumbnailFormat": {
         "type": "string",
         "enum": [
@@ -517,6 +620,9 @@
           }
         ]
       },
+      "TimelineGroupId": {
+        "type": "string"
+      },
       "TimelineGroupType": {
         "oneOf": [
           {
@@ -573,6 +679,73 @@
         ],
         "discriminator": {
           "propertyName": "type"
+        }
+      },
+      "TimelineSection": {
+        "type": "object",
+        "required": [
+          "id",
+          "numAssets",
+          "avgAspectRatio"
+        ],
+        "properties": {
+          "avgAspectRatio": {
+            "type": "number",
+            "format": "float"
+          },
+          "id": {
+            "type": "string"
+          },
+          "numAssets": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "TimelineSectionsResponse": {
+        "type": "object",
+        "required": [
+          "sections"
+        ],
+        "properties": {
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimelineSection"
+            }
+          }
+        }
+      },
+      "TimelineSegment": {
+        "type": "object",
+        "required": [
+          "segment",
+          "assets"
+        ],
+        "properties": {
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            }
+          },
+          "segment": {
+            "$ref": "#/components/schemas/SegmentType"
+          }
+        }
+      },
+      "TimelineSegmentsResponse": {
+        "type": "object",
+        "required": [
+          "segments"
+        ],
+        "properties": {
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimelineSegment"
+            }
+          }
         }
       },
       "Video": {

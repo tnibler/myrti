@@ -187,7 +187,7 @@ pub struct TimelineSegmentsResponse {
 
 #[utoipa::path(
     get,
-    path = "/api/timeline/segments/{sectionId}",
+    path = "/api/timeline/segments",
     params(TimelineSegmentsRequest),
     responses(
     (status = 200, body=TimelineSegmentsResponse)

@@ -70,6 +70,25 @@ const TimelineChunk = z
 		groups: z.array(TimelineGroup)
 	})
 	.passthrough();
+const TimelineSection = z
+	.object({ avgAspectRatio: z.number(), id: z.string(), numAssets: z.number().int() })
+	.passthrough();
+const TimelineSectionsResponse = z.object({ sections: z.array(TimelineSection) }).passthrough();
+const TimelineGroupId = z.string();
+const SegmentType = z.discriminatedUnion('type', [
+	z
+		.object({
+			end: z.string().datetime({ offset: true }),
+			start: z.string().datetime({ offset: true }),
+			type: z.literal('dateRange')
+		})
+		.passthrough(),
+	z
+		.object({ id: TimelineGroupId, name: z.string().nullish(), type: z.literal('userGroup') })
+		.passthrough()
+]);
+const TimelineSegment = z.object({ assets: z.array(Asset), segment: SegmentType }).passthrough();
+const TimelineSegmentsResponse = z.object({ segments: z.array(TimelineSegment) }).passthrough();
 const AlbumId = z.string();
 const ThumbnailFormat = z.enum(['avif', 'webp']);
 const ThumbnailSize = z.enum(['small', 'large']);
@@ -89,6 +108,12 @@ export const schemas = {
 	AssetWithSpe,
 	TimelineGroup,
 	TimelineChunk,
+	TimelineSection,
+	TimelineSectionsResponse,
+	TimelineGroupId,
+	SegmentType,
+	TimelineSegment,
+	TimelineSegmentsResponse,
 	AlbumId,
 	ThumbnailFormat,
 	ThumbnailSize
@@ -217,6 +242,27 @@ const endpoints = makeApi([
 			}
 		],
 		response: z.void()
+	},
+	{
+		method: 'get',
+		path: '/api/timeline/sections',
+		alias: 'getTimelineSections',
+		requestFormat: 'json',
+		response: TimelineSectionsResponse
+	},
+	{
+		method: 'get',
+		path: '/api/timeline/segments',
+		alias: 'getTimelineSegments',
+		requestFormat: 'json',
+		parameters: [
+			{
+				name: 'sectionId',
+				type: 'Query',
+				schema: z.string()
+			}
+		],
+		response: TimelineSegmentsResponse
 	}
 ]);
 

@@ -18,7 +18,15 @@
 </script>
 
 <script lang="ts">
-	let { layout }: { layout: SegmentLayout } = $props();
+	let {
+		layout,
+		assetBaseIndex,
+		onAssetClick
+	}: {
+		layout: SegmentLayout;
+		assetBaseIndex: number;
+		onAssetClick: (assetIndex: number) => void;
+	} = $props();
 </script>
 
 <div
@@ -31,6 +39,7 @@
 			src="/api/asset/thumbnail/{layout.segment.assets[assetIdx].id}/large/avif"
 			class="tile"
 			style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
+			on:click={() => onAssetClick(assetBaseIndex + assetIdx)}
 		/>
 	{/each}
 </div>

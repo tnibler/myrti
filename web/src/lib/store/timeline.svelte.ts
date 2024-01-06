@@ -1,4 +1,4 @@
-import type { Api, TimelineSection, TimelineSegment } from "$lib/apitypes"
+import type { Api, Asset, TimelineSection, TimelineSegment } from "$lib/apitypes"
 
 export type Viewport = { width: number, height: number }
 
@@ -7,7 +7,8 @@ export type DisplaySection = {
   lastUpdateTime: number,
   height: number,
   top: number,
-  segments: TimelineSegment[] | undefined
+  segments: TimelineSegment[] | undefined,
+  assetStartIndex: number
 }
 
 type LayoutConfig = { targetRowHeight: number, sectionMargin: number }
@@ -16,8 +17,11 @@ export interface TimelineGrid {
   initialize: (viewport: Viewport) => Promise<void>,
   loadSection: (sectionIndex: number) => void,
   setRealSectionHeight: (sectionIndex: number, height: number) => void,
-  readonly sections: DisplaySection[]
-  readonly layoutConfig: LayoutConfig
+  getAssetAtIndex: (assetIndex: number) => Asset | undefined,
+  loadAssetAtIndex: (assetIndex: number) => Promise<void>
+  readonly sections: DisplaySection[],
+  readonly layoutConfig: LayoutConfig,
+  readonly totalNumAssets: number,
 }
 
 export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGrid {
@@ -35,6 +39,7 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
 
     const displaySections: DisplaySection[] = [];
     let nextSectionTop = layoutConfig.sectionMargin;
+    let startIndex = 0;
     for (const section of sectionData) {
       const height = estimateHeight(section, viewport.width, layoutConfig.targetRowHeight);
       displaySections.push({
@@ -42,9 +47,11 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
         height,
         lastUpdateTime: 0,
         segments: undefined,
-        top: nextSectionTop
+        top: nextSectionTop,
+        assetStartIndex: startIndex
       });
       nextSectionTop += layoutConfig.sectionMargin + height;
+      startIndex += section.numAssets
     }
     sections = displaySections;
   };
@@ -89,11 +96,73 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
     return height;
   }
 
+  const totalNumAssets: number = $derived(sections.reduce((acc, section: DisplaySection) => acc + section.section.numAssets, 0));
+  const sectionStartIndices = $derived(computeSectionStartIndices(sections));
+
+  function getAssetAtIndex(assetIndex: number): Asset | undefined {
+    console.log("get asset index", assetIndex)
+    if (assetIndex >= totalNumAssets) {
+      return undefined
+    }
+    const sectionIndex = sections.findLastIndex((section, idx) => {
+      return sectionStartIndices[idx] <= assetIndex;
+    });
+    console.assert(sectionIndex >= 0);
+    if (!sections[sectionIndex].segments) {
+      console.log("not loaded", sectionIndex)
+      return undefined;
+    }
+    const segments: TimelineSegment[] = sections[sectionIndex].segments as TimelineSegment[];
+
+    console.assert(segments.length > 0);
+    let segmentIndex = 0;
+    let assetsUpToSegment = sectionStartIndices[sectionIndex];
+    for (let i = 0; i < segments.length; i += 1) {
+      if (assetsUpToSegment + segments[i].assets.length > assetIndex) {
+        break;
+      }
+      assetsUpToSegment += segments[i].assets.length;
+      segmentIndex += 1;
+    }
+
+    const indexInSegment = assetIndex - assetsUpToSegment;
+    return segments[segmentIndex].assets[indexInSegment]
+  }
+
+  async function loadAssetAtIndex(assetIndex: number) {
+    if (assetIndex >= totalNumAssets) {
+      return undefined
+    }
+    const sectionIndex = sections.findLastIndex((section, idx) => {
+      return sectionStartIndices[idx] <= assetIndex;
+    });
+    console.assert(sectionIndex >= 0);
+    if (!sections[sectionIndex].segments) {
+      await loadSection(sectionIndex);
+    }
+  }
+
   return {
     initialize,
     loadSection,
     setRealSectionHeight,
+    getAssetAtIndex,
+    loadAssetAtIndex,
     get sections() { return sections },
-    get layoutConfig() { return layoutConfig }
+    get layoutConfig() { return layoutConfig },
+    get totalNumAssets() { return totalNumAssets },
   }
+}
+
+function computeSectionStartIndices(sections: DisplaySection[]): number[] {
+  if (sections.length == 1) {
+    return [0]
+  } else if (sections.length == 0) {
+    return []
+  }
+  const idxs = [0]
+  for (let i = 1; i < sections.length; i += 1) {
+    idxs.push(idxs[i - 1] + sections[i - 1].section.numAssets);
+  }
+  return idxs
 }

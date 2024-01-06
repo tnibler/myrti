@@ -12,24 +12,32 @@
 		containerWidth: number;
 		registerElementWithIntersectObserver: (el: HTMLElement) => () => void;
 		isIntersecting: boolean;
+		onAssetClick: (index: number) => void;
 	};
+
 	let {
 		timeline,
 		sectionIndex,
 		containerWidth,
 		registerElementWithIntersectObserver,
-		isIntersecting
+		isIntersecting,
+		onAssetClick
 	}: GridSectionProps = $props();
 	let sectionDivEl: HTMLElement;
 	const section: DisplaySection = $derived(timeline.sections[sectionIndex]);
 
+	const segmentStartIndices: number[] | undefined = $derived(
+		timeline.sections[sectionIndex].segments
+			? computeSegmentStartIndices(
+					section.assetStartIndex,
+					timeline.sections[sectionIndex].segments
+				)
+			: undefined
+	);
+
 	let { layouts: justifiedLayouts, sectionHeight } = $derived(
 		section.segments ? computeSegmentLayouts(section.segments) : { layouts: [], sectionHeight: 0 }
 	);
-
-	$effect(() => {
-		console.log('section ', sectionIndex, isIntersecting);
-	});
 
 	$effect(() => {
 		const unregisterIntersectObserver = registerElementWithIntersectObserver(sectionDivEl);
@@ -78,6 +86,22 @@
 		}
 		return { layouts, sectionHeight: segments.length > 0 ? nextSegmentYMin : 0 };
 	}
+
+	function computeSegmentStartIndices(
+		sectionBaseIndex: number,
+		segments: TimelineSegment[]
+	): number[] {
+		if (segments.length == 0) {
+			return [];
+		} else if (segments.length == 1) {
+			return [sectionBaseIndex];
+		}
+		let idxs: number[] = [sectionBaseIndex];
+		for (let i = 1; i < segments.length; i += 1) {
+			idxs.push(idxs[i - 1] + segments[i - 1].assets.length);
+		}
+		return idxs;
+	}
 </script>
 
 <div
@@ -88,7 +112,11 @@
 >
 	{#if isIntersecting && section.segments}
 		{#each section.segments as segment, idx}
-			<GridSegment layout={justifiedLayouts[idx]} />
+			<GridSegment
+				layout={justifiedLayouts[idx]}
+				assetBaseIndex={segmentStartIndices[idx]}
+				{onAssetClick}
+			/>
 		{/each}
 	{/if}
 </div>

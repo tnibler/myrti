@@ -360,7 +360,7 @@ WHERE
         let asset: Asset = dbasset_from_row!(&row).try_into()?;
         match segments.last_mut() {
             None => {
-                assert!(row.segment_idx == 1);
+                assert!(row.segment_idx == segment_min);
                 let ty = match row.timeline_group_id {
                     None => {
                         assert!(row.date_day.is_some());
@@ -423,7 +423,7 @@ WHERE
                 let segment = TimelineSegment {
                     ty,
                     assets: vec![asset],
-                    id: 0,
+                    id: row.segment_idx,
                 };
                 segments.push(segment);
             }

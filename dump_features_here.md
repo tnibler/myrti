@@ -30,3 +30,6 @@ shaka-packager local_file,output=av1_1080x1920.mp4 av1_1080x1920.mp4.media_info
 needs to be run in output directory so that media_info contains filename instead of path
 if localfilestorage: create path, cd into directory, run in cwd
 otherwise: cd into tempdir, run in cwd, write to storage_provider
+
+client hints in what context it's currently looking at an asset, so the server 
+can prefetch the next ones (in the timeline for instance) from disk

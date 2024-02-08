@@ -2,10 +2,9 @@ use std::collections::HashMap;
 
 use camino::Utf8PathBuf as PathBuf;
 use eyre::Result;
-use sqlx::SqlitePool;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, Instrument};
 
 use crate::{
     catalog::{
@@ -14,13 +13,14 @@ use crate::{
     },
     config,
     core::job::JobType,
+    interact,
     job::{
         image_conversion_job::{ImageConversionJob, ImageConversionParams},
         indexing_job::{IndexingJob, IndexingJobParams},
         thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
         video_packaging_job::{VideoPackagingJob, VideoPackagingJobParams},
     },
-    model::repository,
+    model::repository::{self, db::DbPool},
 };
 
 use super::{
@@ -54,7 +54,7 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn start(
         monitor_tx: mpsc::Sender<MonitorMessage>,
-        pool: SqlitePool,
+        pool: DbPool,
         storage: Storage,
         config: config::Config,
     ) -> Scheduler {
@@ -91,7 +91,7 @@ struct SchedulerImpl {
     pub events_tx: mpsc::Sender<SchedulerMessage>,
     pub events_rx: mpsc::Receiver<SchedulerMessage>,
     pub cancel: CancellationToken,
-    pool: SqlitePool,
+    pool: DbPool,
     monitor_tx: mpsc::Sender<MonitorMessage>,
     storage: Storage,
     config: config::Config,
@@ -148,9 +148,19 @@ impl SchedulerImpl {
     }
 
     async fn on_startup(&self) {
-        let asset_roots = repository::asset_root_dir::get_asset_roots(&self.pool)
+        let conn = self
+            .pool
+            .get()
+            .in_current_span()
             .await
             .expect("TODO how do we handle errors in scheduler");
+        let asset_roots = interact!(conn, move |mut conn| {
+            repository::asset_root_dir::get_asset_roots(&mut conn)
+        })
+        .in_current_span()
+        .await
+        .expect("TODO how do we handle errors in scheduler")
+        .expect("TODO how do we handle errors in scheduler");
         for asset_root in asset_roots {
             self.index_asset_root(IndexingJobParams {
                 asset_root,
@@ -211,7 +221,7 @@ impl SchedulerImpl {
         }
 
         let videos_to_package: Vec<PackageVideo> =
-            rules::video_packaging_due(&self.pool).await.unwrap(); // TODO
+            rules::video_packaging_due(self.pool.clone()).await.unwrap(); // TODO
         if videos_to_package.is_empty() {
             return false;
         }
@@ -247,8 +257,9 @@ impl SchedulerImpl {
         if any_running_image_convert_job {
             return false;
         }
-        let images_to_convert: Vec<ConvertImage> =
-            rules::image_conversion_due(&self.pool).await.unwrap(); // TODO error handling
+        let images_to_convert: Vec<ConvertImage> = rules::image_conversion_due(self.pool.clone())
+            .await
+            .unwrap(); // TODO error handling
         if images_to_convert.is_empty() {
             return false;
         }

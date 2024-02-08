@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use core::{
     core::{monitor::Monitor, scheduler::Scheduler, storage::Storage},
-    model::repository::pool::DbPool,
+    model::repository::db::DbPool,
 };
 
 pub struct AppState {

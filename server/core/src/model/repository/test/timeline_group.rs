@@ -12,16 +12,17 @@ use crate::model::{
 
 use super::*;
 
-#[tokio::test]
-#[allow(unused_must_use)]
-async fn adding_asset_to_multiple_group_albums_fails() {
-    let pool = create_db().await;
+#[test]
+fn adding_asset_to_multiple_group_albums_fails() {
+    let mut conn = super::db::open_in_memory_and_migrate();
     let asset_root_dir = AssetRootDir {
         id: AssetRootDirId(0),
         path: PathBuf::from("/path/to/assets"),
     };
-    let root_dir_id =
-        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
+    let root_dir_id = assert_ok!(repository::asset_root_dir::insert_asset_root(
+        &mut conn,
+        &asset_root_dir
+    ));
     let asset = CreateAsset {
         spe: CreateAssetSpe::Image(CreateAssetImage {
             image_format_name: "jpeg".into(),
@@ -64,8 +65,8 @@ async fn adding_asset_to_multiple_group_albums_fails() {
             gps_coordinates: None,
         },
     };
-    let asset_id = assert_ok!(repository::asset::create_asset(&pool, asset.clone()).await);
-    let asset2_id = assert_ok!(repository::asset::create_asset(&pool, asset2.clone()).await);
+    let asset_id = assert_ok!(repository::asset::create_asset(&mut conn, asset.clone()));
+    let asset2_id = assert_ok!(repository::asset::create_asset(&mut conn, asset2.clone()));
     let group = CreateTimelineGroup {
         name: Some("group1".into()),
         display_date: utc_now_millis_zero(),
@@ -78,44 +79,39 @@ async fn adding_asset_to_multiple_group_albums_fails() {
             .unwrap(),
         asset_ids: Vec::new(),
     };
-    let group_id =
-        assert_ok!(repository::timeline_group::create_timeline_group(&pool, group).await);
-    let group2_id =
-        assert_ok!(repository::timeline_group::create_timeline_group(&pool, group2).await);
-    assert_ok!(
-        repository::timeline_group::add_assets_to_group(
-            pool.acquire().await.unwrap().as_mut(),
-            group_id,
-            &[asset_id]
-        )
-        .await
-    );
-    assert_err!(
-        repository::timeline_group::add_assets_to_group(
-            pool.acquire().await.unwrap().as_mut(),
-            group2_id,
-            &[asset_id]
-        )
-        .await
-    );
-    let ret_group: Vec<AssetId> =
-        assert_ok!(repository::timeline_group::get_assets_in_group(&pool, group_id).await)
-            .into_iter()
-            .map(|asset| asset.base.id)
-            .collect();
-    let ret_group2: Vec<AssetId> =
-        assert_ok!(repository::timeline_group::get_assets_in_group(&pool, group2_id).await)
-            .into_iter()
-            .map(|asset| asset.base.id)
-            .collect();
+    let group_id = assert_ok!(repository::timeline_group::create_timeline_group(
+        &mut conn, group
+    ));
+    let group2_id = assert_ok!(repository::timeline_group::create_timeline_group(
+        &mut conn, group2
+    ));
+    assert_ok!(repository::timeline_group::add_assets_to_group(
+        &mut conn,
+        group_id,
+        &[asset_id]
+    ));
+    let _ = assert_err!(repository::timeline_group::add_assets_to_group(
+        &mut conn,
+        group2_id,
+        &[asset_id]
+    ));
+    let ret_group: Vec<AssetId> = assert_ok!(repository::timeline_group::get_assets_in_group(
+        &mut conn, group_id
+    ))
+    .into_iter()
+    .map(|asset| asset.base.id)
+    .collect();
+    let ret_group2: Vec<AssetId> = assert_ok!(repository::timeline_group::get_assets_in_group(
+        &mut conn, group2_id
+    ))
+    .into_iter()
+    .map(|asset| asset.base.id)
+    .collect();
     assert_eq!(ret_group, vec![asset_id]);
     assert_eq!(ret_group2, vec![]);
-    assert_ok!(
-        repository::timeline_group::add_assets_to_group(
-            pool.acquire().await.unwrap().as_mut(),
-            group_id,
-            &[asset2_id]
-        )
-        .await
-    );
+    assert_ok!(repository::timeline_group::add_assets_to_group(
+        &mut conn,
+        group_id,
+        &[asset2_id]
+    ));
 }

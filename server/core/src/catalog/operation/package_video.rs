@@ -1,6 +1,7 @@
 use std::ffi::OsString;
 
 use camino::Utf8PathBuf as PathBuf;
+use diesel::Connection;
 use eyre::{eyre, Context, Result};
 use tracing::{error, instrument, Instrument};
 
@@ -11,8 +12,9 @@ use crate::{
     },
     config,
     core::storage::Storage,
+    interact,
     model::{
-        repository::{self, pool::DbPool},
+        repository::{self, db::DbPool},
         AssetId, AudioRepresentation, AudioRepresentationId, Size, Video, VideoAsset,
         VideoRepresentation, VideoRepresentationId,
     },
@@ -122,15 +124,14 @@ pub struct AudioTranscodeResult {
     pub out_media_info_key: String,
 }
 
-#[instrument(skip(pool))]
-pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> Result<()> {
-    let asset: VideoAsset = repository::asset::get_asset(pool, op.asset_id)
-        .await?
-        .try_into()?;
-    let mut tx = pool
-        .begin()
-        .await
-        .wrap_err("could not begin db transaction")?;
+#[instrument(skip(pool), level = "debug")]
+pub async fn apply_package_video(pool: DbPool, op: CompletedPackageVideo) -> Result<()> {
+    let conn = pool.get().in_current_span().await?;
+    let asset: VideoAsset = interact!(conn, move |mut conn| {
+        repository::asset::get_asset(&mut conn, op.asset_id)?.try_into()
+    })
+    .in_current_span()
+    .await??;
     let asset = VideoAsset {
         video: Video {
             has_dash: true,
@@ -138,87 +139,92 @@ pub async fn apply_package_video(pool: &DbPool, op: &CompletedPackageVideo) -> R
         },
         ..asset
     };
-    repository::asset::set_asset_has_dash(tx.as_mut(), op.asset_id, true).await?;
-    match &op.created_audio_repr {
-        Some(CreatedAudioRepr::Transcode(audio_transcode)) => {
-            let audio_representation = AudioRepresentation {
-                id: AudioRepresentationId(0),
-                asset_id: op.asset_id,
-                codec_name: audio_codec_name(&audio_transcode.target),
-                file_key: audio_transcode.out_file_key.clone(),
-                media_info_key: audio_transcode.out_media_info_key.clone(),
-            };
-            let _audio_representation_id = repository::representation::insert_audio_representation(
-                tx.as_mut(),
-                &audio_representation,
-            )
-            .await?;
+    interact!(conn, move |conn| conn.transaction(|conn| {
+        repository::asset::set_asset_has_dash(conn, op.asset_id, true)?;
+        match &op.created_audio_repr {
+            Some(CreatedAudioRepr::Transcode(audio_transcode)) => {
+                let audio_representation = AudioRepresentation {
+                    id: AudioRepresentationId(0),
+                    asset_id: op.asset_id,
+                    codec_name: audio_codec_name(&audio_transcode.target),
+                    file_key: audio_transcode.out_file_key.clone(),
+                    media_info_key: audio_transcode.out_media_info_key.clone(),
+                };
+                let _audio_representation_id =
+                    repository::representation::insert_audio_representation(
+                        conn,
+                        &audio_representation,
+                    )?;
+            }
+            Some(CreatedAudioRepr::PackagedOriginalFile {
+                out_file_key,
+                out_media_info_key,
+            }) => {
+                let audio_representation = AudioRepresentation {
+                    id: AudioRepresentationId(0),
+                    asset_id: op.asset_id,
+                    codec_name: asset.video.audio_codec_name.unwrap(), // TODO
+                    file_key: out_file_key.clone(),
+                    media_info_key: out_media_info_key.clone(),
+                };
+                let _audio_representation_id =
+                    repository::representation::insert_audio_representation(
+                        conn,
+                        &audio_representation,
+                    )?;
+            }
+            None | Some(CreatedAudioRepr::Existing(_)) => {}
         }
-        Some(CreatedAudioRepr::PackagedOriginalFile {
-            out_file_key,
-            out_media_info_key,
-        }) => {
-            let audio_representation = AudioRepresentation {
-                id: AudioRepresentationId(0),
-                asset_id: op.asset_id,
-                codec_name: asset.video.audio_codec_name.unwrap(), // TODO
+        let created_video_repr = match &op.created_video_repr {
+            CreatedVideoRepr::PackagedOriginalFile {
+                out_file_key,
+                out_media_info_key,
+            } => Some(VideoRepresentation {
+                id: VideoRepresentationId(0),
+                asset_id: asset.base.id,
+                codec_name: asset.video.video_codec_name,
+                width: asset.base.size.width,
+                height: asset.base.size.height,
+                bitrate: asset.video.video_bitrate,
                 file_key: out_file_key.clone(),
                 media_info_key: out_media_info_key.clone(),
-            };
-            let _audio_representation_id = repository::representation::insert_audio_representation(
-                tx.as_mut(),
-                &audio_representation,
-            )
-            .await?;
+            }),
+            CreatedVideoRepr::Transcode(transcode) => Some(VideoRepresentation {
+                id: VideoRepresentationId(0),
+                asset_id: asset.base.id,
+                codec_name: codec_name(&transcode.target.codec).to_owned(),
+                width: transcode.final_size.width,
+                height: transcode.final_size.height,
+                bitrate: transcode.bitrate,
+                file_key: transcode.out_file_key.clone(),
+                media_info_key: transcode.out_media_info_key.clone(),
+            }),
+            CreatedVideoRepr::Existing(_) => None,
+        };
+        if let Some(video_repr) = created_video_repr {
+            let _video_repr_id =
+                repository::representation::insert_video_representation(conn, &video_repr)?;
         }
-        None | Some(CreatedAudioRepr::Existing(_)) => {}
-    }
-    let created_video_repr = match &op.created_video_repr {
-        CreatedVideoRepr::PackagedOriginalFile {
-            out_file_key,
-            out_media_info_key,
-        } => Some(VideoRepresentation {
-            id: VideoRepresentationId(0),
-            asset_id: asset.base.id,
-            codec_name: asset.video.video_codec_name,
-            width: asset.base.size.width,
-            height: asset.base.size.height,
-            bitrate: asset.video.video_bitrate,
-            file_key: out_file_key.clone(),
-            media_info_key: out_media_info_key.clone(),
-        }),
-        CreatedVideoRepr::Transcode(transcode) => Some(VideoRepresentation {
-            id: VideoRepresentationId(0),
-            asset_id: asset.base.id,
-            codec_name: codec_name(&transcode.target.codec).to_owned(),
-            width: transcode.final_size.width,
-            height: transcode.final_size.height,
-            bitrate: transcode.bitrate,
-            file_key: transcode.out_file_key.clone(),
-            media_info_key: transcode.out_media_info_key.clone(),
-        }),
-        CreatedVideoRepr::Existing(_) => None,
-    };
-    if let Some(video_repr) = created_video_repr {
-        let _video_repr_id =
-            repository::representation::insert_video_representation(tx.as_mut(), &video_repr)
-                .await?;
-    }
-    tx.commit()
-        .await
-        .wrap_err("could not commit db transaction")?;
-    Ok(())
+        Ok(())
+    }))
+    .in_current_span()
+    .await?
 }
 
-#[instrument(skip(pool, storage))]
+#[instrument(skip(pool, storage), level = "debug")]
 pub async fn perform_side_effects_package_video(
-    pool: &DbPool,
+    pool: DbPool,
     storage: &Storage,
     package_video: &PackageVideo,
     bin_paths: Option<&config::BinPaths>,
 ) -> Result<CompletedPackageVideo> {
     let asset_id = package_video.asset_id;
-    let asset_path = repository::asset::get_asset_path_on_disk(pool, asset_id).await?;
+    let conn = pool.get().in_current_span().await?;
+    let asset_path = interact!(conn, move |mut conn| {
+        repository::asset::get_asset_path_on_disk(&mut conn, asset_id)
+    })
+    .in_current_span()
+    .await??;
 
     let ffmpeg_path = bin_paths
         .map(|bp| bp.ffmpeg.as_ref().map(|p| p.as_path()))

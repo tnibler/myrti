@@ -9,7 +9,7 @@ mock-commands = []
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-geocode = { path = "../geocode" }
+# geocode = { path = "../geocode" }
 
 async-trait = "0.1.73"
 camino = { version = "1.1.6", features = ["serde1"] }
@@ -27,7 +27,6 @@ parse-size = { version = "1.0.0", features = ["std"] }
 rayon = "1.7.0"
 serde = { version = "1.0.175", features = ["derive"] }
 serde_json = "1.0.104"
-sqlx = { version ="0.7.1", features = ["sqlite", "runtime-tokio", "chrono", "migrate"] }
 strum_macros = "0.25.2"
 tempfile = "3.7.0"
 thiserror = "1.0.49"
@@ -40,6 +39,10 @@ tracing-forest = { version = "0.1.6", features = ["ansi", "tokio", "serde", "env
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 walkdir = "2.3.3"
 is_sorted = "0.1.1"
+diesel = { version = "2.1.4", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
+diesel_migrations = { version = "2.1.0", features = ["sqlite"] }
+deadpool-diesel = { version = "0.5.0", features = ["sqlite", "tracing", "serde"] }
+deadpool = { version = "0.10.0", features = ["rt_tokio_1"] }
 
 [build-dependencies]
 cc = "1.0.79"

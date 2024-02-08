@@ -1,48 +1,34 @@
+use crate::model::util::{datetime_to_db_repr, hash_u64_to_vec8};
 use crate::model::{repository::db_entity::DbFailedThumbnailJob, AssetId, FailedThumbnailJob};
-use eyre::{Context, Result};
-use tracing::{instrument, Instrument};
+use diesel::prelude::*;
+use eyre::Result;
+use tracing::instrument;
 
-use super::pool::DbPool;
+use super::db::DbConn;
+use super::schema;
 
-#[instrument(skip(pool))]
-pub async fn insert_failed_thumbnail_job(pool: &DbPool, j: &FailedThumbnailJob) -> Result<()> {
-    let db_value: DbFailedThumbnailJob = j.try_into()?;
-    sqlx::query!(
-        r#"
-INSERT INTO FailedThumbnailJob VALUES (?, ?, ?);
-    "#,
-        db_value.asset_id,
-        db_value.file_hash,
-        db_value.date
-    )
-    .execute(pool)
-    .in_current_span()
-    .await
-    .wrap_err("could not insert into table FailedThumbnailJob")?;
+#[instrument(skip(conn), level = "trace")]
+pub fn insert_failed_thumbnail_job(conn: &mut DbConn, j: &FailedThumbnailJob) -> Result<()> {
+    use schema::FailedThumbnailJob;
+    diesel::insert_into(FailedThumbnailJob::table)
+        .values((
+            FailedThumbnailJob::asset_id.eq(j.asset_id.0),
+            FailedThumbnailJob::file_hash.eq(hash_u64_to_vec8(j.file_hash)),
+            FailedThumbnailJob::date.eq(datetime_to_db_repr(&j.date)),
+        ))
+        .execute(conn)?;
     Ok(())
 }
 
-#[instrument(skip(pool))]
-pub async fn get_failed_thumbnail_job_for_asset(
-    pool: &DbPool,
+#[instrument(skip(conn), level = "trace")]
+pub fn get_failed_thumbnail_job_for_asset(
+    conn: &mut DbConn,
     asset_id: AssetId,
 ) -> Result<Option<FailedThumbnailJob>> {
-    sqlx::query_as!(
-        DbFailedThumbnailJob,
-        r#"
-SELECT
-asset_id,
-file_hash,
-date
-FROM FailedThumbnailJob
-WHERE asset_id = ?;
-    "#,
-        asset_id
-    )
-    .fetch_optional(pool)
-    .in_current_span()
-    .await
-    .wrap_err("could not query table FailedThumbnailJob")?
-    .map(|j| (&j).try_into())
-    .transpose()
+    use schema::FailedThumbnailJob;
+    let db_ftj: Option<DbFailedThumbnailJob> = FailedThumbnailJob::table
+        .filter(FailedThumbnailJob::asset_id.eq(asset_id.0))
+        .first(conn)
+        .optional()?;
+    db_ftj.map(|db_ftj| db_ftj.try_into()).transpose()
 }

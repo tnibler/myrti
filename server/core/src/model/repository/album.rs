@@ -1,15 +1,18 @@
-use chrono::{DateTime, Utc};
-use eyre::{eyre, Context, Result};
-use sqlx::SqliteConnection;
-use tracing::Instrument;
+use std::borrow::Cow;
+
+use chrono::Utc;
+use diesel::prelude::*;
+use eyre::{Context, Result};
+use tracing::instrument;
 
 use crate::model::{
-    repository::db_entity::{DbAlbum, DbAsset},
-    util::{datetime_from_db_repr, datetime_to_db_repr},
+    self,
+    repository::db_entity::{DbAlbum, DbAlbumWithAssetCount, DbAsset, DbInsertAlbum},
+    util::datetime_to_db_repr,
     Album, AlbumEntryId, AlbumId, Asset, AssetId,
 };
 
-use super::{pool::DbPool, DbError};
+use super::{db::DbConn, schema};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CreateAlbum {
@@ -18,196 +21,123 @@ pub struct CreateAlbum {
 }
 
 /// Get all albums ordered by changed_at (descending)
-pub async fn get_all_albums_with_asset_count(pool: &DbPool) -> Result<Vec<(Album, i64)>> {
-    sqlx::query_as!(
-        DbAlbum,
-        r#"
-SELECT Album.*, COUNT(AlbumEntry.asset_id) as num_assets FROM Album
-INNER JOIN AlbumEntry ON AlbumEntry.album_id = Album.id
-GROUP BY AlbumEntry.album_id
-ORDER BY Album.changed_at DESC;
-    "#
-    )
-    .fetch_all(pool)
-    .await
-    .wrap_err("could not query table Album")?
-    .into_iter()
-    .map(|db_album| {
-        let num_assets = db_album
-            .num_assets
-            .ok_or(eyre!("column num_assets must be non-null"))?;
-        let model_album: Album = db_album.try_into()?;
-        Ok((model_album, num_assets))
-    })
-    .collect::<Result<Vec<_>>>()
+#[instrument(skip(conn), level = "trace")]
+pub fn get_all_albums_with_asset_count(conn: &mut DbConn) -> Result<Vec<(Album, i64)>> {
+    use diesel::dsl::count;
+    use schema::{Album, AlbumEntry};
+    let db_albums: Vec<DbAlbumWithAssetCount> = Album::table
+        .inner_join(AlbumEntry::table)
+        .group_by(Album::album_id)
+        .select((DbAlbum::as_select(), count(AlbumEntry::album_entry_id)))
+        .load(conn)?;
+    db_albums
+        .into_iter()
+        .map(|a| {
+            a.album
+                .try_into()
+                .and_then(|album| Ok((album, a.asset_count)))
+        })
+        .collect::<Result<Vec<(model::Album, i64)>>>()
 }
 
-pub async fn get_album(pool: &DbPool, album_id: AlbumId) -> Result<Album> {
-    let row = sqlx::query!(
-        r#"
-SELECT Album.* FROM Album WHERE id = ?;
-    "#,
-        album_id
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(DbError::from)
-    .wrap_err("could not query single row from table Album")?;
-    let album = Album {
-        id: AlbumId(row.id),
-        name: row.name,
-        description: row.description,
-        created_at: datetime_from_db_repr(row.created_at)?,
-        changed_at: datetime_from_db_repr(row.changed_at)?,
-    };
-    Ok(album)
+#[instrument(skip(conn), level = "trace")]
+pub fn get_album(conn: &mut DbConn, album_id: AlbumId) -> Result<Album> {
+    use schema::Album;
+    let db_album: DbAlbum = Album::table.find(album_id.0).first(conn)?;
+    db_album.try_into()
 }
 
-pub async fn create_album(
-    pool: &DbPool,
+#[instrument(skip(conn), level = "trace")]
+pub fn create_album(
+    conn: &mut DbConn,
     create_album: CreateAlbum,
     assets: &[AssetId],
 ) -> Result<AlbumId> {
-    let mut tx = pool
-        .begin()
-        .await
-        .wrap_err("could not begin db transaction")?;
-    let now = chrono::Utc::now();
-    let album = Album {
-        id: AlbumId(0),
-        name: create_album.name,
-        description: create_album.description,
-        created_at: now,
-        changed_at: now,
-    };
-    let album_id = insert_album(&album, tx.as_mut()).await?;
-    if !assets.is_empty() {
-        append_assets_to_album(tx.as_mut(), album_id, assets).await?;
-    }
-    tx.commit().await?;
+    use schema::{Album, AlbumEntry};
+    let now = datetime_to_db_repr(&Utc::now());
+    let album_id: AlbumId = conn.transaction(|conn| {
+        let album_id = diesel::insert_into(Album::table)
+            .values(DbInsertAlbum {
+                album_id: None,
+                name: create_album.name.map(Cow::Owned),
+                description: create_album.description.map(Cow::Owned),
+                created_at: now,
+                changed_at: now,
+            })
+            .returning(Album::album_id)
+            .get_result(conn)
+            .map(|id| AlbumId(id))
+            .wrap_err("Error inserting Album")?;
+        let album_entry_ids = assets
+            .into_iter()
+            .enumerate()
+            .map(|(idx, asset_id)| {
+                let album_entry_id: i64 = diesel::insert_into(AlbumEntry::table)
+                    .values((
+                        AlbumEntry::album_id.eq(album_id.0),
+                        AlbumEntry::asset_id.eq(asset_id.0),
+                        AlbumEntry::idx.eq(i32::try_from(idx)?),
+                    ))
+                    .returning(AlbumEntry::album_entry_id)
+                    .get_result(conn)?;
+                Ok(AlbumEntryId(album_entry_id))
+            })
+            .collect::<Result<Vec<_>>>()
+            .wrap_err("error inserting one or more AlbumEntry")?;
+        Ok::<AlbumId, eyre::Report>(album_id)
+    })?;
     Ok(album_id)
 }
 
-async fn insert_album(album: &Album, conn: &mut SqliteConnection) -> Result<AlbumId> {
-    let created_at = datetime_to_db_repr(&album.created_at);
-    let changed_at = datetime_to_db_repr(&album.changed_at);
-    let result = sqlx::query!(
-        r#"
-INSERT INTO Album(id, name, description, created_at, changed_at)
-VALUES
-(NULL, ?, ?, ?, ?);
-    "#,
-        album.name,
-        album.description,
-        created_at,
-        changed_at,
-    )
-    .execute(conn)
-    .in_current_span()
-    .await
-    .wrap_err("could not insert into table Album")?;
-    let id = AlbumId(result.last_insert_rowid());
-    Ok(id)
-}
-
 /// Get assets in album ordered by the index of their AlbumEntry index
-pub async fn get_assets_in_album(album_id: AlbumId, pool: &DbPool) -> Result<Vec<Asset>> {
-    sqlx::query_as!(
-        DbAsset,
-        r#"
-SELECT 
-Asset.id,
-Asset.ty as "ty: _",
-Asset.root_dir_id,
-Asset.file_path,
-Asset.file_type,
-Asset.hash,
-Asset.is_hidden,
-Asset.added_at,
-Asset.taken_date,
-Asset.timezone_offset,
-Asset.timezone_info as "timezone_info: _",
-Asset.width,
-Asset.height,
-Asset.rotation_correction as "rotation_correction: _",
-Asset.gps_latitude as "gps_latitude: _",
-Asset.gps_longitude as "gps_longitude: _",
-Asset.thumb_small_square_avif as "thumb_small_square_avif: _",
-Asset.thumb_small_square_webp as "thumb_small_square_webp: _",
-Asset.thumb_large_orig_avif as "thumb_large_orig_avif: _",
-Asset.thumb_large_orig_webp as "thumb_large_orig_webp: _",
-Asset.thumb_small_square_width,
-Asset.thumb_small_square_height,
-Asset.thumb_large_orig_width,
-Asset.thumb_large_orig_height,
-Asset.image_format_name,
-Asset.video_codec_name,
-Asset.video_bitrate,
-Asset.audio_codec_name,
-Asset.has_dash
-FROM Asset INNER JOIN AlbumEntry
-ON Asset.id = AlbumEntry.asset_id
-WHERE AlbumEntry.album_id = ?
-ORDER BY AlbumEntry.idx;
-    "#,
-        album_id
-    )
-    .fetch_all(pool)
-    .await
-    .wrap_err("could not query tables AlbumEntry, Asset")?
-    .into_iter()
-    .map(|db_asset| db_asset.try_into())
-    .collect::<Result<Vec<Asset>>>()
+#[instrument(skip(conn), level = "trace")]
+pub fn get_assets_in_album(conn: &mut DbConn, album_id: AlbumId) -> Result<Vec<Asset>> {
+    use schema::{AlbumEntry, Asset};
+    let db_assets: Vec<DbAsset> = AlbumEntry::table
+        .filter(AlbumEntry::album_id.eq(album_id.0))
+        .inner_join(Asset::table)
+        .order_by(AlbumEntry::idx)
+        .select(DbAsset::as_select())
+        .load(conn)?;
+    db_assets
+        .into_iter()
+        .map(|db_asset| db_asset.try_into())
+        .collect::<Result<Vec<_>>>()
 }
 
-pub async fn append_assets_to_album(
-    tx: &mut SqliteConnection,
+#[instrument(skip(conn), level = "trace")]
+pub fn append_assets_to_album(
+    conn: &mut DbConn,
     album_id: AlbumId,
     asset_ids: &[AssetId],
 ) -> Result<()> {
-    let last_index = sqlx::query!(
-        r#"
-SELECT MAX(AlbumEntry.idx) as max_index FROM AlbumEntry WHERE AlbumEntry.album_id = ?;
-    "#,
-        album_id
-    )
-    // we get one value, either index or null
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(DbError::from)
-    .wrap_err("could not query table AlbumEntry")?
-    .max_index;
-    let first_insert_index = last_index.map_or(0, |last| last + 1);
-    let insert_tuples = asset_ids.into_iter().zip(first_insert_index..);
-    let mut query_builder = sqlx::QueryBuilder::new(
-        r#"
-INSERT INTO AlbumEntry(id, album_id, asset_id, idx)
-    "#,
-    );
-    query_builder.push_values(insert_tuples, move |mut builder, (asset_id, index)| {
-        builder.push_bind(None::<AlbumEntryId>);
-        builder.push_bind(album_id);
-        builder.push_bind(asset_id);
-        builder.push_bind(index);
-    });
-    query_builder.push(r#";"#);
-    query_builder
-        .build()
-        .execute(&mut *tx)
-        .await
-        .wrap_err("could not insert into table AlbumEntry")?;
-
-    // update changed_at field of album we just appended to
-    let now = chrono::Utc::now().timestamp();
-    sqlx::query!(
-        r#"
-UPDATE Album SET changed_at=? WHERE id = ?;
-    "#,
-        now,
-        album_id
-    )
-    .execute(&mut *tx)
-    .await
-    .wrap_err("could not update column Album.changed_at")?;
-    Ok(())
+    use diesel::dsl::max;
+    use schema::{Album, AlbumEntry};
+    conn.transaction(|conn| {
+        let last_index: Option<i32> = AlbumEntry::table
+            .filter(AlbumEntry::album_id.eq(album_id.0))
+            .select(max(AlbumEntry::idx))
+            .get_result(conn)?;
+        let first_insert_index = last_index.map(|last| last + 1).unwrap_or(0);
+        let _album_entry_ids = asset_ids
+            .into_iter()
+            .zip(first_insert_index..)
+            .map(|(asset_id, idx)| {
+                let album_entry_id: i64 = diesel::insert_into(AlbumEntry::table)
+                    .values((
+                        AlbumEntry::album_id.eq(album_id.0),
+                        AlbumEntry::asset_id.eq(asset_id.0),
+                        AlbumEntry::idx.eq(idx),
+                    ))
+                    .returning(AlbumEntry::album_entry_id)
+                    .get_result(conn)?;
+                Ok(AlbumEntryId(album_entry_id))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let now = datetime_to_db_repr(&Utc::now());
+        diesel::update(Album::table)
+            .set(Album::changed_at.eq(now))
+            .execute(conn)?;
+        Ok(())
+    })
 }

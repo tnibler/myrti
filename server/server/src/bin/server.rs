@@ -15,7 +15,6 @@ use mediathingyrust::{
     routes,
 };
 use serde::Deserialize;
-use sqlx::{migrate::MigrateDatabase, Sqlite, SqlitePool};
 use tokio::{signal, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 use tower::ServiceBuilder;
@@ -38,43 +37,49 @@ use core::{
         scheduler::Scheduler,
         storage::{LocalFileStorage, Storage},
     },
+    deadpool_diesel, interact,
     model::{
-        repository::{self, pool::DbPool},
+        repository::{
+            self,
+            db::{self, DbPool},
+        },
         AssetRootDir, AssetRootDirId,
     },
 };
 
-async fn db_setup() -> Result<SqlitePool> {
-    let db_url = "sqlite://mediathingy.db";
-    if !Sqlite::database_exists(db_url).await.unwrap_or(false) {
-        info!("Creating database {}", db_url);
-        Sqlite::create_database(db_url).await?;
-    }
-    // } else {
-    //     println!("dropping and recreating database");
-    //     Sqlite::drop_database(db_url).await?;
-    //     Sqlite::create_database(db_url).await?;
-    // }
-
-    let pool = SqlitePool::connect(db_url).await?;
-    sqlx::migrate!("../core/migrations").run(&pool).await?;
+async fn db_setup() -> Result<DbPool> {
+    let db_url = "mediathingy.db";
+    let pool = db::open_db_pool(db_url)?;
+    let conn = pool.get().await?;
+    interact!(conn, move |mut conn| db::migrate(&mut conn))
+        .in_current_span()
+        .await??;
     Ok(pool)
 }
 
 async fn store_asset_roots_from_config(config: &Config, pool: &DbPool) -> Result<()> {
+    let conn = pool.get().in_current_span().await?;
     for asset_dir in config.asset_dirs.iter() {
-        let existing = repository::asset_root_dir::get_asset_root_with_path(pool, &asset_dir.path)
-            .await
-            .wrap_err("Error checkng if AssetRootDir already exists")?;
+        let asset_dir_path = asset_dir.path.to_owned();
+        let existing = interact!(conn, move |mut conn| {
+            repository::asset_root_dir::get_asset_root_with_path(&mut conn, &asset_dir_path)
+        })
+        .in_current_span()
+        .await?
+        .wrap_err("Error checkng if AssetRootDir already exists")?;
         if existing.is_none() {
-            repository::asset_root_dir::insert_asset_root(
-                &pool,
-                &AssetRootDir {
-                    id: AssetRootDirId(0),
-                    path: asset_dir.path.clone(),
-                },
-            )
-            .await?;
+            let asset_dir_path = asset_dir.path.to_owned();
+            interact!(conn, move |mut conn| {
+                repository::asset_root_dir::insert_asset_root(
+                    &mut conn,
+                    &AssetRootDir {
+                        id: AssetRootDirId(0),
+                        path: asset_dir_path,
+                    },
+                )
+            })
+            .in_current_span()
+            .await??;
         }
     }
     Ok(())
@@ -188,7 +193,6 @@ async fn main() -> Result<()> {
         .unwrap();
     info!("Shutting down...");
 
-    pool.close().await;
     Ok(())
 }
 

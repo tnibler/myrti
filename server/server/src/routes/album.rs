@@ -5,8 +5,12 @@ use axum::{
 };
 use eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
+use tracing::Instrument;
 
-use core::model::{self, repository};
+use core::{
+    deadpool_diesel, interact,
+    model::{self, repository},
+};
 
 use crate::{
     app_state::SharedState,
@@ -36,11 +40,15 @@ pub struct CreateAlbumResponse {
 
 #[tracing::instrument(skip(app_state))]
 pub async fn get_all_albums(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Album>>> {
-    let albums: Vec<Album> = repository::album::get_all_albums_with_asset_count(&app_state.pool)
-        .await?
-        .into_iter()
-        .map(|(album, num_assets)| Album::from_model(&album, num_assets))
-        .collect();
+    let conn = app_state.pool.get().in_current_span().await?;
+    let albums: Vec<Album> = interact!(conn, move |mut conn| {
+        repository::album::get_all_albums_with_asset_count(&mut conn)
+    })
+    .in_current_span()
+    .await??
+    .into_iter()
+    .map(|(album, num_assets)| Album::from_model(&album, num_assets))
+    .collect();
     Ok(Json(albums))
 }
 
@@ -61,8 +69,12 @@ pub async fn post_create_album(
         .into_iter()
         .map(|id| id.try_into())
         .collect::<Result<Vec<_>>>()?;
-    let album_id =
-        repository::album::create_album(&app_state.pool, create_album, &asset_ids).await?;
+    let conn = app_state.pool.get().in_current_span().await?;
+    let album_id = interact!(conn, move |mut conn| {
+        repository::album::create_album(&mut conn, create_album, &asset_ids)
+    })
+    .in_current_span()
+    .await??;
     Ok(Json(CreateAlbumResponse {
         album_id: album_id.0,
     }))

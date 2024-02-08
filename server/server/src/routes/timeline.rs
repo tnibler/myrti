@@ -18,12 +18,15 @@ use crate::{
         TimelineGroupId,
     },
 };
-use core::model::{
-    self,
-    repository::{
+use core::{
+    deadpool_diesel, interact,
+    model::{
         self,
-        pool::DbPool,
-        timeline::{TimelineElement, TimelineSegmentType},
+        repository::{
+            self,
+            db::DbPool,
+            timeline::{TimelineElement, TimelineSegmentType},
+        },
     },
 };
 
@@ -61,13 +64,16 @@ pub async fn get_timeline(
         Some(s) => Some(model::AssetId(s.parse().wrap_err("bad asset id")?)),
         None => None,
     };
-    let groups = repository::timeline::get_timeline_chunk(
-        &app_state.pool,
-        last_asset_id,
-        req_body.max_count.into(),
-    )
+    let conn = app_state.pool.get().in_current_span().await?;
+    let groups = interact!(conn, move |mut conn| {
+        repository::timeline::get_timeline_chunk(
+            &mut conn,
+            last_asset_id,
+            req_body.max_count.into(),
+        )
+    })
     .in_current_span()
-    .await?;
+    .await??;
     let filtered_nonempty_groups = groups.into_iter().filter(|group| match group {
         TimelineElement::DayGrouped(assets) => !assets.is_empty(),
         TimelineElement::Group { group: _, assets } => !assets.is_empty(),
@@ -141,15 +147,19 @@ pub struct TimelineSection {
 pub async fn get_timeline_sections(
     State(app_state): State<SharedState>,
 ) -> ApiResult<Json<TimelineSectionsResponse>> {
-    let sections: Vec<TimelineSection> = repository::timeline::get_sections(&app_state.pool)
-        .await?
-        .into_iter()
-        .map(|section| TimelineSection {
-            id: format!("{}_{}", section.id.segment_min, section.id.segment_max),
-            num_assets: section.num_assets,
-            avg_aspect_ratio: 3.0 / 2.0,
-        })
-        .collect();
+    let conn = app_state.pool.get().in_current_span().await?;
+    let sections: Vec<TimelineSection> = interact!(conn, move |mut conn| {
+        repository::timeline::get_sections(&mut conn)
+    })
+    .in_current_span()
+    .await??
+    .into_iter()
+    .map(|section| TimelineSection {
+        id: format!("{}_{}", section.id.segment_min, section.id.segment_max),
+        num_assets: section.num_assets,
+        avg_aspect_ratio: 3.0 / 2.0,
+    })
+    .collect();
     Ok(Json(TimelineSectionsResponse { sections }))
 }
 
@@ -204,37 +214,43 @@ pub async fn get_timeline_segments(
         .ok_or(eyre!("invalid sectionId"))?;
     let segment_min: i64 = segment_min.parse().wrap_err("invalid sectionId")?;
     let segment_max: i64 = segment_max.parse().wrap_err("invalid sectionId")?;
-    let segments =
-        repository::timeline::get_segments_in_section(&app_state.pool, segment_min, segment_max)
-            .await?
+    let conn = app_state.pool.get().in_current_span().await?;
+    let segments = interact!(conn, move |mut conn| {
+        repository::timeline::get_segments_in_section(&mut conn, segment_min, segment_max)
+    })
+    .in_current_span()
+    .await??
+    .into_iter()
+    .map(|segment| TimelineSegment {
+        assets: segment
+            .assets
             .into_iter()
-            .map(|segment| TimelineSegment {
-                assets: segment
-                    .assets
-                    .into_iter()
-                    .map(|asset| asset.into())
-                    .collect(),
-                segment: match segment.ty {
-                    TimelineSegmentType::Group(
-                        repository::timeline::TimelineGroupType::UserCreated(group),
-                    ) => SegmentType::UserGroup {
-                        id: TimelineGroupId(group.id.to_string()),
-                        name: group.name,
-                    },
-                    TimelineSegmentType::DateRange { start, end } => {
-                        SegmentType::DateRange { start, end }
-                    }
-                },
-            })
-            .collect();
+            .map(|asset| asset.into())
+            .collect(),
+        segment: match segment.ty {
+            TimelineSegmentType::Group(repository::timeline::TimelineGroupType::UserCreated(
+                group,
+            )) => SegmentType::UserGroup {
+                id: TimelineGroupId(group.id.to_string()),
+                name: group.name,
+            },
+            TimelineSegmentType::DateRange { start, end } => SegmentType::DateRange { start, end },
+        },
+    })
+    .collect();
     Ok(Json(TimelineSegmentsResponse { segments }))
 }
 
 async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<AssetWithSpe> {
+    let conn = pool.get().in_current_span().await?;
     match &asset.sp {
         model::AssetSpe::Image(_image) => {
-            let reprs =
-                repository::representation::get_image_representations(pool, asset.base.id).await?;
+            let asset_id = asset.base.id;
+            let reprs = interact!(conn, move |mut conn| {
+                repository::representation::get_image_representations(&mut conn, asset_id)
+            })
+            .in_current_span()
+            .await??;
             let api_reprs = reprs
                 .into_iter()
                 .map(|repr| ImageRepresentation {

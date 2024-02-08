@@ -1,14 +1,15 @@
 use proptest::prelude::*;
 
 use crate::model::{
-    repository::{self, pool::DbPool, timeline_group::CreateTimelineGroup},
-    Asset, AssetBase, AssetId, AssetSpe, TimelineGroup, TimelineGroupId,
+    repository::{self, db::DbConn, timeline_group::CreateTimelineGroup},
+    Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, Image, TimelineGroup, TimelineGroupId,
+    Video, VideoAsset,
 };
 
 /// Inserts asset and returns them in the same order, with asset_id set
 /// For VideoAssets, it uses an empty string as ffprobe_output
-pub async fn prop_insert_create_test_assets(
-    pool: &DbPool,
+pub fn prop_insert_create_test_assets(
+    conn: &mut DbConn,
     assets: &[Asset],
 ) -> Result<Vec<Asset>, TestCaseError> {
     let mut assets_with_ids: Vec<Asset> = Vec::default();
@@ -18,8 +19,7 @@ pub async fn prop_insert_create_test_assets(
             _ => None,
         };
         #[allow(deprecated)]
-        let asset_insert_result =
-            repository::asset::insert_asset(&pool, &asset, ffprobe_output).await;
+        let asset_insert_result = repository::asset::insert_asset(conn, &asset, ffprobe_output);
         prop_assert!(
             asset_insert_result.is_ok(),
             "Inserting Asset returned error: {}",
@@ -41,8 +41,8 @@ pub async fn prop_insert_create_test_assets(
 
 /// Inserts empty albums, then adds assets to them
 /// returns albums in same order with album_id set
-pub async fn prop_insert_timeline_groups_add_assets(
-    pool: &DbPool,
+pub fn prop_insert_timeline_groups_add_assets(
+    conn: &mut DbConn,
     assets: &[Asset],
     groups_asset_idxs: &[(TimelineGroup, Vec<prop::sample::Index>)],
 ) -> Result<Vec<TimelineGroup>, TestCaseError> {
@@ -53,14 +53,14 @@ pub async fn prop_insert_timeline_groups_add_assets(
             .map(|idx| idx.get(assets).base.id)
             .collect();
         let group_with_id =
-            prop_insert_timeline_group_add_assets(pool, group, assets.iter().copied()).await?;
+            prop_insert_timeline_group_add_assets(conn, group, assets.iter().copied())?;
         groups_with_ids.push(group_with_id);
     }
     Ok(groups_with_ids)
 }
 
-pub async fn prop_insert_timeline_group_add_assets(
-    pool: &DbPool,
+pub fn prop_insert_timeline_group_add_assets(
+    conn: &mut DbConn,
     group: &TimelineGroup,
     asset_ids: impl Iterator<Item = AssetId>,
 ) -> Result<TimelineGroup, TestCaseError> {
@@ -70,8 +70,7 @@ pub async fn prop_insert_timeline_group_add_assets(
         asset_ids: Vec::new(),
     };
     // initial creation with assets to insert right away not tested here
-    let group_insert_result =
-        repository::timeline_group::create_timeline_group(pool, create_group).await;
+    let group_insert_result = repository::timeline_group::create_timeline_group(conn, create_group);
     prop_assert!(
         group_insert_result.is_ok(),
         "Inserting TimelineGroup returned error: {}",
@@ -82,24 +81,49 @@ pub async fn prop_insert_timeline_group_add_assets(
         id: group_id,
         ..group.clone()
     };
-    let mut tx = pool.begin().await.unwrap();
     prop_assert_ne!(group_with_id.id, TimelineGroupId(0));
     let append_result = repository::timeline_group::add_assets_to_group(
-        tx.as_mut(),
+        conn,
         group_with_id.id,
         &asset_ids.collect::<Vec<_>>(),
-    )
-    .await;
+    );
     prop_assert!(
         append_result.is_ok(),
         "Appending to Album returned error: {:?}",
         append_result.unwrap_err()
     );
-    let commit_result = tx.commit().await;
-    prop_assert!(
-        commit_result.is_ok(),
-        "Committing transaction returned error: {:?}",
-        commit_result.unwrap_err()
-    );
     Ok(group_with_id)
+}
+
+pub fn set_assets_root_dir(assets: Vec<Asset>, root_dir_id: AssetRootDirId) -> Vec<Asset> {
+    assets
+        .into_iter()
+        .map(|asset| Asset {
+            base: AssetBase {
+                root_dir_id,
+                ..asset.base
+            },
+            sp: asset.sp,
+        })
+        .collect()
+}
+
+pub fn set_asset_root_dir(asset: Asset, root_dir_id: AssetRootDirId) -> Asset {
+    Asset {
+        base: AssetBase {
+            root_dir_id,
+            ..asset.base
+        },
+        sp: asset.sp,
+    }
+}
+
+pub fn set_video_asset_root_dir(asset: VideoAsset, root_dir_id: AssetRootDirId) -> VideoAsset {
+    VideoAsset {
+        base: AssetBase {
+            root_dir_id,
+            ..asset.base
+        },
+        video: asset.video,
+    }
 }

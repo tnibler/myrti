@@ -5,24 +5,22 @@ use chrono::Months;
 use claims::assert_ok;
 
 use crate::model::{
-    repository::{
-        self,
-        test::{create_db, utc_now_millis_zero},
-    },
-    AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType, CreateAsset, CreateAssetBase,
-    CreateAssetImage, CreateAssetSpe, CreateAssetVideo, Image, ImageRepresentation,
-    ImageRepresentationId, Size, TimestampInfo,
+    repository::{self, test::utc_now_millis_zero},
+    AssetId, AssetRootDir, AssetRootDirId, CreateAsset, CreateAssetBase, CreateAssetImage,
+    CreateAssetSpe, ImageRepresentation, ImageRepresentationId, Size, TimestampInfo,
 };
 
-#[tokio::test]
-async fn insert_retrieve_image_representation() {
-    let pool = create_db().await;
+#[test]
+fn insert_retrieve_image_representation() {
+    let mut conn = super::db::open_in_memory_and_migrate();
     let asset_root_dir = AssetRootDir {
         id: AssetRootDirId(0),
         path: PathBuf::from("/path/to/assets"),
     };
-    let root_dir_id =
-        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
+    let root_dir_id = assert_ok!(repository::asset_root_dir::insert_asset_root(
+        &mut conn,
+        &asset_root_dir
+    ));
     let asset = CreateAsset {
         spe: CreateAssetSpe::Image(CreateAssetImage {
             image_format_name: "jpeg".into(),
@@ -44,9 +42,10 @@ async fn insert_retrieve_image_representation() {
             gps_coordinates: None,
         },
     };
-    let asset_id = assert_ok!(repository::asset::create_asset(&pool, asset).await);
-    let image_reprs =
-        assert_ok!(repository::representation::get_image_representations(&pool, asset_id).await);
+    let asset_id = assert_ok!(repository::asset::create_asset(&mut conn, asset));
+    let image_reprs = assert_ok!(repository::representation::get_image_representations(
+        &mut conn, asset_id
+    ));
     assert!(image_reprs.is_empty());
     let repr1 = ImageRepresentation {
         id: ImageRepresentationId(0),
@@ -57,27 +56,31 @@ async fn insert_retrieve_image_representation() {
         file_size: 123123,
         file_key: "img/some_key".into(),
     };
-    let repr1_id =
-        assert_ok!(repository::representation::insert_image_representation(&pool, &repr1).await);
+    let repr1_id = assert_ok!(repository::representation::insert_image_representation(
+        &mut conn, &repr1
+    ));
     let repr1_with_id = ImageRepresentation {
         id: repr1_id,
         ..repr1
     };
     let expected = vec![repr1_with_id];
-    let retrieved =
-        assert_ok!(repository::representation::get_image_representations(&pool, asset_id).await);
+    let retrieved = assert_ok!(repository::representation::get_image_representations(
+        &mut conn, asset_id
+    ));
     assert_eq!(expected, retrieved);
 }
 
 #[tokio::test]
 async fn get_images_with_no_acceptable_repr() {
-    let pool = create_db().await;
+    let mut conn = super::db::open_in_memory_and_migrate();
     let asset_root_dir = AssetRootDir {
         id: AssetRootDirId(0),
         path: PathBuf::from("/path/to/assets"),
     };
-    let root_dir_id =
-        assert_ok!(repository::asset_root_dir::insert_asset_root(&pool, &asset_root_dir).await);
+    let root_dir_id = assert_ok!(repository::asset_root_dir::insert_asset_root(
+        &mut conn,
+        &asset_root_dir
+    ));
     let asset1 = CreateAsset {
         spe: CreateAssetSpe::Image(CreateAssetImage {
             image_format_name: "jpeg".into(),
@@ -99,7 +102,7 @@ async fn get_images_with_no_acceptable_repr() {
             gps_coordinates: None,
         },
     };
-    let asset1_id = assert_ok!(repository::asset::create_asset(&pool, asset1).await);
+    let asset1_id = assert_ok!(repository::asset::create_asset(&mut conn, asset1));
     let asset2 = CreateAsset {
         spe: CreateAssetSpe::Image(CreateAssetImage {
             image_format_name: "heif".into(),
@@ -121,22 +124,20 @@ async fn get_images_with_no_acceptable_repr() {
             gps_coordinates: None,
         },
     };
-    let asset2_id = assert_ok!(repository::asset::create_asset(&pool, asset2).await);
+    let asset2_id = assert_ok!(repository::asset::create_asset(&mut conn, asset2));
 
-    let acceptable_formats = ["jpeg"].into_iter();
+    let acceptable_formats = ["jpeg"];
     let actual: HashSet<AssetId> = assert_ok!(
-        repository::asset::get_image_assets_with_no_acceptable_repr(&pool, acceptable_formats)
-            .await
+        repository::asset::get_image_assets_with_no_acceptable_repr(&mut conn, &acceptable_formats)
     )
     .into_iter()
     .collect();
     let expected: HashSet<AssetId> = [asset2_id].into_iter().collect();
     assert_eq!(expected, actual);
 
-    let acceptable_formats = ["jpeg", "heif"].into_iter();
+    let acceptable_formats = ["jpeg", "heif"];
     let actual: HashSet<AssetId> = assert_ok!(
-        repository::asset::get_image_assets_with_no_acceptable_repr(&pool, acceptable_formats)
-            .await
+        repository::asset::get_image_assets_with_no_acceptable_repr(&mut conn, &acceptable_formats)
     )
     .into_iter()
     .collect();
@@ -152,22 +153,23 @@ async fn get_images_with_no_acceptable_repr() {
         file_size: 94949494,
         file_key: "img/key2".into(),
     };
-    assert_ok!(repository::representation::insert_image_representation(&pool, &asset2_repr).await);
+    assert_ok!(repository::representation::insert_image_representation(
+        &mut conn,
+        &asset2_repr
+    ));
 
-    let acceptable_formats = ["jpeg"].into_iter();
+    let acceptable_formats = ["jpeg"];
     let actual: HashSet<AssetId> = assert_ok!(
-        repository::asset::get_image_assets_with_no_acceptable_repr(&pool, acceptable_formats)
-            .await
+        repository::asset::get_image_assets_with_no_acceptable_repr(&mut conn, &acceptable_formats)
     )
     .into_iter()
     .collect();
     let expected: HashSet<AssetId> = [asset2_id].into_iter().collect();
     assert_eq!(expected, actual);
 
-    let acceptable_formats = ["jpeg", "avif"].into_iter();
+    let acceptable_formats = ["jpeg", "avif"];
     let actual: HashSet<AssetId> = assert_ok!(
-        repository::asset::get_image_assets_with_no_acceptable_repr(&pool, acceptable_formats)
-            .await
+        repository::asset::get_image_assets_with_no_acceptable_repr(&mut conn, &acceptable_formats)
     )
     .into_iter()
     .collect();

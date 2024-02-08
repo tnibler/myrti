@@ -1,8 +1,6 @@
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE AssetRootDir (
-  id    INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  path  TEXT NOT NULL UNIQUE
+  asset_root_dir_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  path TEXT NOT NULL UNIQUE
 ) STRICT;
 
 CREATE TABLE DataDir (
@@ -11,7 +9,7 @@ CREATE TABLE DataDir (
 ) STRICT;
 
 CREATE TABLE Asset (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  asset_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   -- 1=Image, 2=Video
   ty INTEGER NOT NULL CHECK (ty IN (1, 2)),
   root_dir_id INTEGER NOT NULL,
@@ -56,7 +54,7 @@ CREATE TABLE Asset (
   audio_codec_name TEXT,
   has_dash INTEGER,
 
-  FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(id),
+  FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(asset_root_dir_id),
   UNIQUE(root_dir_id, file_path),
 
   -- timezone_offset NULL is only valid for timezone_info=UtcCertain, and NoTimestamp I guess?
@@ -85,17 +83,17 @@ CREATE TABLE Asset (
 ) STRICT;
 
 CREATE TABLE DuplicateAsset (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  dup_asset_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   asset_id INTEGER NOT NULL,
   root_dir_id INTEGER NOT NULL,
   file_path TEXT NOT NULL,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id),
-  FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(id),
+  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id),
+  FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(asset_root_dir_id),
   UNIQUE(root_dir_id, file_path)
 ) STRICT;
 
 CREATE TABLE VideoRepresentation (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  video_repr_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   asset_id INTEGER NOT NULL,
   -- columns that aren't known until encoding is done can be null if is_preallocated_dummy is true
   codec_name TEXT NOT NULL,
@@ -104,31 +102,32 @@ CREATE TABLE VideoRepresentation (
   bitrate INTEGER NOT NULL,
   file_key TEXT NOT NULL,
   media_info_key TEXT NOT NULL,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id)
+  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 
 CREATE TABLE AudioRepresentation (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  audio_repr_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   asset_id INTEGER NOT NULL,
   codec_name TEXT NOT NULL,
   -- bitrate INTEGER NOT NULL,
   file_key TEXT NOT NULL,
   media_info_key TEXT NOT NULL,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id)
+  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 
 CREATE TABLE ImageRepresentation (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  image_repr_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   asset_id INTEGER NOT NULL,
   format_name TEXT NOT NULL,
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
   file_size INTEGER NOT NULL,
-  file_key TEXT NOT NULL
+  file_key TEXT NOT NULL,
+  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 
 CREATE TABLE Album (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  album_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   name TEXT,
   description TEXT,
   -- UTC timestamp in milliseconds since UNIX epoch
@@ -140,19 +139,19 @@ CREATE TABLE Album (
 -- -- surrogate key here because
 -- -- https://dba.stackexchange.com/a/761
 CREATE TABLE AlbumEntry (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  album_entry_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   album_id INTEGER NOT NULL,
   asset_id INTEGER NOT NULL,
   idx INTEGER NOT NULL,
   UNIQUE(album_id, idx),
-  FOREIGN KEY (album_id) REFERENCES Album(id),
-  FOREIGN KEY (asset_id) REFERENCES Asset(id)
+  FOREIGN KEY (album_id) REFERENCES Album(album_id),
+  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 
 CREATE INDEX album_id_index ON AlbumEntry(album_id);
 
 CREATE TABLE TimelineGroup (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  timeline_group_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   name TEXT,
   -- UTC timestamp of date used to position the group in the timeline
   display_date INTEGER NOT NULL,
@@ -163,13 +162,13 @@ CREATE TABLE TimelineGroup (
 ) STRICT;
 
 CREATE TABLE TimelineGroupEntry (
-  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  timeline_group_entry_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   group_id INTEGER NOT NULL,
   asset_id INTEGER NOT NULL,
   -- an Asset can only belong to one TimelineGroup
   UNIQUE(asset_id),
-  FOREIGN KEY (group_id) REFERENCES TimelineGroup(id),
-  FOREIGN KEY (asset_id) REFERENCES Asset(id)
+  FOREIGN KEY (group_id) REFERENCES TimelineGroup(timeline_group_id),
+  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 
 CREATE VIEW TimelineSegment (
@@ -181,14 +180,14 @@ CREATE VIEW TimelineSegment (
 ) AS 
 WITH timeline AS (
   SELECT
-  Asset.id AS asset_id,
+  Asset.asset_id AS asset_id,
   Asset.taken_date AS asset_date,
-  CASE WHEN TimelineGroup.id IS NULL THEN date(Asset.taken_date / 1000, 'unixepoch') ELSE NULL END AS asset_date_day,
-  CASE WHEN TimelineGroup.id IS NOT NULL THEN TimelineGroup.id ELSE NULL END AS group_id,
-  CASE WHEN TimelineGroup.id IS NOT NULL THEN TimelineGroup.display_date ELSE Asset.taken_date END AS sort_date
+  CASE WHEN TimelineGroup.timeline_group_id IS NULL THEN date(Asset.taken_date / 1000, 'unixepoch') ELSE NULL END AS asset_date_day,
+  CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.timeline_group_id ELSE NULL END AS group_id,
+  CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.display_date ELSE Asset.taken_date END AS sort_date
   FROM Asset
-  LEFT JOIN TimelineGroupEntry ON TimelineGroupEntry.asset_id = Asset.id
-  LEFT JOIN TimelineGroup ON TimelineGroupEntry.group_id = TimelineGroup.id
+  LEFT JOIN TimelineGroupEntry ON TimelineGroupEntry.asset_id = Asset.asset_id
+  LEFT JOIN TimelineGroup ON TimelineGroupEntry.group_id = TimelineGroup.timeline_group_id
 )
 -- assign segment numbers ignoring maximum segment size
 SELECT 
@@ -206,12 +205,26 @@ DENSE_RANK() OVER
 FROM timeline
 ORDER BY sort_date DESC, timeline_group_id DESC, asset_date DESC, asset_id DESC;
 
+-- =================== Configuration =======================
+
+CREATE TABLE AcceptableVideoCodec (
+  codec_name TEXT PRIMARY KEY NOT NULL,
+  CHECK(LOWER(codec_name) = codec_name)
+) STRICT;
+
+CREATE TABLE AcceptableAudioCodec (
+  codec_name TEXT PRIMARY KEY NOT NULL,
+  CHECK(LOWER(codec_name) = codec_name)
+) STRICT;
+
+-- =================== Housekeeping ========================
+
 CREATE TABLE FailedThumbnailJob (
   asset_id INTEGER PRIMARY KEY NOT NULL,
   file_hash BLOB NOT NULL,
   -- milliseconds since UNIX epoch
   date INTEGER NOT NULL,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id)
+  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 
 CREATE TABLE FailedFFmpeg (
@@ -219,7 +232,7 @@ CREATE TABLE FailedFFmpeg (
   file_hash BLOB NOT NULL,
   -- milliseconds since UNIX epoch
   date INTEGER NOT NULL,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id)
+  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 );
 
 CREATE TABLE FailedShakaPackager (
@@ -227,5 +240,5 @@ CREATE TABLE FailedShakaPackager (
   file_hash BLOB NOT NULL,
   -- milliseconds since UNIX epoch
   date INTEGER NOT NULL,
-  FOREIGN KEY (asset_id) REFERENCES Asset(id)
+  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 );

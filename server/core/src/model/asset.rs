@@ -65,7 +65,7 @@ pub struct CreateAssetBase {
     pub timestamp_info: TimestampInfo,
     pub size: Size,
     /// degrees clockwise
-    pub rotation_correction: Option<i64>,
+    pub rotation_correction: Option<i32>,
     /// Seahash of the file, if already computed
     pub hash: Option<u64>,
     pub gps_coordinates: Option<GpsCoordinates>,
@@ -156,37 +156,5 @@ impl TryFrom<Asset> for ImageAsset {
 
     fn try_from(value: Asset) -> std::result::Result<Self, Self::Error> {
         (&value).try_into()
-    }
-}
-
-impl TryFrom<&DbAsset> for VideoAsset {
-    type Error = Report;
-
-    fn try_from(value: &DbAsset) -> Result<Self, Self::Error> {
-        Asset::try_from(value)?.try_into()
-    }
-}
-
-impl TryFrom<DbAsset> for VideoAsset {
-    type Error = Report;
-
-    fn try_from(value: DbAsset) -> Result<Self, Self::Error> {
-        Asset::try_from(&value)?.try_into()
-    }
-}
-
-impl TryFrom<&DbAsset> for ImageAsset {
-    type Error = Report;
-
-    fn try_from(value: &DbAsset) -> Result<Self, Self::Error> {
-        Asset::try_from(value)?.try_into()
-    }
-}
-
-impl TryFrom<DbAsset> for ImageAsset {
-    type Error = Report;
-
-    fn try_from(value: DbAsset) -> Result<Self, Self::Error> {
-        Asset::try_from(&value)?.try_into()
     }
 }

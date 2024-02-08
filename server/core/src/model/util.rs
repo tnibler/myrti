@@ -3,7 +3,7 @@ use eyre::{eyre, Context, Result};
 use std::path::{Path, PathBuf};
 
 #[inline]
-pub fn bool_to_int(b: bool) -> i64 {
+pub fn bool_to_int(b: bool) -> i32 {
     if b {
         1
     } else {
@@ -45,8 +45,9 @@ pub fn datetime_from_db_repr(unix_millis: i64) -> Result<DateTime<Utc>> {
     }
 }
 
-pub fn hash_vec8_to_u64(v: &[u8]) -> Result<u64> {
+pub fn hash_vec8_to_u64(v: impl AsRef<[u8]>) -> Result<u64> {
     let array: [u8; 8] = v
+        .as_ref()
         .try_into()
         .wrap_err("could not parse hash from db value")?;
     Ok(u64::from_le_bytes(array))

@@ -1,15 +1,31 @@
 pub mod album;
 pub mod asset;
 pub mod asset_root_dir;
-pub mod data_dir;
+pub mod config;
+pub mod db;
 pub mod db_entity;
 pub mod duplicate_asset;
-mod error;
 pub mod failed_job;
-pub mod pool;
 pub mod representation;
+#[allow(non_snake_case)]
+mod schema;
 #[cfg(test)]
 mod test;
 pub mod timeline;
 pub mod timeline_group;
-pub use error::*;
+
+#[macro_export()]
+macro_rules! interact {
+    ($conn:ident, $block:expr) => {
+        <_ as futures::TryFutureExt>::map_err($conn.interact::<_, eyre::Result<_>>($block), |err| {
+            match err {
+                deadpool_diesel::InteractError::Panic(_) => {
+                    eyre::eyre!("database interaction panicked")
+                }
+                deadpool_diesel::InteractError::Aborted => {
+                    eyre::eyre!("database interaction was aborted")
+                }
+            }
+        })
+    };
+}

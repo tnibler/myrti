@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use async_trait::async_trait;
 use chrono::Utc;
-use eyre::{Report, Result};
+use eyre::{Context, Report, Result};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, instrument, Instrument};
@@ -19,8 +19,9 @@ use crate::{
         job::{Job, JobHandle, JobProgress, JobResultType},
         storage::Storage,
     },
+    interact,
     model::{
-        repository::{self, pool::DbPool},
+        repository::{self, db::DbPool},
         AssetId, FailedThumbnailJob, ThumbnailFormat,
     },
     processing::hash::hash_file,
@@ -63,6 +64,24 @@ impl ThumbnailJob {
         status_tx: mpsc::Sender<JobProgress>,
         cancel: CancellationToken,
     ) -> Result<ThumbnailJobResult> {
+        async fn resolve(op: &CreateThumbnail) -> CreateThumbnailWithPaths {
+            let mut thumbnails_to_create: Vec<ThumbnailToCreateWithPaths> = Vec::default();
+            for thumb in &op.thumbnails {
+                let avif_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Avif);
+                let webp_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Webp);
+                let thumbnail_to_create = ThumbnailToCreateWithPaths {
+                    ty: thumb.ty,
+                    webp_key,
+                    avif_key,
+                };
+                thumbnails_to_create.push(thumbnail_to_create);
+            }
+            CreateThumbnailWithPaths {
+                asset_id: op.asset_id,
+                thumbnails: thumbnails_to_create,
+            }
+        }
+
         // TODO send progress updates
         status_tx
             .send(JobProgress {
@@ -71,16 +90,22 @@ impl ThumbnailJob {
             })
             .await
             .unwrap();
+        let conn = self.pool.get().in_current_span().await?;
         let mut failed: Vec<FailedThumbnail> = Vec::default();
         for op in &self.params.thumbnails {
-            let past_failed_job =
-                repository::failed_job::get_failed_thumbnail_job_for_asset(&self.pool, op.asset_id)
-                    .await?;
+            let asset_id = op.asset_id;
+            let past_failed_job = interact!(conn, move |mut conn| {
+                repository::failed_job::get_failed_thumbnail_job_for_asset(&mut conn, asset_id)
+            })
+            .in_current_span()
+            .await??;
             if let Some(past_failed_job) = past_failed_job {
-                let asset_path = repository::asset::get_asset_path_on_disk(&self.pool, op.asset_id)
-                    .in_current_span()
-                    .await?
-                    .path_on_disk();
+                let asset_path = interact!(conn, move |mut conn| {
+                    repository::asset::get_asset_path_on_disk(&mut conn, asset_id)
+                })
+                .in_current_span()
+                .await??
+                .path_on_disk();
                 let file = tokio::fs::File::open(&asset_path)
                     .in_current_span()
                     .await?
@@ -89,7 +114,7 @@ impl ThumbnailJob {
                 let current_hash = hash_file(file).in_current_span().await?;
                 if current_hash == past_failed_job.file_hash {
                     debug!(
-                        asset_id = ?op.asset_id,
+                        asset_id = ?asset_id,
                         "skipping thumbnail that failed in the past"
                     );
                     continue;
@@ -99,8 +124,8 @@ impl ThumbnailJob {
             let op_resolved = resolve(&op).in_current_span().await;
             let side_effect_results = match perform_side_effects_create_thumbnail(
                 &self.storage,
-                &self.pool,
-                &op_resolved,
+                self.pool.clone(),
+                op_resolved.clone(),
             )
             .in_current_span()
             .await
@@ -128,33 +153,36 @@ impl ThumbnailJob {
                 let failed_asset_ids: HashSet<AssetId> =
                     failed.iter().map(|f| f.thumbnail.asset_id).collect();
                 for failed_asset_id in failed_asset_ids {
-                    let asset_path =
-                        repository::asset::get_asset_path_on_disk(&self.pool, op.asset_id)
-                            .in_current_span()
-                            .await?
-                            .path_on_disk();
+                    let asset_path = interact!(conn, move |mut conn| {
+                        repository::asset::get_asset_path_on_disk(&mut conn, asset_id)
+                    })
+                    .in_current_span()
+                    .await??
+                    .path_on_disk();
                     let file = tokio::fs::File::open(&asset_path)
                         .await?
                         .try_into_std()
                         .unwrap();
                     let hash = hash_file(file).await?;
-                    let insert_res = repository::failed_job::insert_failed_thumbnail_job(
-                        &self.pool,
-                        &FailedThumbnailJob {
-                            asset_id: failed_asset_id,
-                            file_hash: hash,
-                            date: Utc::now(),
-                        },
-                    )
+                    let insert_res = interact!(conn, move |mut conn| {
+                        repository::failed_job::insert_failed_thumbnail_job(
+                            &mut conn,
+                            &FailedThumbnailJob {
+                                asset_id: failed_asset_id,
+                                file_hash: hash,
+                                date: Utc::now(),
+                            },
+                        )
+                    })
                     .in_current_span()
-                    .await;
+                    .await?;
                     if let Err(err) = insert_res {
                         error!(%err, "failed inserting FailedThumbnailJob");
                     }
                 }
                 continue;
             }
-            let apply_result = apply_create_thumbnail(&self.pool, &op_resolved).await;
+            let apply_result = apply_create_thumbnail(self.pool.clone(), op_resolved).await;
             if let Err(err) = apply_result {
                 failed.push(FailedThumbnail {
                     thumbnail: op.clone(),
@@ -163,25 +191,7 @@ impl ThumbnailJob {
                 continue;
             }
         }
-        return Ok(ThumbnailJobResult { failed });
-
-        async fn resolve(op: &CreateThumbnail) -> CreateThumbnailWithPaths {
-            let mut thumbnails_to_create: Vec<ThumbnailToCreateWithPaths> = Vec::default();
-            for thumb in &op.thumbnails {
-                let avif_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Avif);
-                let webp_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Webp);
-                let thumbnail_to_create = ThumbnailToCreateWithPaths {
-                    ty: thumb.ty,
-                    webp_key,
-                    avif_key,
-                };
-                thumbnails_to_create.push(thumbnail_to_create);
-            }
-            CreateThumbnailWithPaths {
-                asset_id: op.asset_id,
-                thumbnails: thumbnails_to_create,
-            }
-        }
+        Ok(ThumbnailJobResult { failed })
     }
 }
 

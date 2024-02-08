@@ -1,56 +1,50 @@
 use camino::Utf8Path as Path;
-use eyre::{eyre, Context, Result};
+use diesel::prelude::*;
+use eyre::Result;
+use tracing::instrument;
 
-use crate::model::{util::path_to_string, AssetRootDir, AssetRootDirId};
+use crate::model::{AssetRootDir, AssetRootDirId};
 
+use super::db::DbConn;
 use super::db_entity::DbAssetRootDir;
-use super::pool::DbPool;
-use super::DbError;
+use super::schema;
 
-pub async fn get_asset_root(pool: &DbPool, id: AssetRootDirId) -> Result<AssetRootDir> {
-    sqlx::query_as!(DbAssetRootDir, "SELECT * FROM AssetRootDir WHERE id=?", id)
-        .fetch_one(pool)
-        .await
-        .map_err(DbError::from)
-        .map(|db_asset_root| db_asset_root.try_into())
-        .wrap_err("failed to query table AssetRootDirs")?
+#[instrument(skip(conn), level = "trace")]
+pub fn get_asset_root(conn: &mut DbConn, id: AssetRootDirId) -> Result<AssetRootDir> {
+    use schema::AssetRootDir;
+    let db_ard: DbAssetRootDir = AssetRootDir::table.find(id.0).first(conn)?;
+    db_ard.try_into()
 }
 
-pub async fn get_asset_roots(pool: &DbPool) -> Result<Vec<AssetRootDir>> {
-    sqlx::query_as!(DbAssetRootDir, "SELECT * FROM AssetRootDir;")
-        .fetch_all(pool)
-        .await?
+#[instrument(skip(conn), level = "trace")]
+pub fn get_asset_roots(conn: &mut DbConn) -> Result<Vec<AssetRootDir>> {
+    use schema::AssetRootDir;
+    let db_ards: Vec<DbAssetRootDir> = AssetRootDir::table.load(conn)?;
+    db_ards
         .into_iter()
-        .map(|ard| ard.try_into())
+        .map(|db_ard| db_ard.try_into())
         .collect::<Result<Vec<_>>>()
-        .wrap_err("failed to query table AssetRootDirs")
 }
 
-pub async fn insert_asset_root(
-    pool: &DbPool,
+#[instrument(skip(conn), level = "trace")]
+pub fn insert_asset_root(
+    conn: &mut DbConn,
     asset_root_dir: &AssetRootDir,
 ) -> Result<AssetRootDirId> {
-    let path = path_to_string(&asset_root_dir.path)?;
-    sqlx::query!(
-        "INSERT INTO AssetRootDir (id, path) VALUES (null, ?);",
-        path
-    )
-    .execute(pool)
-    .await
-    .map(|query_result| AssetRootDirId(query_result.last_insert_rowid()))
-    .wrap_err("failed to insert into table AssetRootDirs")
+    use schema::AssetRootDir;
+    let id = diesel::insert_into(AssetRootDir::table)
+        .values(AssetRootDir::path.eq(&asset_root_dir.path.as_str()))
+        .returning(AssetRootDir::asset_root_dir_id)
+        .get_result(conn)?;
+    Ok(AssetRootDirId(id))
 }
 
-pub async fn get_asset_root_with_path(pool: &DbPool, path: &Path) -> Result<Option<AssetRootDir>> {
-    let path = path_to_string(path)?;
-    sqlx::query_as!(
-        DbAssetRootDir,
-        "SELECT * FROM AssetRootDir WHERE path=?",
-        path
-    )
-    .fetch_optional(pool)
-    .await
-    .wrap_err("failed to query table AssetRootDirs")?
-    .map(|v| v.try_into())
-    .transpose()
+#[instrument(skip(conn), level = "trace")]
+pub fn get_asset_root_with_path(conn: &mut DbConn, path: &Path) -> Result<Option<AssetRootDir>> {
+    use schema::AssetRootDir;
+    let db_ard: Option<DbAssetRootDir> = AssetRootDir::table
+        .filter(AssetRootDir::path.eq(path.as_str()))
+        .first(conn)
+        .optional()?;
+    db_ard.map(|db_ard| db_ard.try_into()).transpose()
 }

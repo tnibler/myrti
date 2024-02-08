@@ -4,8 +4,9 @@ use tracing::{instrument, Instrument};
 
 use crate::{
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
+    interact,
     model::{
-        repository::{self, pool::DbPool},
+        repository::{self, db::DbPool},
         AssetId, AssetType, ThumbnailType,
     },
     processing::{
@@ -39,29 +40,36 @@ pub struct ThumbnailToCreateWithPaths {
     pub webp_key: String,
 }
 
-#[instrument(skip(pool))]
-pub async fn apply_create_thumbnail(pool: &DbPool, op: &CreateThumbnailWithPaths) -> Result<()> {
-    for thumb in &op.thumbnails {
-        // TODO unnecessary transaction
-        let mut tx = pool
-            .begin()
-            .await
-            .wrap_err("could not begin db transaction")?;
-        match thumb.ty {
-            ThumbnailType::SmallSquare => {
-                repository::asset::set_asset_small_thumbnails(tx.as_mut(), op.asset_id, true, true)
-                    .await
-            }
-            ThumbnailType::LargeOrigAspect => {
-                repository::asset::set_asset_large_thumbnails(tx.as_mut(), op.asset_id, true, true)
-                    .await
+#[instrument(skip(pool), level = "debug")]
+pub async fn apply_create_thumbnail(pool: DbPool, op: CreateThumbnailWithPaths) -> Result<()> {
+    let conn = pool.get().in_current_span().await?;
+    interact!(conn, move |mut conn| {
+        for thumb in &op.thumbnails {
+            match thumb.ty {
+                ThumbnailType::SmallSquare => {
+                    repository::asset::set_asset_small_thumbnails(
+                        &mut conn,
+                        op.asset_id,
+                        true,
+                        true,
+                    )
+                    .wrap_err("could not set asset thumbnails")?;
+                }
+                ThumbnailType::LargeOrigAspect => {
+                    repository::asset::set_asset_large_thumbnails(
+                        &mut conn,
+                        op.asset_id,
+                        true,
+                        true,
+                    )
+                    .wrap_err("could not set asset thumbnails")?;
+                }
             }
         }
-        .wrap_err("could not set asset thumbnails")?;
-        tx.commit()
-            .await
-            .wrap_err("could not commit db transaction")?;
-    }
+        Ok(())
+    })
+    .in_current_span()
+    .await??;
     Ok(())
 }
 
@@ -69,11 +77,11 @@ pub struct ThumbnailSideEffectResult {
     pub failed: Vec<(ThumbnailToCreateWithPaths, Report)>,
 }
 
-#[instrument(skip(pool, storage))]
+#[instrument(skip(pool, storage), level = "debug")]
 pub async fn perform_side_effects_create_thumbnail(
     storage: &Storage,
-    pool: &DbPool,
-    op: &CreateThumbnailWithPaths,
+    pool: DbPool,
+    op: CreateThumbnailWithPaths,
 ) -> Result<ThumbnailSideEffectResult> {
     let mut result = ThumbnailSideEffectResult {
         failed: Vec::default(),
@@ -81,10 +89,14 @@ pub async fn perform_side_effects_create_thumbnail(
     if op.thumbnails.is_empty() {
         return Ok(result);
     }
-    let in_path = repository::asset::get_asset_path_on_disk(pool, op.asset_id)
-        .await?
-        .path_on_disk();
-    let asset = repository::asset::get_asset(pool, op.asset_id).await?;
+    let conn = pool.get().in_current_span().await?;
+    let (in_path, asset) = interact!(conn, move |mut conn| {
+        let in_path =
+            repository::asset::get_asset_path_on_disk(&mut conn, op.asset_id)?.path_on_disk();
+        let asset = repository::asset::get_asset(&mut conn, op.asset_id)?;
+        Ok::<_, eyre::Report>((in_path, asset))
+    })
+    .await??;
     // TODO don't await sequentially. Not super bad because op.thumbnails is small but still
     for thumb in &op.thumbnails {
         match create_thumbnail(in_path.clone(), asset.base.ty, thumb, storage)
@@ -100,7 +112,7 @@ pub async fn perform_side_effects_create_thumbnail(
     Ok(result)
 }
 
-#[instrument(skip(storage))]
+#[instrument(skip(storage), level = "debug")]
 async fn create_thumbnail(
     asset_path: PathBuf,
     asset_type: AssetType,

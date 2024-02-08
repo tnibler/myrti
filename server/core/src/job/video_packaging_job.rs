@@ -12,7 +12,7 @@ use crate::{
         job::{Job, JobHandle, JobProgress, JobResultType},
         storage::Storage,
     },
-    model::repository::pool::DbPool,
+    model::repository::db::DbPool,
 };
 
 #[derive(Debug, Clone)]
@@ -74,7 +74,7 @@ impl VideoPackagingJob {
 
     async fn process_task(&self, package_video: PackageVideo) -> Result<()> {
         let completed_package_video = perform_side_effects_package_video(
-            &self.pool,
+            self.pool.clone(),
             &self.storage,
             &package_video,
             self.bin_paths.as_ref(),
@@ -82,7 +82,7 @@ impl VideoPackagingJob {
         .in_current_span()
         .await
         .wrap_err("error packaging video asset")?;
-        apply_package_video(&self.pool, &completed_package_video)
+        apply_package_video(self.pool.clone(), completed_package_video)
             .in_current_span()
             .await
             .wrap_err("error packaging video asset")?;

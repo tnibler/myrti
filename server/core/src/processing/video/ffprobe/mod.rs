@@ -19,8 +19,8 @@ pub struct AudioStream {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VideoStream {
     pub codec_name: String,
-    pub width: i64,
-    pub height: i64,
+    pub width: i32,
+    pub height: i32,
     pub bitrate: i64,
     pub rotation: Option<i32>,
 }

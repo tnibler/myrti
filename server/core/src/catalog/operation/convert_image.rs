@@ -1,4 +1,6 @@
 use eyre::{Context, Result};
+use futures::TryFutureExt;
+use tracing::Instrument;
 
 use crate::{
     catalog::{
@@ -6,8 +8,9 @@ use crate::{
         storage_key,
     },
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
+    interact,
     model::{
-        repository::{self, pool::DbPool},
+        repository::{self, db::DbPool},
         AssetId, ImageRepresentation, ImageRepresentationId, Size,
     },
     processing::{self, image::image_conversion::ConvertImageTrait},
@@ -20,10 +23,10 @@ pub struct ConvertImage {
     pub output_file_key: String,
 }
 
-#[tracing::instrument(skip(pool))]
+#[tracing::instrument(skip(pool), level = "debug")]
 pub async fn apply_convert_image(
-    pool: &DbPool,
-    op: &ConvertImage,
+    pool: DbPool,
+    op: ConvertImage,
     result: ImageConversionSideEffectResult,
 ) -> Result<()> {
     let image_representation = ImageRepresentation {
@@ -35,9 +38,13 @@ pub async fn apply_convert_image(
         width: result.final_size.width,
         height: result.final_size.height,
     };
-    repository::representation::insert_image_representation(pool, &image_representation)
-        .await
-        .wrap_err("error inserting image representation")?;
+    let conn = pool.get().in_current_span().await?;
+    interact!(conn, move |mut conn| {
+        repository::representation::insert_image_representation(&mut conn, &image_representation)
+            .wrap_err("error inserting image representation")
+    })
+    .in_current_span()
+    .await??;
     Ok(())
 }
 
@@ -47,20 +54,25 @@ pub struct ImageConversionSideEffectResult {
     pub file_size: i64,
 }
 
-#[tracing::instrument(skip(storage))]
+#[tracing::instrument(skip(storage, pool), level = "debug")]
 pub async fn perform_side_effects_convert_image(
     op: &ConvertImage,
-    pool: &DbPool,
+    pool: DbPool,
     storage: &Storage,
 ) -> Result<ImageConversionSideEffectResult> {
     let command_out_file = storage.new_command_out_file(&op.output_file_key).await?;
-    // FIXME (low) unnecessarily querying same row twice
-    let asset = repository::asset::get_asset(pool, op.asset_id).await?;
-    let asset_path = repository::asset::get_asset_path_on_disk(pool, op.asset_id)
-        .await?
-        .path_on_disk();
+    let conn = pool.get().await?;
+    let asset_id = op.asset_id;
+    let (asset, asset_path) = interact!(conn, move |mut conn| {
+        // FIXME (low) unnecessarily querying same row twice
+        let asset = repository::asset::get_asset(&mut conn, asset_id)?;
+        let asset_path = repository::asset::get_asset_path_on_disk(&mut conn, asset_id)?;
+        Ok((asset, asset_path))
+    })
+    .in_current_span()
+    .await??;
     let scaled_size = processing::image::image_conversion::ConvertImage::convert_image(
-        asset_path,
+        asset_path.path_on_disk(),
         op.target.clone(),
         &op.output_file_key,
         storage,

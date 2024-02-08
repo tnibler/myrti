@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use eyre::{Context, Result};
-use tracing::instrument;
+use tracing::{instrument, Instrument};
 
 use crate::{
     catalog::{
@@ -11,8 +11,9 @@ use crate::{
         },
         storage_key,
     },
+    interact,
     model::{
-        repository::{self, pool::DbPool},
+        repository::{self, db::DbPool},
         AssetThumbnails, ThumbnailType, VideoAsset,
     },
     processing,
@@ -30,11 +31,14 @@ use super::{
 #[instrument(skip(pool))]
 pub async fn thumbnails_to_create(pool: &DbPool) -> Result<Vec<CreateThumbnail>> {
     // always create all thumbnails if any are missing for now
-    let limit: Option<i32> = None;
-    let assets: Vec<AssetThumbnails> =
-        repository::asset::get_assets_with_missing_thumbnail(pool, limit)
-            .await
-            .wrap_err("could not query for Assets with missing thumbnails")?;
+    let limit: Option<i64> = None;
+    let conn = pool.get().in_current_span().await?;
+    let assets: Vec<AssetThumbnails> = interact!(conn, move |mut conn| {
+        repository::asset::get_assets_with_missing_thumbnail(&mut conn, limit)
+            .wrap_err("could not query for Assets with missing thumbnails")
+    })
+    .in_current_span()
+    .await??;
     Ok(assets
         .into_iter()
         .map(|asset| CreateThumbnail {
@@ -51,7 +55,7 @@ pub async fn thumbnails_to_create(pool: &DbPool) -> Result<Vec<CreateThumbnail>>
         .collect())
 }
 
-pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
+pub async fn video_packaging_due(pool: DbPool) -> Result<Vec<PackageVideo>> {
     // priority:
     //  - videos with original in acceptable codec and no DASH packaged
     //  - videos with no representation in acceptable codec
@@ -67,19 +71,33 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
     // Also only package originals if there is space for the original codec + transcode,
     // and allow setting this per storage provider (don't want to upload loads to S3 only to
     // delete it later when transcoding is done)
+    let conn = pool.get().in_current_span().await?;
 
     let acceptable_video_codecs = ["h264", "av1", "vp9"];
     let acceptable_audio_codecs = ["aac", "opus", "flac", "mp3"];
-    let acceptable_codecs_no_dash = repository::asset::get_videos_in_acceptable_codec_without_dash(
-        pool,
-        acceptable_video_codecs.into_iter(),
-        acceptable_audio_codecs.into_iter(),
-    )
-    .await?;
+    // TODO yes we're clearing and putting the config back in every time lol
+    interact!(conn, move |conn| {
+        repository::config::set_acceptable_audio_codecs(conn, &acceptable_audio_codecs)?;
+        repository::config::set_acceptable_video_codecs(conn, &acceptable_video_codecs)?;
+        Ok(())
+    })
+    .in_current_span()
+    .await??;
+
+    let acceptable_codecs_no_dash = interact!(conn, move |mut conn| {
+        repository::asset::get_videos_in_acceptable_codec_without_dash(&mut conn)
+    })
+    .in_current_span()
+    .await??;
     let mut acceptable_codecs_no_dash_and_no_rotation_metadata: Vec<VideoAsset> = Vec::default();
     let mut must_reencode_because_rotation_metadata: Vec<VideoAsset> = Vec::default();
     for asset in acceptable_codecs_no_dash {
-        let ffprobe_output = repository::asset::get_ffprobe_output(pool, asset.base.id).await?;
+        let ffprobe_output = interact!(
+            conn,
+            move |mut conn| repository::asset::get_ffprobe_output(&mut conn, asset.base.id)
+        )
+        .in_current_span()
+        .await??;
         let streams = processing::video::ffprobe_get_streams_from_json(&ffprobe_output)
             .wrap_err("failed to parse ffprobe output stored in db")?;
         match streams.video.rotation {
@@ -133,14 +151,11 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
             .collect());
     }
 
-    let no_good_reprs: Vec<VideoAsset> =
-        repository::asset::get_video_assets_with_no_acceptable_repr(
-            pool,
-            acceptable_video_codecs.into_iter(),
-            acceptable_audio_codecs.into_iter(),
-        )
-        .await
-        .unwrap();
+    let no_good_reprs: Vec<VideoAsset> = interact!(conn, move |mut conn| {
+        repository::asset::get_video_assets_with_no_acceptable_repr(&mut conn)
+    })
+    .in_current_span()
+    .await??;
     if !no_good_reprs.is_empty() || !must_reencode_because_rotation_metadata.is_empty() {
         use crate::catalog::encoding_target::av1;
         return Ok(no_good_reprs
@@ -204,16 +219,17 @@ pub async fn video_packaging_due(pool: &DbPool) -> Result<Vec<PackageVideo>> {
     //       if rung in ql and no repr for video at that rung:
     //         transcode to that rung
     // TODO
-    return Ok(Vec::default());
+    Ok(Vec::default())
 }
 
-pub async fn image_conversion_due(pool: &DbPool) -> Result<Vec<ConvertImage>> {
+pub async fn image_conversion_due(pool: DbPool) -> Result<Vec<ConvertImage>> {
     let acceptable_formats = ["jpeg", "avif", "png", "webp"];
-    let assets_no_good_repr = repository::asset::get_image_assets_with_no_acceptable_repr(
-        pool,
-        acceptable_formats.into_iter(),
-    )
-    .await?;
+    let conn = pool.get().in_current_span().await?;
+    let assets_no_good_repr = interact!(conn, move |mut conn| {
+        repository::asset::get_image_assets_with_no_acceptable_repr(&mut conn, &acceptable_formats)
+    })
+    .in_current_span()
+    .await??;
     // there should be no duplicates
     debug_assert!(
         assets_no_good_repr.len()

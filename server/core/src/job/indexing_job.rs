@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     config,
     core::job::{Job, JobHandle, JobProgress, JobResultType},
-    model::repository::pool::DbPool,
+    model::repository::db::DbPool,
     model::{AssetId, AssetRootDir, AssetRootDirId},
     processing::indexing,
 };
@@ -57,7 +57,7 @@ impl IndexingJob {
         let mut new_asset_ids = Vec::<AssetId>::new();
         match indexing::index_asset_root(
             &self.params.asset_root,
-            &self.pool,
+            self.pool,
             self.config.bin_paths.as_ref(),
         )
         .await

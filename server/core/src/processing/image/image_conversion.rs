@@ -42,8 +42,8 @@ impl ConvertImageTrait for ConvertImage {
             .wrap_err("error in image conversion task")?
             .wrap_err("error converting image")?
             .map(|processing_size| Size {
-                width: processing_size.width as i64,
-                height: processing_size.height as i64,
+                width: processing_size.width,
+                height: processing_size.height,
             });
         command_out_file.flush_to_storage().await?;
         Ok(size)

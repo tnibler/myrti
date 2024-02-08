@@ -1,13 +1,12 @@
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{eyre, Context, Result};
-use geocode::{ReverseGeocodeError, ReverseGeocoder};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     core::job::{Job, JobHandle, JobProgress, JobResultType},
     model::{
-        repository::{self, pool::DbPool},
+        repository::{self, db::DbPool},
         AssetId,
     },
 };
@@ -80,25 +79,25 @@ impl GeoTaggingJob {
     }
 
     async fn run(self, cancel: CancellationToken) -> Result<GeoTaggingJobResult> {
-        let rgc = geocode::ReverseGeocoder::new(&self.config.reverse_geocoder_db_path)
-            .await
-            .wrap_err("error initializing ReverseGeocoder")?;
+        // let rgc = geocode::ReverseGeocoder::new(&self.config.reverse_geocoder_db_path)
+        //     .await
+        //     .wrap_err("error initializing ReverseGeocoder")?;
         let mut failed: Vec<FailedGeoTagging> = Vec::default();
-        for asset_id in &self.params.asset_ids {
-            if cancel.is_cancelled() {
-                return Ok(GeoTaggingJobResult { failed });
-            }
-            // let result = self.process_asset(*asset_id, &rgc).await;
-            // match result {
-            //     Ok(()) => {}
-            //     Err(err) => {
-            //         failed.push(FailedGeoTagging {
-            //             asset_id: *asset_id,
-            //             err,
-            //         });
-            //     }
-            // }
-        }
+        // for asset_id in &self.params.asset_ids {
+        //     if cancel.is_cancelled() {
+        //         return Ok(GeoTaggingJobResult { failed });
+        //     }
+        // let result = self.process_asset(*asset_id, &rgc).await;
+        // match result {
+        //     Ok(()) => {}
+        //     Err(err) => {
+        //         failed.push(FailedGeoTagging {
+        //             asset_id: *asset_id,
+        //             err,
+        //         });
+        //     }
+        // }
+        // }
         Ok(GeoTaggingJobResult { failed })
     }
 

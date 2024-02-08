@@ -22,11 +22,12 @@ use utoipa::ToSchema;
 use core::{
     catalog::storage_key,
     core::storage::{StorageProvider, StorageReadError},
+    deadpool_diesel, interact,
     model::{self, repository},
 };
 
 use crate::{
-    app_state::SharedState,
+    app_state::{self, SharedState},
     http_error::{ApiResult, HttpError},
     schema::{asset::Asset, AssetId},
 };
@@ -50,11 +51,15 @@ responses(
         ),
 )]
 async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Asset>>> {
-    let assets: Vec<Asset> = repository::asset::get_assets(&app_state.pool)
-        .await?
-        .into_iter()
-        .map(|a| a.into())
-        .collect();
+    let conn = app_state.pool.get().in_current_span().await?;
+    let assets: Vec<Asset> = interact!(conn, move |mut conn| {
+        repository::asset::get_assets(&mut conn)
+    })
+    .in_current_span()
+    .await??
+    .into_iter()
+    .map(|a| a.into())
+    .collect();
     Ok(Json(assets))
 }
 
@@ -177,9 +182,13 @@ async fn get_asset_file(
     State(app_state): State<SharedState>,
 ) -> ApiResult<Response> {
     let id: model::AssetId = AssetId(id).try_into()?;
-    let path = repository::asset::get_asset_path_on_disk(&app_state.pool, id)
-        .await?
-        .path_on_disk();
+    let conn = app_state.pool.get().in_current_span().await?;
+    let path = interact!(conn, move |mut conn| {
+        repository::asset::get_asset_path_on_disk(&mut conn, id)
+    })
+    .in_current_span()
+    .await??
+    .path_on_disk();
     let file = tokio::fs::File::open(&path).await?;
     let stream = ReaderStream::new(file);
     let body = StreamBody::new(stream);
@@ -233,9 +242,13 @@ async fn get_image_asset_representation(
     // removing format name/file extension from storage key would make this query unnecessary but
     // it's nice to have for now
     // Or maybe not since we need to set a MIME type?
-    let repr = repository::representation::get_image_representation(&app_state.pool, repr_id)
-        .await
-        .wrap_err("no such repr_id")?;
+    let conn = app_state.pool.get().in_current_span().await?;
+    let repr = interact!(conn, move |mut conn| {
+        repository::representation::get_image_representation(&mut conn, repr_id)
+    })
+    .in_current_span()
+    .await?
+    .wrap_err("no such repr_id")?;
     let storage_key = repr.file_key;
     let read_stream = app_state
         .storage

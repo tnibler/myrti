@@ -1,76 +1,340 @@
-use super::DbAssetType;
-use crate::model::{AssetId, AssetRootDirId, TimestampInfo};
+use std::borrow::Cow;
 
-#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
+use camino::Utf8PathBuf as PathBuf;
+use chrono::FixedOffset;
+use diesel::{prelude::Insertable, Queryable, QueryableByName, Selectable};
+use eyre::{eyre, Context, Result};
+
+use crate::model::{
+    util::{bool_to_int, datetime_from_db_repr, datetime_to_db_repr, hash_vec8_to_u64},
+    Asset, AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetThumbnails,
+    AssetType, GpsCoordinates, Image, Size, TimestampInfo, Video,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, QueryableByName, Selectable)]
+#[diesel(table_name = super::super::schema::Asset)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct DbAsset {
-    pub id: AssetId,
-    pub ty: DbAssetType,
-    pub root_dir_id: AssetRootDirId,
+    pub asset_id: i64,
+    pub ty: i32,
+    pub root_dir_id: i64,
     pub file_type: String,
     pub file_path: String,
-    pub is_hidden: i64,
     pub hash: Option<Vec<u8>>,
+    pub is_hidden: i32,
     pub added_at: i64,
     pub taken_date: i64,
     pub timezone_offset: Option<String>,
-    pub timezone_info: DbTimestampInfo,
-    pub width: i64,
-    pub height: i64,
-    pub rotation_correction: Option<i64>,
+    pub timezone_info: i32,
+    pub width: i32,
+    pub height: i32,
+    pub rotation_correction: Option<i32>,
     pub gps_latitude: Option<i64>,
     pub gps_longitude: Option<i64>,
-    pub thumb_small_square_avif: i64,
-    pub thumb_small_square_webp: i64,
-    pub thumb_large_orig_avif: i64,
-    pub thumb_large_orig_webp: i64,
-    pub thumb_small_square_width: Option<i64>,
-    pub thumb_small_square_height: Option<i64>,
-    pub thumb_large_orig_width: Option<i64>,
-    pub thumb_large_orig_height: Option<i64>,
+    pub thumb_small_square_avif: i32,
+    pub thumb_small_square_webp: i32,
+    pub thumb_large_orig_avif: i32,
+    pub thumb_large_orig_webp: i32,
+    pub thumb_small_square_width: Option<i32>,
+    pub thumb_small_square_height: Option<i32>,
+    pub thumb_large_orig_width: Option<i32>,
+    pub thumb_large_orig_height: Option<i32>,
     pub image_format_name: Option<String>,
     pub video_codec_name: Option<String>,
     pub video_bitrate: Option<i64>,
     pub audio_codec_name: Option<String>,
-    pub has_dash: Option<i64>,
+    pub has_dash: Option<i32>,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, sqlx::Type)]
-#[repr(i32)]
-pub enum DbTimestampInfo {
-    TzCertain = 1,
-    UtcCertain = 2,
-    TzSetByUser = 3,
-    TzInferredLocation = 4,
-    TzGuessedLocal = 5,
-    NoTimestamp = 6,
+impl TryFrom<DbAsset> for Asset {
+    type Error = eyre::Report;
+
+    fn try_from(value: DbAsset) -> Result<Self, Self::Error> {
+        let ty = from_db_asset_ty(value.ty)?;
+        let timestamp_info =
+            from_db_timezone_info(value.timezone_info, value.timezone_offset.as_deref())?;
+        let hash: Option<u64> = value
+            .hash
+            .as_ref()
+            .map(|a| hash_vec8_to_u64(&a))
+            .transpose()?;
+        let coords = match (value.gps_latitude, value.gps_longitude) {
+            (Some(lat), Some(lon)) => Some(GpsCoordinates { lat, lon }),
+            (None, None) => None,
+            _ => {
+                tracing::warn!(
+                    asset_id = value.asset_id,
+                    "Asset has only one of gps lat/lon"
+                );
+                None
+            }
+        };
+        let base = AssetBase {
+            id: AssetId(value.asset_id),
+            ty: from_db_asset_ty(value.ty)?,
+            root_dir_id: AssetRootDirId(value.root_dir_id),
+            file_type: value.file_type,
+            file_path: value.file_path.into(),
+            is_hidden: value.is_hidden != 0,
+            added_at: datetime_from_db_repr(value.added_at)?,
+            hash,
+            taken_date: datetime_from_db_repr(value.taken_date)?,
+            timestamp_info,
+            size: Size {
+                width: value.width,
+                height: value.height,
+            },
+            rotation_correction: value.rotation_correction,
+            gps_coordinates: coords,
+            thumb_small_square_avif: value.thumb_small_square_avif != 0,
+            thumb_small_square_webp: value.thumb_small_square_webp != 0,
+            thumb_large_orig_avif: value.thumb_large_orig_avif != 0,
+            thumb_large_orig_webp: value.thumb_large_orig_webp != 0,
+            thumb_small_square_size: value
+                .thumb_small_square_width
+                .zip(value.thumb_small_square_height)
+                .map(|(width, height)| Size { width, height }),
+            thumb_large_orig_size: value
+                .thumb_large_orig_width
+                .zip(value.thumb_large_orig_height)
+                .map(|(width, height)| Size { width, height }),
+        };
+        let sp = match ty {
+            AssetType::Image => AssetSpe::Image(Image {
+                image_format_name: value
+                    .image_format_name
+                    .ok_or(eyre!("image DbAsset must have image_format_name set"))?,
+            }),
+            AssetType::Video => AssetSpe::Video(Video {
+                video_codec_name: value
+                    .video_codec_name
+                    .ok_or(eyre!("video DbAsset must have video_codec_name set"))?,
+                video_bitrate: value
+                    .video_bitrate
+                    .ok_or(eyre!("video DbAsset must have video_bitrate set"))?,
+                audio_codec_name: value.audio_codec_name.clone(),
+                has_dash: value
+                    .has_dash
+                    .map(|i| i != 0)
+                    .ok_or(eyre!("Video asset can not have has_dash null"))?,
+            }),
+        };
+        Ok(Asset { base, sp })
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DbAssetThumbnails {
-    pub id: AssetId,
-    pub ty: DbAssetType,
-    pub thumb_small_square_avif: i64,
-    pub thumb_small_square_webp: i64,
-    pub thumb_large_orig_avif: i64,
-    pub thumb_large_orig_webp: i64,
+#[derive(Debug, Clone, PartialEq, Eq, Insertable)]
+#[diesel(table_name = super::super::schema::Asset)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct DbInsertAsset<'a> {
+    pub asset_id: Option<i64>,
+    pub ty: i32,
+    pub root_dir_id: i64,
+    pub file_type: Cow<'a, str>,
+    pub file_path: Cow<'a, str>,
+    pub is_hidden: i32,
+    pub hash: Option<Cow<'a, [u8]>>,
+    pub added_at: i64,
+    pub taken_date: i64,
+    pub timezone_offset: Option<Cow<'a, str>>,
+    pub timezone_info: i32,
+    pub width: i32,
+    pub height: i32,
+    pub rotation_correction: Option<i32>,
+    pub gps_latitude: Option<i64>,
+    pub gps_longitude: Option<i64>,
+    pub thumb_small_square_avif: i32,
+    pub thumb_small_square_webp: i32,
+    pub thumb_large_orig_avif: i32,
+    pub thumb_large_orig_webp: i32,
+    pub thumb_small_square_width: Option<i32>,
+    pub thumb_small_square_height: Option<i32>,
+    pub thumb_large_orig_width: Option<i32>,
+    pub thumb_large_orig_height: Option<i32>,
+    pub image_format_name: Option<Cow<'a, str>>,
+    pub ffprobe_output: Option<Cow<'a, [u8]>>,
+    pub video_codec_name: Option<Cow<'a, str>>,
+    pub video_bitrate: Option<i64>,
+    pub audio_codec_name: Option<Cow<'a, str>>,
+    pub has_dash: Option<i32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+pub fn to_db_asset_ty(ty: AssetType) -> i32 {
+    match ty {
+        AssetType::Image => 1,
+        AssetType::Video => 2,
+    }
+}
+
+pub fn from_db_asset_ty(i: i32) -> Result<AssetType> {
+    match i {
+        1 => Ok(AssetType::Image),
+        2 => Ok(AssetType::Video),
+        _ => Err(eyre!("Invalid column ty in Asset row")),
+    }
+}
+
+// TODO roundtrip proptests making sure that composition of these is identity
+fn to_db_timezone_info(tzi: &TimestampInfo) -> i32 {
+    match tzi {
+        TimestampInfo::TzCertain(_) => 1,
+        TimestampInfo::UtcCertain => 2,
+        TimestampInfo::TzSetByUser(_) => 3,
+        TimestampInfo::TzInferredLocation(_) => 4,
+        TimestampInfo::TzGuessedLocal(_) => 5,
+        TimestampInfo::NoTimestamp => 6,
+    }
+}
+
+fn from_db_timezone_info(i: i32, tz_offset: Option<&str>) -> Result<TimestampInfo> {
+    match (i, tz_offset) {
+        (1 | 3 | 4 | 5, Some(tz_offset)) => {
+            let offset: FixedOffset = tz_offset
+                .parse()
+                .wrap_err("could not parse timezone offset")?;
+            match i {
+                1 => Ok(TimestampInfo::TzCertain(offset)),
+                3 => Ok(TimestampInfo::TzSetByUser(offset)),
+                4 => Ok(TimestampInfo::TzInferredLocation(offset)),
+                5 => Ok(TimestampInfo::TzGuessedLocal(offset)),
+                _ => unreachable!(),
+            }
+        }
+        (2, _) => Ok(TimestampInfo::UtcCertain),
+        (6, _) => Ok(TimestampInfo::NoTimestamp),
+        _ => Err(eyre!("invalid timezone_info combination in db row ")),
+    }
+}
+
+pub trait AsInsertableAsset {
+    fn as_insertable<'a, 'b>(&'a self, ffprobe_output: Option<Cow<'b, [u8]>>) -> DbInsertAsset<'a>
+    where
+        'b: 'a;
+}
+
+impl AsInsertableAsset for Asset {
+    fn as_insertable<'a, 'b>(&'a self, ffprobe_output: Option<Cow<'b, [u8]>>) -> DbInsertAsset<'a>
+    where
+        'b: 'a,
+    {
+        let timezone_offset: Option<_> = match self.base.timestamp_info {
+            TimestampInfo::TzCertain(tz)
+            | TimestampInfo::TzSetByUser(tz)
+            | TimestampInfo::TzInferredLocation(tz)
+            | TimestampInfo::TzGuessedLocal(tz) => Some(Cow::Owned(tz.to_string())),
+            TimestampInfo::UtcCertain | TimestampInfo::NoTimestamp => None,
+        };
+        DbInsertAsset {
+            asset_id: None,
+            ty: to_db_asset_ty(self.base.ty),
+            root_dir_id: self.base.root_dir_id.0,
+            file_type: Cow::Borrowed(&self.base.file_type),
+            file_path: Cow::Borrowed(&self.base.file_path.as_str()),
+            is_hidden: bool_to_int(self.base.is_hidden),
+            hash: self.base.hash.map(|h| Cow::Owned(h.to_le_bytes().to_vec())),
+            added_at: datetime_to_db_repr(&self.base.added_at),
+            taken_date: datetime_to_db_repr(&self.base.taken_date),
+            timezone_offset,
+            timezone_info: to_db_timezone_info(&self.base.timestamp_info),
+            width: self.base.size.width,
+            height: self.base.size.height,
+            rotation_correction: self.base.rotation_correction,
+            gps_latitude: self.base.gps_coordinates.map(|c| c.lat),
+            gps_longitude: self.base.gps_coordinates.map(|c| c.lon),
+            thumb_small_square_avif: bool_to_int(self.base.thumb_small_square_avif),
+            thumb_small_square_webp: bool_to_int(self.base.thumb_small_square_webp),
+            thumb_large_orig_avif: bool_to_int(self.base.thumb_large_orig_avif),
+            thumb_large_orig_webp: bool_to_int(self.base.thumb_large_orig_webp),
+            thumb_small_square_width: self.base.thumb_small_square_size.map(|s| s.width),
+            thumb_small_square_height: self.base.thumb_small_square_size.map(|s| s.height),
+            thumb_large_orig_width: self.base.thumb_large_orig_size.map(|s| s.width),
+            thumb_large_orig_height: self.base.thumb_large_orig_size.map(|s| s.height),
+            image_format_name: match &self.sp {
+                AssetSpe::Image(img) => Some(Cow::Borrowed(&img.image_format_name)),
+                AssetSpe::Video(_) => None,
+            },
+            ffprobe_output: match &self.sp {
+                AssetSpe::Image(_) => {
+                    debug_assert!(
+                        ffprobe_output.is_none(),
+                        "ffrobe_output must not be set to insert image Asset"
+                    );
+                    None
+                }
+                AssetSpe::Video(_video) => ffprobe_output,
+            },
+            video_codec_name: match &self.sp {
+                AssetSpe::Image(_) => None,
+                AssetSpe::Video(video) => Some(Cow::Borrowed(&video.video_codec_name)),
+            },
+            video_bitrate: match &self.sp {
+                AssetSpe::Video(video) => Some(video.video_bitrate),
+                _ => None,
+            },
+            audio_codec_name: match &self.sp {
+                AssetSpe::Video(video) => Some(
+                    video
+                        .audio_codec_name
+                        .as_deref()
+                        .map(|cn| Cow::Borrowed(cn)),
+                )
+                .flatten(),
+                _ => None,
+            },
+            has_dash: match &self.sp {
+                AssetSpe::Video(video) => Some(bool_to_int(video.has_dash)),
+                _ => None,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Queryable)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct DbAssetPathOnDisk {
-    pub id: AssetId,
+    #[diesel(column_name = asset_id)]
+    pub asset_id: i64,
+    #[diesel(column_name = path_in_asset_root)]
     pub path_in_asset_root: String,
+    #[diesel(column_name = asset_root_path)]
     pub asset_root_path: String,
 }
 
-impl From<&TimestampInfo> for DbTimestampInfo {
-    fn from(value: &TimestampInfo) -> Self {
-        match value {
-            TimestampInfo::TzCertain(_) => Self::TzCertain,
-            TimestampInfo::UtcCertain => Self::UtcCertain,
-            TimestampInfo::TzSetByUser(_) => Self::TzSetByUser,
-            TimestampInfo::TzInferredLocation(_) => Self::TzInferredLocation,
-            TimestampInfo::TzGuessedLocal(_) => Self::TzGuessedLocal,
-            TimestampInfo::NoTimestamp => Self::NoTimestamp,
-        }
+impl TryFrom<DbAssetPathOnDisk> for AssetPathOnDisk {
+    type Error = eyre::Report;
+
+    fn try_from(value: DbAssetPathOnDisk) -> Result<Self, Self::Error> {
+        Ok(AssetPathOnDisk {
+            id: AssetId(value.asset_id),
+            path_in_asset_root: PathBuf::from(value.path_in_asset_root),
+            asset_root_path: PathBuf::from(value.asset_root_path),
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Queryable)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct DbAssetThumbnails {
+    #[diesel(column_name = asset_id)]
+    pub asset_id: i64,
+    pub ty: i32,
+    pub thumb_small_square_avif: i32,
+    pub thumb_small_square_webp: i32,
+    pub thumb_large_orig_avif: i32,
+    pub thumb_large_orig_webp: i32,
+}
+
+impl TryFrom<DbAssetThumbnails> for AssetThumbnails {
+    type Error = eyre::Report;
+
+    fn try_from(value: DbAssetThumbnails) -> Result<Self, Self::Error> {
+        Ok(AssetThumbnails {
+            id: AssetId(value.asset_id),
+            ty: from_db_asset_ty(value.ty)?,
+            thumb_small_square_avif: value.thumb_small_square_avif != 0,
+            thumb_small_square_webp: value.thumb_small_square_webp != 0,
+            thumb_large_orig_avif: value.thumb_large_orig_avif != 0,
+            thumb_large_orig_webp: value.thumb_large_orig_webp != 0,
+        })
     }
 }

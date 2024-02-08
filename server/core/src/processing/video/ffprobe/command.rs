@@ -73,8 +73,8 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
     struct FFProbeVideoStream {
         pub codec_name: String,
         pub duration: String,
-        pub width: i64,
-        pub height: i64,
+        pub width: i32,
+        pub height: i32,
         pub bit_rate: String,
         pub side_data_list: Option<Vec<FFProbeSideData>>,
     }

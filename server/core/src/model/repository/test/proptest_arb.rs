@@ -53,7 +53,6 @@ pub fn timestamp_info_strategy() -> BoxedStrategy<TimestampInfo> {
 
 prop_compose! {
     pub fn arb_new_asset_base(
-        asset_root_id: AssetRootDirId,
         ty: AssetType,
         file_type: String,
     )
@@ -63,7 +62,7 @@ prop_compose! {
         added_at in arb_datetime_utc(),
         taken_date in arb_datetime_utc(),
         timestamp_info in timestamp_info_strategy(),
-        size in (200..4000_i64, 200..4000_i64).prop_map(|(w, h)| Size { width: w, height: h}),
+        size in (200..4000_i32, 200..4000_i32).prop_map(|(w, h)| Size { width: w, height: h}),
         rotation_correction in prop_oneof![
             Just(None),
             Just(Some(90)),
@@ -79,7 +78,7 @@ prop_compose! {
         AssetBase {
             id: AssetId(0),
             ty,
-            root_dir_id: asset_root_id,
+            root_dir_id: AssetRootDirId(0),
             file_type: file_type.clone(),
             file_path,
             is_hidden,
@@ -101,12 +100,12 @@ prop_compose! {
 }
 
 prop_compose! {
-    pub fn arb_new_image_asset(asset_root_dir_id: AssetRootDirId)
+    pub fn arb_new_image_asset()
     (
         file_type in "jpeg|png|webp|avif|heic"
     )
     (
-        base in arb_new_asset_base(asset_root_dir_id, AssetType::Image, file_type)
+        base in arb_new_asset_base(AssetType::Image, file_type)
     ) -> ImageAsset {
         ImageAsset {
             image: Image {
@@ -118,12 +117,12 @@ prop_compose! {
 }
 
 prop_compose! {
-    pub fn arb_new_video_asset(asset_root_dir_id: AssetRootDirId)
+    pub fn arb_new_video_asset()
     (
         file_type in "mp4|mov|avi",
     )
     (
-        base in arb_new_asset_base(asset_root_dir_id, AssetType::Video, file_type),
+        base in arb_new_asset_base(AssetType::Video, file_type),
         video_codec_name in "h264|hevc|av1|vp9|mjpeg",
         video_bitrate in 800_000_i64..5_000_000,
         audio_codec_name in prop_oneof![
@@ -143,10 +142,10 @@ prop_compose! {
     }
 }
 
-pub fn arb_new_asset(asset_root_dir_id: AssetRootDirId) -> BoxedStrategy<Asset> {
+pub fn arb_new_asset() -> BoxedStrategy<Asset> {
     prop_oneof![
-        arb_new_image_asset(asset_root_dir_id).prop_map(|image| image.into()),
-        arb_new_video_asset(asset_root_dir_id).prop_map(|video| video.into())
+        arb_new_image_asset().prop_map(|image| image.into()),
+        arb_new_video_asset().prop_map(|video| video.into())
     ]
     .boxed()
 }
@@ -197,7 +196,7 @@ prop_compose! {
         file_path in path_strategy().no_shrink(),
         taken_date in arb_datetime_utc(),
         timestamp_info in timestamp_info_strategy(),
-        size in (200..4000_i64, 200..4000_i64).prop_map(|(w, h)| Size { width: w, height: h}),
+        size in (200..4000_i32, 200..4000_i32).prop_map(|(w, h)| Size { width: w, height: h}),
         rotation_correction in prop_oneof![
             Just(None),
             Just(Some(90)),

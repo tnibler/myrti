@@ -1,4 +1,4 @@
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
 
 use async_trait::async_trait;
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
@@ -90,11 +90,14 @@ impl ShakaPackagerWithLocalOutputTrait for ShakaPackager {
             .stderr(Stdio::piped())
             .spawn()
             .wrap_err("error calling shaka packager")?
-            .wait()
+            .wait_with_output()
             .await?;
-        match result.success() {
+        match result.status.success() {
             true => Ok(()),
-            false => Err(eyre!("shaka packager exited with error")),
+            false => Err(eyre!(
+                "shaka packager exited with error:\n{}",
+                String::from_utf8_lossy(&result.stderr)
+            )),
         }
     }
 }

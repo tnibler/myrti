@@ -3,8 +3,10 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use tracing::Instrument;
 
 use core::model::{self, repository};
+use core::{deadpool_diesel, interact};
 
 use crate::{
     app_state::SharedState,
@@ -19,7 +21,12 @@ pub fn router() -> Router<SharedState> {
 }
 
 async fn get_asset_roots(app_state: State<SharedState>) -> ApiResult<Json<Vec<AssetRoot>>> {
-    let asset_roots = repository::asset_root_dir::get_asset_roots(&app_state.pool).await?;
+    let conn = app_state.pool.get().in_current_span().await?;
+    let asset_roots = interact!(conn, move |mut conn| {
+        repository::asset_root_dir::get_asset_roots(&mut conn)
+    })
+    .in_current_span()
+    .await??;
     Ok(asset_roots
         .into_iter()
         .map(|model| AssetRoot {
@@ -38,7 +45,12 @@ async fn get_asset_root_by_id(
     app_state: State<SharedState>,
 ) -> ApiResult<Json<AssetRoot>> {
     let id: model::AssetRootDirId = AssetRootDirId(path_id).try_into()?;
-    let model = repository::asset_root_dir::get_asset_root(&app_state.pool, id).await?;
+    let conn = app_state.pool.get().in_current_span().await?;
+    let model = interact!(conn, move |mut conn| {
+        repository::asset_root_dir::get_asset_root(&mut conn, id)
+    })
+    .in_current_span()
+    .await??;
     Ok(AssetRoot {
         id: model.id.into(),
         path: model.path,

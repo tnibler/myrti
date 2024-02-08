@@ -12,7 +12,7 @@ use crate::{
         job::{Job, JobHandle, JobProgress, JobResultType},
         storage::Storage,
     },
-    model::repository::pool::DbPool,
+    model::repository::db::DbPool,
 };
 
 pub struct ImageConversionJob {
@@ -64,25 +64,26 @@ impl ImageConversionJob {
             .await
             .unwrap();
         let mut failed: Vec<FailedImageConversion> = Vec::default();
-        for op in &self.params.ops {
+        for op in self.params.ops {
             // TODO check past failed jobs
             // let past_failed_job =
             //     repository::failed_job::get_failed_image_conversion_job_for_asset(&self.pool, op.asset_id)
             //         .await?;
-            let size = match perform_side_effects_convert_image(op, &self.pool, &self.storage)
-                .in_current_span()
-                .await
-            {
-                Err(err) => {
-                    failed.push(FailedImageConversion {
-                        op: op.clone(),
-                        err,
-                    });
-                    continue;
-                }
-                Ok(r) => r,
-            };
-            let apply_result = apply_convert_image(&self.pool, op, size)
+            let size =
+                match perform_side_effects_convert_image(&op, self.pool.clone(), &self.storage)
+                    .in_current_span()
+                    .await
+                {
+                    Err(err) => {
+                        failed.push(FailedImageConversion {
+                            op: op.clone(),
+                            err,
+                        });
+                        continue;
+                    }
+                    Ok(r) => r,
+                };
+            let apply_result = apply_convert_image(self.pool.clone(), op.clone(), size)
                 .in_current_span()
                 .await;
             if let Err(err) = apply_result {

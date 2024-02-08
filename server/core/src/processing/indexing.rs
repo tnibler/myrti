@@ -6,8 +6,8 @@ use tracing::{debug, error, instrument, Instrument};
 use walkdir::WalkDir;
 
 use crate::{
-    config,
-    model::{self, repository::duplicate_asset::NewDuplicateAsset, repository::pool::DbPool, *},
+    config, interact,
+    model::{self, repository::db::DbPool, repository::duplicate_asset::NewDuplicateAsset, *},
     processing::{self, hash::hash_file},
 };
 
@@ -19,7 +19,7 @@ use super::{
 #[instrument(skip(pool))]
 pub async fn index_asset_root(
     asset_root: &AssetRootDir,
-    pool: &DbPool,
+    pool: DbPool,
     bin_paths: Option<&config::BinPaths>,
 ) -> Result<Vec<AssetId>> {
     let mut new_asset_ids: Vec<AssetId> = vec![];
@@ -30,7 +30,7 @@ pub async fn index_asset_root(
                 if e.file_type().is_file() {
                     let utf8_path = camino::Utf8Path::from_path(e.path());
                     if let Some(path) = utf8_path {
-                        if let Some(id) = index_file(path, asset_root, pool, bin_paths)
+                        if let Some(id) = index_file(path, asset_root, &pool, bin_paths)
                             .in_current_span()
                             .await?
                         {
@@ -65,12 +65,18 @@ async fn index_file(
     let path_in_asset_root = path
         .strip_prefix(&asset_root.path)
         .wrap_err("file to index is not in provided asset root")?;
-    let existing = repository::asset::asset_or_duplicate_with_path_exists(
-        pool,
-        asset_root.id,
-        path_in_asset_root,
-    )
-    .await?;
+    let path_in_asset_root2 = path_in_asset_root.to_owned();
+    let asset_root_id = asset_root.id;
+    let conn = pool.get().in_current_span().await?;
+    let existing = interact!(conn, move |mut conn| {
+        repository::asset::asset_or_duplicate_with_path_exists(
+            &mut conn,
+            asset_root_id,
+            &path_in_asset_root2,
+        )
+    })
+    .in_current_span()
+    .await??;
     if existing {
         return Ok(None);
     }
@@ -116,13 +122,13 @@ async fn index_file(
             };
             let size = if swap {
                 Size {
-                    height: video.width.into(),
-                    width: video.height.into(),
+                    height: video.width,
+                    width: video.height,
                 }
             } else {
                 Size {
-                    width: video.width.into(),
-                    height: video.height.into(),
+                    width: video.width,
+                    height: video.height,
                 }
             };
             (CreateAssetSpe::Video(create_video), size)
@@ -159,18 +165,27 @@ async fn index_file(
         .try_into_std()
         .unwrap();
     let hash = hash_file(file).await?;
-    let existing_with_same_hash = repository::asset::get_asset_with_hash(pool, hash).await?;
-    if let Some(existing_asset_id) = existing_with_same_hash {
-        repository::duplicate_asset::insert_duplicate_asset(
-            pool,
-            NewDuplicateAsset {
-                existing_asset_id,
-                asset_root_dir_id: asset_root.id,
-                path_in_asset_root,
-            },
-        )
-        .in_current_span()
-        .await?;
+    let conn = pool.get().in_current_span().await?;
+    let path_in_asset_root2 = path_in_asset_root.to_owned();
+    let is_duplicate = interact!(conn, move |mut conn| {
+        let existing_with_same_hash = repository::asset::get_asset_with_hash(&mut conn, hash)?;
+        if let Some(existing_asset_id) = existing_with_same_hash {
+            repository::duplicate_asset::insert_duplicate_asset(
+                &mut conn,
+                NewDuplicateAsset {
+                    existing_asset_id,
+                    asset_root_dir_id: asset_root_id,
+                    path_in_asset_root: &path_in_asset_root2,
+                },
+            )?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    })
+    .in_current_span()
+    .await??;
+    if is_duplicate {
         return Ok(None);
     }
     let timestamp_guess = figure_out_utc_timestamp(&metadata);
@@ -211,6 +226,10 @@ async fn index_file(
         base: create_asset_base,
         spe: create_asset_spe,
     };
-    let id = repository::asset::create_asset(pool, create_asset).await?;
+    let id = interact!(conn, move |mut conn| {
+        repository::asset::create_asset(&mut conn, create_asset)
+    })
+    .in_current_span()
+    .await??;
     Ok(Some(id))
 }

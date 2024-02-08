@@ -56,8 +56,8 @@ pub struct Image {
 pub struct ImageRepresentation {
     pub id: String,
     pub format: String,
-    pub width: i64,
-    pub height: i64,
+    pub width: i32,
+    pub height: i32,
     pub size: i64,
 }
 

@@ -64,16 +64,16 @@
 	let placeholderEl: HTMLImageElement | undefined;
 	let isActive = $state(false);
 
-	enum OpenTransitionState {
+	enum PlaceholderTransition {
 		No,
 		Running,
 		Finished
 	}
-	let openTransitionState = $state(OpenTransitionState.No as OpenTransitionState);
+	let placeholderTransitionState = $state(PlaceholderTransition.No as OpenTransitionState);
 	let imageLoaded = $state(false);
 	let imageElVisible = $state(false);
 	let placeholderVisible = $derived(
-		!imageElVisible || openTransitionState === OpenTransitionState.Running
+		!imageElVisible || placeholderTransitionState === PlaceholderTransition.Running
 	);
 
 	// for some reason the slideImage/slideVideo bindings don't get unset when the bound component
@@ -89,7 +89,11 @@
 	$effect(() => {
 		// small delay between image being loaded and allowed to be shown and actually doing it
 		// for flicker reasons. Not perfect but pretty good
-		if (!imageElVisible && imageLoaded && openTransitionState !== OpenTransitionState.Running) {
+		if (
+			!imageElVisible &&
+			imageLoaded &&
+			placeholderTransitionState !== PlaceholderTransition.Running
+		) {
 			setTimeout(() => {
 				imageElVisible = true;
 			}, 30);
@@ -168,7 +172,11 @@
 	});
 
 	$effect(() => {
-		if (openTransition != null && placeholderEl && openTransitionState === OpenTransitionState.No) {
+		if (
+			openTransition != null &&
+			placeholderEl &&
+			placeholderTransitionState === PlaceholderTransition.No
+		) {
 			addOpenTransition(placeholderEl, openTransition);
 		}
 	});
@@ -190,14 +198,14 @@
 	function addOpenTransition(el: HTMLImageElement, t: OpenTransitionParams) {
 		const transform = getTransformToFitThumbnail(t.fromBounds);
 		el.style.transform = transform;
-		openTransitionState = OpenTransitionState.Running;
+		placeholderTransitionState = PlaceholderTransition.Running;
 
 		requestAnimationFrame(() => {
 			const listener = (e: TransitionEvent) => {
 				if (e.target === el) {
 					el.removeEventListener('transitionend', listener, false);
 					el.removeEventListener('transitioncancel', listener, false);
-					openTransitionState = OpenTransitionState.Finished;
+					placeholderTransitionState = PlaceholderTransition.Finished;
 					t.onTransitionEnd();
 				}
 			};
@@ -242,7 +250,7 @@
 			};
 			placeholderEl.addEventListener('transitionend', listener, false);
 			placeholderEl.addEventListener('transitioncancel', listener, false);
-			openTransitionState = OpenTransitionState.Running;
+			placeholderTransitionState = PlaceholderTransition.Running;
 
 			requestAnimationFrame(() => {
 				if (!placeholderEl) {
@@ -301,7 +309,8 @@
 			style:width="{width}px"
 			style:height="{height}px"
 			style:user-select="none"
-			class:slide-transition-transform={openTransitionState === OpenTransitionState.Running}
+			class:slide-transition-transform={placeholderTransitionState ===
+				PlaceholderTransition.Running}
 		/>
 	{/if}
 </div>

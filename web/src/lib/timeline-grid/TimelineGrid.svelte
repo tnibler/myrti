@@ -106,15 +106,15 @@
 			/>
 		{/each}
 	</section>
-
-	<Gallery
-		bind:this={gallery}
-		numSlides={timeline.totalNumAssets}
-		{getSlide}
-		{getThumbnailBounds}
-		{bodyWrapper}
-	/>
 </div>
+
+<Gallery
+	bind:this={gallery}
+	numSlides={timeline.totalNumAssets}
+	{getSlide}
+	{getThumbnailBounds}
+	{bodyWrapper}
+/>
 
 <style>
 	#grid {

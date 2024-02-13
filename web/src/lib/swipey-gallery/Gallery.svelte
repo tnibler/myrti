@@ -14,6 +14,7 @@
 		pagerY = window.scrollY;
 		bodyWrapper.classList.add('modalOpen');
 		bodyWrapper.style.height = '100vh';
+		topOffset = 0;
 		requestAnimationFrame(() => {
 			bodyWrapper.scrollTo(0, pagerY);
 		});

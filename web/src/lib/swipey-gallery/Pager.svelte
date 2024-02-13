@@ -220,7 +220,7 @@
 					if (direction !== 'backToCenter') {
 						previousIndex = slideIndex;
 						slideIndex = index;
-						reorderItemHoldersAfterAnim();
+						reorderSlideHoldersAfterAnim();
 					}
 				}
 			},
@@ -244,10 +244,10 @@
 		slideIndex = newIndex;
 		const destX = -(newIndex - slideIndexInitOffset) * slideWidth;
 		xTransform = destX;
-		reorderItemHoldersAfterAnim();
+		reorderSlideHoldersAfterAnim();
 	}
 
-	function reorderItemHoldersAfterAnim() {
+	function reorderSlideHoldersAfterAnim() {
 		animations.stopAnimationsFor('pan');
 		const diffMod3 = (slideIndex - previousIndex) % 3;
 		const previousActiveHolder: SlideHolderState = holderStates[holderOrder[1]];

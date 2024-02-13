@@ -253,12 +253,14 @@
 		const previousActiveHolder: SlideHolderState = holderStates[holderOrder[1]];
 		let movedHolder: SlideHolderState;
 		// TODO Photoswipe resets transforms here if containerShiftIndex >= 50
-		if (diffMod3 === 1 || diffMod3 === -2) {
+		const shiftedRight = diffMod3 === 1 || diffMod3 === -2;
+		const shiftedLeft = diffMod3 === 2 || diffMod3 === -1;
+		if (shiftedRight) {
 			containerShift += 1;
 			holderOrder = [holderOrder[1], holderOrder[2], holderOrder[0]];
 			movedHolder = holderStates[holderOrder[2]];
 			movedHolder.xTransform = (containerShift + 2) * slideWidth;
-		} else if (diffMod3 === 2 || diffMod3 === -1) {
+		} else if (shiftedLeft) {
 			containerShift -= 1;
 			holderOrder = [holderOrder[2], holderOrder[0], holderOrder[1]];
 			movedHolder = holderStates[holderOrder[0]];
@@ -279,8 +281,11 @@
 			currentSlideIndex !== null,
 			'currentSlideIndex is null after shuffling SlideHolders'
 		);
-		if (currentSlideIndex !== null) {
+		if (currentSlideIndex !== null && shiftedRight) {
 			const nextSlideIndex = currentSlideIndex == numSlides - 1 ? null : currentSlideIndex + 1;
+			movedHolder.slideIndex = nextSlideIndex;
+		} else if (currentSlideIndex !== null && shiftedLeft) {
+			const nextSlideIndex = currentSlideIndex === 0 ? null : currentSlideIndex - 1;
 			movedHolder.slideIndex = nextSlideIndex;
 		}
 		movedHolder.openTransition = null;

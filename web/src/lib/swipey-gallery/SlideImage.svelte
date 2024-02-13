@@ -49,6 +49,10 @@
 	bind:this={imgEl}
 	src={slideData.src}
 	onload={onContentReady}
+	onerror={(e) => {
+		console.log('error loading image', e);
+		onContentReady();
+	}}
 	decoding="async"
 	style:width="{size.width}px"
 	style:height="{size.height}px"

@@ -386,7 +386,7 @@
 	}
 
 	.pager-wrapper {
-		/* overflow: hidden; */
+		overflow: hidden;
 		touch-action: none;
 	}
 

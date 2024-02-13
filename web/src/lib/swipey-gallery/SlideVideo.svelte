@@ -78,7 +78,14 @@
 	class:slide-transition-opacity={!isCloseTransitionRunning}
 	class:hidden={!isVisible}
 >
-	<source src={slideData.src} type={slideData.mimeType} />
+	<source
+		src={slideData.src}
+		type={slideData.mimeType}
+		onerror={(e) => {
+			console.log('TODO handle video codec errors');
+			onContentReady();
+		}}
+	/>
 </video>
 
 <style>

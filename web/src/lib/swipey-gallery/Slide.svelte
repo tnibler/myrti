@@ -231,10 +231,32 @@
 
 	function closeTransition(toBounds: ThumbnailBounds, onTransitionEnd: () => void) {
 		const transform = getTransformToFitThumbnail(toBounds);
-		if (slideImage) {
+		// apply transition to placeholder if the content element hasn't loaded yet
+		if (!imageElVisible && placeholderEl) {
+			const listener = (e: TransitionEvent) => {
+				if (e.target === placeholderEl) {
+					placeholderEl.removeEventListener('transitionend', listener, false);
+					placeholderEl.removeEventListener('transitioncancel', listener, false);
+					onTransitionEnd();
+				}
+			};
+			placeholderEl.addEventListener('transitionend', listener, false);
+			placeholderEl.addEventListener('transitioncancel', listener, false);
+			openTransitionState = OpenTransitionState.Running;
+
+			requestAnimationFrame(() => {
+				if (!placeholderEl) {
+					return;
+				}
+				placeholderEl.style.transform = transform;
+			});
+		} else if (slideImage) {
 			slideImage.closeTransition(transform, onTransitionEnd);
 		} else if (slideVideo) {
 			slideVideo.closeTransition(transform, onTransitionEnd);
+		} else {
+			// catch all so gallery closes no matter what weird in-between states we get into
+			onTransitionEnd();
 		}
 	}
 </script>

@@ -10,17 +10,16 @@
 	let pagerY = 0;
 	let topOffset = $state(0);
 
-	function onOpenTransitionFinished() {
-		pagerY = window.scrollY;
-		bodyWrapper.classList.add('modalOpen');
-		bodyWrapper.style.height = '100vh';
-		topOffset = 0;
-		requestAnimationFrame(() => {
-			bodyWrapper.scrollTo(0, pagerY);
-		});
-	}
+	function onOpenTransitionFinished() {}
 
 	export function open(index: number) {
+		requestAnimationFrame(() => {
+			pagerY = window.scrollY;
+			bodyWrapper.classList.add('modalOpen');
+			bodyWrapper.style.height = '100vh';
+			topOffset = 0;
+			bodyWrapper.scrollTo(0, pagerY);
+		});
 		slideIndex = index;
 		topOffset = window.scrollY;
 		isOpen = true;

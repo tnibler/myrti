@@ -49,6 +49,7 @@
 	style="width: {layout.width}px; height: {layout.height}px; top: {layout.top}px; left: 0px;"
 >
 	{#each layout.tiles as box, assetIdx}
+		<!-- svelte-ignore a11y-missing-attribute -->
 		<img
 			bind:this={imgEls[assetIdx]}
 			src="/api/asset/thumbnail/{layout.segment.assets[assetIdx].id}/large/avif"

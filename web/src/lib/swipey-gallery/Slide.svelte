@@ -97,9 +97,7 @@
 			imageLoaded &&
 			placeholderTransitionState !== PlaceholderTransition.Running
 		) {
-			setTimeout(() => {
-				imageElVisible = true;
-			}, 30);
+			imageElVisible = true;
 		}
 	});
 

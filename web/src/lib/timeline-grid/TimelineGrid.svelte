@@ -13,6 +13,7 @@
 	let viewport = $state({ width: 0, height: 0 });
 	let gallery: Gallery;
 	let bodyWrapper: HTMLDivElement;
+	let gridSections: GridSection[] = $state([]);
 
 	const layoutConfig = {
 		targetRowHeight: 180,
@@ -57,9 +58,19 @@
 		return null;
 	}
 
-	function getThumbnailBounds(i: number): ThumbnailBounds {
-		// const el = document.querySelector('[data-img-id="' + data.assetId + '"] img');
-		return { rect: { x: 100, y: 100, width: 100, height: 100 } };
+	function getThumbnailBounds(assetIndex: number): ThumbnailBounds {
+		const sectionIndex = timeline.sections.findLastIndex((section, idx) => {
+			return section.assetStartIndex <= assetIndex;
+		});
+		if (sectionIndex < 0) {
+			console.error(`did not find section containing asset at index ${assetIndex}`);
+			return { rect: { x: 100, y: 100, width: 100, height: 100 } };
+		}
+		const imgEl = gridSections[sectionIndex].getThumbImgForAsset(assetIndex);
+		if (!imgEl) {
+			return { rect: { x: 100, y: 100, width: 100, height: 100 } };
+		}
+		return { rect: { x: imgEl.x, y: imgEl.y, width: imgEl.width, height: imgEl.height } };
 	}
 
 	function onAssetClick(index: number) {
@@ -97,6 +108,7 @@
 	<section id="grid" bind:clientWidth={viewport.width} bind:clientHeight={viewport.height}>
 		{#each timeline.sections as section, idx}
 			<GridSection
+				bind:this={gridSections[idx]}
 				{timeline}
 				sectionIndex={idx}
 				containerWidth={viewport.width}

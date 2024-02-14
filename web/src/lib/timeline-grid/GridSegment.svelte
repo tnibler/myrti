@@ -27,6 +27,20 @@
 		assetBaseIndex: number;
 		onAssetClick: (assetIndex: number) => void;
 	} = $props();
+
+	/** thumbnail els addressed by their index _in this segment_, not the global asset index in the whole timeline */
+	let imgEls: HTMLImageElement[] = $state([]);
+
+	/**
+	@param assetIndex index in this segment, not global asset index in timeline
+	*/
+	export function getThumbImgForAsset(assetIndex: number): HTMLImageElement {
+		console.assert(assetIndex >= 0);
+		if (assetIndex >= imgEls.length) {
+			console.error('segment was asked for thumbnail with index higher than number of assets');
+		}
+		return imgEls[assetIndex];
+	}
 </script>
 
 <div
@@ -36,6 +50,7 @@
 >
 	{#each layout.tiles as box, assetIdx}
 		<img
+			bind:this={imgEls[assetIdx]}
 			src="/api/asset/thumbnail/{layout.segment.assets[assetIdx].id}/large/avif"
 			class="tile"
 			style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"

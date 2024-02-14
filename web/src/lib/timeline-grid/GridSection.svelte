@@ -34,6 +34,7 @@
 				)
 			: undefined
 	);
+	let gridSegments: GridSegment[] = $state([]);
 
 	let { layouts: justifiedLayouts, sectionHeight } = $derived(
 		section.segments ? computeSegmentLayouts(section.segments) : { layouts: [], sectionHeight: 0 }
@@ -54,6 +55,20 @@
 			}
 		}
 	});
+
+	export function getThumbImgForAsset(assetIndex: number): HTMLImageElement {
+		const segmentIndex = segmentStartIndices.findLastIndex(
+			(startIndex) => startIndex <= assetIndex
+		);
+		if (segmentIndex < 0) {
+			console.error(
+				`section ${sectionIndex} was asked for thumbnail element for asset at index ${assetIndex} but no matching segment was found.`
+			);
+			return undefined;
+		}
+		const gridSegment = gridSegments[segmentIndex];
+		return gridSegment.getThumbImgForAsset(assetIndex - segmentStartIndices[segmentIndex]);
+	}
 
 	function computeSegmentLayouts(segments: TimelineSegment[]): {
 		layouts: SegmentLayout[];
@@ -113,6 +128,7 @@
 	{#if isIntersecting && section.segments}
 		{#each section.segments as segment, idx}
 			<GridSegment
+				bind:this={gridSegments[idx]}
 				layout={justifiedLayouts[idx]}
 				assetBaseIndex={segmentStartIndices[idx]}
 				{onAssetClick}

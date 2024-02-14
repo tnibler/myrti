@@ -75,6 +75,9 @@
 	let placeholderVisible = $derived(
 		!imageElVisible || placeholderTransitionState === PlaceholderTransition.Running
 	);
+	/** Wait this long after the real content is ready to hide the placeholder to reveal the <img> underneath.
+	Without this, there is a flicker on some devices/browsers. */
+	const PLACEHOLDER_HIDE_DELAY = data.type === 'image' ? 450 : 0;
 
 	// for some reason the slideImage/slideVideo bindings don't get unset when the bound component
 	// is removed, so we do it manually here
@@ -304,7 +307,7 @@
 		<img
 			class="placeholder"
 			bind:this={placeholderEl}
-			out:fade={{ duration: 200 }}
+			out:fade={{ duration: 100, delay: PLACEHOLDER_HIDE_DELAY }}
 			src={data.placeholderSrc}
 			style:width="{width}px"
 			style:height="{height}px"

@@ -241,7 +241,13 @@
 	function closeTransition(toBounds: ThumbnailBounds, onTransitionEnd: () => void) {
 		const transform = getTransformToFitThumbnail(toBounds);
 		// apply transition to placeholder if the content element hasn't loaded yet
-		if (!imageElVisible && placeholderEl) {
+		if (placeholderEl) {
+			// The placeholder may still be visible while the content element is already present
+			// because of the delay between the image content being ready and the placeholder being hidden.
+			// If we close in this intermediary state, the content element should be hidden before animating
+			// the placeholder.
+			imageElVisible = false;
+
 			const listener = (e: TransitionEvent) => {
 				if (e.target === placeholderEl) {
 					placeholderEl.removeEventListener('transitionend', listener, false);

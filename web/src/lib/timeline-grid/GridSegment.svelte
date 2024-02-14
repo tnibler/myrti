@@ -49,14 +49,21 @@
 	style="width: {layout.width}px; height: {layout.height}px; top: {layout.top}px; left: 0px;"
 >
 	{#each layout.tiles as box, assetIdx}
-		<!-- svelte-ignore a11y-missing-attribute -->
-		<img
-			bind:this={imgEls[assetIdx]}
-			src="/api/asset/thumbnail/{layout.segment.assets[assetIdx].id}/large/avif"
-			class="tile"
-			style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
-			on:click={() => onAssetClick(assetBaseIndex + assetIdx)}
-		/>
+		<a
+			href="#"
+			onclick={(e) => {
+				e.preventDefault();
+				onAssetClick(assetBaseIndex + assetIdx);
+			}}
+		>
+			<!-- svelte-ignore a11y-missing-attribute -->
+			<img
+				bind:this={imgEls[assetIdx]}
+				src="/api/asset/thumbnail/{layout.segment.assets[assetIdx].id}/large/avif"
+				class="tile"
+				style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
+			/>
+		</a>
 	{/each}
 </div>
 

@@ -70,10 +70,10 @@
 		Finished
 	}
 	let placeholderTransitionState = $state(PlaceholderTransition.No as OpenTransitionState);
-	let imageLoaded = $state(false);
-	let imageElVisible = $state(false);
+	let contentHasLoaded = $state(false);
+	let isContentVisible = $state(false);
 	let placeholderVisible = $derived(
-		!imageElVisible || placeholderTransitionState === PlaceholderTransition.Running
+		!isContentVisible || placeholderTransitionState === PlaceholderTransition.Running
 	);
 	/** Wait this long after the real content is ready to hide the placeholder to reveal the <img> underneath.
 	Without this, there is a flicker on some devices/browsers. */
@@ -93,11 +93,11 @@
 		// small delay between image being loaded and allowed to be shown and actually doing it
 		// for flicker reasons. Not perfect but pretty good
 		if (
-			!imageElVisible &&
-			imageLoaded &&
+			!isContentVisible &&
+			contentHasLoaded &&
 			placeholderTransitionState !== PlaceholderTransition.Running
 		) {
-			imageElVisible = true;
+			isContentVisible = true;
 		}
 	});
 
@@ -248,7 +248,7 @@
 			// because of the delay between the image content being ready and the placeholder being hidden.
 			// If we close in this intermediary state, the content element should be hidden before animating
 			// the placeholder.
-			imageElVisible = false;
+			isContentVisible = false;
 
 			const listener = (e: TransitionEvent) => {
 				if (e.target === placeholderEl) {
@@ -290,9 +290,9 @@
 				bind:this={slideImage}
 				size={{ width, height }}
 				slideData={data as ImageSlideData}
-				isVisible={imageElVisible}
+				isVisible={isContentVisible}
 				onContentReady={() => {
-					imageLoaded = true;
+					contentHasLoaded = true;
 				}}
 			/>
 		{:else if data.type === 'video'}
@@ -300,10 +300,10 @@
 				bind:this={slideVideo}
 				size={{ width, height }}
 				slideData={data as VideoSlideData}
-				isVisible={imageElVisible}
+				isVisible={isContentVisible}
 				{isActive}
 				onContentReady={() => {
-					imageLoaded = true;
+					contentHasLoaded = true;
 				}}
 			/>
 		{/if}

@@ -67,7 +67,6 @@ export function newGestureController(
   let tapState: { tapTimer: number, lastTapPoint: Point } | null = null;
 
   function setStartPoints() {
-    console.assert(!('gesture' in state))
     if (state.points === 1 || state.points === 2) {
       state.p1.start = { x: state.p1.x, y: state.p1.y };
     }

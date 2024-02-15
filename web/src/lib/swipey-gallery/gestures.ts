@@ -123,6 +123,8 @@ export function newGestureController(
       const x = e.pageX;
       const y = e.pageY;
       const p2 = { x, y, start: { x, y }, prev: { x, y }, id: e.pointerId }
+      setStartPoints();
+      setPrevPoints();
       state = {
         points: 2,
         p1: state.p1,
@@ -214,13 +216,12 @@ export function newGestureController(
         rafLoopStop();
         rafRenderLoop();
       }
-    } else if (state.points === 2) {
+    } else if (state.points === 2 && !('gesture' in state)) {
       const currentSlide = gallery.currentSlide;
-      if (!('gesture' in state)) {
-        // no gesture being tracked until now, so set start points
-        // for the zoom starting now
-        setStartPoints()
-      }
+      // no gesture being tracked until now, so set start points
+      // for the zoom starting now
+      setStartPoints();
+      setPrevPoints();
       if (currentSlide !== null && currentSlide.canBeZoomed) {
         // start zoom
         state = {

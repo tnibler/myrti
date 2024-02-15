@@ -28,7 +28,6 @@ export function updateDrag(drag: DragState, slide: SlideState, pager: PagerState
   if (closeOnVerticalDrag && drag.dragAxis === 'y'
     && slide.currentZoomLevel <= slide.zoomLevels.fit
     && !isMultitouch) {
-    // TODO handle vertical swipe to close 
     const deltaY = pager.isShifted ? 0 : (p1.y - p1.prev.y);
     const clampedDeltaY = Math.min(Math.max(slide.pan.y + deltaY, slide.panBounds.max.y), slide.panBounds.min.y) - slide.pan.y;
     const deltaYWithFriction = (deltaY === clampedDeltaY) ? deltaY : (deltaY * PAN_END_FRICTION);

@@ -113,13 +113,6 @@ export function newGestureController(
       }
     } else if (state.points === 1
       && !gallery.pager.isShifted) { // only start zooming if not currently scrolling
-      if ('gesture' in state && state.gesture === 'drag') {
-        // end drag, maybe start zoom when new pointer moves
-        finishDrag(state, gallery);
-      } else if ('gesture' in state && state.gesture === 'zoom') {
-        // unreachable hopefully
-        console.assert(false, 'gesture === zoom')
-      }
       const x = e.pageX;
       const y = e.pageY;
       const p2 = { x, y, start: { x, y }, prev: { x, y }, id: e.pointerId }

@@ -81,12 +81,11 @@ export function finishZoom(state: ZoomState, slide: SlideControls, gallery: Gall
   // const isOverMaxZoomLevel = rawZoomLevel > (slide.zoomLevels.fit * 1.15); // needed for pinch to close
   const zoomPoint = centerPoint(p1, p2);
   const zoomStartPoint = centerPoint(p1.start, p2.start);
-  correctZoomPan(zoomPoint, zoomStartPoint, slide, gallery);
+  correctZoomPan(zoomPoint, slide, gallery);
 }
 
 export function correctZoomPan(
   zoomPoint: Point,
-  zoomStartPoint: Point,
   slide: SlideControls,
   gallery: GalleryControls,
 ) {
@@ -99,8 +98,10 @@ export function correctZoomPan(
   const correctedZoomLevel = Math.max(Math.min(initialZoomLevel, slide.zoomLevels.max), slide.zoomLevels.min);
   // pan after hypothetically setting correctedZoomLevel
   const zoomAdjustedPan = {
-    x: computePan('x', correctedZoomLevel, initialZoomLevel, zoomPoint, zoomStartPoint, initialPan),
-    y: computePan('y', correctedZoomLevel, initialZoomLevel, zoomPoint, zoomStartPoint, initialPan),
+    // zoomPoint is passed as both zoomPoint and zoomStartPoint since the bounce back animation
+    // is really a new zoom gesture without any movement of the finger points
+    x: computePan('x', correctedZoomLevel, initialZoomLevel, zoomPoint, zoomPoint, initialPan),
+    y: computePan('y', correctedZoomLevel, initialZoomLevel, zoomPoint, zoomPoint, initialPan),
   }
   // now clamp zoomAdjustedPan to bounds after hypothetically setting correctedZoomLevel
   // panAreaSize is really always gallery.viewportSize

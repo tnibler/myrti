@@ -130,7 +130,7 @@ export function finishDrag(drag: DragState, gallery: GalleryControls) {
     // ignoring the potential very short drag between letting the first and second finger go.
     // But that's minor and not too bad really.
     const zoomPoint = { x: drag.p1.x, y: drag.p1.y }
-    correctZoomPan(zoomPoint, zoomPoint, slide, gallery)
+    correctZoomPan(zoomPoint, slide, gallery)
   } else {
     const slide = gallery.currentSlide;
     console.assert(slide !== null);

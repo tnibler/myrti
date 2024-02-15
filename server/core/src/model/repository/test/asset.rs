@@ -11,6 +11,7 @@ use proptest::prelude::*;
 use proptest_arb::{arb_new_asset, arb_new_video_asset};
 
 use crate::model::{
+    ThumbnailType, ThumbnailFormat,
     repository, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType,
     AudioRepresentation, AudioRepresentationId, CreateAsset, CreateAssetBase, CreateAssetImage,
     CreateAssetSpe, CreateAssetVideo, Image, Size, TimestampInfo, Video, VideoAsset,
@@ -96,12 +97,6 @@ fn inserting_mismatching_asset_ty_and_spe_fails() {
             rotation_correction: None,
             hash: None,
             gps_coordinates: None,
-            thumb_small_square_avif: false,
-            thumb_small_square_webp: false,
-            thumb_large_orig_avif: false,
-            thumb_large_orig_webp: false,
-            thumb_large_orig_size: None,
-            thumb_small_square_size: None,
         },
     };
     // should fail both with and without ffprobe_output
@@ -145,31 +140,12 @@ fn prop_get_assets_with_missing_thumbnails() {
     prop_compose! {
         fn arb_asset_with_some_thumbnails()(
             asset in arb_new_asset(),
-            thumb_present in any::<(bool, bool, bool, bool)>(),
-        ) -> Asset {
-            Asset {
-                base: AssetBase {
-                    thumb_small_square_avif: thumb_present.0,
-                    thumb_small_square_webp: thumb_present.1,
-                    thumb_large_orig_avif: thumb_present.2,
-                    thumb_large_orig_webp: thumb_present.3,
-                    thumb_small_square_size: if thumb_present.0 || thumb_present.1 {
-                        Some(Size { width: 100, height: 100 })
-                    } else {
-                        None
-                    },
-                    thumb_large_orig_size:  if thumb_present.2 || thumb_present.3 {
-                        Some(Size { width: 200, height: 300 })
-                    } else {
-                        None
-                    },
-                    ..asset.base
-                },
-                ..asset
-            }
+            thumb_present in any::<(bool, bool)>(),
+        ) -> (Asset, bool, bool) {
+            (asset, thumb_present.0, thumb_present.1)
         }
     }
-    proptest!(|(assets in prop::collection::vec(arb_asset_with_some_thumbnails(), 5..20))| {
+    proptest!(|(assets_thumb_present in prop::collection::vec(arb_asset_with_some_thumbnails(), 1..20))| {
         let mut conn = super::db::open_in_memory_and_migrate();
         let asset_root_dir = AssetRootDir {
             id: AssetRootDirId(0),
@@ -178,9 +154,13 @@ fn prop_get_assets_with_missing_thumbnails() {
         let root_dir_id = assert_ok!(
             repository::asset_root_dir::insert_asset_root(&mut conn, &asset_root_dir)
         );
-        let assets = set_assets_root_dir(assets, root_dir_id);
-        let mut assets_with_ids: Vec<Asset> = Vec::default();
-        for asset in assets {
+        let assets_thumb_present: Vec<_> = assets_thumb_present
+            .into_iter()
+            .map(|(asset, t_lg_orig, t_sm_sq)| 
+                (set_asset_root_dir(asset, root_dir_id), t_lg_orig, t_sm_sq)
+            ).collect();
+        let mut assets_with_ids: Vec<(Asset, bool, bool)> = Vec::default();
+        for (asset, has_lg_orig, has_sm_sq) in assets_thumb_present {
             let ffprobe_output: Option<&[u8]> = match &asset.sp {
                 AssetSpe::Video(video) => Some(&[]),
                 _ => None
@@ -196,16 +176,19 @@ fn prop_get_assets_with_missing_thumbnails() {
                 },
                 ..asset
             };
-            assets_with_ids.push(asset_with_id);
+            if has_lg_orig {
+                assert_ok!(repository::asset::set_asset_has_thumbnail(&mut conn, asset_id, ThumbnailType::LargeOrigAspect, Size { width: 0, height: 0}, &[ThumbnailFormat::Webp, ThumbnailFormat::Avif]));
+            }
+            if has_sm_sq {
+                assert_ok!(repository::asset::set_asset_has_thumbnail(&mut conn, asset_id, ThumbnailType::SmallSquare, Size { width: 0, height: 0}, &[ThumbnailFormat::Webp, ThumbnailFormat::Avif]));
+            }
+            assets_with_ids.push((asset_with_id, has_lg_orig, has_sm_sq));
         }
-        let expected_with_missing_thumb: HashSet<AssetId> = assets_with_ids.iter()
-            .filter(|asset| {
-                !(asset.base.thumb_small_square_avif &&
-                asset.base.thumb_small_square_webp &&
-                asset.base.thumb_large_orig_avif &&
-                asset.base.thumb_large_orig_webp)
+        let expected_with_missing_thumb: HashSet<AssetId> = assets_with_ids.into_iter()
+            .filter(|(asset, has_lg_orig, has_sm_sq)| {
+                !(*has_lg_orig && *has_sm_sq)
             })
-            .map(|asset| asset.base.id)
+            .map(|(asset, _, _)| asset.base.id)
             .collect();
         let actual = repository::asset::get_assets_with_missing_thumbnail(&mut conn, None);
         prop_assert!(actual.is_ok());
@@ -258,12 +241,6 @@ fn get_videos_without_dash() {
             rotation_correction: Some(90),
             hash: None,
             gps_coordinates: None,
-            thumb_small_square_avif: true,
-            thumb_small_square_webp: false,
-            thumb_large_orig_avif: false,
-            thumb_large_orig_webp: true,
-            thumb_small_square_size: None,
-            thumb_large_orig_size: None,
         },
     };
     let asset2 = CreateAsset {
@@ -397,12 +374,6 @@ fn get_videos_in_acceptable_codec_without_dash() {
             rotation_correction: Some(90),
             hash: None,
             gps_coordinates: None,
-            thumb_small_square_avif: true,
-            thumb_small_square_webp: false,
-            thumb_large_orig_avif: false,
-            thumb_large_orig_webp: true,
-            thumb_small_square_size: None,
-            thumb_large_orig_size: None,
         },
         sp: AssetSpe::Video(Video {
             video_codec_name: "h264".to_owned(),

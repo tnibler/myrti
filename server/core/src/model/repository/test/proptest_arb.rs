@@ -89,12 +89,6 @@ prop_compose! {
             rotation_correction,
             gps_coordinates,
             hash,
-            thumb_small_square_avif: false,
-            thumb_small_square_webp: false,
-            thumb_large_orig_avif: false,
-            thumb_large_orig_webp: false,
-            thumb_large_orig_size: None,
-            thumb_small_square_size: None
         }
     }
 }

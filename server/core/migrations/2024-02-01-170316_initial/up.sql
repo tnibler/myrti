@@ -35,15 +35,6 @@ CREATE TABLE Asset (
   gps_latitude INTEGER,
   gps_longitude INTEGER,
 
-  thumb_small_square_avif INTEGER NOT NULL,
-  thumb_small_square_webp INTEGER NOT NULL,
-  thumb_large_orig_avif INTEGER NOT NULL,
-  thumb_large_orig_webp INTEGER NOT NULL,
-  thumb_small_square_width INTEGER,
-  thumb_small_square_height INTEGER,
-  thumb_large_orig_width INTEGER,
-  thumb_large_orig_height INTEGER,
-
   -- columns for images only
   image_format_name TEXT,
 
@@ -90,6 +81,18 @@ CREATE TABLE DuplicateAsset (
   FOREIGN KEY (asset_id) REFERENCES Asset(asset_id),
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(asset_root_dir_id),
   UNIQUE(root_dir_id, file_path)
+) STRICT;
+
+CREATE TABLE AssetThumbnail (
+  thumbnail_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  asset_id INTEGER NOT NULL,
+  -- 0 = large original aspect ratio, 1 = small cropped square
+  ty INTEGER NOT NULL CHECK(ty IN (0, 1)),
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  format_name TEXT NOT NULL,
+  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id),
+  UNIQUE(asset_id, ty, width, height, format_name)
 ) STRICT;
 
 CREATE TABLE VideoRepresentation (

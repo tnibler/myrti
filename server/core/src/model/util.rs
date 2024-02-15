@@ -2,6 +2,8 @@ use chrono::{DateTime, TimeZone, Utc};
 use eyre::{eyre, Context, Result};
 use std::path::{Path, PathBuf};
 
+use super::ThumbnailType;
+
 #[inline]
 pub fn bool_to_int(b: bool) -> i32 {
     if b {
@@ -55,4 +57,19 @@ pub fn hash_vec8_to_u64(v: impl AsRef<[u8]>) -> Result<u64> {
 
 pub fn hash_u64_to_vec8(u: u64) -> Vec<u8> {
     u.to_le_bytes().into_iter().collect()
+}
+
+pub fn to_db_thumbnail_type(tt: ThumbnailType) -> i32 {
+    match tt {
+        ThumbnailType::LargeOrigAspect => 0,
+        ThumbnailType::SmallSquare => 1,
+    }
+}
+
+pub fn from_db_thumbnail_type(i: i32) -> Result<ThumbnailType> {
+    match i {
+        0 => Ok(ThumbnailType::LargeOrigAspect),
+        1 => Ok(ThumbnailType::SmallSquare),
+        other => Err(eyre!("invalid db thumbnail type {}", other)),
+    }
 }

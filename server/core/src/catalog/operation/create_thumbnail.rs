@@ -7,7 +7,7 @@ use crate::{
     interact,
     model::{
         repository::{self, db::DbPool},
-        AssetId, AssetType, ThumbnailType,
+        AssetId, AssetType, Size, ThumbnailFormat, ThumbnailType,
     },
     processing::{
         self,
@@ -45,26 +45,19 @@ pub async fn apply_create_thumbnail(pool: DbPool, op: CreateThumbnailWithPaths) 
     let conn = pool.get().in_current_span().await?;
     interact!(conn, move |mut conn| {
         for thumb in &op.thumbnails {
-            match thumb.ty {
-                ThumbnailType::SmallSquare => {
-                    repository::asset::set_asset_small_thumbnails(
-                        &mut conn,
-                        op.asset_id,
-                        true,
-                        true,
-                    )
-                    .wrap_err("could not set asset thumbnails")?;
-                }
-                ThumbnailType::LargeOrigAspect => {
-                    repository::asset::set_asset_large_thumbnails(
-                        &mut conn,
-                        op.asset_id,
-                        true,
-                        true,
-                    )
-                    .wrap_err("could not set asset thumbnails")?;
-                }
-            }
+            // we never query thumbnail sizes and don't have access to them right here so ignore
+            // for now
+            let size = Size {
+                width: 0,
+                height: 0,
+            };
+            repository::asset::set_asset_has_thumbnail(
+                &mut conn,
+                op.asset_id,
+                thumb.ty,
+                size,
+                &[ThumbnailFormat::Avif, ThumbnailFormat::Webp],
+            )?;
         }
         Ok(())
     })

@@ -7,8 +7,8 @@ use eyre::{eyre, Context, Result};
 
 use crate::model::{
     util::{bool_to_int, datetime_from_db_repr, datetime_to_db_repr, hash_vec8_to_u64},
-    Asset, AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetThumbnails,
-    AssetType, GpsCoordinates, Image, Size, TimestampInfo, Video,
+    Asset, AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetType,
+    GpsCoordinates, Image, Size, TimestampInfo, Video,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Queryable, QueryableByName, Selectable)]
@@ -31,14 +31,6 @@ pub struct DbAsset {
     pub rotation_correction: Option<i32>,
     pub gps_latitude: Option<i64>,
     pub gps_longitude: Option<i64>,
-    pub thumb_small_square_avif: i32,
-    pub thumb_small_square_webp: i32,
-    pub thumb_large_orig_avif: i32,
-    pub thumb_large_orig_webp: i32,
-    pub thumb_small_square_width: Option<i32>,
-    pub thumb_small_square_height: Option<i32>,
-    pub thumb_large_orig_width: Option<i32>,
-    pub thumb_large_orig_height: Option<i32>,
     pub image_format_name: Option<String>,
     pub video_codec_name: Option<String>,
     pub video_bitrate: Option<i64>,
@@ -86,18 +78,6 @@ impl TryFrom<DbAsset> for Asset {
             },
             rotation_correction: value.rotation_correction,
             gps_coordinates: coords,
-            thumb_small_square_avif: value.thumb_small_square_avif != 0,
-            thumb_small_square_webp: value.thumb_small_square_webp != 0,
-            thumb_large_orig_avif: value.thumb_large_orig_avif != 0,
-            thumb_large_orig_webp: value.thumb_large_orig_webp != 0,
-            thumb_small_square_size: value
-                .thumb_small_square_width
-                .zip(value.thumb_small_square_height)
-                .map(|(width, height)| Size { width, height }),
-            thumb_large_orig_size: value
-                .thumb_large_orig_width
-                .zip(value.thumb_large_orig_height)
-                .map(|(width, height)| Size { width, height }),
         };
         let sp = match ty {
             AssetType::Image => AssetSpe::Image(Image {
@@ -143,14 +123,6 @@ pub struct DbInsertAsset<'a> {
     pub rotation_correction: Option<i32>,
     pub gps_latitude: Option<i64>,
     pub gps_longitude: Option<i64>,
-    pub thumb_small_square_avif: i32,
-    pub thumb_small_square_webp: i32,
-    pub thumb_large_orig_avif: i32,
-    pub thumb_large_orig_webp: i32,
-    pub thumb_small_square_width: Option<i32>,
-    pub thumb_small_square_height: Option<i32>,
-    pub thumb_large_orig_width: Option<i32>,
-    pub thumb_large_orig_height: Option<i32>,
     pub image_format_name: Option<Cow<'a, str>>,
     pub ffprobe_output: Option<Cow<'a, [u8]>>,
     pub video_codec_name: Option<Cow<'a, str>>,
@@ -241,14 +213,6 @@ impl AsInsertableAsset for Asset {
             rotation_correction: self.base.rotation_correction,
             gps_latitude: self.base.gps_coordinates.map(|c| c.lat),
             gps_longitude: self.base.gps_coordinates.map(|c| c.lon),
-            thumb_small_square_avif: bool_to_int(self.base.thumb_small_square_avif),
-            thumb_small_square_webp: bool_to_int(self.base.thumb_small_square_webp),
-            thumb_large_orig_avif: bool_to_int(self.base.thumb_large_orig_avif),
-            thumb_large_orig_webp: bool_to_int(self.base.thumb_large_orig_webp),
-            thumb_small_square_width: self.base.thumb_small_square_size.map(|s| s.width),
-            thumb_small_square_height: self.base.thumb_small_square_size.map(|s| s.height),
-            thumb_large_orig_width: self.base.thumb_large_orig_size.map(|s| s.width),
-            thumb_large_orig_height: self.base.thumb_large_orig_size.map(|s| s.height),
             image_format_name: match &self.sp {
                 AssetSpe::Image(img) => Some(Cow::Borrowed(&img.image_format_name)),
                 AssetSpe::Video(_) => None,
@@ -308,33 +272,6 @@ impl TryFrom<DbAssetPathOnDisk> for AssetPathOnDisk {
             id: AssetId(value.asset_id),
             path_in_asset_root: PathBuf::from(value.path_in_asset_root),
             asset_root_path: PathBuf::from(value.asset_root_path),
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Queryable)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct DbAssetThumbnails {
-    #[diesel(column_name = asset_id)]
-    pub asset_id: i64,
-    pub ty: i32,
-    pub thumb_small_square_avif: i32,
-    pub thumb_small_square_webp: i32,
-    pub thumb_large_orig_avif: i32,
-    pub thumb_large_orig_webp: i32,
-}
-
-impl TryFrom<DbAssetThumbnails> for AssetThumbnails {
-    type Error = eyre::Report;
-
-    fn try_from(value: DbAssetThumbnails) -> Result<Self, Self::Error> {
-        Ok(AssetThumbnails {
-            id: AssetId(value.asset_id),
-            ty: from_db_asset_ty(value.ty)?,
-            thumb_small_square_avif: value.thumb_small_square_avif != 0,
-            thumb_small_square_webp: value.thumb_small_square_webp != 0,
-            thumb_large_orig_avif: value.thumb_large_orig_avif != 0,
-            thumb_large_orig_webp: value.thumb_large_orig_webp != 0,
         })
     }
 }

@@ -35,14 +35,6 @@ diesel::table! {
         rotation_correction -> Nullable<Integer>,
         gps_latitude -> Nullable<BigInt>,
         gps_longitude -> Nullable<BigInt>,
-        thumb_small_square_avif -> Integer,
-        thumb_small_square_webp -> Integer,
-        thumb_large_orig_avif -> Integer,
-        thumb_large_orig_webp -> Integer,
-        thumb_small_square_width -> Nullable<Integer>,
-        thumb_small_square_height -> Nullable<Integer>,
-        thumb_large_orig_width -> Nullable<Integer>,
-        thumb_large_orig_height -> Nullable<Integer>,
         image_format_name -> Nullable<Text>,
         ffprobe_output -> Nullable<Binary>,
         video_codec_name -> Nullable<Text>,
@@ -56,6 +48,17 @@ diesel::table! {
     AssetRootDir (asset_root_dir_id) {
         asset_root_dir_id -> BigInt,
         path -> Text,
+    }
+}
+
+diesel::table! {
+    AssetThumbnail (thumbnail_id) {
+        thumbnail_id -> BigInt,
+        asset_id -> BigInt,
+        ty -> Integer,
+        width -> Integer,
+        height -> Integer,
+        format_name -> Text,
     }
 }
 
@@ -167,6 +170,7 @@ diesel::table! {
 diesel::joinable!(AlbumEntry -> Album (album_id));
 diesel::joinable!(AlbumEntry -> Asset (asset_id));
 diesel::joinable!(Asset -> AssetRootDir (root_dir_id));
+diesel::joinable!(AssetThumbnail -> Asset (asset_id));
 diesel::joinable!(AudioRepresentation -> Asset (asset_id));
 diesel::joinable!(DuplicateAsset -> Asset (asset_id));
 diesel::joinable!(DuplicateAsset -> AssetRootDir (root_dir_id));

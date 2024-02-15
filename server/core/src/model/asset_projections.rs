@@ -1,16 +1,13 @@
 use camino::Utf8PathBuf as PathBuf;
 use serde::Serialize;
 
-use super::{AssetId, AssetType};
+use super::AssetId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AssetThumbnails {
     pub id: AssetId,
-    pub ty: AssetType,
-    pub thumb_small_square_avif: bool,
-    pub thumb_small_square_webp: bool,
-    pub thumb_large_orig_avif: bool,
-    pub thumb_large_orig_webp: bool,
+    pub has_thumb_large_orig: bool,
+    pub has_thumb_small_square: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

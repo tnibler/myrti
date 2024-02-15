@@ -21,12 +21,6 @@ pub struct AssetBase {
     pub gps_coordinates: Option<GpsCoordinates>,
     /// Seahash of the file, if already computed
     pub hash: Option<u64>,
-    pub thumb_small_square_avif: bool,
-    pub thumb_small_square_webp: bool,
-    pub thumb_large_orig_avif: bool,
-    pub thumb_large_orig_webp: bool,
-    pub thumb_small_square_size: Option<Size>,
-    pub thumb_large_orig_size: Option<Size>,
 }
 
 /// Origin and reliability of the timezone for an asset's original creation date

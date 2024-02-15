@@ -159,6 +159,8 @@ function finishYPan(drag: DragState, slide: SlideControls, gallery: GalleryContr
     }
   }
 
+  const wasZoomedIn = slide.currentZoomLevel > slide.zoomLevels.fit;
+
   if (pan === clampedPan) {
     // nothing to do
     return;
@@ -172,7 +174,11 @@ function finishYPan(drag: DragState, slide: SlideControls, gallery: GalleryContr
     dampingRatio,
     onUpdate: (position: number) => {
       slide.pan.y = Math.floor(position)
-      gallery.onVerticalDrag(computeVerticalDragRatio(position, slide, gallery.pager.viewportSize.height));
+      if (!wasZoomedIn) {
+        // background opacity only changes when slide is dragged down and not zoomed in,
+        // so only animate the opacity reset if it wasn't zoomed
+        gallery.onVerticalDrag(computeVerticalDragRatio(position, slide, gallery.pager.viewportSize.height));
+      }
     }
   }, 'pan');
 }

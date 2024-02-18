@@ -37,7 +37,7 @@ pub fn open_in_memory_and_migrate() -> diesel::sqlite::SqliteConnection {
     conn
 }
 
-pub fn migrate(conn: &mut DbConn) -> Result<()> {
+pub fn migrate(conn: &mut diesel::SqliteConnection) -> Result<()> {
     match conn.run_pending_migrations(MIGRATIONS) {
         Ok(_) => {}
         Err(e) => return Err(eyre::eyre!("error running migrations")),
@@ -45,7 +45,7 @@ pub fn migrate(conn: &mut DbConn) -> Result<()> {
     Ok(())
 }
 
-fn connection_setup(conn: &mut DbConn) -> Result<()> {
+fn connection_setup(conn: &mut diesel::SqliteConnection) -> Result<()> {
     conn.batch_execute(
         r#"
 PRAGMA journal_mode = wal;
@@ -57,6 +57,7 @@ PRAGMA foreign_keys = on;
 
 type SqlitePool = Pool<Manager>;
 
+pub type PooledDbConn = deadpool_diesel::Connection<diesel::SqliteConnection>;
 pub type DbConn = diesel::SqliteConnection;
 
 #[derive(Clone)]

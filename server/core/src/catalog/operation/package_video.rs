@@ -1,6 +1,5 @@
 use std::ffi::OsString;
 
-use camino::Utf8PathBuf as PathBuf;
 use diesel::Connection;
 use eyre::{eyre, Context, Result};
 use tracing::{error, instrument, Instrument};
@@ -14,7 +13,10 @@ use crate::{
     core::storage::Storage,
     interact,
     model::{
-        repository::{self, db::DbPool},
+        repository::{
+            self,
+            db::{DbPool, PooledDbConn},
+        },
         AssetId, AudioRepresentation, AudioRepresentationId, Size, Video, VideoAsset,
         VideoRepresentation, VideoRepresentationId,
     },
@@ -124,9 +126,8 @@ pub struct AudioTranscodeResult {
     pub out_media_info_key: String,
 }
 
-#[instrument(skip(pool), level = "debug")]
-pub async fn apply_package_video(pool: DbPool, op: CompletedPackageVideo) -> Result<()> {
-    let conn = pool.get().in_current_span().await?;
+#[instrument(skip(conn), level = "debug")]
+pub async fn apply_package_video(conn: &mut PooledDbConn, op: CompletedPackageVideo) -> Result<()> {
     let asset: VideoAsset = interact!(conn, move |mut conn| {
         repository::asset::get_asset(&mut conn, op.asset_id)?.try_into()
     })

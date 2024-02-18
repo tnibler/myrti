@@ -2,6 +2,7 @@ use camino::Utf8Path as Path;
 use chrono::{DateTime, Local, Utc};
 use color_eyre::eyre::Result;
 use eyre::{eyre, Context};
+use tokio::sync::mpsc;
 use tracing::{debug, error, instrument, Instrument};
 use walkdir::WalkDir;
 
@@ -16,47 +17,9 @@ use super::{
     video::{streams::FFProbeStreamsTrait, FFProbe},
 };
 
-#[instrument(skip(pool))]
-pub async fn index_asset_root(
-    asset_root: &AssetRootDir,
-    pool: DbPool,
-    bin_paths: Option<&config::BinPaths>,
-) -> Result<Vec<AssetId>> {
-    let mut new_asset_ids: Vec<AssetId> = vec![];
-    // FIXME if a datadir is subdir of assetroot it should obviously not be indexed
-    for entry in WalkDir::new(asset_root.path.as_path()).follow_links(true) {
-        match entry {
-            Ok(e) => {
-                if e.file_type().is_file() {
-                    let utf8_path = camino::Utf8Path::from_path(e.path());
-                    if let Some(path) = utf8_path {
-                        if let Some(id) = index_file(path, asset_root, &pool, bin_paths)
-                            .in_current_span()
-                            .await?
-                        {
-                            new_asset_ids.push(id);
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                if let Some(path) = e.path() {
-                    error!("Could not index file or directory {}", path.display());
-                } else {
-                    error!(
-                        "Error during indexing of asset root dir {}",
-                        &asset_root.path
-                    )
-                }
-            }
-        }
-    }
-    Ok(new_asset_ids)
-}
-
 /// Returns Some(AssetId) if a new, non duplicate asset was indexed and added to the database
 #[instrument(skip(pool), level = "debug")]
-async fn index_file(
+pub async fn index_file(
     path: &Path,
     asset_root: &AssetRootDir,
     pool: &DbPool,
@@ -67,7 +30,7 @@ async fn index_file(
         .wrap_err("file to index is not in provided asset root")?;
     let path_in_asset_root2 = path_in_asset_root.to_owned();
     let asset_root_id = asset_root.id;
-    let conn = pool.get().in_current_span().await?;
+    let conn = pool.get().await?;
     let existing = interact!(conn, move |mut conn| {
         repository::asset::asset_or_duplicate_with_path_exists(
             &mut conn,
@@ -75,7 +38,6 @@ async fn index_file(
             &path_in_asset_root2,
         )
     })
-    .in_current_span()
     .await??;
     if existing {
         return Ok(None);
@@ -89,7 +51,6 @@ async fn index_file(
         .flatten()
         .map(|p| p.as_path());
     let metadata = read_media_metadata(path, exiftool_path)
-        .in_current_span()
         .await
         .wrap_err("could not read file metadata")?;
     let file_type = match &metadata.file.file_type {
@@ -165,7 +126,7 @@ async fn index_file(
         .try_into_std()
         .unwrap();
     let hash = hash_file(file).await?;
-    let conn = pool.get().in_current_span().await?;
+    let conn = pool.get().await?;
     let path_in_asset_root2 = path_in_asset_root.to_owned();
     let is_duplicate = interact!(conn, move |mut conn| {
         let existing_with_same_hash = repository::asset::get_asset_with_hash(&mut conn, hash)?;
@@ -183,7 +144,6 @@ async fn index_file(
             Ok(false)
         }
     })
-    .in_current_span()
     .await??;
     if is_duplicate {
         return Ok(None);
@@ -229,7 +189,6 @@ async fn index_file(
     let id = interact!(conn, move |mut conn| {
         repository::asset::create_asset(&mut conn, create_asset)
     })
-    .in_current_span()
     .await??;
     Ok(Some(id))
 }

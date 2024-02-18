@@ -1,8 +1,6 @@
 use core::{
     core::scheduler::{SchedulerMessage, UserRequest},
-    deadpool_diesel, interact,
-    job::indexing_job::IndexingJobParams,
-    model::{self, repository},
+    model::{self},
 };
 
 use axum::{
@@ -11,9 +9,8 @@ use axum::{
     routing::post,
     Router,
 };
-use eyre::Context;
 use serde::Deserialize;
-use tracing::{info, Instrument};
+use tracing::info;
 
 use crate::{app_state::SharedState, http_error::HttpError};
 
@@ -21,7 +18,6 @@ pub mod album;
 pub mod asset;
 pub mod asset_roots;
 pub mod dash;
-pub mod jobs;
 pub mod timeline;
 
 #[derive(Deserialize)]
@@ -37,21 +33,11 @@ async fn post_index_asset_root(
     info!("reindex dir {}", id);
     // let asset_root_dir = repository::asset_root_dir::get_asset_root(&app_state.pool, id).await?;
     // dbg!(&asset_root_dir);
-    let conn = app_state.pool.get().in_current_span().await?;
-    let asset_root = interact!(conn, move |mut conn| {
-        repository::asset_root_dir::get_asset_root(&mut conn, id)
-    })
-    .in_current_span()
-    .await?
-    .wrap_err("No asset root with this id")?;
-    let params = IndexingJobParams {
-        asset_root,
-        sub_paths: None,
-    };
     app_state
         .scheduler
+        .send
         .send(SchedulerMessage::UserRequest(
-            UserRequest::ReindexAssetRoots { params },
+            UserRequest::ReindexAssetRoot(id),
         ))
         .await
         .unwrap();

@@ -15,8 +15,7 @@ use mediathingyrust::{
     routes,
 };
 use serde::Deserialize;
-use tokio::{signal, sync::mpsc};
-use tokio_util::sync::CancellationToken;
+use tokio::signal;
 use tower::ServiceBuilder;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -32,9 +31,7 @@ use tracing_subscriber::{prelude::*, EnvFilter};
 use core::{
     config::Config,
     core::{
-        job::JobId,
-        monitor::{Monitor, MonitorMessage},
-        scheduler::Scheduler,
+        scheduler::SchedulerHandle,
         storage::{LocalFileStorage, Storage},
     },
     deadpool_diesel, interact,
@@ -85,34 +82,6 @@ async fn store_asset_roots_from_config(config: &Config, pool: &DbPool) -> Result
     Ok(())
 }
 
-#[derive(Deserialize)]
-struct QueryCancel {
-    id: u64,
-}
-
-async fn post_cancel(
-    query: Query<QueryCancel>,
-    app_state: State<SharedState>,
-) -> Result<impl IntoResponse, HttpError> {
-    app_state.monitor.cancel_job(JobId(query.0.id)).await?;
-    Ok(())
-}
-
-#[instrument(name = "Get Job status",
-skip(app_state, query),
-fields(job_id=query.id))]
-async fn get_status(
-    query: Query<QueryCancel>,
-    app_state: State<SharedState>,
-) -> Result<impl IntoResponse, HttpError> {
-    let status = app_state
-        .monitor
-        .get_status(JobId(query.id))
-        .in_current_span()
-        .await?;
-    Ok(format!("{:#?}", status))
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     if std::env::var("RUST_LIB_BACKTRACE").is_err() {
@@ -144,19 +113,14 @@ async fn main() -> Result<()> {
             .unwrap();
     let pool = db_setup().await.unwrap();
     store_asset_roots_from_config(&config, &pool).await?;
-    // run it with hyper on localhost:3000
-    let (monitor_tx, monitor_rx) = mpsc::channel::<MonitorMessage>(1000);
     let storage_path = config.data_dir.path.clone();
     std::fs::create_dir_all(&storage_path).unwrap();
     let storage: Storage = LocalFileStorage::new(storage_path).into();
-    let scheduler = Scheduler::start(monitor_tx, pool.clone(), storage.clone(), config);
-    let monitor_cancel = CancellationToken::new();
-    let monitor = Monitor::new(monitor_rx, scheduler.tx.clone(), monitor_cancel.clone());
+    let scheduler = SchedulerHandle::new(pool.clone(), storage.clone(), config);
     let shared_state: SharedState = Arc::new(AppState {
         pool: pool.clone(),
         storage,
         scheduler,
-        monitor,
     });
     let cors = CorsLayer::new()
         // allow `GET` and `POST` when accessing the resource
@@ -169,10 +133,7 @@ async fn main() -> Result<()> {
         .nest("/api/asset", routes::asset::router())
         .nest("/api/assetRoots", routes::asset_roots::router())
         .nest("/api/dash", routes::dash::router())
-        .nest("/api/jobs", routes::jobs::router())
         .nest("/api", routes::api_router())
-        .route("/cancel", post(post_cancel))
-        .route("/status", get(get_status))
         .layer(
             ServiceBuilder::new()
                 .set_x_request_id(MakeRequestUuid::default())

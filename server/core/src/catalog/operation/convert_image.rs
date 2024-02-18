@@ -1,16 +1,15 @@
 use eyre::{Context, Result};
-use futures::TryFutureExt;
 use tracing::Instrument;
 
 use crate::{
-    catalog::{
-        image_conversion_target::{image_format_name, ImageConversionTarget},
-        storage_key,
-    },
+    catalog::image_conversion_target::{image_format_name, ImageConversionTarget},
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
     interact,
     model::{
-        repository::{self, db::DbPool},
+        repository::{
+            self,
+            db::{DbPool, PooledDbConn},
+        },
         AssetId, ImageRepresentation, ImageRepresentationId, Size,
     },
     processing::{self, image::image_conversion::ConvertImageTrait},
@@ -23,10 +22,10 @@ pub struct ConvertImage {
     pub output_file_key: String,
 }
 
-#[tracing::instrument(skip(pool), level = "debug")]
+#[tracing::instrument(skip(conn), level = "debug")]
 pub async fn apply_convert_image(
-    pool: DbPool,
-    op: ConvertImage,
+    conn: &mut PooledDbConn,
+    op: &ConvertImage,
     result: ImageConversionSideEffectResult,
 ) -> Result<()> {
     let image_representation = ImageRepresentation {
@@ -38,7 +37,6 @@ pub async fn apply_convert_image(
         width: result.final_size.width,
         height: result.final_size.height,
     };
-    let conn = pool.get().in_current_span().await?;
     interact!(conn, move |mut conn| {
         repository::representation::insert_image_representation(&mut conn, &image_representation)
             .wrap_err("error inserting image representation")

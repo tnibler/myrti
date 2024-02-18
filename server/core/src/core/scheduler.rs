@@ -1,304 +1,187 @@
-use std::collections::HashMap;
-
-use camino::Utf8PathBuf as PathBuf;
-use eyre::Result;
 use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
-use tracing::{debug, info, instrument, Instrument};
+use tracing::instrument;
 
 use crate::{
-    catalog::{
-        operation::{convert_image::ConvertImage, package_video::PackageVideo},
-        rules,
+    actor::{
+        image_conversion::{ImageConversionActorHandle, ImageConversionMessage},
+        indexing::{IndexingActorHandle, IndexingMessage, IndexingResult},
+        thumbnail::{ThumbnailActorHandle, ThumbnailMessage},
+        video_packaging::{VideoPackagingActorHandle, VideoPackagingMessage},
     },
-    config,
-    core::job::JobType,
+    catalog::rules,
+    config::Config,
     interact,
-    job::{
-        image_conversion_job::{ImageConversionJob, ImageConversionParams},
-        indexing_job::{IndexingJob, IndexingJobParams},
-        thumbnail_job::{ThumbnailJob, ThumbnailJobParams},
-        video_packaging_job::{VideoPackagingJob, VideoPackagingJobParams},
+    model::{
+        repository::{self, db::DbPool},
+        AssetId, AssetRootDirId,
     },
-    model::repository::{self, db::DbPool},
 };
 
-use super::{
-    job::{Job, JobId, JobResultType},
-    monitor::MonitorMessage,
-    storage::Storage,
-};
+use super::storage::Storage;
 
 #[derive(Debug)]
 pub enum SchedulerMessage {
     Timer,
-    FileSystemChange { changed_files: Vec<PathBuf> },
     UserRequest(UserRequest),
-    JobComplete { id: JobId, result: JobResultType },
-    JobFailed { id: JobId },
-    JobRegisteredWithMonitor { id: JobId, job_type: JobType },
-    ConfigChange,
 }
 
 #[derive(Debug)]
 pub enum UserRequest {
-    ReindexAssetRoots { params: IndexingJobParams },
+    ReindexAssetRoot(AssetRootDirId),
 }
 
-#[derive(Clone)]
-pub struct Scheduler {
-    cancel: CancellationToken,
-    pub tx: mpsc::Sender<SchedulerMessage>,
+#[derive(Debug, Clone)]
+pub struct SchedulerHandle {
+    pub send: mpsc::Sender<SchedulerMessage>,
 }
 
-impl Scheduler {
-    pub fn start(
-        monitor_tx: mpsc::Sender<MonitorMessage>,
-        pool: DbPool,
-        storage: Storage,
-        config: config::Config,
-    ) -> Scheduler {
-        let (tx, rx) = mpsc::channel::<SchedulerMessage>(1000);
-        let cancel = CancellationToken::new();
-        let cancel_copy = cancel.clone();
-        let tx_copy = tx.clone();
-        tokio::spawn(async move {
-            let mut si = SchedulerImpl {
-                events_tx: tx_copy,
-                events_rx: rx,
-                cancel,
-                pool,
-                config,
-                monitor_tx,
-                storage,
-                running_jobs: HashMap::default(),
-            };
-            si.run().await;
-        });
-        Scheduler {
-            cancel: cancel_copy,
-            tx,
-        }
-    }
+impl SchedulerHandle {
+    pub fn new(db_pool: DbPool, storage: Storage, config: Config) -> Self {
+        let indexing_actor = IndexingActorHandle::new(db_pool.clone(), config.clone());
+        let thumbnail_actor =
+            ThumbnailActorHandle::new(db_pool.clone(), storage.clone(), config.clone());
+        let video_packaging_actor =
+            VideoPackagingActorHandle::new(db_pool.clone(), storage.clone(), config.clone());
+        let image_conversion_actor =
+            ImageConversionActorHandle::new(db_pool.clone(), storage.clone(), config.clone());
 
-    pub async fn send(&self, msg: SchedulerMessage) -> Result<()> {
-        self.tx.send(msg).await?;
-        Ok(())
+        let db_pool_copy = db_pool.clone();
+        let indexing_send = indexing_actor.send.clone();
+        let (send, recv) = mpsc::channel(1000);
+        let sched = Scheduler {
+            db_pool,
+            storage,
+            config,
+            recv,
+            indexing_actor,
+            thumbnail_actor,
+            video_packaging_actor,
+            image_conversion_actor,
+        };
+        tokio::spawn(run_scheduler(sched));
+        tokio::spawn(on_startup(db_pool_copy, indexing_send));
+        Self { send }
     }
 }
 
-struct SchedulerImpl {
-    pub events_tx: mpsc::Sender<SchedulerMessage>,
-    pub events_rx: mpsc::Receiver<SchedulerMessage>,
-    pub cancel: CancellationToken,
-    pool: DbPool,
-    monitor_tx: mpsc::Sender<MonitorMessage>,
-    storage: Storage,
-    config: config::Config,
-
-    running_jobs: HashMap<JobId, JobType>,
+struct Scheduler {
+    pub db_pool: DbPool,
+    pub storage: Storage,
+    pub config: Config,
+    pub recv: mpsc::Receiver<SchedulerMessage>,
+    pub indexing_actor: IndexingActorHandle,
+    pub thumbnail_actor: ThumbnailActorHandle,
+    pub video_packaging_actor: VideoPackagingActorHandle,
+    pub image_conversion_actor: ImageConversionActorHandle,
 }
 
-impl SchedulerImpl {
-    async fn run(&mut self) {
-        info!("Scheduler starting");
-        self.on_startup().await;
-        loop {
-            tokio::select! {
-                _ = self.cancel.cancelled() => {
-                    info!("Scheduler cancelled");
-                    break;
-                }
-                Some(message) = self.events_rx.recv() => {
-                    debug!(?message, "Received message");
-                    match message {
-                        SchedulerMessage::Timer => todo!(),
-                        SchedulerMessage::FileSystemChange { changed_files: _ } => todo!(),
-                        SchedulerMessage::UserRequest(request) => {
-                            match request {
-                                UserRequest::ReindexAssetRoots { params } => {
-                                    self.index_asset_root(params).await;
-                                },
-                            }
-                        },
-                        SchedulerMessage::JobRegisteredWithMonitor { id, job_type } => {
-                            assert!(
-                                self.running_jobs.insert(id, job_type).is_none(),
-                                "Attempting to insert already existing JobId into running_jobs"
-                            );
-                        }
-                        SchedulerMessage::JobComplete {id, result }=> {
-                            self.on_job_complete(id, result).await;
-                            let removed = self.running_jobs.remove(&id);
-                            debug_assert!(removed.is_some(), "Scheduler did not know about job that completed");
-                        },
-                        SchedulerMessage::JobFailed { id } => {
-                            let removed = self.running_jobs.remove(&id);
-                            debug_assert!(removed.is_some(), "Scheduler did not know about job that completed");
-                        }
-                        SchedulerMessage::ConfigChange => todo!(),
-                    }
+async fn run_scheduler(sched: Scheduler) {
+    let Scheduler {
+        db_pool,
+        storage,
+        config,
+        mut recv,
+        mut indexing_actor,
+        thumbnail_actor,
+        video_packaging_actor,
+        image_conversion_actor,
+    } = sched;
+    loop {
+        println!("select");
+        tokio::select! {
+            Some(msg) = recv.recv() => {
+                handle_msg(msg, &indexing_actor.send).await;
+            }
+            Some(indexing_result) = indexing_actor.recv_result.recv() => {
+                match indexing_result {
+                    IndexingResult::NewAsset(asset_id) => {
+                        on_new_asset_indexed(asset_id,
+                            db_pool.clone(),
+                            thumbnail_actor.send.clone(),
+                            video_packaging_actor.send.clone(),
+                            image_conversion_actor.send.clone(),
+                        ).await;
+                    },
+                    IndexingResult::IndexingError { root_dir_id, path, report } => {
+                        tracing::error!(?root_dir_id, ?path, %report, "TODO unhandled indexing error");
+                    },
+                    IndexingResult::FailedToStartIndexing { root_dir_id, report } => {
+                        tracing::error!(?root_dir_id, %report, "TODO unhandled failed to start indexing job");
+                    },
                 }
             }
         }
     }
+}
 
-    async fn on_job_complete(&self, _job_id: JobId, _result: JobResultType) {
-        self.start_any_job_if_required().await;
-    }
-
-    async fn on_startup(&self) {
-        let conn = self
-            .pool
-            .get()
-            .in_current_span()
-            .await
-            .expect("TODO how do we handle errors in scheduler");
-        let asset_roots = interact!(conn, move |mut conn| {
-            repository::asset_root_dir::get_asset_roots(&mut conn)
-        })
-        .in_current_span()
+#[instrument(skip_all, level = "debug")]
+async fn on_startup(db_pool: DbPool, indexing_send: mpsc::Sender<IndexingMessage>) {
+    let conn = db_pool
+        .get()
         .await
-        .expect("TODO how do we handle errors in scheduler")
         .expect("TODO how do we handle errors in scheduler");
-        for asset_root in asset_roots {
-            self.index_asset_root(IndexingJobParams {
-                asset_root,
-                sub_paths: None,
+    let asset_roots = interact!(conn, move |mut conn| {
+        repository::asset_root_dir::get_asset_roots(&mut conn)
+    })
+    .await
+    .expect("TODO how do we handle errors in scheduler")
+    .expect("TODO how do we handle errors in scheduler");
+    for asset_root in asset_roots {
+        let _ = indexing_send
+            .send(IndexingMessage::IndexAssetRootDir {
+                root_dir_id: asset_root.id,
             })
             .await;
-        }
+    }
+}
+
+async fn handle_msg(msg: SchedulerMessage, indexing_send: &mpsc::Sender<IndexingMessage>) {
+    match msg {
+        SchedulerMessage::Timer => {}
+        SchedulerMessage::UserRequest(user_request) => match user_request {
+            UserRequest::ReindexAssetRoot(root_dir_id) => {
+                let _ = indexing_send
+                    .send(IndexingMessage::IndexAssetRootDir { root_dir_id })
+                    .await;
+            }
+        },
+    }
+}
+
+async fn on_new_asset_indexed(
+    asset_id: AssetId,
+    db_pool: DbPool,
+    thumbnail_send: mpsc::Sender<ThumbnailMessage>,
+    video_packaging_send: mpsc::Sender<VideoPackagingMessage>,
+    image_conversion_send: mpsc::Sender<ImageConversionMessage>,
+) {
+    tracing::info!(?asset_id, "asset indexed");
+    let mut conn = db_pool.get().await.unwrap();
+    let thumbnails_required = rules::required_thumbnails_for_asset(&mut conn, asset_id)
+        .await
+        .expect("TODO");
+    if !thumbnails_required.thumbnails.is_empty() {
+        let _ = thumbnail_send
+            .send(ThumbnailMessage::CreateThumbnails(vec![
+                thumbnails_required,
+            ]))
+            .await;
+    }
+    let video_packaging_required = rules::required_video_packaging_for_asset(&mut conn, asset_id)
+        .await
+        .expect("TODO");
+    for vid_pack in video_packaging_required {
+        let _ = video_packaging_send
+            .send(VideoPackagingMessage::PackageVideo(vid_pack))
+            .await;
     }
 
-    async fn start_any_job_if_required(&self) -> bool {
-        let thumbnail = self.thumbnail_if_required().await;
-        let package_video = self.package_video_if_required().await;
-        let convert_image = self.convert_image_if_required().await;
-        return thumbnail || package_video || convert_image;
-    }
-
-    async fn thumbnail_if_required(&self) -> bool {
-        // Only run one job of a given type at a time. In the future, we might want to run multiple,
-        // in which case we'll need to compute the diff between the params of currently running
-        // jobs and the output of rules::thumbnails_to_create
-        let any_running_thumbnail_job = self
-            .running_jobs
-            .values()
-            .any(|job_type| matches!(job_type, JobType::Thumbnail { params: _ }));
-        if any_running_thumbnail_job {
-            return false;
-        }
-
-        let thumbnails_to_create = rules::thumbnails_to_create(&self.pool).await.unwrap();
-        if thumbnails_to_create.is_empty() {
-            return false;
-        }
-        let params = ThumbnailJobParams {
-            thumbnails: thumbnails_to_create,
-        };
-        let job = ThumbnailJob::new(params.clone(), self.pool.clone(), self.storage.clone());
-        let handle = job.start();
-        self.monitor_tx
-            .send(MonitorMessage::AddJob {
-                handle,
-                ty: JobType::Thumbnail { params },
-            })
-            .await
-            .unwrap();
-        return true;
-    }
-
-    async fn package_video_if_required(&self) -> bool {
-        // Only run one job of a given type at a time. In the future, we might want to run multiple,
-        // in which case we'll need to compute the diff between the params of currently running
-        // jobs and the output of rules::video_packaging_due
-        let any_running_video_packaging_job = self
-            .running_jobs
-            .values()
-            .any(|job_type| matches!(job_type, JobType::VideoPackaging { params: _ }));
-        if any_running_video_packaging_job {
-            return false;
-        }
-
-        let videos_to_package: Vec<PackageVideo> =
-            rules::video_packaging_due(self.pool.clone()).await.unwrap(); // TODO
-        if videos_to_package.is_empty() {
-            return false;
-        }
-        debug!(?videos_to_package, "videos need processing");
-        let params = VideoPackagingJobParams {
-            tasks: videos_to_package,
-        };
-        let job = VideoPackagingJob::new(
-            params.clone(),
-            self.config.bin_paths.clone(),
-            self.storage.clone(),
-            self.pool.clone(),
-        );
-        let handle = job.start();
-        self.monitor_tx
-            .send(MonitorMessage::AddJob {
-                handle,
-                ty: JobType::VideoPackaging { params },
-            })
-            .await
-            .unwrap();
-        return true;
-    }
-
-    async fn convert_image_if_required(&self) -> bool {
-        // Only run one job of a given type at a time. In the future, we might want to run multiple,
-        // in which case we'll need to compute the diff between the params of currently running
-        // jobs and the output of rules::video_packaging_due
-        let any_running_image_convert_job = self
-            .running_jobs
-            .values()
-            .any(|job_type| matches!(job_type, JobType::ImageConversion { params: _ }));
-        if any_running_image_convert_job {
-            return false;
-        }
-        let images_to_convert: Vec<ConvertImage> = rules::image_conversion_due(self.pool.clone())
-            .await
-            .unwrap(); // TODO error handling
-        if images_to_convert.is_empty() {
-            return false;
-        }
-        let params = ImageConversionParams {
-            ops: images_to_convert,
-        };
-        let job = ImageConversionJob::new(params.clone(), self.storage.clone(), self.pool.clone());
-        let handle = job.start();
-        self.monitor_tx
-            .send(MonitorMessage::AddJob {
-                handle,
-                ty: JobType::ImageConversion { params },
-            })
-            .await
-            .unwrap();
-        return true;
-    }
-
-    async fn index_asset_root(&self, params: IndexingJobParams) -> bool {
-        let asset_root_already_being_indexed =
-            self.running_jobs.values().any(|job_type| match job_type {
-                JobType::Indexing { params } if params.asset_root.id == params.asset_root.id => {
-                    true
-                }
-                _ => false,
-            });
-        if asset_root_already_being_indexed {
-            return false;
-        }
-
-        let job = IndexingJob::new(params.clone(), self.pool.clone(), self.config.clone());
-        let handle = job.start();
-        self.monitor_tx
-            .send(MonitorMessage::AddJob {
-                handle,
-                ty: JobType::Indexing { params },
-            })
-            .await
-            .unwrap();
-        return true;
+    let image_conversion_required = rules::required_image_conversion_for_asset(&mut conn, asset_id)
+        .await
+        .expect("TODO");
+    for img_convert in image_conversion_required {
+        let _ = image_conversion_send
+            .send(ImageConversionMessage::ConvertImage(img_convert))
+            .await;
     }
 }

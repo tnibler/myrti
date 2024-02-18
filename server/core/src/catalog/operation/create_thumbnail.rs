@@ -6,7 +6,10 @@ use crate::{
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
     interact,
     model::{
-        repository::{self, db::DbPool},
+        repository::{
+            self,
+            db::{DbPool, PooledDbConn},
+        },
         AssetId, AssetType, Size, ThumbnailFormat, ThumbnailType,
     },
     processing::{
@@ -40,9 +43,11 @@ pub struct ThumbnailToCreateWithPaths {
     pub webp_key: String,
 }
 
-#[instrument(skip(pool), level = "debug")]
-pub async fn apply_create_thumbnail(pool: DbPool, op: CreateThumbnailWithPaths) -> Result<()> {
-    let conn = pool.get().in_current_span().await?;
+#[instrument(skip(conn), level = "debug")]
+pub async fn apply_create_thumbnail(
+    conn: &mut PooledDbConn,
+    op: CreateThumbnailWithPaths,
+) -> Result<()> {
     interact!(conn, move |mut conn| {
         for thumb in &op.thumbnails {
             // we never query thumbnail sizes and don't have access to them right here so ignore

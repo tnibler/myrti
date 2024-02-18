@@ -138,6 +138,28 @@ OR sm_sq.thumbnail_id IS NULL;
     Ok(res)
 }
 
+#[instrument(skip(conn), level = "trace")]
+pub fn get_thumbnails_for_asset(conn: &mut DbConn, asset_id: AssetId) -> Result<AssetThumbnails> {
+    let row: DbAssetHasThumbnails = diesel::sql_query(r#"
+SELECT Asset.asset_id AS asset_id, (lg_orig.thumbnail_id IS NOT NULL) as has_lg_orig, (sm_sq.thumbnail_id IS NOT NULL) AS has_sm_sq
+FROM Asset
+LEFT OUTER JOIN AssetThumbnail lg_orig ON (Asset.asset_id = lg_orig.asset_id AND lg_orig.ty = ?)
+LEFT OUTER JOIN AssetThumbnail sm_sq ON (Asset.asset_id = sm_sq.asset_id AND sm_sq.ty = ?)
+WHERE 
+Asset.asset_id = ?;
+    "#)
+        .bind::<diesel::sql_types::BigInt, _>(asset_id.0)
+        .bind::<diesel::sql_types::Integer, _>(to_db_thumbnail_type(ThumbnailType::LargeOrigAspect))
+        .bind::<diesel::sql_types::Integer, _>(to_db_thumbnail_type(ThumbnailType::SmallSquare))
+        .get_result(conn)
+        .wrap_err("error querying for asset thumbnails")?;
+    Ok(AssetThumbnails {
+        id: AssetId(row.asset_id),
+        has_thumb_large_orig: row.has_lg_orig != 0,
+        has_thumb_small_square: row.has_sm_sq != 0,
+    })
+}
+
 #[instrument(skip(conn, ffprobe_output), level = "trace")]
 #[deprecated = "use create_asset instead"]
 #[doc(hidden)]

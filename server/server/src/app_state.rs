@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
 use core::{
-    core::{monitor::Monitor, scheduler::Scheduler, storage::Storage},
+    core::{scheduler::SchedulerHandle, storage::Storage},
     model::repository::db::DbPool,
 };
 
 pub struct AppState {
     pub pool: DbPool,
     pub storage: Storage,
-    pub scheduler: Scheduler,
-    pub monitor: Monitor,
+    pub scheduler: SchedulerHandle,
 }
 
 pub type SharedState = Arc<AppState>;

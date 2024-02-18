@@ -1,7 +1,7 @@
+pub mod actor;
 pub mod catalog;
 pub mod config;
 pub mod core;
-pub mod job;
 pub mod model;
 mod processing;
 pub use deadpool_diesel;

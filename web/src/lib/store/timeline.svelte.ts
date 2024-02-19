@@ -18,7 +18,7 @@ export interface TimelineGrid {
   loadSection: (sectionIndex: number) => void,
   setRealSectionHeight: (sectionIndex: number, height: number) => void,
   getAssetAtIndex: (assetIndex: number) => Promise<Asset | null>,
-  loadAssetAtIndex: (assetIndex: number) => Promise<void>
+  preloadAssetAtIndex: (assetIndex: number) => Promise<void>
   readonly sections: DisplaySection[],
   readonly layoutConfig: LayoutConfig,
   readonly totalNumAssets: number,
@@ -27,6 +27,24 @@ export interface TimelineGrid {
 export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGrid {
   let viewport: Viewport = { width: 0, height: 0 }
   let sections: DisplaySection[] = $state([])
+
+  const inflightSegmentRequests: Map<string, Promise<TimelineSegment[]>> = new Map();
+  function requestSegments(sectionId: string): Promise<TimelineSegment[]> {
+    const inflight = inflightSegmentRequests.get(sectionId);
+    if (inflight) {
+      return inflight;
+    } else {
+      const insertPromise = (async () => {
+        const r = await api.getTimelineSegments({ queries: { sectionId } });
+        return r.segments;
+      })();
+      inflightSegmentRequests.set(sectionId, insertPromise);
+      insertPromise.then(() => {
+        inflightSegmentRequests.delete(sectionId);
+      });
+      return insertPromise;
+    }
+  }
 
   async function initialize(_viewport: Viewport) {
     viewport = _viewport
@@ -60,8 +78,8 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
     if (!sections[sectionIndex].segments) {
       console.log("loading section", sectionIndex)
       const sectionId = sections[sectionIndex].section.id;
-      const segmentResponse = await api.getTimelineSegments({ queries: { sectionId } });
-      sections[sectionIndex].segments = segmentResponse.segments;
+      const segments = await requestSegments(sectionId);
+      sections[sectionIndex].segments = segments;
     }
   }
 
@@ -128,15 +146,15 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
     return segments[segmentIndex].assets[indexInSegment]
   }
 
-  async function loadAssetAtIndex(assetIndex: number) {
+  async function preloadAssetAtIndex(assetIndex: number) {
     if (assetIndex >= totalNumAssets) {
-      return undefined
+      return;
     }
     const sectionIndex = sections.findLastIndex((section, idx) => {
       return sectionStartIndices[idx] <= assetIndex;
     });
     console.assert(sectionIndex >= 0);
-    if (!sections[sectionIndex].segments) {
+    if (sectionIndex >= 0 && !sections[sectionIndex].segments) {
       await loadSection(sectionIndex);
     }
   }
@@ -146,7 +164,7 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
     loadSection,
     setRealSectionHeight,
     getAssetAtIndex,
-    loadAssetAtIndex,
+    preloadAssetAtIndex,
     get sections() { return sections },
     get layoutConfig() { return layoutConfig },
     get totalNumAssets() { return totalNumAssets },

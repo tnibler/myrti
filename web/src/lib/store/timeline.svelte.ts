@@ -109,8 +109,7 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
     });
     console.assert(sectionIndex >= 0);
     if (!sections[sectionIndex].segments) {
-      console.log("not loaded", sectionIndex)
-      return undefined;
+      await loadSection(sectionIndex);
     }
     const segments: TimelineSegment[] = sections[sectionIndex].segments as TimelineSegment[];
 

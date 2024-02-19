@@ -320,15 +320,6 @@ export function newGestureController(
   };
 };
 
-
-function getEventId(e: PointerEvent | Touch): number {
-  if ('pointerId' in e) {
-    return e.pointerId;
-  } else {
-    return e.identifier;
-  }
-}
-
 function updateDragVelocity(drag: DragState, force: boolean) {
   const p1 = drag.p1;
   if (drag.lastVelocityCalcP1 === null) {

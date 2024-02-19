@@ -255,7 +255,7 @@ prop_compose! {
                 video_bitrate,
                 audio_codec_name,
                 has_dash: false,
-                ffprobe_output: Vec::default(),
+                ffprobe_output: Default::default(),
             })
         }
     }

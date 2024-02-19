@@ -26,7 +26,7 @@ fn insert_retrieve_video_representation() {
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
             has_dash: false,
-            ffprobe_output: Vec::default(),
+            ffprobe_output: Default::default(),
         }),
         base: CreateAssetBase {
             root_dir_id,
@@ -51,7 +51,7 @@ fn insert_retrieve_video_representation() {
             video_bitrate: 456,
             audio_codec_name: Some("opus".into()),
             has_dash: false,
-            ffprobe_output: Vec::default(),
+            ffprobe_output: Default::default(),
         }),
         base: CreateAssetBase {
             root_dir_id,
@@ -159,7 +159,7 @@ fn insert_retrieve_audio_representation() {
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
             has_dash: false,
-            ffprobe_output: Vec::default(),
+            ffprobe_output: Default::default(),
         }),
         base: CreateAssetBase {
             root_dir_id,
@@ -184,7 +184,7 @@ fn insert_retrieve_audio_representation() {
             video_bitrate: 456,
             audio_codec_name: Some("mp3".into()),
             has_dash: false,
-            ffprobe_output: Vec::default(),
+            ffprobe_output: Default::default(),
         }),
         base: CreateAssetBase {
             root_dir_id,

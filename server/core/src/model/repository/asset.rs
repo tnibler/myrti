@@ -218,7 +218,7 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
         sp,
     };
 
-    let insertable = asset.as_insertable(ffprobe_output.map(|o| Cow::Owned(o)));
+    let insertable = asset.as_insertable(ffprobe_output.map(|o| Cow::Owned(o.0)));
     let id: i64 = insert_into(schema::Asset::table)
         .values(&insertable)
         .returning(schema::Asset::asset_id)

@@ -76,9 +76,12 @@ pub struct CreateAssetImage {
     pub image_format_name: String,
 }
 
+#[derive(Clone, Eq, PartialEq, Hash, Default)]
+pub struct FFProbeOutput(pub Vec<u8>);
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CreateAssetVideo {
-    pub ffprobe_output: Vec<u8>,
+    pub ffprobe_output: FFProbeOutput,
     pub video_codec_name: String,
     pub video_bitrate: i64,
     pub audio_codec_name: Option<String>,
@@ -156,5 +159,17 @@ impl TryFrom<Asset> for ImageAsset {
 
     fn try_from(value: Asset) -> std::result::Result<Self, Self::Error> {
         (&value).try_into()
+    }
+}
+
+impl From<Vec<u8>> for FFProbeOutput {
+    fn from(value: Vec<u8>) -> Self {
+        Self(value)
+    }
+}
+
+impl std::fmt::Debug for FFProbeOutput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}B)", self.0.len())
     }
 }

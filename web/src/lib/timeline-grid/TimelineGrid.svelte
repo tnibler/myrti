@@ -27,11 +27,11 @@
 		sectionsIntersecting.fill(false, 0, timeline.sections.length);
 	});
 
-	async function getSlide(index: number): Promise<SlideData> {
-		const asset: Asset | undefined = timeline.getAssetAtIndex(index);
+	async function getSlide(index: number): Promise<SlideData | null> {
+		const asset: Asset | null = await timeline.getAssetAtIndex(index);
 		if (!asset) {
-			console.log('asset is undefined');
-			return undefined;
+			console.log('asset is null');
+			return null;
 		}
 		if (asset.type === 'image') {
 			return {

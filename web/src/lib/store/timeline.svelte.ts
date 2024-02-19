@@ -17,7 +17,7 @@ export interface TimelineGrid {
   initialize: (viewport: Viewport) => Promise<void>,
   loadSection: (sectionIndex: number) => void,
   setRealSectionHeight: (sectionIndex: number, height: number) => void,
-  getAssetAtIndex: (assetIndex: number) => Asset | undefined,
+  getAssetAtIndex: (assetIndex: number) => Promise<Asset | null>,
   loadAssetAtIndex: (assetIndex: number) => Promise<void>
   readonly sections: DisplaySection[],
   readonly layoutConfig: LayoutConfig,
@@ -99,12 +99,12 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
   const totalNumAssets: number = $derived(sections.reduce((acc, section: DisplaySection) => acc + section.section.numAssets, 0));
   const sectionStartIndices = $derived(computeSectionStartIndices(sections));
 
-  function getAssetAtIndex(assetIndex: number): Asset | undefined {
+  async function getAssetAtIndex(assetIndex: number): Promise<Asset | null> {
     console.log("get asset index", assetIndex)
     if (assetIndex >= totalNumAssets) {
-      return undefined
+      return null;
     }
-    const sectionIndex = sections.findLastIndex((section, idx) => {
+    const sectionIndex = sections.findLastIndex((_section, idx) => {
       return sectionStartIndices[idx] <= assetIndex;
     });
     console.assert(sectionIndex >= 0);

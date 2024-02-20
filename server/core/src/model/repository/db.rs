@@ -50,6 +50,7 @@ fn connection_setup(conn: &mut diesel::SqliteConnection) -> Result<()> {
         r#"
 PRAGMA journal_mode = wal;
 PRAGMA foreign_keys = on;
+PRAGMA busy_timeout = 30000;
     "#,
     )?;
     Ok(())

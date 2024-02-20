@@ -87,7 +87,6 @@ async fn run_scheduler(sched: Scheduler) {
         image_conversion_actor,
     } = sched;
     loop {
-        println!("select");
         tokio::select! {
             Some(msg) = recv.recv() => {
                 handle_msg(msg, &indexing_actor.send).await;
@@ -103,7 +102,7 @@ async fn run_scheduler(sched: Scheduler) {
                         ).await;
                     },
                     IndexingResult::IndexingError { root_dir_id, path, report } => {
-                        tracing::error!(?root_dir_id, ?path, %report, "TODO unhandled indexing error");
+                        tracing::error!(?root_dir_id, ?path, ?report, "TODO unhandled indexing error");
                     },
                     IndexingResult::FailedToStartIndexing { root_dir_id, report } => {
                         tracing::error!(?root_dir_id, %report, "TODO unhandled failed to start indexing job");
@@ -155,7 +154,6 @@ async fn on_new_asset_indexed(
     video_packaging_send: mpsc::Sender<VideoPackagingMessage>,
     image_conversion_send: mpsc::Sender<ImageConversionMessage>,
 ) {
-    tracing::info!(?asset_id, "asset indexed");
     let mut conn = db_pool.get().await.unwrap();
     let thumbnails_required = rules::required_thumbnails_for_asset(&mut conn, asset_id)
         .await

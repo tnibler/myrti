@@ -305,7 +305,6 @@ pub fn get_segments_in_section(
     let query = sql_query(qb.finish())
         .bind::<diesel::sql_types::BigInt, _>(segment_min)
         .bind::<diesel::sql_types::BigInt, _>(segment_max);
-    println!("{}", diesel::debug_query(&query));
     let rows: Vec<RowTimelineSegmentInSection> = query
         .load(conn)
         .wrap_err("error querying timeline segments in section")?;

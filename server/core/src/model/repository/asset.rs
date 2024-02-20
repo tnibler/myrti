@@ -199,7 +199,7 @@ pub fn insert_asset(
     Ok(AssetId(id))
 }
 
-#[instrument(skip(conn))]
+#[instrument(skip(conn), level = "trace")]
 pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<AssetId> {
     let (ty, sp, ffprobe_output) = match create_asset.spe {
         CreateAssetSpe::Image(image) => (

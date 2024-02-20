@@ -25,7 +25,7 @@ struct DashFilePath {
     pub path: String,
 }
 
-#[instrument(skip(app_state))]
+#[instrument(skip(app_state), level = "trace")]
 async fn get_dash_file(
     Path(path): Path<DashFilePath>,
     State(app_state): State<SharedState>,

@@ -94,7 +94,7 @@ pub enum ThumbnailFormat {
     Webp,
 }
 
-#[instrument(name = "Get Asset thumbnail", skip(app_state))]
+#[instrument(name = "Get Asset thumbnail", skip(app_state), level = "trace")]
 #[utoipa::path(get, path = "/api/thumbnail/{id}/{size}/{format}",
 responses(
     (status = 200, body=String, content_type = "application/octet")
@@ -175,7 +175,7 @@ responses(
         ("id" = String, Path, description = "AssetId"),
     )
 )]
-#[instrument(name = "Get Asset file", skip(app_state))]
+#[instrument(name = "Get Asset file", skip(app_state), level = "trace")]
 async fn get_asset_file(
     Path(id): Path<String>,
     Query(query): Query<HashMap<String, String>>,

@@ -28,7 +28,7 @@ use super::{
     },
 };
 
-#[instrument(skip(conn), level = "debug")]
+#[instrument(skip(conn), level = "trace")]
 pub async fn required_thumbnails_for_asset(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
@@ -54,7 +54,7 @@ pub async fn required_thumbnails_for_asset(
     })
 }
 
-#[instrument(skip(conn), level = "debug")]
+#[instrument(skip(conn), level = "trace")]
 pub async fn required_video_packaging_for_asset(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
@@ -153,13 +153,13 @@ pub async fn required_video_packaging_for_asset(
     }])
 }
 
-#[instrument(skip(conn), level = "debug")]
+#[instrument(skip(conn), level = "trace")]
 pub async fn required_image_conversion_for_asset(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
 ) -> Result<Vec<ConvertImage>> {
     // TODO
-    tracing::error!("TODO not implemented required_image_conversion");
+    // tracing::error!("TODO not implemented required_image_conversion");
     Ok(Default::default())
 }
 

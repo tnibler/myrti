@@ -52,7 +52,7 @@ pub struct TimelineRequest {
     (status = 200, body=TimelineChunk)
     )
 )]
-#[instrument(skip(app_state))]
+#[instrument(skip(app_state), level = "trace")]
 pub async fn get_timeline(
     State(app_state): State<SharedState>,
     Query(req_body): Query<TimelineRequest>,
@@ -143,7 +143,7 @@ pub struct TimelineSection {
     (status = 200, body=TimelineSectionsResponse)
     )
 )]
-#[instrument(skip(app_state))]
+#[instrument(skip(app_state), level = "trace")]
 pub async fn get_timeline_sections(
     State(app_state): State<SharedState>,
 ) -> ApiResult<Json<TimelineSectionsResponse>> {
@@ -203,7 +203,7 @@ pub struct TimelineSegmentsResponse {
     (status = 200, body=TimelineSegmentsResponse)
     )
 )]
-#[instrument(skip(app_state))]
+#[instrument(skip(app_state), level = "trace")]
 pub async fn get_timeline_segments(
     Query(query): Query<TimelineSegmentsRequest>,
     State(app_state): State<SharedState>,

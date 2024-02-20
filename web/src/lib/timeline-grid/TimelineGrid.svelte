@@ -51,7 +51,8 @@
 				size: {
 					width: asset.width,
 					height: asset.height
-				}
+				},
+				mpdManifestUrl: `/api/dash/${asset.id}/stream.mpd`
 			};
 		}
 		console.error('TODO no asset');

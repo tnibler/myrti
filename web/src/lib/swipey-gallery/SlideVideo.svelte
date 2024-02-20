@@ -2,6 +2,7 @@
 	import type { Size } from './util_types';
 	import type { VideoSlideData } from './slide-data';
 	import './slide.css';
+	import { onMount } from 'svelte';
 
 	type SlideVideoProps = {
 		/** size of the DOM element */
@@ -17,6 +18,7 @@
 
 	let isCloseTransitionRunning = $state(false);
 	let videoEl: HTMLVideoElement | undefined = $state();
+	let enableRegularVideo = $state(false);
 
 	$effect(() => {
 		if (!videoEl) {
@@ -30,6 +32,11 @@
 	});
 	$effect(() => {
 		slideData.src;
+		if (slideData.mpdManifestUrl) {
+			shakaInitPlayer();
+		} else {
+			enableRegularVideo = true;
+		}
 		setTimeout(() => {
 			if (videoEl) {
 				videoEl.controls = true;
@@ -62,6 +69,12 @@
 			videoEl.style.transform = transform;
 		});
 	}
+
+	async function shakaInitPlayer() {
+		const player = new shaka.Player();
+		await player.attach(videoEl);
+		await player.load(slideData.mpdManifestUrl);
+	}
 </script>
 
 <video
@@ -78,14 +91,16 @@
 	class:slide-transition-opacity={!isCloseTransitionRunning}
 	class:hidden={!isVisible}
 >
-	<source
-		src={slideData.src}
-		type={slideData.mimeType}
-		onerror={(e) => {
-			console.log('TODO handle video codec errors');
-			onContentReady();
-		}}
-	/>
+	{#if enableRegularVideo}
+		<source
+			src={slideData.src}
+			type={slideData.mimeType}
+			onerror={(e) => {
+				console.log('TODO handle video codec errors', e);
+				onContentReady();
+			}}
+		/>
+	{/if}
 </video>
 
 <style>

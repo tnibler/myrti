@@ -13,6 +13,7 @@ export type VideoSlideData = {
   placeholderSrc: string;
   size: Size;
   mimeType: string;
+  mpdManifestUrl: string | null;
 }
 
 export type SlideData = ImageSlideData | VideoSlideData;

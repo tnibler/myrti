@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import Pager, { type PagerProps } from './Pager.svelte';
 
 	type GalleryProps = PagerProps & { bodyWrapper: HTMLElement };
@@ -9,6 +10,8 @@
 	let pager: Pager;
 	let pagerY = 0;
 	let topOffset = $state(0);
+
+	onMount(() => shakaInit());
 
 	function onOpenTransitionFinished() {}
 
@@ -34,6 +37,18 @@
 				window.scrollTo(0, pagerY);
 			});
 		});
+	}
+
+	function shakaInit() {
+		if (window.shaka) {
+			return;
+		}
+		shaka.polyfill.installAll();
+		if (!shaka.Player.isBrowserSupported()) {
+			console.error('shaka player not supported in this browser');
+			return;
+		}
+		window.shaka = shaka;
 	}
 </script>
 

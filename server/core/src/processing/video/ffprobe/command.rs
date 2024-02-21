@@ -38,7 +38,7 @@ pub fn ffprobe_get_streams_from_json(json: &[u8]) -> Result<FFProbeStreams> {
     })
 }
 
-#[instrument]
+#[instrument(level = "debug")]
 pub async fn ffprobe_get_streams(
     path: &Path,
     ffprobe_bin_path: Option<&Path>,

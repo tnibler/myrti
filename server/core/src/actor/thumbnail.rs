@@ -68,7 +68,6 @@ struct ThumbnailActor {
     pub send_result: mpsc::Sender<ThumbnailResult>,
 }
 
-#[instrument(skip(actor), level = "debug")]
 async fn run_thumbnail_actor(mut actor: ThumbnailActor) {
     while let Some(msg) = actor.recv.recv().await {
         match msg {

@@ -50,7 +50,7 @@ pub struct ShakaResult {
 
 #[async_trait]
 impl ShakaPackagerWithLocalOutputTrait for ShakaPackager {
-    #[instrument(name = "shaka_packager")]
+    #[instrument(name = "shaka_packager", level = "debug")]
     async fn run_with_local_output(
         input: &Path,
         repr_type: RepresentationType,

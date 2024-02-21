@@ -53,7 +53,6 @@ struct ImageConversionActor {
     pub send_result: mpsc::Sender<ImageConversionResult>,
 }
 
-#[instrument(skip(actor))]
 async fn run_image_conversion_actor(mut actor: ImageConversionActor) {
     while let Some(msg) = actor.recv.recv().await {
         match msg {

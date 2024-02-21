@@ -20,7 +20,11 @@ pub struct MpdGenerator {}
 
 #[async_trait]
 impl MpdGeneratorTrait for MpdGenerator {
-    #[instrument(name = "mpd_generator", skip(storage, media_info_keys))]
+    #[instrument(
+        name = "mpd_generator",
+        skip(storage, media_info_keys),
+        level = "debug"
+    )]
     async fn run(
         media_info_keys: impl Iterator<Item = &str> + Send,
         output_key: &str,

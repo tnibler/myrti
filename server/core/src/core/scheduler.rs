@@ -47,6 +47,9 @@ impl SchedulerHandle {
 
         let db_pool_copy = db_pool.clone();
         let indexing_send = indexing_actor.send.clone();
+        let thumbnail_send = thumbnail_actor.send.clone();
+        let video_packaging_send = video_packaging_actor.send.clone();
+        let image_conversion_send = image_conversion_actor.send.clone();
         let (send, recv) = mpsc::channel(1000);
         let sched = Scheduler {
             db_pool,
@@ -59,7 +62,13 @@ impl SchedulerHandle {
             image_conversion_actor,
         };
         tokio::spawn(run_scheduler(sched));
-        tokio::spawn(on_startup(db_pool_copy, indexing_send));
+        tokio::spawn(on_startup(
+            db_pool_copy,
+            indexing_send,
+            thumbnail_send,
+            video_packaging_send,
+            image_conversion_send,
+        ));
         Self { send }
     }
 }
@@ -114,8 +123,14 @@ async fn run_scheduler(sched: Scheduler) {
 }
 
 #[instrument(skip_all, level = "debug")]
-async fn on_startup(db_pool: DbPool, indexing_send: mpsc::Sender<IndexingMessage>) {
-    let conn = db_pool
+async fn on_startup(
+    db_pool: DbPool,
+    indexing_send: mpsc::Sender<IndexingMessage>,
+    thumbnail_send: mpsc::Sender<ThumbnailMessage>,
+    video_packaging_send: mpsc::Sender<VideoPackagingMessage>,
+    image_conversion_send: mpsc::Sender<ImageConversionMessage>,
+) {
+    let mut conn = db_pool
         .get()
         .await
         .expect("TODO how do we handle errors in scheduler");
@@ -130,6 +145,25 @@ async fn on_startup(db_pool: DbPool, indexing_send: mpsc::Sender<IndexingMessage
             .send(IndexingMessage::IndexAssetRootDir {
                 root_dir_id: asset_root.id,
             })
+            .await;
+    }
+
+    let video_packaging_required = rules::video_packaging_due(&mut conn).await.expect("TODO");
+    for vid_pack in video_packaging_required {
+        let _ = video_packaging_send
+            .send(VideoPackagingMessage::PackageVideo(vid_pack))
+            .await;
+    }
+    let image_conversion_required = rules::image_conversion_due(&mut conn).await.expect("TODO");
+    for img_convert in image_conversion_required {
+        let _ = image_conversion_send
+            .send(ImageConversionMessage::ConvertImage(img_convert))
+            .await;
+    }
+    let thumbnails_required = rules::thumbnails_to_create(&mut conn).await.expect("TODO");
+    if !thumbnails_required.is_empty() {
+        let _ = thumbnail_send
+            .send(ThumbnailMessage::CreateThumbnails(thumbnails_required))
             .await;
     }
 }

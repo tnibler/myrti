@@ -18,7 +18,7 @@ use super::{
 };
 
 /// Returns Some(AssetId) if a new, non duplicate asset was indexed and added to the database
-#[instrument(skip(pool), level = "debug")]
+#[instrument(skip(pool, bin_paths), level = "debug")]
 pub async fn index_file(
     path: &Path,
     asset_root: &AssetRootDir,

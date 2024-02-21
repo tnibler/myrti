@@ -39,7 +39,7 @@ pub struct FFmpeg {
 
 #[async_trait]
 impl FFmpegLocalOutputTrait for FFmpeg {
-    #[instrument(name = "ffmpeg", skip(self))]
+    #[instrument(name = "ffmpeg", skip(self), level = "debug")]
     async fn run_with_local_output(
         &self,
         input: &Path,

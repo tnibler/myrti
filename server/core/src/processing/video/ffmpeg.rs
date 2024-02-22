@@ -50,8 +50,8 @@ impl FFmpegLocalOutputTrait for FFmpeg {
         command
             .arg("-nostdin")
             .arg("-y")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         command.args(self.pre_input_flags.iter());
         command.arg("-i").arg(input);
         command.args(self.flags.iter());

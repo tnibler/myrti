@@ -86,8 +86,8 @@ impl ShakaPackagerWithLocalOutputTrait for ShakaPackager {
 
         debug!(?command, "Invoking shaka-packager");
         let result = command
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .spawn()
             .wrap_err("error calling shaka packager")?
             .wait_with_output()

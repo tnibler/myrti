@@ -12,8 +12,8 @@ pub async fn ffmpeg_snapshot(
     ffmpeg_bin_path: Option<&str>,
 ) -> Result<()> {
     let exit_status = Command::new(ffmpeg_bin_path.unwrap_or("ffmpeg"))
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .arg("-nostdin")
         .arg("-y")
         .arg("-i")

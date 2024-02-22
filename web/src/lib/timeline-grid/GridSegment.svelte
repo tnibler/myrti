@@ -7,6 +7,7 @@
 		height: number;
 		width: number;
 		tiles: Tile[];
+		headerTop: number;
 	};
 
 	export type Tile = {
@@ -27,6 +28,21 @@
 		assetBaseIndex: number;
 		onAssetClick: (assetIndex: number) => void;
 	} = $props();
+	const segmentTitle = $derived.call(() => {
+		const segment = layout.segment.segment;
+		if (segment.type === 'userGroup') {
+			return segment.name;
+		} else {
+			const options = {
+				weekday: 'long',
+				year: 'numeric',
+				month: 'long',
+				day: 'numeric'
+			};
+			const date = new Date(segment.start);
+			return date.toLocaleDateString('de-DE', options);
+		}
+	});
 
 	/** thumbnail els addressed by their index _in this segment_, not the global asset index in the whole timeline */
 	let imgEls: HTMLImageElement[] = $state([]);
@@ -48,6 +64,9 @@
 	class="segment"
 	style="width: {layout.width}px; height: {layout.height}px; top: {layout.top}px; left: 0px;"
 >
+	<h2 style="left: 20px; position: absolute; top: {layout.headerTop}px;">
+		{segmentTitle}
+	</h2>
 	{#each layout.tiles as box, assetIdx}
 		<a
 			href="#"

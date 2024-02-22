@@ -75,12 +75,10 @@
 		sectionHeight: number;
 	} {
 		const targetRowHeight = timeline.layoutConfig.targetRowHeight;
-		// if (!isIntersecting) {
-		// 	return [];
-		// }
+		const headerHeight = timeline.layoutConfig.headerHeight;
+		const segmentMargin = timeline.layoutConfig.segmentMargin;
 		let layouts: SegmentLayout[] = [];
-		const segmentMargin = 20;
-		let nextSegmentYMin = segmentMargin;
+		let nextSegmentYMin = segmentMargin + headerHeight;
 		for (const segment of segments) {
 			const assetSizes = segment.assets.map((asset) => {
 				return {
@@ -95,9 +93,10 @@
 				top: nextSegmentYMin,
 				width: containerWidth,
 				height,
-				tiles: geometry.boxes
+				tiles: geometry.boxes,
+				headerTop: -headerHeight
 			});
-			nextSegmentYMin += height + segmentMargin;
+			nextSegmentYMin += height + segmentMargin + headerHeight;
 		}
 		return { layouts, sectionHeight: segments.length > 0 ? nextSegmentYMin : 0 };
 	}

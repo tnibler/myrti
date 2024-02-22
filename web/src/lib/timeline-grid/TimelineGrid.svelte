@@ -17,7 +17,9 @@
 
 	const layoutConfig = {
 		targetRowHeight: 180,
-		sectionMargin: 20
+		headerHeight: 50,
+		sectionMargin: 20,
+		segmentMargin: 20
 	};
 	const timeline = $state(createTimeline(layoutConfig, api));
 

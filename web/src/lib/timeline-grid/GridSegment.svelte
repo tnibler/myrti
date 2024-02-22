@@ -59,14 +59,13 @@
 	}
 </script>
 
+<h2 style="left: 20px; position: relative;">
+	{segmentTitle}
+</h2>
 <div
-	id="segment-{layout.segment.id}"
-	class="segment"
-	style="width: {layout.width}px; height: {layout.height}px; top: {layout.top}px; left: 0px;"
+	id="segment-{layout.segment.segment.id}"
+	style="position: relative; height: {layout.height}px;"
 >
-	<h2 style="left: 20px; position: absolute; top: {layout.headerTop}px;">
-		{segmentTitle}
-	</h2>
 	{#each layout.tiles as box, assetIdx}
 		<a
 			href="#"

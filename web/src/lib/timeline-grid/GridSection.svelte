@@ -36,9 +36,10 @@
 	);
 	let gridSegments: GridSegment[] = $state([]);
 
-	let { layouts: justifiedLayouts, sectionHeight } = $derived(
-		section.segments ? computeSegmentLayouts(section.segments) : { layouts: [], sectionHeight: 0 }
-	);
+	let justifiedLayouts = $derived(section.segments ? computeSegmentLayouts(section.segments) : []);
+	/** height of the actual DOM element, which we propagate up to the layout logic to shift the other sections 
+	around as the content is loaded lazily **/
+	let sectionHeight = $state(0);
 
 	$effect(() => {
 		const unregisterIntersectObserver = registerElementWithIntersectObserver(sectionDivEl);
@@ -70,11 +71,10 @@
 		return gridSegment.getThumbImgForAsset(assetIndex - segmentStartIndices[segmentIndex]);
 	}
 
-	function computeSegmentLayouts(segments: TimelineSegment[]): {
-		layouts: SegmentLayout[];
-		sectionHeight: number;
-	} {
+	function computeSegmentLayouts(segments: TimelineSegment[]): SegmentLayout[] {
 		const targetRowHeight = timeline.layoutConfig.targetRowHeight;
+		// this is only a guess and doesn't matter, the segment will fit its contents
+		// including the header
 		const headerHeight = timeline.layoutConfig.headerHeight;
 		const segmentMargin = timeline.layoutConfig.segmentMargin;
 		let layouts: SegmentLayout[] = [];
@@ -98,7 +98,7 @@
 			});
 			nextSegmentYMin += height + segmentMargin + headerHeight;
 		}
-		return { layouts, sectionHeight: segments.length > 0 ? nextSegmentYMin : 0 };
+		return layouts;
 	}
 
 	function computeSegmentStartIndices(
@@ -116,13 +116,20 @@
 		}
 		return idxs;
 	}
+
+	// if section is not visible, set the (estimated) size explicitly, otherwise let its size
+	// fit the content.
+	// This makes it easier to handle e.g., font size/text zoom in the header without breaking the layout
+	// or recalculating stuff in js.
+	const explicitSectionHeight = $derived(isIntersecting ? '' : `height: ${section.height}px;`);
 </script>
 
 <div
 	bind:this={sectionDivEl}
+	bind:clientHeight={sectionHeight}
 	class="grid-section"
 	id="section-{sectionIndex}"
-	style="width: {containerWidth}px; height: {section.height}px; top: {section.top}px; left: 0px;"
+	style="width: {containerWidth}px;  top: {section.top}px; left: 0px; {explicitSectionHeight}"
 >
 	{#if isIntersecting && section.segments}
 		{#each section.segments as segment, idx}

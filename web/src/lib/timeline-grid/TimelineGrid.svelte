@@ -16,7 +16,7 @@
 	let gridSections: GridSection[] = $state([]);
 
 	const layoutConfig = {
-		targetRowHeight: 180,
+		targetRowHeight: 120,
 		headerHeight: 50,
 		sectionMargin: 20,
 		segmentMargin: 20
@@ -141,5 +141,6 @@
 		height: 100%;
 		width: 100%;
 		position: relative;
+		overflow-y: scroll;
 	}
 </style>

@@ -17,14 +17,14 @@
 
 	export function open(index: number) {
 		requestAnimationFrame(() => {
-			pagerY = window.scrollY;
+			pagerY = bodyWrapper.scrollTop;
 			bodyWrapper.classList.add('modalOpen');
 			bodyWrapper.style.height = '100vh';
 			topOffset = 0;
 			bodyWrapper.scrollTo(0, pagerY);
 		});
 		slideIndex = index;
-		topOffset = window.scrollY;
+		topOffset = bodyWrapper.scrollTop;
 		isOpen = true;
 	}
 
@@ -34,7 +34,7 @@
 			bodyWrapper.classList.remove('modalOpen');
 			bodyWrapper.style.height = '100%';
 			requestAnimationFrame(() => {
-				window.scrollTo(0, pagerY);
+				bodyWrapper.scrollTo(0, pagerY);
 			});
 		});
 	}

@@ -45,7 +45,7 @@
 		return unregisterIntersectObserver;
 	});
 
-	$effect.pre(() => {
+	$effect(() => {
 		if (sectionHeight != 0 && sectionHeight != section.height) {
 			const delta = timeline.setRealSectionHeight(sectionIndex, sectionHeight);
 			// TODO scroll more sveltily or smth

@@ -18,7 +18,7 @@
 
 	let isCloseTransitionRunning = $state(false);
 	let videoEl: HTMLVideoElement | undefined = $state();
-	let enableRegularVideo = $state(false);
+	let enableVideoSrcOrig = $state(false);
 
 	$effect(() => {
 		if (!videoEl) {
@@ -32,10 +32,10 @@
 	});
 	$effect(() => {
 		slideData.src;
-		if (slideData.mpdManifestUrl) {
-			shakaInitPlayer();
+		if (slideData.videoSource === 'dash') {
+			shakaInitPlayer(slideData.mpdManifestUrl);
 		} else {
-			enableRegularVideo = true;
+			enableVideoSrcOrig = true;
 		}
 		setTimeout(() => {
 			if (videoEl) {
@@ -70,10 +70,10 @@
 		});
 	}
 
-	async function shakaInitPlayer() {
+	async function shakaInitPlayer(mpdManifestUrl: string) {
 		const player = new shaka.Player();
 		await player.attach(videoEl);
-		await player.load(slideData.mpdManifestUrl);
+		await player.load(mpdManifestUrl);
 	}
 </script>
 
@@ -91,7 +91,7 @@
 	class:slide-transition-opacity={!isCloseTransitionRunning}
 	class:hidden={!isVisible}
 >
-	{#if enableRegularVideo}
+	{#if enableVideoSrcOrig}
 		<source
 			src={slideData.src}
 			type={slideData.mimeType}

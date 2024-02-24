@@ -6,7 +6,7 @@
 	import type { ThumbnailBounds } from '$lib/swipey-gallery/thumbnail-bounds';
 	import type { SlideData } from '$lib/swipey-gallery/slide-data';
 
-	import type { Asset } from '$lib/apitypes';
+	import type { AssetWithSpe } from '$lib/apitypes';
 
 	let windowScrollY: number = $state(0);
 	let viewport = $state({ width: 0, height: 0 });
@@ -31,7 +31,7 @@
 	});
 
 	async function getSlide(index: number): Promise<SlideData | null> {
-		const asset: Asset | null = await timeline.getAssetAtIndex(index);
+		const asset: AssetWithSpe | null = await timeline.getAssetAtIndex(index);
 		if (!asset) {
 			console.log('asset is null');
 			return null;
@@ -47,6 +47,14 @@
 				placeholderSrc: '/api/asset/thumbnail/' + asset.id + '/large/avif'
 			};
 		} else if (asset.type === 'video') {
+			const videoSource:
+				| { videoSource: 'dash'; mpdManifestUrl: string }
+				| { videoSource: 'original' } = asset.hasDash
+				? {
+						videoSource: 'dash',
+						mpdManifestUrl: `/api/dash/${asset.id}/stream.mpd`
+					}
+				: { videoSource: 'original' };
 			return {
 				type: 'video',
 				src: '/api/asset/original/' + asset.id,
@@ -55,7 +63,8 @@
 					width: asset.width,
 					height: asset.height
 				},
-				mpdManifestUrl: `/api/dash/${asset.id}/stream.mpd`
+				mimeType: asset.mimeType,
+				...videoSource
 			};
 		}
 		console.error('TODO no asset');

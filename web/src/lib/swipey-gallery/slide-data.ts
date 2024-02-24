@@ -8,12 +8,11 @@ export type ImageSlideData = {
 };
 
 export type VideoSlideData = {
-  type: 'image';
+  type: 'video';
   src: string;
   placeholderSrc: string;
   size: Size;
   mimeType: string;
-  mpdManifestUrl: string | null;
-}
+} & ({ videoSource: 'dash', mpdManifestUrl: string } | { videoSource: 'original' })
 
 export type SlideData = ImageSlideData | VideoSlideData;

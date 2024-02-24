@@ -493,7 +493,7 @@
           },
           "height": {
             "type": "integer",
-            "format": "int64"
+            "format": "int32"
           },
           "id": {
             "type": "string"
@@ -504,7 +504,7 @@
           },
           "width": {
             "type": "integer",
-            "format": "int64"
+            "format": "int32"
           }
         }
       },
@@ -726,7 +726,7 @@
           "assets": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/Asset"
+              "$ref": "#/components/schemas/AssetWithSpe"
             }
           },
           "segment": {
@@ -749,7 +749,15 @@
         }
       },
       "Video": {
-        "type": "object"
+        "type": "object",
+        "required": [
+          "hasDash"
+        ],
+        "properties": {
+          "hasDash": {
+            "type": "boolean"
+          }
+        }
       }
     }
   },

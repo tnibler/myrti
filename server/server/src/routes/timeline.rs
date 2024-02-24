@@ -181,7 +181,7 @@ pub enum SegmentType {
 pub struct TimelineSegment {
     #[serde(rename = "segment")]
     pub segment: SegmentType,
-    pub assets: Vec<Asset>,
+    pub assets: Vec<AssetWithSpe>,
 }
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]
@@ -268,9 +268,11 @@ async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<Ass
                 }),
             })
         }
-        model::AssetSpe::Video(_video) => Ok(AssetWithSpe {
+        model::AssetSpe::Video(video) => Ok(AssetWithSpe {
             asset: asset.into(),
-            spe: AssetSpe::Video(Video {}),
+            spe: AssetSpe::Video(Video {
+                has_dash: video.has_dash,
+            }),
         }),
     }
 }

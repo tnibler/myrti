@@ -57,7 +57,7 @@ const ImageRepresentation = z
 	})
 	.passthrough();
 const Image = z.object({ representations: z.array(ImageRepresentation) }).passthrough();
-const Video = z.object({}).partial().passthrough();
+const Video = z.object({ hasDash: z.boolean() }).passthrough();
 const AssetSpe = z.union([Image, Video]);
 const AssetWithSpe = Asset.and(AssetSpe).and(z.object({}).partial().passthrough());
 const TimelineGroup = TimelineGroupType.and(
@@ -87,7 +87,9 @@ const SegmentType = z.discriminatedUnion('type', [
 		.object({ id: TimelineGroupId, name: z.string().nullish(), type: z.literal('userGroup') })
 		.passthrough()
 ]);
-const TimelineSegment = z.object({ assets: z.array(Asset), segment: SegmentType }).passthrough();
+const TimelineSegment = z
+	.object({ assets: z.array(AssetWithSpe), segment: SegmentType })
+	.passthrough();
 const TimelineSegmentsResponse = z.object({ segments: z.array(TimelineSegment) }).passthrough();
 const AlbumId = z.string();
 const ThumbnailFormat = z.enum(['avif', 'webp']);

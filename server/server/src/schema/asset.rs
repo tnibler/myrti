@@ -63,7 +63,31 @@ pub struct ImageRepresentation {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct Video {}
+pub struct Video {
+    pub has_dash: bool,
+}
+
+impl From<&model::Asset> for AssetWithSpe {
+    fn from(value: &model::Asset) -> Self {
+        AssetWithSpe {
+            asset: value.into(),
+            spe: match &value.sp {
+                model::AssetSpe::Image(_image) => AssetSpe::Image(Image {
+                    representations: Default::default(), /* FIXME */
+                }),
+                model::AssetSpe::Video(video) => AssetSpe::Video(Video {
+                    has_dash: video.has_dash,
+                }),
+            },
+        }
+    }
+}
+
+impl From<model::Asset> for AssetWithSpe {
+    fn from(value: model::Asset) -> Self {
+        (&value).into()
+    }
+}
 
 impl From<&model::Asset> for Asset {
     fn from(value: &model::Asset) -> Self {

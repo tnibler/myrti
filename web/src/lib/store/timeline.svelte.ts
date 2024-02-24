@@ -1,4 +1,4 @@
-import type { Api, Asset, TimelineSection, TimelineSegment } from "$lib/apitypes"
+import type { Api, AssetWithSpe, TimelineSection, TimelineSegment } from "$lib/apitypes"
 
 export type Viewport = { width: number, height: number }
 
@@ -23,7 +23,7 @@ export interface TimelineGridStore {
   initialize: (viewport: Viewport) => Promise<void>,
   loadSection: (sectionIndex: number) => void,
   setRealSectionHeight: (sectionIndex: number, height: number) => void,
-  getAssetAtIndex: (assetIndex: number) => Promise<Asset | null>,
+  getAssetAtIndex: (assetIndex: number) => Promise<AssetWithSpe | null>,
   preloadAssetAtIndex: (assetIndex: number) => Promise<void>
   readonly sections: DisplaySection[],
   readonly layoutConfig: LayoutConfig,
@@ -133,7 +133,7 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
   const totalNumAssets: number = $derived(sections.reduce((acc, section: DisplaySection) => acc + section.section.numAssets, 0));
   const sectionStartIndices = $derived(computeSectionStartIndices(sections));
 
-  async function getAssetAtIndex(assetIndex: number): Promise<Asset | null> {
+  async function getAssetAtIndex(assetIndex: number): Promise<AssetWithSpe | null> {
     console.log("get asset index", assetIndex)
     if (assetIndex >= totalNumAssets) {
       return null;

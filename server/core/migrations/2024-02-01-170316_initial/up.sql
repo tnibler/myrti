@@ -29,6 +29,7 @@ CREATE TABLE Asset (
   height INTEGER NOT NULL,
   -- rotation correction applied after exif/metadata rotation if that's still wrong
   rotation_correction INTEGER,
+  thumb_hash BLOB,
 
   -- Metadata
   -- latitude and longitude are stored multipled by 10e8

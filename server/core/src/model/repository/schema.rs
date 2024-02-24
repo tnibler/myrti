@@ -33,6 +33,7 @@ diesel::table! {
         width -> Integer,
         height -> Integer,
         rotation_correction -> Nullable<Integer>,
+        thumb_hash -> Nullable<Blob>,
         gps_latitude -> Nullable<BigInt>,
         gps_longitude -> Nullable<BigInt>,
         image_format_name -> Nullable<Text>,

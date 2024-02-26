@@ -1,5 +1,6 @@
 <script lang="ts" context="module">
 	import type { TimelineSegment } from '$lib/apitypes';
+	import { mdiCheckCircle } from '@mdi/js';
 
 	export type SegmentLayout = {
 		segment: TimelineSegment;
@@ -74,13 +75,31 @@
 				onAssetClick(assetBaseIndex + assetIdx);
 			}}
 		>
-			<!-- svelte-ignore a11y-missing-attribute -->
-			<img
-				bind:this={imgEls[assetIdx]}
-				src="/api/asset/thumbnail/{layout.segment.assets[assetIdx].id}/large/avif"
-				class="tile"
-				style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
-			/>
+			<div>
+				<!-- svelte-ignore a11y-missing-attribute -->
+				<img
+					bind:this={imgEls[assetIdx]}
+					src="/api/asset/thumbnail/{layout.segment.assets[assetIdx].id}/large/avif"
+					class="tile"
+					style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px; z-index: 10;"
+				/>
+				<div
+					style="position: absolute; width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px; z-index: 20;"
+				>
+					<button
+						style="padding: 4px; position: absolute; focus-outline: none; outline: none; background: none; border: none; cursor:pointer;"
+						role="checkbox"
+						aria-checked="false"
+						onclick={(e) => {
+							e.stopPropagation();
+						}}
+					>
+						<svg style="opacity: 0.6;" width="24" height="24" viewBox="0 0 24 24"
+							><path d={mdiCheckCircle} fill="#fff" /></svg
+						>
+					</button>
+				</div>
+			</div>
 		</a>
 	{/each}
 </div>

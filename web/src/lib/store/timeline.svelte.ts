@@ -22,6 +22,16 @@ export interface TimelineGrid {
   readonly sections: DisplaySection[],
   readonly layoutConfig: LayoutConfig,
   readonly totalNumAssets: number,
+
+  readonly selectedAssetIndices: number[],
+  /** Assets are highlighted when something is selected and shift is pressed to preview
+   * possible range selection. */
+  readonly selectionPreviewIndices: number[],
+  setAssetSelected: (assetIndex: number, selected: boolean) => void;
+  /** @param clickedAssetIndex asset clicked to perform range selection */
+  setRangeSelected: (clickedAssetIndex: number, selected: boolean) => void;
+  /** Asset is hoevered while shift is pressed, selection range should be highlighted */
+  rangeSelectHover: (hoveredAssetIndex: number) => void;
 }
 
 export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGrid {
@@ -158,6 +168,9 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
       await loadSection(sectionIndex);
     }
   }
+
+  const selectedAssetIndices: number[] = [];
+  const selectionPreviewIndices: number[] = [];
 
   return {
     initialize,

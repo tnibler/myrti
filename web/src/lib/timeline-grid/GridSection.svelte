@@ -1,13 +1,13 @@
 <script lang="ts">
 	import type { TimelineSegment } from '$lib/apitypes';
-	import type { DisplaySection } from '$lib/store/timeline.svelte';
+	import type { DisplaySection, TimelineGridStore } from '$lib/store/timeline.svelte';
 	import GridSegment from './GridSegment.svelte';
 	import type { SegmentLayout } from './GridSegment.svelte';
 	import type TimelineGrid from './TimelineGrid.svelte';
 	import createJustifiedLayout from 'justified-layout';
 
 	type GridSectionProps = {
-		timeline: TimelineGrid;
+		timeline: TimelineGridStore;
 		sectionIndex: number;
 		containerWidth: number;
 		registerElementWithIntersectObserver: (el: HTMLElement) => () => void;

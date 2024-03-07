@@ -13,7 +13,7 @@ export type DisplaySection = {
 
 type LayoutConfig = { targetRowHeight: number, sectionMargin: number, headerHeight: number, segmentMargin: number }
 
-export interface TimelineGrid {
+export interface TimelineGridStore {
   initialize: (viewport: Viewport) => Promise<void>,
   loadSection: (sectionIndex: number) => void,
   setRealSectionHeight: (sectionIndex: number, height: number) => void,

@@ -1,6 +1,7 @@
 <script lang="ts" context="module">
 	import type { TimelineSegment } from '$lib/apitypes';
 	import { mdiCheckCircle } from '@mdi/js';
+	import type { TimelineGridStore } from '$lib/store/timeline.svelte';
 
 	export type SegmentLayout = {
 		segment: TimelineSegment;

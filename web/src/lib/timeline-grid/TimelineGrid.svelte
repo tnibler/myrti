@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/apiclient';
-	import { createTimeline } from '$lib/store/timeline.svelte';
+	import { createTimeline, type TimelineGridStore } from '$lib/store/timeline.svelte';
 	import GridSection from './GridSection.svelte';
 	import 'photoswipe/photoswipe.css';
 	import Gallery from '$lib/swipey-gallery/Gallery.svelte';
@@ -21,7 +21,7 @@
 		sectionMargin: 20,
 		segmentMargin: 20
 	};
-	const timeline = $state(createTimeline(layoutConfig, api));
+	const timeline: TimelineGridStore = $state(createTimeline(layoutConfig, api));
 
 	let sectionsIntersecting: boolean[] = $state([]);
 	$effect(async () => {

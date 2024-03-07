@@ -3,11 +3,11 @@
 	import type { DisplaySection, TimelineGridStore } from '$lib/store/timeline.svelte';
 	import GridSegment from './GridSegment.svelte';
 	import type { SegmentLayout } from './GridSegment.svelte';
-	import type TimelineGrid from './TimelineGrid.svelte';
 	import createJustifiedLayout from 'justified-layout';
 
 	type GridSectionProps = {
 		timeline: TimelineGridStore;
+		inSelectionMode: boolean;
 		sectionIndex: number;
 		containerWidth: number;
 		registerElementWithIntersectObserver: (el: HTMLElement) => () => void;
@@ -17,12 +17,13 @@
 
 	let {
 		timeline,
+		inSelectionMode,
 		sectionIndex,
 		containerWidth,
 		registerElementWithIntersectObserver,
 		isIntersecting,
 		onAssetClick
-	}: GridSectionProps = $props();
+	} = $props<GridSectionProps>();
 	let sectionDivEl: HTMLElement;
 	const section: DisplaySection = $derived(timeline.sections[sectionIndex]);
 
@@ -134,6 +135,8 @@
 	{#if isIntersecting && section.segments}
 		{#each section.segments as segment, idx}
 			<GridSegment
+				{timeline}
+				{inSelectionMode}
 				bind:this={gridSegments[idx]}
 				layout={justifiedLayouts[idx]}
 				assetBaseIndex={segmentStartIndices[idx]}

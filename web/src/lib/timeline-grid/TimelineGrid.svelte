@@ -22,6 +22,7 @@
 		segmentMargin: 20
 	};
 	const timeline: TimelineGridStore = $state(createTimeline(layoutConfig, api));
+	let inSelectionMode = $derived(Object.keys(timeline.selectedAssetIndices).length > 0);
 
 	let sectionsIntersecting: boolean[] = $state([]);
 	$effect(async () => {
@@ -113,6 +114,7 @@
 			<GridSection
 				bind:this={gridSections[idx]}
 				{timeline}
+				{inSelectionMode}
 				sectionIndex={idx}
 				containerWidth={viewport.width}
 				{registerElementWithIntersectObserver}

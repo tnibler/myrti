@@ -1,18 +1,18 @@
 <script lang="ts" context="module">
 	import type { TimelineSegment } from '$lib/apitypes';
-	import { mdiCheckCircle } from '@mdi/js';
 	import type { TimelineGridStore } from '$lib/store/timeline.svelte';
+	import { mdiCheckCircle, mdiCheckCircleOutline } from '@mdi/js';
 
 	export type SegmentLayout = {
 		segment: TimelineSegment;
 		top: number;
 		height: number;
 		width: number;
-		tiles: Tile[];
+		tiles: TileBox[];
 		headerTop: number;
 	};
 
-	export type Tile = {
+	export type TileBox = {
 		width: number;
 		height: number;
 		top: number;
@@ -21,15 +21,17 @@
 </script>
 
 <script lang="ts">
-	let {
-		layout,
-		assetBaseIndex,
-		onAssetClick
-	}: {
+	import GridTile from './GridTile.svelte';
+
+	type GridSegmentProps = {
+		timeline: TimelineGridStore;
+		inSelectionMode: boolean;
 		layout: SegmentLayout;
 		assetBaseIndex: number;
 		onAssetClick: (assetIndex: number) => void;
-	} = $props();
+	};
+	let { timeline, inSelectionMode, layout, assetBaseIndex, onAssetClick } =
+		$props<GridSegmentProps>();
 	const segmentTitle = $derived.call(() => {
 		const segment = layout.segment.segment;
 		if (segment.type === 'userGroup') {
@@ -68,40 +70,17 @@
 	id="segment-{layout.segment.segment.id}"
 	style="position: relative; height: {layout.height}px;"
 >
-	{#each layout.tiles as box, assetIdx}
-		<a
-			href="#"
-			onclick={(e) => {
-				e.preventDefault();
-				onAssetClick(assetBaseIndex + assetIdx);
-			}}
-		>
-			<div>
-				<!-- svelte-ignore a11y-missing-attribute -->
-				<img
-					bind:this={imgEls[assetIdx]}
-					src="/api/asset/thumbnail/{layout.segment.assets[assetIdx].id}/large/avif"
-					class="tile"
-					style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px; z-index: 10;"
-				/>
-				<div
-					style="position: absolute; width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px; z-index: 20;"
-				>
-					<button
-						style="padding: 4px; position: absolute; focus-outline: none; outline: none; background: none; border: none; cursor:pointer;"
-						role="checkbox"
-						aria-checked="false"
-						onclick={(e) => {
-							e.stopPropagation();
-						}}
-					>
-						<svg style="opacity: 0.6;" width="24" height="24" viewBox="0 0 24 24"
-							><path d={mdiCheckCircle} fill="#fff" /></svg
-						>
-					</button>
-				</div>
-			</div>
-		</a>
+	{#each layout.tiles as box, indexInSegment}
+		{@const assetIndex = assetBaseIndex + indexInSegment}
+		<GridTile
+			{assetIndex}
+			{timeline}
+			{inSelectionMode}
+			asset={layout.segment.assets[indexInSegment]}
+			onAssetClick={() => onAssetClick(assetIndex)}
+			{box}
+			bind:imgEl={imgEls[indexInSegment]}
+		/>
 	{/each}
 </div>
 
@@ -109,10 +88,5 @@
 	.segment {
 		position: absolute;
 		contain: layout;
-	}
-
-	.tile {
-		position: absolute;
-		background-color: green;
 	}
 </style>

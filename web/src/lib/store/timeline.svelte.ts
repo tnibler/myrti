@@ -23,10 +23,10 @@ export interface TimelineGridStore {
   readonly layoutConfig: LayoutConfig,
   readonly totalNumAssets: number,
 
-  readonly selectedAssetIndices: number[],
+  readonly selectedAssetIndices: Record<number, boolean>,
   /** Assets are highlighted when something is selected and shift is pressed to preview
    * possible range selection. */
-  readonly selectionPreviewIndices: number[],
+  readonly selectionPreviewIndices: Record<number, boolean>,
   setAssetSelected: (assetIndex: number, selected: boolean) => void;
   /** @param clickedAssetIndex asset clicked to perform range selection */
   setRangeSelected: (clickedAssetIndex: number, selected: boolean) => void;
@@ -34,7 +34,7 @@ export interface TimelineGridStore {
   rangeSelectHover: (hoveredAssetIndex: number) => void;
 }
 
-export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGrid {
+export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGridStore {
   let viewport: Viewport = { width: 0, height: 0 }
   let sections: DisplaySection[] = $state([])
 
@@ -169,8 +169,24 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
     }
   }
 
-  const selectedAssetIndices: number[] = [];
-  const selectionPreviewIndices: number[] = [];
+  const selectedAssetIndices: Record<number, boolean> = $state({});
+  const selectionPreviewIndices: Record<number, boolean> = $state({});
+
+  function setAssetSelected(index: number, selected: boolean) {
+    if (selected) {
+      selectedAssetIndices[index] = true;
+    } else {
+      delete selectedAssetIndices[index];
+    }
+  }
+
+  function setRangeSelected(clickedIndex: number, selected: boolean) {
+    console.error("TODO setRangeSelected");
+  }
+
+  function rangeSelectHover(hoveredIndex: number) {
+    console.error("TODO rangeSelectHover");
+  }
 
   return {
     initialize,
@@ -181,6 +197,11 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
     get sections() { return sections },
     get layoutConfig() { return layoutConfig },
     get totalNumAssets() { return totalNumAssets },
+    setAssetSelected,
+    setRangeSelected,
+    rangeSelectHover,
+    get selectedAssetIndices() { return selectedAssetIndices },
+    get selectionPreviewIndices() { return selectionPreviewIndices },
   }
 }
 

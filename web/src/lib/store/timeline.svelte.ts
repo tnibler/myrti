@@ -11,7 +11,7 @@ export type DisplaySection = {
   assetStartIndex: number
 }
 
-type LayoutConfig = { targetRowHeight: number, sectionMargin: number }
+type LayoutConfig = { targetRowHeight: number, sectionMargin: number, headerHeight: number, segmentMargin: number }
 
 export interface TimelineGrid {
   initialize: (viewport: Viewport) => Promise<void>,

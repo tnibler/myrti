@@ -18,7 +18,8 @@
 		targetRowHeight: 120,
 		headerHeight: 50,
 		sectionMargin: 20,
-		segmentMargin: 20
+		segmentMargin: 20,
+		boxSpacing: 4
 	};
 	const timeline: TimelineGridStore = $state(createTimeline(layoutConfig, api));
 	let inSelectionMode = $derived(Object.keys(timeline.selectedAssetIndices).length > 0);

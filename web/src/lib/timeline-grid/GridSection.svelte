@@ -87,7 +87,11 @@
 					height: asset.height
 				};
 			});
-			const geometry = createJustifiedLayout(assetSizes, { targetRowHeight, containerWidth });
+			const geometry = createJustifiedLayout(assetSizes, {
+				targetRowHeight,
+				containerWidth,
+				boxSpacing: timeline.layoutConfig.boxSpacing
+			});
 			const height = geometry.containerHeight;
 			layouts.push({
 				segment: segment,

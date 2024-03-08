@@ -311,7 +311,7 @@
 	{#if placeholderVisible}
 		<!-- svelte-ignore a11y-missing-attribute -->
 		<img
-			class="placeholder"
+			class="placeholder max-w-none"
 			bind:this={placeholderEl}
 			out:fade={{ duration: 100, delay: PLACEHOLDER_HIDE_DELAY }}
 			src={data.placeholderSrc}

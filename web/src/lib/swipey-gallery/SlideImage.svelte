@@ -65,6 +65,7 @@
 <style>
 	.slide-image {
 		position: absolute;
+		max-width: none; /* override tailwind */
 	}
 
 	.slide-image.hidden {

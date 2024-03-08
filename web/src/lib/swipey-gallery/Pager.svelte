@@ -314,11 +314,11 @@
 
 <div class="pager-wrapper" bind:this={pagerWrapper} style:top={`${topOffset}px`}>
 	<div
-		class="background"
+		class="pager-background"
 		style:opacity={backgroundOpacity}
 		class:transition-opacity={backgroundOpacityTransition}
 	/>
-	<div class="container" style="transform: {transformString};">
+	<div class="slide-container" style="transform: {transformString};">
 		{#each holderStates as slideHolder (slideHolder.id)}
 			<SlideHolder
 				id={slideHolder.id}
@@ -364,8 +364,8 @@
 
 <style>
 	.pager-wrapper,
-	.background,
-	.container {
+	.pager-background,
+	.slide-container {
 		position: absolute;
 		left: 0;
 		width: 100%;
@@ -373,7 +373,7 @@
 	}
 
 	.background,
-	.container {
+	.slide-container {
 		position: absolute;
 		top: 0;
 		left: 0;
@@ -381,7 +381,7 @@
 		height: 100%;
 	}
 
-	.background {
+	.pager-background {
 		will-change: opacity;
 		background: #000;
 	}
@@ -395,7 +395,7 @@
 		touch-action: none;
 	}
 
-	.container {
+	.slide-container {
 		user-select: none;
 	}
 

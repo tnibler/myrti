@@ -80,7 +80,7 @@
 <video
 	autoplay={isActive}
 	muted={true}
-	class="slide-video"
+	class="slide-video max-w-none"
 	bind:this={videoEl}
 	on:loadeddata={onContentReady}
 	width={size.width}

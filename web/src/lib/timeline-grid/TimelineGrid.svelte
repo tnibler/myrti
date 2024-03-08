@@ -2,7 +2,6 @@
 	import { api } from '$lib/apiclient';
 	import { createTimeline, type TimelineGridStore } from '$lib/store/timeline.svelte';
 	import GridSection from './GridSection.svelte';
-	import 'photoswipe/photoswipe.css';
 	import Gallery from '$lib/swipey-gallery/Gallery.svelte';
 	import type { ThumbnailBounds } from '$lib/swipey-gallery/thumbnail-bounds';
 	import type { SlideData } from '$lib/swipey-gallery/slide-data';

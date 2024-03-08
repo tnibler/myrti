@@ -33,6 +33,7 @@ export interface TimelineGridStore {
   /** Assets are highlighted when something is selected and shift is pressed to preview
    * possible range selection. */
   readonly selectionPreviewIndices: Record<number, boolean>,
+  clearSelection: () => void;
   setAssetSelected: (assetIndex: number, selected: boolean) => void;
   /** @param clickedAssetIndex asset clicked to perform range selection */
   setRangeSelected: (clickedAssetIndex: number, selected: boolean) => void;
@@ -206,6 +207,11 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
     setAssetSelected,
     setRangeSelected,
     rangeSelectHover,
+    clearSelection: () => {
+      for (const asset in selectedAssetIndices) {
+        delete selectedAssetIndices[asset];
+      }
+    },
     get selectedAssetIndices() { return selectedAssetIndices },
     get selectionPreviewIndices() { return selectionPreviewIndices },
   }

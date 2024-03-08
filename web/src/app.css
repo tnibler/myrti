@@ -1,3 +1,13 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --appbar-height: 4rem;
+}
+
+@screen md {
+  :root {
+    --appbar-height: 5rem;
+  }
+}

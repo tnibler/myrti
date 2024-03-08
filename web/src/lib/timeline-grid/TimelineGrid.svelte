@@ -1,12 +1,14 @@
 <script lang="ts">
-	import { api } from '$lib/apiclient';
-	import { createTimeline, type TimelineGridStore } from '$lib/store/timeline.svelte';
 	import GridSection from './GridSection.svelte';
 	import Gallery from '$lib/swipey-gallery/Gallery.svelte';
 	import type { ThumbnailBounds } from '$lib/swipey-gallery/thumbnail-bounds';
 	import type { SlideData } from '$lib/swipey-gallery/slide-data';
-
 	import type { AssetWithSpe } from '$lib/apitypes';
+	import type { TimelineGridStore } from '$lib/store/timeline.svelte';
+
+	type TimelineGridProps = {
+	  timeline: TimelineGridStore
+	}
 
 	let windowScrollY: number = $state(0);
 	let viewport = $state({ width: 0, height: 0 });
@@ -14,15 +16,8 @@
 	let bodyWrapper: HTMLDivElement;
 	let gridSections: GridSection[] = $state([]);
 
-	const layoutConfig = {
-		targetRowHeight: 120,
-		headerHeight: 50,
-		sectionMargin: 20,
-		segmentMargin: 20,
-		boxSpacing: 4
-	};
-	const timeline: TimelineGridStore = $state(createTimeline(layoutConfig, api));
-	let inSelectionMode = $derived(Object.keys(timeline.selectedAssetIndices).length > 0);
+	let { timeline } = $props<TimelineGridProps>();
+	const inSelectionMode = $derived(Object.keys(timeline.selectedAssetIndices).length > 0);
 
 	let sectionsIntersecting: boolean[] = $state([]);
 	$effect(async () => {

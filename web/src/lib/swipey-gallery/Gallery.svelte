@@ -19,7 +19,6 @@
 		requestAnimationFrame(() => {
 			pagerY = bodyWrapper.scrollTop;
 			bodyWrapper.classList.add('modalOpen');
-			bodyWrapper.style.height = '100vh';
 			topOffset = 0;
 			bodyWrapper.scrollTo(0, pagerY);
 		});

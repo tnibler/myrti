@@ -40,7 +40,9 @@
 		setTimeout(() => {
 			if (videoEl) {
 				videoEl.controls = true;
-				videoEl.play();
+				if (isActive) {
+					videoEl.play();
+				}
 			}
 		}, 400);
 	});

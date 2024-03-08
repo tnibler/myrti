@@ -2,6 +2,8 @@
 	import type { Asset } from '$lib/apitypes';
 	import type { TimelineGridStore } from '$lib/store/timeline.svelte';
 	import {
+		mdiProgressWrench,
+		mdiPlayCircleOutline,
 		mdiCheckCircle,
 		mdiCheckCircleOutline,
 		mdiCheckboxMarkedCircle,
@@ -58,6 +60,18 @@
 			class:rounded-xl={isSelected}
 			class:scale-[0.85]={isSelected}
 		/>
+		{#if asset.type === 'video'}
+			{@const icon = asset.hasDash ? mdiPlayCircleOutline : mdiProgressWrench}
+			<svg
+				class="absolute right-0 mr-1 mt-1 md:mr-2 md:mt-2"
+				style="opacity: 0.75;"
+				width="24"
+				height="24"
+				viewBox="0 0 24 24"
+			>
+				<path d={icon} fill="#fff" />
+			</svg>
+		{/if}
 		<div class="absolute z-20 h-full w-full">
 			{#if inSelectionMode || isMouseOver}
 				{@const icon = isSelected
@@ -66,7 +80,7 @@
 						? mdiCircleOutline
 						: mdiCheckCircleOutline}
 				<button
-					class="absolute m-1 p-1 focus:outline-none"
+					class="absolute left-0 p-1 md:p-2 focus:outline-none"
 					role="checkbox"
 					aria-checked={isSelected}
 					onclick={(e) => {
@@ -76,9 +90,9 @@
 					}}
 					transition:fade={{ duration: 80 }}
 				>
-					<svg style="opacity: 0.6;" width="24" height="24" viewBox="0 0 24 24"
-						><path d={icon} fill="#fff" /></svg
-					>
+					<svg style:opacity={isSelected ? 1 : 0.75} width="24" height="24" viewBox="0 0 24 24"
+						><path d={icon} fill="#fff" />
+					</svg>
 				</button>
 			{/if}
 		</div>

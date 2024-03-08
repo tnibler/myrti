@@ -202,7 +202,7 @@
 		}
 		const index = Math.min(Math.max(slideIndex + diff, 0), numSlides - 1);
 		if (index !== slideIndex) {
-			slide.onScrollAway();
+			holderStates[holderOrder[1]].isActive = false;
 		}
 		const destX = -(index - slideIndexInitOffset) * slideWidth;
 		animations.stopAnimationsFor('pager');
@@ -238,7 +238,7 @@
 		}
 		const newIndex = Math.min(Math.max(slideIndex + diff, 0), numSlides - 1);
 		if (newIndex !== slideIndex) {
-			slide.onScrollAway();
+			holderStates[holderOrder[1]].isActive = false;
 		}
 		previousIndex = slideIndex;
 		slideIndex = newIndex;
@@ -275,7 +275,8 @@
 		const newActiveHolder = holderStates[holderOrder[1]];
 		previousActiveHolder.isActive = false;
 		newActiveHolder.isActive = true;
-		slide.onActive();
+		// FIXME this is the same as isActive. onActive and onScrollAway should both
+		// just be replaced with setting isActive
 		const currentSlideIndex = newActiveHolder.slideIndex;
 		console.assert(
 			currentSlideIndex !== null,

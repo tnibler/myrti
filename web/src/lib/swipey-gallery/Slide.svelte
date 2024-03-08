@@ -18,8 +18,6 @@
 		pan: Point;
 		applyCurrentZoomPan: () => void;
 		setZoomLevel: (z: number) => void;
-		onScrollAway: () => void;
-		onActive: () => void;
 		closeTransition: (toBounds: ThumbnailBounds, onTransitionEnd: () => void) => void;
 	};
 </script>
@@ -39,9 +37,10 @@
 
 	type SlideProps = {
 		data: SlideData;
+		isActive: boolean;
 		openTransition: OpenTransitionParams | null;
 	};
-	let { data, openTransition } = $props<SlideProps>();
+	let { data, isActive, openTransition } = $props<SlideProps>();
 
 	let gallery: GalleryControls = getContext('gallery');
 	let pan: Point = $state({ x: 0, y: 0 });
@@ -62,7 +61,6 @@
 	let slideImage: SlideImage | undefined = $state();
 	let slideVideo: SlideVideo | undefined = $state();
 	let placeholderEl: HTMLImageElement | undefined;
-	let isActive = $state(false);
 
 	enum PlaceholderTransition {
 		No,
@@ -134,12 +132,6 @@
 		applyCurrentZoomPan: () => {
 			domZoom *= cssTransformZoom;
 			cssTransformZoom = 1;
-		},
-		onScrollAway: () => {
-			isActive = false;
-		},
-		onActive: () => {
-			isActive = true;
 		},
 		closeTransition
 	};

@@ -18,7 +18,7 @@
 <div id="id-{id}" class="item" style="transform: {transformStr};">
 	{#await slide then awaitedSlide}
 		{#if awaitedSlide !== null}
-			<Slide data={awaitedSlide} {openTransition} bind:controls={slideControls} />
+			<Slide data={awaitedSlide} {isActive} {openTransition} bind:controls={slideControls} />
 		{/if}
 	{/await}
 </div>

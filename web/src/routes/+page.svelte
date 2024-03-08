@@ -18,7 +18,7 @@
 	const inSelectionMode = $derived(Object.keys(timeline.selectedAssetIndices).length > 0);
 </script>
 
-<div class="flex flex-col">
+<div class="flex flex-col h-dvh">
 	{#if !inSelectionMode}
 		<AppBar />
 	{:else}
@@ -39,11 +39,9 @@
 	#page {
 		overflow-y: hidden;
 		display: flex;
-		height: 100vh;
 	}
 
 	#content {
-		height: 100vh;
 		flex-grow: 1;
 	}
 

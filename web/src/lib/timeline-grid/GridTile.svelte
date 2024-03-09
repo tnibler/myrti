@@ -29,7 +29,7 @@
 
 <a
 	href="#"
-	class="absolute group"
+	class="absolute group select-none"
 	style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
 	onclick={(e) => {
 		e.preventDefault();

@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     routing::get,
     Json, Router,
 };
@@ -33,7 +33,7 @@ use core::{
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/sections", get(get_timeline_sections))
-        .route("/segments", get(get_timeline_segments))
+        .route("/sections/:id", get(get_timeline_segments))
 }
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]
@@ -197,19 +197,17 @@ pub struct TimelineSegmentsResponse {
 
 #[utoipa::path(
     get,
-    path = "/api/timeline/segments",
-    params(TimelineSegmentsRequest),
+    path = "/api/timeline/sections/{id}",
     responses(
     (status = 200, body=TimelineSegmentsResponse)
     )
 )]
 #[instrument(skip(app_state), level = "trace")]
 pub async fn get_timeline_segments(
-    Query(query): Query<TimelineSegmentsRequest>,
+    Path(section_id): Path<String>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Json<TimelineSegmentsResponse>> {
-    let (segment_min, segment_max) = query
-        .section_id
+    let (segment_min, segment_max) = section_id
         .split_once("_")
         .ok_or(eyre!("invalid sectionId"))?;
     let segment_min: i64 = segment_min.parse().wrap_err("invalid sectionId")?;

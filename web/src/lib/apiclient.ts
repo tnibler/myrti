@@ -254,13 +254,13 @@ const endpoints = makeApi([
 	},
 	{
 		method: 'get',
-		path: '/api/timeline/segments',
+		path: '/api/timeline/sections/:id',
 		alias: 'getTimelineSegments',
 		requestFormat: 'json',
 		parameters: [
 			{
-				name: 'sectionId',
-				type: 'Query',
+				name: 'id',
+				type: 'Path',
 				schema: z.string()
 			}
 		],

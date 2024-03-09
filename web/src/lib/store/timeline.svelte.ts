@@ -52,7 +52,7 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
       return inflight;
     } else {
       const insertPromise = (async () => {
-        const r = await api.getTimelineSegments({ queries: { sectionId } });
+        const r = await api.getTimelineSegments({ params: { id: sectionId } });
         return r.segments;
       })();
       inflightSegmentRequests.set(sectionId, insertPromise);

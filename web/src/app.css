@@ -6,8 +6,3 @@
   --appbar-height: 4rem;
 }
 
-@screen md {
-  :root {
-    --appbar-height: 5rem;
-  }
-}

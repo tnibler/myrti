@@ -13,6 +13,7 @@ use mediathingyrust::{
     app_state::{AppState, SharedState},
     http_error::HttpError,
     routes,
+    spa_serve_dir::SpaServeDirService,
 };
 use serde::Deserialize;
 use tokio::signal;
@@ -20,6 +21,7 @@ use tower::ServiceBuilder;
 use tower_http::{
     cors::{Any, CorsLayer},
     request_id::MakeRequestUuid,
+    services::ServeDir,
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     ServiceBuilderExt,
 };
@@ -134,6 +136,7 @@ async fn main() -> Result<()> {
         .nest("/api/assetRoots", routes::asset_roots::router())
         .nest("/api/dash", routes::dash::router())
         .nest("/api", routes::api_router())
+        .fallback_service(SpaServeDirService::new(ServeDir::new("../web/build")))
         .layer(
             ServiceBuilder::new()
                 .set_x_request_id(MakeRequestUuid::default())

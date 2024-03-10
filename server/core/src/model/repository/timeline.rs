@@ -267,7 +267,7 @@ struct RowTimelineSegmentInSection {
     pub segment_idx: i64,
 }
 
-#[instrument(skip(conn), level = "debug")]
+#[instrument(skip(conn), level = "trace")]
 pub fn get_segments_in_section(
     conn: &mut DbConn,
     segment_min: i64,
@@ -308,7 +308,6 @@ pub fn get_segments_in_section(
     let rows: Vec<RowTimelineSegmentInSection> = query
         .load(conn)
         .wrap_err("error querying timeline segments in section")?;
-    tracing::debug!(?rows);
     let mut segments: Vec<TimelineSegment> = Vec::new();
     for row in rows {
         let asset: Asset = row.asset.try_into()?;
@@ -383,6 +382,5 @@ pub fn get_segments_in_section(
             }
         }
     }
-    tracing::debug!(?segments);
     Ok(segments)
 }

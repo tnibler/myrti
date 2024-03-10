@@ -4,10 +4,10 @@
 	type Props = {
 		numAssetsSelected: number;
 		onCancelSelectClicked: () => void;
-		onCreateAlbumClicked: () => void;
+		onAddToAlbumClicked: () => void;
 		onHideClicked: () => void;
 	};
-	let { numAssetsSelected, onCancelSelectClicked, onCreateAlbumClicked, onHideClicked } =
+	let { numAssetsSelected, onCancelSelectClicked, onAddToAlbumClicked, onHideClicked } =
 		$props<Props>();
 </script>
 
@@ -45,7 +45,7 @@
 		<button
 			class="p-3 hover:bg-gray-200 bg-transparent rounded-full transition-colors"
 			onclick={() => {
-				onCreateAlbumClicked();
+				onAddToAlbumClicked();
 			}}
 		>
 			<svg width="24" height="24" viewBox="0 0 24 24">

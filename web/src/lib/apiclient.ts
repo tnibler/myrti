@@ -1,8 +1,23 @@
 import { makeApi, Zodios, type ZodiosOptions } from '@zodios/core';
 import { z } from 'zod';
 
-const AssetRootDirId = z.string();
+const AlbumId = z.string();
+const Album = z
+	.object({
+		changedAt: z.string().datetime({ offset: true }),
+		createdAt: z.string().datetime({ offset: true }),
+		description: z.string().nullish(),
+		id: AlbumId,
+		name: z.string().nullish(),
+		numAssets: z.number().int()
+	})
+	.passthrough();
 const AssetId = z.string();
+const CreateAlbumRequest = z
+	.object({ assets: z.array(AssetId), description: z.string().nullish(), name: z.string() })
+	.passthrough();
+const CreateAlbumResponse = z.object({ albumId: z.number().int() }).passthrough();
+const AssetRootDirId = z.string();
 const AssetMetadataType = z.union([
 	z
 		.object({ Video: z.object({ duration: z.number().int().nullable() }).partial().passthrough() })
@@ -91,13 +106,16 @@ const TimelineSegment = z
 	.object({ assets: z.array(AssetWithSpe), segment: SegmentType })
 	.passthrough();
 const TimelineSegmentsResponse = z.object({ segments: z.array(TimelineSegment) }).passthrough();
-const AlbumId = z.string();
 const ThumbnailFormat = z.enum(['avif', 'webp']);
 const ThumbnailSize = z.enum(['small', 'large']);
 
 export const schemas = {
-	AssetRootDirId,
+	AlbumId,
+	Album,
 	AssetId,
+	CreateAlbumRequest,
+	CreateAlbumResponse,
+	AssetRootDirId,
 	AssetMetadataType,
 	AssetMetadata,
 	AssetType,
@@ -116,12 +134,47 @@ export const schemas = {
 	SegmentType,
 	TimelineSegment,
 	TimelineSegmentsResponse,
-	AlbumId,
 	ThumbnailFormat,
 	ThumbnailSize
 };
 
 const endpoints = makeApi([
+	{
+		method: 'get',
+		path: '/api/albums',
+		alias: 'getAllAlbums',
+		requestFormat: 'json',
+		response: z.array(Album)
+	},
+	{
+		method: 'post',
+		path: '/api/albums',
+		alias: 'createAlbum',
+		requestFormat: 'json',
+		parameters: [
+			{
+				name: 'body',
+				type: 'Body',
+				schema: CreateAlbumRequest
+			},
+			{
+				name: 'name',
+				type: 'Path',
+				schema: z.string()
+			},
+			{
+				name: 'description',
+				type: 'Path',
+				schema: z.string().nullable()
+			},
+			{
+				name: 'assets',
+				type: 'Path',
+				schema: z.array(AssetId)
+			}
+		],
+		response: z.object({ albumId: z.number().int() }).passthrough()
+	},
 	{
 		method: 'get',
 		path: '/api/asset',

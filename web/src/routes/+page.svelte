@@ -1,4 +1,6 @@
 <script lang="ts">
+	import AddToAlbumDialog from '$lib/AddToAlbumDialog.svelte';
+	import MainLayout from '$lib/MainLayout.svelte';
 	import TimelineSelectAppBar from '$lib/TimelineSelectAppBar.svelte';
 	import { api } from '$lib/apiclient';
 	import AppBar from '$lib/appbar/AppBar.svelte';
@@ -16,38 +18,48 @@
 
 	const timeline: TimelineGridStore = $state(createTimeline(layoutConfig, api));
 	const inSelectionMode = $derived(Object.keys(timeline.selectedAssetIndices).length > 0);
+
+	let addToAlbumDialog: AddToAlbumDialog | null = $state(null);
+
+	function onAddToAlbumClicked() {
+		addToAlbumDialog?.open();
+	}
+
+	async function onCreateAlbumSubmit({ albumName }: { albumName: string }) {
+		// TODO this is terrible but the whole selection thing is going to change dw
+		const assetIds = await Promise.all(
+			Object.keys(timeline.selectedAssetIndices).map((idx) =>
+				timeline.getAssetAtIndex(parseInt(idx)).then((a) => a.id)
+			)
+		);
+		const response = await api.createAlbum({
+			assets: assetIds,
+			name: albumName,
+			description: null
+		});
+		console.log(`albumId: ${response.albumId}`);
+		addToAlbumDialog?.close();
+		timeline.clearSelection();
+	}
 </script>
 
-<div class="flex flex-col h-dvh">
-	{#if !inSelectionMode}
-		<AppBar />
-	{:else}
-		<TimelineSelectAppBar
-			numAssetsSelected={Object.keys(timeline.selectedAssetIndices).length}
-			onCancelSelectClicked={() => timeline.clearSelection()}
-		/>
-	{/if}
-	<div id="page" class="flex-1">
-		<Sidebar />
-		<div id="content">
-			<TimelineGrid {timeline} />
-		</div>
-	</div>
-</div>
+<AddToAlbumDialog bind:this={addToAlbumDialog} onSubmit={onCreateAlbumSubmit} />
 
-<style>
-	#page {
-		overflow-y: hidden;
-		display: flex;
-	}
+{#snippet content()}
+	<TimelineGrid {timeline} />
+{/snippet}
 
-	#content {
-		flex-grow: 1;
-	}
+{#snippet timelineSelectAppBar()}
+	<TimelineSelectAppBar
+		numAssetsSelected={Object.keys(timeline.selectedAssetIndices).length}
+		onCancelSelectClicked={() => timeline.clearSelection()}
+		{onAddToAlbumClicked}
+	/>
+{/snippet}
 
-	@media screen and (max-width: 600px) {
-		#sidebar {
-			display: none;
-		}
-	}
-</style>
+<MainLayout
+	{content}
+	appBarOverride={timelineSelectAppBar}
+	showAppBarOverride={inSelectionMode}
+	activeSideBarEntry="timeline"
+/>

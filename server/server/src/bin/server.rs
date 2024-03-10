@@ -129,7 +129,7 @@ async fn main() -> Result<()> {
         .allow_origin(Any);
     let app = Router::new()
         .nest("/api/timeline", routes::timeline::router())
-        .nest("/api/album", routes::album::router())
+        .nest("/api/albums", routes::album::router())
         .nest("/api/asset", routes::asset::router())
         .nest("/api/assetRoots", routes::asset_roots::router())
         .nest("/api/dash", routes::dash::router())

@@ -9,6 +9,88 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api/albums": {
+      "get": {
+        "tags": [
+          "crate::routes::album"
+        ],
+        "operationId": "getAllAlbums",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Album"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "crate::routes::album"
+        ],
+        "operationId": "createAlbum",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "description",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "assets",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/AssetId"
+              }
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAlbumRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateAlbumResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/asset": {
       "get": {
         "tags": [
@@ -275,7 +357,7 @@
         }
       }
     },
-    "/api/timeline/segments": {
+    "/api/timeline/sections/{id}": {
       "get": {
         "tags": [
           "crate::routes::timeline"
@@ -283,8 +365,8 @@
         "operationId": "getTimelineSegments",
         "parameters": [
           {
-            "name": "sectionId",
-            "in": "query",
+            "name": "id",
+            "in": "path",
             "required": true,
             "schema": {
               "type": "string"
@@ -308,6 +390,40 @@
   },
   "components": {
     "schemas": {
+      "Album": {
+        "type": "object",
+        "required": [
+          "id",
+          "numAssets",
+          "createdAt",
+          "changedAt"
+        ],
+        "properties": {
+          "changedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "$ref": "#/components/schemas/AlbumId"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "numAssets": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "AlbumId": {
         "type": "string"
       },
@@ -463,6 +579,40 @@
             "type": "object"
           }
         ]
+      },
+      "CreateAlbumRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "assets"
+        ],
+        "properties": {
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetId"
+            }
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateAlbumResponse": {
+        "type": "object",
+        "required": [
+          "albumId"
+        ],
+        "properties": {
+          "albumId": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
       },
       "Image": {
         "type": "object",

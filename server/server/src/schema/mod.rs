@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 use core::model;
 
-mod album;
+pub mod album;
 pub mod asset;
 mod asset_root_dir;
 pub mod timeline;

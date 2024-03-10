@@ -6,6 +6,7 @@ use axum::{
 use eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
 use tracing::Instrument;
+use utoipa::{IntoParams, ToSchema};
 
 use core::{
     deadpool_diesel, interact,
@@ -21,10 +22,10 @@ use crate::{
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/", get(get_all_albums))
-        .route("/", post(post_create_album))
+        .route("/", post(create_album))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, ToSchema, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAlbumRequest {
     pub name: String,
@@ -32,12 +33,17 @@ pub struct CreateAlbumRequest {
     pub assets: Vec<AssetId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateAlbumResponse {
     pub album_id: i64,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/albums",
+    responses((status = 200, body=Vec<Album>)),
+)]
 #[tracing::instrument(skip(app_state))]
 pub async fn get_all_albums(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Album>>> {
     let conn = app_state.pool.get().in_current_span().await?;
@@ -52,8 +58,14 @@ pub async fn get_all_albums(State(app_state): State<SharedState>) -> ApiResult<J
     Ok(Json(albums))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/albums",
+    params(CreateAlbumRequest),
+    responses((status = 200, body=CreateAlbumResponse)),
+)]
 #[tracing::instrument(skip(app_state))]
-pub async fn post_create_album(
+pub async fn create_album(
     State(app_state): State<SharedState>,
     Json(request): Json<CreateAlbumRequest>,
 ) -> ApiResult<Json<CreateAlbumResponse>> {

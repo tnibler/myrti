@@ -1,7 +1,6 @@
 <script lang="ts" context="module">
 	import type { TimelineSegment } from '$lib/apitypes';
 	import type { TimelineGridStore } from '$lib/store/timeline.svelte';
-	import { mdiCheckCircle, mdiCheckCircleOutline } from '@mdi/js';
 
 	export type SegmentLayout = {
 		segment: TimelineSegment;
@@ -11,17 +10,10 @@
 		tiles: TileBox[];
 		headerTop: number;
 	};
-
-	export type TileBox = {
-		width: number;
-		height: number;
-		top: number;
-		left: number;
-	};
 </script>
 
 <script lang="ts">
-	import GridTile from './GridTile.svelte';
+	import GridTile, { type TileBox } from '$lib/ui/GridTile.svelte';
 
 	type GridSegmentProps = {
 		timeline: TimelineGridStore;
@@ -61,6 +53,19 @@
 		}
 		return imgEls[assetIndex];
 	}
+
+	function toggleAssetSelected(assetId: string) {
+		const isSelected = assetId in timeline.selectedAssetIds;
+		timeline.setAssetSelected(assetId, !isSelected);
+	}
+
+	function getSelectState(
+		assetId: string
+	): { inSelectMode: false } | { inSelectMode: true; isSelected: boolean } {
+		const inSelectMode = Object.keys(timeline.selectedAssetIds).length > 0;
+		const isSelected = assetId in timeline.selectedAssetIds;
+		return { inSelectMode, isSelected };
+	}
 </script>
 
 <h2 style="left: 20px; position: relative;">
@@ -72,11 +77,13 @@
 >
 	{#each layout.tiles as box, indexInSegment}
 		{@const assetIndex = assetBaseIndex + indexInSegment}
+		{@const asset = layout.segment.assets[indexInSegment]}
 		<GridTile
-			{assetIndex}
-			{timeline}
-			{inSelectionMode}
-			asset={layout.segment.assets[indexInSegment]}
+			selectState={getSelectState(asset.id)}
+			onSelectToggled={() => {
+				toggleAssetSelected(asset.id);
+			}}
+			{asset}
 			onAssetClick={() => onAssetClick(assetIndex)}
 			{box}
 			bind:imgEl={imgEls[indexInSegment]}

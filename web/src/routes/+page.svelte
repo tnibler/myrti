@@ -17,7 +17,7 @@
 	};
 
 	const timeline: TimelineGridStore = $state(createTimeline(layoutConfig, api));
-	const inSelectionMode = $derived(Object.keys(timeline.selectedAssetIndices).length > 0);
+	const inSelectionMode = $derived(Object.keys(timeline.selectedAssetIds).length > 0);
 
 	let addToAlbumDialog: AddToAlbumDialog | null = $state(null);
 
@@ -27,11 +27,7 @@
 
 	async function onCreateAlbumSubmit({ albumName }: { albumName: string }) {
 		// TODO this is terrible but the whole selection thing is going to change dw
-		const assetIds = await Promise.all(
-			Object.keys(timeline.selectedAssetIndices).map((idx) =>
-				timeline.getAssetAtIndex(parseInt(idx)).then((a) => a.id)
-			)
-		);
+		const assetIds = Object.keys(timeline.selectedAssetIds);
 		const response = await api.createAlbum({
 			assets: assetIds,
 			name: albumName,
@@ -51,7 +47,7 @@
 
 {#snippet timelineSelectAppBar()}
 	<TimelineSelectAppBar
-		numAssetsSelected={Object.keys(timeline.selectedAssetIndices).length}
+		numAssetsSelected={Object.keys(timeline.selectedAssetIds).length}
 		onCancelSelectClicked={() => timeline.clearSelection()}
 		{onAddToAlbumClicked}
 	/>

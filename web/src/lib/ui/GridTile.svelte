@@ -1,6 +1,14 @@
+<script context="module">
+	export type TileBox = {
+		width: number;
+		height: number;
+		top: number;
+		left: number;
+	};
+</script>
+
 <script lang="ts">
 	import type { Asset } from '$lib/apitypes';
-	import type { TimelineGridStore } from '$lib/store/timeline.svelte';
 	import {
 		mdiProgressWrench,
 		mdiPlayCircleOutline,
@@ -9,22 +17,31 @@
 		mdiCheckboxMarkedCircle,
 		mdiCircleOutline
 	} from '@mdi/js';
-	import type { TileBox } from './GridSegment.svelte';
 	import { fade } from 'svelte/transition';
 
 	type GridTileProps = {
-		assetIndex: number;
 		asset: Asset;
 		box: TileBox;
-		timeline: TimelineGridStore;
-		inSelectionMode: boolean;
+		selectState: { inSelectMode: false } | { inSelectMode: true; isSelected: boolean };
+		onSelectToggled: () => void;
 		onAssetClick: () => void;
 		imgEl: HTMLImageElement;
 	};
-	let { assetIndex, asset, box, timeline, inSelectionMode, onAssetClick, imgEl } =
-		$props<GridTileProps>();
-	const isSelected = $derived(assetIndex in timeline.selectedAssetIndices);
+	let { asset, box, selectState, onSelectToggled, onAssetClick, imgEl } = $props<GridTileProps>();
 	let isMouseOver = $state(false);
+	const isSelected = $derived(selectState.inSelectMode && selectState.isSelected);
+
+	function onSelectButtonClick() {
+		onSelectToggled();
+	}
+
+	function onTileClick() {
+		if (selectState.inSelectMode) {
+			onSelectToggled();
+		} else {
+			onAssetClick();
+		}
+	}
 </script>
 
 <a
@@ -33,11 +50,7 @@
 	style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
 	onclick={(e) => {
 		e.preventDefault();
-		if (inSelectionMode) {
-			timeline.setAssetSelected(assetIndex, !isSelected);
-		} else {
-			onAssetClick();
-		}
+		onTileClick();
 	}}
 	onmouseenter={() => {
 		isMouseOver = true;
@@ -73,10 +86,10 @@
 			</svg>
 		{/if}
 		<div class="absolute z-20 h-full w-full">
-			{#if inSelectionMode || isMouseOver}
+			{#if selectState.inSelectMode || isMouseOver}
 				{@const icon = isSelected
 					? mdiCheckboxMarkedCircle
-					: inSelectionMode
+					: selectState.inSelectMode
 						? mdiCircleOutline
 						: mdiCheckCircleOutline}
 				<button
@@ -86,7 +99,7 @@
 					onclick={(e) => {
 						e.stopPropagation();
 						e.preventDefault();
-						timeline.setAssetSelected(assetIndex, !isSelected);
+						onSelectButtonClick();
 					}}
 					transition:fade={{ duration: 80 }}
 				>

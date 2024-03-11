@@ -7,8 +7,8 @@
 	import type { TimelineGridStore } from '$lib/store/timeline.svelte';
 
 	type TimelineGridProps = {
-	  timeline: TimelineGridStore
-	}
+		timeline: TimelineGridStore;
+	};
 
 	let windowScrollY: number = $state(0);
 	let viewport = $state({ width: 0, height: 0 });
@@ -17,7 +17,7 @@
 	let gridSections: GridSection[] = $state([]);
 
 	let { timeline } = $props<TimelineGridProps>();
-	const inSelectionMode = $derived(Object.keys(timeline.selectedAssetIndices).length > 0);
+	const inSelectionMode = $derived(Object.keys(timeline.selectedAssetIds).length > 0);
 
 	let sectionsIntersecting: boolean[] = $state([]);
 	$effect(async () => {

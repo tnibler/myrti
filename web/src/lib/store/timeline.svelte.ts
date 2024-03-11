@@ -29,12 +29,13 @@ export interface TimelineGridStore {
   readonly layoutConfig: LayoutConfig,
   readonly totalNumAssets: number,
 
-  readonly selectedAssetIndices: Record<number, boolean>,
+  /** Maps currently selected assetIds to a number that are in order of selection (but not contiguous) */
+  readonly selectedAssetIds: Record<string, number>,
   /** Assets are highlighted when something is selected and shift is pressed to preview
    * possible range selection. */
-  readonly selectionPreviewIndices: Record<number, boolean>,
+  readonly selectionPreviewIds: Record<string, boolean>,
   clearSelection: () => void;
-  setAssetSelected: (assetIndex: number, selected: boolean) => void;
+  setAssetSelected: (assetId: string, selected: boolean) => void;
   /** @param clickedAssetIndex asset clicked to perform range selection */
   setRangeSelected: (clickedAssetIndex: number, selected: boolean) => void;
   /** Asset is hoevered while shift is pressed, selection range should be highlighted */
@@ -134,8 +135,10 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
   const totalNumAssets: number = $derived(sections.reduce((acc, section: DisplaySection) => acc + section.section.numAssets, 0));
   const sectionStartIndices = $derived(computeSectionStartIndices(sections));
 
+  // TODO figure out a better way to store and access assets without iterating over sections and segments every time,
+  // just store assets in a map under their index when they are loaded
+
   async function getAssetAtIndex(assetIndex: number): Promise<AssetWithSpe | null> {
-    console.log("get asset index", assetIndex)
     if (assetIndex >= totalNumAssets) {
       return null;
     }
@@ -176,14 +179,22 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
     }
   }
 
-  const selectedAssetIndices: Record<number, boolean> = $state({});
-  const selectionPreviewIndices: Record<number, boolean> = $state({});
+  let numSelected = 0;
+  let nextSelectionIndex = 0;
+  const selectedAssetIds: Record<string, number> = $state({});
+  const selectionPreviewIds: Record<string, boolean> = $state({});
 
-  function setAssetSelected(index: number, selected: boolean) {
+  function setAssetSelected(assetId: string, selected: boolean) {
     if (selected) {
-      selectedAssetIndices[index] = true;
+      selectedAssetIds[assetId] = nextSelectionIndex;
+      numSelected += 1;
+      nextSelectionIndex += 1;
     } else {
-      delete selectedAssetIndices[index];
+      delete selectedAssetIds[assetId];
+      numSelected -= 1;
+      if (numSelected == 0) {
+        nextSelectionIndex = 0;
+      }
     }
   }
 
@@ -208,12 +219,12 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
     setRangeSelected,
     rangeSelectHover,
     clearSelection: () => {
-      for (const asset in selectedAssetIndices) {
-        delete selectedAssetIndices[asset];
+      for (const assetId in selectedAssetIds) {
+        delete selectedAssetIds[assetId];
       }
     },
-    get selectedAssetIndices() { return selectedAssetIndices },
-    get selectionPreviewIndices() { return selectionPreviewIndices },
+    get selectedAssetIds() { return selectedAssetIds },
+    get selectionPreviewIds() { return selectionPreviewIds },
   }
 }
 

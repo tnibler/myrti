@@ -12,7 +12,9 @@ diesel::table! {
     AlbumEntry (album_entry_id) {
         album_entry_id -> BigInt,
         album_id -> BigInt,
-        asset_id -> BigInt,
+        ty -> Integer,
+        asset_id -> Nullable<BigInt>,
+        text -> Nullable<Text>,
         idx -> Integer,
     }
 }

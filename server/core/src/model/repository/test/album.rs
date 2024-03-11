@@ -88,7 +88,7 @@ fn prop_create_retrieve_albums() {
                 use diesel::prelude::*;
                 use super::super::schema::AlbumEntry;
                 AlbumEntry::table
-                    .filter(AlbumEntry::album_id.eq(album.id.0))
+                    .filter(AlbumEntry::album_id.eq(album.id.0).and(AlbumEntry::ty.eq(1)))
                     .select(AlbumEntry::idx)
                     .order_by(AlbumEntry::idx)
                     .load(&mut conn).unwrap()

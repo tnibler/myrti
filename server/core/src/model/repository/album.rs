@@ -47,7 +47,7 @@ pub fn get_album(conn: &mut DbConn, album_id: AlbumId) -> Result<Album> {
     db_album.try_into()
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(err(Debug), skip(conn), level = "trace")]
 pub fn create_album(
     conn: &mut DbConn,
     create_album: CreateAlbum,
@@ -75,7 +75,9 @@ pub fn create_album(
                 let album_entry_id: i64 = diesel::insert_into(AlbumEntry::table)
                     .values((
                         AlbumEntry::album_id.eq(album_id.0),
-                        AlbumEntry::asset_id.eq(asset_id.0),
+                        AlbumEntry::ty.eq(1),
+                        AlbumEntry::asset_id.eq(Some(asset_id.0)),
+                        AlbumEntry::text.eq(Option::<String>::None),
                         AlbumEntry::idx.eq(i32::try_from(idx)?),
                     ))
                     .returning(AlbumEntry::album_entry_id)
@@ -94,7 +96,11 @@ pub fn create_album(
 pub fn get_assets_in_album(conn: &mut DbConn, album_id: AlbumId) -> Result<Vec<Asset>> {
     use schema::{AlbumEntry, Asset};
     let db_assets: Vec<DbAsset> = AlbumEntry::table
-        .filter(AlbumEntry::album_id.eq(album_id.0))
+        .filter(
+            AlbumEntry::album_id
+                .eq(album_id.0)
+                .and(AlbumEntry::ty.eq(1)),
+        )
         .inner_join(Asset::table)
         .order_by(AlbumEntry::idx)
         .select(DbAsset::as_select())
@@ -126,7 +132,9 @@ pub fn append_assets_to_album(
                 let album_entry_id: i64 = diesel::insert_into(AlbumEntry::table)
                     .values((
                         AlbumEntry::album_id.eq(album_id.0),
-                        AlbumEntry::asset_id.eq(asset_id.0),
+                        AlbumEntry::ty.eq(1),
+                        AlbumEntry::asset_id.eq(Some(asset_id.0)),
+                        AlbumEntry::text.eq(Option::<String>::None),
                         AlbumEntry::idx.eq(idx),
                     ))
                     .returning(AlbumEntry::album_entry_id)

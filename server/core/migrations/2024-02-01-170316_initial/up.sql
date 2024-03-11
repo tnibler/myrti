@@ -145,9 +145,17 @@ CREATE TABLE Album (
 CREATE TABLE AlbumEntry (
   album_entry_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   album_id INTEGER NOT NULL,
-  asset_id INTEGER NOT NULL,
+  -- 1 = asset, 2 = text
+  ty INTEGER NOT NULL,
+  asset_id INTEGER,
+  text TEXT,
   idx INTEGER NOT NULL,
   UNIQUE(album_id, idx),
+  CHECK(
+    (ty = 1 AND asset_id IS NOT NULL AND text IS NULL)
+    OR
+    (ty = 2 AND asset_id IS NULL AND text IS NOT NULL)
+  ),
   FOREIGN KEY (album_id) REFERENCES Album(album_id),
   FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 ) STRICT;

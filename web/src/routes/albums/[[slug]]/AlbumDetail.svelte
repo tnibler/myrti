@@ -2,6 +2,7 @@
 	import { api } from '$lib/apiclient';
 	import type { Asset } from '$lib/apitypes';
 	import type { TileBox } from '$lib/timeline-grid/GridSegment.svelte';
+	import GridTile from '$lib/ui/GridTile.svelte';
 	import createJustifiedLayout from 'justified-layout';
 	import { onMount } from 'svelte';
 
@@ -25,7 +26,6 @@
 		}
 		return computeLayout(assets, containerWidth, layoutOptions);
 	});
-	$inspect(containerWidth);
 
 	onMount(() => {
 		fetchAlbumDetails();
@@ -77,9 +77,12 @@
 		{#if gridLayout}
 			{#each gridLayout.tiles as tile, index (assets[index])}
 				{@const asset = assets[index]}
-				<img
-					style="position: absolute; width: {tile.width}px; height: {tile.height}px; top: {tile.top}px; left: {tile.left}px;"
-					src="/api/asset/thumbnail/{asset.id}/large/avif"
+				<GridTile
+					{asset}
+					box={tile}
+					onAssetClick={() => {}}
+					onSelectToggled={() => {}}
+					selectState={{ inSelectMode: false }}
 				/>
 			{/each}
 		{/if}

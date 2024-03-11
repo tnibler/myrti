@@ -91,94 +91,70 @@ async fn handle_message(
     actor: &mut ThumbnailActor,
     create_thumbnails: Vec<CreateThumbnail>,
 ) -> Result<()> {
-    fn resolve(op: &CreateThumbnail) -> CreateThumbnailWithPaths {
-        let mut thumbnails_to_create: Vec<ThumbnailToCreateWithPaths> = Vec::default();
-        for thumb in &op.thumbnails {
-            let avif_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Avif);
-            let webp_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Webp);
-            let thumbnail_to_create = ThumbnailToCreateWithPaths {
-                ty: thumb.ty,
-                webp_key,
-                avif_key,
-            };
-            thumbnails_to_create.push(thumbnail_to_create);
-        }
-        CreateThumbnailWithPaths {
-            asset_id: op.asset_id,
-            thumbnails: thumbnails_to_create,
+    for op in create_thumbnails {
+        handle_thumbnail_op(actor, op).await?;
+    }
+    Ok(())
+}
+
+fn resolve(op: &CreateThumbnail) -> CreateThumbnailWithPaths {
+    let mut thumbnails_to_create: Vec<ThumbnailToCreateWithPaths> = Vec::default();
+    for thumb in &op.thumbnails {
+        let avif_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Avif);
+        let webp_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Webp);
+        let thumbnail_to_create = ThumbnailToCreateWithPaths {
+            ty: thumb.ty,
+            webp_key,
+            avif_key,
+        };
+        thumbnails_to_create.push(thumbnail_to_create);
+    }
+    CreateThumbnailWithPaths {
+        asset_id: op.asset_id,
+        thumbnails: thumbnails_to_create,
+    }
+}
+
+#[tracing::instrument(skip(actor), level = "debug")]
+async fn handle_thumbnail_op(actor: &mut ThumbnailActor, op: CreateThumbnail) -> Result<()> {
+    let conn = actor.db_pool.get().await?;
+    let asset_id = op.asset_id;
+    let past_failed_job = interact!(conn, move |mut conn| {
+        repository::failed_job::get_failed_thumbnail_job_for_asset(&mut conn, asset_id)
+    })
+    .await??;
+    if let Some(past_failed_job) = past_failed_job {
+        let asset_path = interact!(conn, move |mut conn| {
+            repository::asset::get_asset_path_on_disk(&mut conn, asset_id)
+        })
+        .await??
+        .path_on_disk();
+        let file = tokio::fs::File::open(&asset_path)
+            .await?
+            .try_into_std()
+            .expect("no operation has touched this file");
+        let current_hash = hash_file(file).await?;
+        if current_hash == past_failed_job.file_hash {
+            tracing::debug!(
+                asset_id = ?asset_id,
+                "skipping thumbnail that failed in the past"
+            );
         }
     }
+    drop(conn); // don't hold connection over long operations that don't need it
 
-    for op in create_thumbnails {
-        let conn = actor.db_pool.get().await?;
-        let asset_id = op.asset_id;
-        let past_failed_job = interact!(conn, move |mut conn| {
-            repository::failed_job::get_failed_thumbnail_job_for_asset(&mut conn, asset_id)
-        })
-        .await??;
-        if let Some(past_failed_job) = past_failed_job {
-            let asset_path = interact!(conn, move |mut conn| {
-                repository::asset::get_asset_path_on_disk(&mut conn, asset_id)
-            })
-            .await??
-            .path_on_disk();
-            let file = tokio::fs::File::open(&asset_path)
-                .await?
-                .try_into_std()
-                .expect("no operation has touched this file");
-            let current_hash = hash_file(file).await?;
-            if current_hash == past_failed_job.file_hash {
-                tracing::debug!(
-                    asset_id = ?asset_id,
-                    "skipping thumbnail that failed in the past"
-                );
-                continue;
-            }
-        }
-        drop(conn); // don't hold connection over long operations that don't need it
-
-        let op_resolved = resolve(&op);
-        let side_effect_results = match perform_side_effects_create_thumbnail(
-            &actor.storage,
-            actor.db_pool.clone(),
-            op_resolved.clone(),
-        )
-        .await
-        {
-            Err(report) => {
-                // same as above
-                // if things fail here it's not the asset's fault, so don't remember the fail
-                // in the database
-                let _ = actor
-                    .send_result
-                    .send(ThumbnailResult::ThumbnailError {
-                        thumbnail: op.clone(),
-                        report,
-                    })
-                    .await;
-                continue;
-            }
-            Ok(r) => r,
-        };
-        // if one thumbnail of op fails we discard the whole thing for now
-        let mut conn = actor.db_pool.get().await?;
-        if !side_effect_results.failed.is_empty() {
-            for (_thumbnail, report) in side_effect_results.failed {
-                let _ = actor
-                    .send_result
-                    .send(ThumbnailResult::ThumbnailError {
-                        thumbnail: op.clone(),
-                        report,
-                    })
-                    .await;
-            }
-            let saved_failed_thumbnail_res = save_failed_thumbnail(&mut conn, asset_id).await;
-            if let Err(err) = saved_failed_thumbnail_res {
-                tracing::warn!(%err, "failed inserting FailedThumbnailJob");
-            }
-        }
-        let apply_result = apply_create_thumbnail(&mut conn, op_resolved).await;
-        if let Err(report) = apply_result {
+    let op_resolved = resolve(&op);
+    let side_effect_results = match perform_side_effects_create_thumbnail(
+        &actor.storage,
+        actor.db_pool.clone(),
+        op_resolved.clone(),
+    )
+    .await
+    {
+        Err(report) => {
+            // same as above
+            // if things fail here it's not the asset's fault, so don't remember the fail
+            // in the database
             let _ = actor
                 .send_result
                 .send(ThumbnailResult::ThumbnailError {
@@ -186,8 +162,36 @@ async fn handle_message(
                     report,
                 })
                 .await;
-            continue;
+            return Ok(());
         }
+        Ok(r) => r,
+    };
+    // if one thumbnail of op fails we discard the whole thing for now
+    let mut conn = actor.db_pool.get().await?;
+    if !side_effect_results.failed.is_empty() {
+        for (_thumbnail, report) in side_effect_results.failed {
+            let _ = actor
+                .send_result
+                .send(ThumbnailResult::ThumbnailError {
+                    thumbnail: op.clone(),
+                    report,
+                })
+                .await;
+        }
+        let saved_failed_thumbnail_res = save_failed_thumbnail(&mut conn, asset_id).await;
+        if let Err(err) = saved_failed_thumbnail_res {
+            tracing::warn!(%err, "failed inserting FailedThumbnailJob");
+        }
+    }
+    let apply_result = apply_create_thumbnail(&mut conn, op_resolved).await;
+    if let Err(report) = apply_result {
+        let _ = actor
+            .send_result
+            .send(ThumbnailResult::ThumbnailError {
+                thumbnail: op.clone(),
+                report,
+            })
+            .await;
     }
     Ok(())
 }

@@ -139,8 +139,10 @@ async fn index_asset_root(
     bin_paths: Option<&config::BinPaths>,
     asset_root: AssetRootDir,
 ) {
+    tracing::info!(path=%asset_root.path, "Start indexing");
     // TODO WalkDir is synchronous
     // FIXME if a datadir is subdir of assetroot it should obviously not be indexed
+    let mut new_asset_count = 0;
     for entry in WalkDir::new(asset_root.path.as_path()).follow_links(true) {
         match entry {
             Ok(e) => {
@@ -152,7 +154,10 @@ async fn index_asset_root(
                             Ok(None) => {
                                 continue;
                             }
-                            Ok(Some(asset_id)) => IndexingResult::NewAsset(asset_id),
+                            Ok(Some(asset_id)) => {
+                                new_asset_count += 1;
+                                IndexingResult::NewAsset(asset_id)
+                            }
                             Err(report) => IndexingResult::IndexingError {
                                 root_dir_id: asset_root.id,
                                 path: Some(path.to_owned()),
@@ -178,4 +183,5 @@ async fn index_asset_root(
             }
         }
     }
+    tracing::info!(path=%asset_root.path, new_assets=new_asset_count, "Finished indexing");
 }

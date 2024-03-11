@@ -27,7 +27,7 @@ use tower_http::{
 };
 use tracing::{info, instrument, Instrument};
 use tracing_error::ErrorLayer;
-use tracing_forest::ForestLayer;
+use tracing_forest::{ForestLayer, Processor};
 use tracing_subscriber::{prelude::*, EnvFilter};
 
 use core::{
@@ -99,12 +99,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
         .with(ErrorLayer::default())
-        .with(ForestLayer::default())
-        // .with(
-        //     tracing_subscriber::fmt::layer()
-        //         // .with_span_events(FmtSpan::NEW)
-        //         .with_writer(std::io::stderr),
-        // )
+        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
         .init();
 
     info!("Starting up...");

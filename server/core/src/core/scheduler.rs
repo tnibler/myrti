@@ -134,6 +134,35 @@ async fn on_startup(
         .get()
         .await
         .expect("TODO how do we handle errors in scheduler");
+
+    let video_packaging_required = rules::video_packaging_due(&mut conn).await.expect("TODO");
+    let video_packaging_count = video_packaging_required.len();
+    let image_conversion_required = rules::image_conversion_due(&mut conn).await.expect("TODO");
+    let image_conversion_count = image_conversion_required.len();
+    let thumbnails_required = rules::thumbnails_to_create(&mut conn).await.expect("TODO");
+    let thumbnail_count = thumbnails_required.len();
+    tracing::info!(
+        image_conversion = image_conversion_count,
+        video_packaging = video_packaging_count,
+        thumbnail = thumbnail_count,
+        "Collected required jobs"
+    );
+    for vid_pack in video_packaging_required {
+        let _ = video_packaging_send
+            .send(VideoPackagingMessage::PackageVideo(vid_pack))
+            .await;
+    }
+    for img_convert in image_conversion_required {
+        let _ = image_conversion_send
+            .send(ImageConversionMessage::ConvertImage(img_convert))
+            .await;
+    }
+    if !thumbnails_required.is_empty() {
+        let _ = thumbnail_send
+            .send(ThumbnailMessage::CreateThumbnails(thumbnails_required))
+            .await;
+    }
+
     let asset_roots = interact!(conn, move |mut conn| {
         repository::asset_root_dir::get_asset_roots(&mut conn)
     })
@@ -145,25 +174,6 @@ async fn on_startup(
             .send(IndexingMessage::IndexAssetRootDir {
                 root_dir_id: asset_root.id,
             })
-            .await;
-    }
-
-    let video_packaging_required = rules::video_packaging_due(&mut conn).await.expect("TODO");
-    for vid_pack in video_packaging_required {
-        let _ = video_packaging_send
-            .send(VideoPackagingMessage::PackageVideo(vid_pack))
-            .await;
-    }
-    let image_conversion_required = rules::image_conversion_due(&mut conn).await.expect("TODO");
-    for img_convert in image_conversion_required {
-        let _ = image_conversion_send
-            .send(ImageConversionMessage::ConvertImage(img_convert))
-            .await;
-    }
-    let thumbnails_required = rules::thumbnails_to_create(&mut conn).await.expect("TODO");
-    if !thumbnails_required.is_empty() {
-        let _ = thumbnail_send
-            .send(ThumbnailMessage::CreateThumbnails(thumbnails_required))
             .await;
     }
 }

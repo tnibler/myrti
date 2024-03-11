@@ -107,7 +107,7 @@ impl StorageCommandOutput for LocalOutputFile {
         Ok(file_meta.len())
     }
 
-    #[instrument(skip(self), level = "trace")]
+    #[instrument(err, skip(self), level = "trace")]
     async fn flush_to_storage(mut self) -> Result<()> {
         self.debug_only_flushed_to_storage = true;
         Ok(())
@@ -125,7 +125,7 @@ impl Drop for LocalOutputFile {
 
 #[async_trait]
 impl StorageProvider for LocalFileStorage {
-    #[instrument(skip(self), level = "trace")]
+    #[instrument(err, skip(self), level = "trace")]
     async fn open_read_stream(
         &self,
         key: &str,
@@ -145,7 +145,7 @@ impl StorageProvider for LocalFileStorage {
         }
     }
 
-    #[instrument(skip(self), level = "trace")]
+    #[instrument(err, skip(self), level = "trace")]
     async fn open_write_stream(&self, key: &str) -> Result<Box<dyn AsyncWrite + Send + Unpin>> {
         Ok(Box::new(
             tokio::fs::OpenOptions::new()
@@ -158,14 +158,14 @@ impl StorageProvider for LocalFileStorage {
         ))
     }
 
-    #[instrument(skip(self), level = "trace")]
+    #[instrument(err, skip(self), level = "trace")]
     async fn exists(&self, key: &str) -> Result<bool> {
         tokio::fs::try_exists(self.root.join(key))
             .await
             .wrap_err("error checking if path exists")
     }
 
-    #[instrument(skip(self), level = "trace")]
+    #[instrument(err, skip(self), level = "trace")]
     async fn new_command_out_file(&self, key: &str) -> Result<CommandOutputFile> {
         let path = self.root.join(key);
         if let Some(parent) = &path.parent() {

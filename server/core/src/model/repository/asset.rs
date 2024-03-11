@@ -351,7 +351,6 @@ pub fn get_video_assets_with_no_acceptable_repr(conn: &mut DbConn) -> Result<Vec
         "#,
         ));
     let db_assets: Vec<DbAsset> = query.load(conn)?;
-    tracing::debug!(?db_assets);
     db_assets
         .into_iter()
         .map(|db_asset| model::Asset::try_from(db_asset)?.try_into())

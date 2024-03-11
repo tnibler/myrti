@@ -18,7 +18,7 @@ use super::{
 };
 
 /// Returns Some(AssetId) if a new, non duplicate asset was indexed and added to the database
-#[instrument(skip(pool, bin_paths), level = "debug")]
+#[instrument(skip(pool, asset_root, bin_paths), level = "debug")]
 pub async fn index_file(
     path: &Path,
     asset_root: &AssetRootDir,
@@ -56,7 +56,7 @@ pub async fn index_file(
     let file_type = match &metadata.file.file_type {
         Some(ft) => ft.to_ascii_lowercase(),
         None => {
-            debug!(%path, "No file type in exiftool output, ignoring");
+            debug!(%path, "Ignoring file: No file type in exiftool output");
             return Ok(None);
         }
     };

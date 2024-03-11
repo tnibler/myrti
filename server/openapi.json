@@ -91,6 +91,36 @@
         }
       }
     },
+    "/api/albums/{id}": {
+      "get": {
+        "tags": [
+          "crate::routes::album"
+        ],
+        "operationId": "getAlbumDetails",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlbumDetailsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/asset": {
       "get": {
         "tags": [
@@ -421,6 +451,28 @@
           "numAssets": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "AlbumDetailsResponse": {
+        "type": "object",
+        "required": [
+          "assets"
+        ],
+        "properties": {
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Asset"
+            }
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

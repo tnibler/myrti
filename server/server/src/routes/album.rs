@@ -1,28 +1,29 @@
 use axum::{
-    extract::State,
+    extract::{Path, State},
     routing::{get, post},
     Json, Router,
 };
-use eyre::{eyre, Result};
+use eyre::{eyre, Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::Instrument;
 use utoipa::{IntoParams, ToSchema};
 
 use core::{
     deadpool_diesel, interact,
-    model::{self, repository},
+    model::{self, repository, AlbumId},
 };
 
 use crate::{
-    app_state::SharedState,
+    app_state::{self, SharedState},
     http_error::ApiResult,
-    schema::{Album, AssetId},
+    schema::{asset::Asset, Album, AssetId},
 };
 
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/", get(get_all_albums))
         .route("/", post(create_album))
+        .route("/:id", get(get_album_details))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, ToSchema, IntoParams)]
@@ -50,7 +51,6 @@ pub async fn get_all_albums(State(app_state): State<SharedState>) -> ApiResult<J
     let albums: Vec<Album> = interact!(conn, move |mut conn| {
         repository::album::get_all_albums_with_asset_count(&mut conn)
     })
-    .in_current_span()
     .await??
     .into_iter()
     .map(|(album, num_assets)| Album::from_model(&album, num_assets))
@@ -81,13 +81,49 @@ pub async fn create_album(
         .into_iter()
         .map(|id| id.try_into())
         .collect::<Result<Vec<_>>>()?;
-    let conn = app_state.pool.get().in_current_span().await?;
+    let conn = app_state.pool.get().await?;
     let album_id = interact!(conn, move |mut conn| {
         repository::album::create_album(&mut conn, create_album, &asset_ids)
     })
-    .in_current_span()
     .await??;
     Ok(Json(CreateAlbumResponse {
         album_id: album_id.0,
+    }))
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AlbumDetailsResponse {
+    pub assets: Vec<Asset>,
+    pub name: Option<String>,
+    pub description: Option<String>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/albums/{id}",
+    responses((status = 200, body=AlbumDetailsResponse))
+)]
+pub async fn get_album_details(
+    Path(album_id): Path<String>,
+    State(app_state): State<SharedState>,
+) -> ApiResult<Json<AlbumDetailsResponse>> {
+    let album_id = album_id
+        .parse()
+        .wrap_err("Invalid albumId")
+        .map(|id| AlbumId(id))?;
+    let conn = app_state.pool.get().await?;
+    let assets = interact!(conn, move |mut conn| {
+        repository::album::get_assets_in_album(&mut conn, album_id)
+    })
+    .await??;
+    let album = interact!(conn, move |mut conn| {
+        repository::album::get_album(&mut conn, album_id)
+    })
+    .await??;
+    Ok(Json(AlbumDetailsResponse {
+        name: album.name,
+        description: album.description,
+        assets: assets.into_iter().map(|a| a.into()).collect(),
     }))
 }

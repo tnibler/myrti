@@ -50,6 +50,9 @@ const Asset = z
 		width: z.number().int()
 	})
 	.passthrough();
+const AlbumDetailsResponse = z
+	.object({ assets: z.array(Asset), description: z.string().nullish(), name: z.string().nullish() })
+	.passthrough();
 const TimelineGroupType = z.discriminatedUnion('type', [
 	z.object({ date: z.string(), type: z.literal('day') }).passthrough(),
 	z
@@ -120,6 +123,7 @@ export const schemas = {
 	AssetMetadata,
 	AssetType,
 	Asset,
+	AlbumDetailsResponse,
 	TimelineGroupType,
 	ImageRepresentation,
 	Image,
@@ -174,6 +178,20 @@ const endpoints = makeApi([
 			}
 		],
 		response: z.object({ albumId: z.number().int() }).passthrough()
+	},
+	{
+		method: 'get',
+		path: '/api/albums/:id',
+		alias: 'getAlbumDetails',
+		requestFormat: 'json',
+		parameters: [
+			{
+				name: 'id',
+				type: 'Path',
+				schema: z.string()
+			}
+		],
+		response: AlbumDetailsResponse
 	},
 	{
 		method: 'get',

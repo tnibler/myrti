@@ -53,6 +53,8 @@ const Asset = z
 const AlbumDetailsResponse = z
 	.object({ assets: z.array(Asset), description: z.string().nullish(), name: z.string().nullish() })
 	.passthrough();
+const AppendAssetsRequest = z.object({ assetIds: z.array(AssetId) }).passthrough();
+const AppendAssetsResponse = z.object({ success: z.boolean() }).passthrough();
 const TimelineGroupType = z.discriminatedUnion('type', [
 	z.object({ date: z.string(), type: z.literal('day') }).passthrough(),
 	z
@@ -124,6 +126,8 @@ export const schemas = {
 	AssetType,
 	Asset,
 	AlbumDetailsResponse,
+	AppendAssetsRequest,
+	AppendAssetsResponse,
 	TimelineGroupType,
 	ImageRepresentation,
 	Image,
@@ -160,21 +164,6 @@ const endpoints = makeApi([
 				name: 'body',
 				type: 'Body',
 				schema: CreateAlbumRequest
-			},
-			{
-				name: 'name',
-				type: 'Path',
-				schema: z.string()
-			},
-			{
-				name: 'description',
-				type: 'Path',
-				schema: z.string().nullable()
-			},
-			{
-				name: 'assets',
-				type: 'Path',
-				schema: z.array(AssetId)
 			}
 		],
 		response: z.object({ albumId: z.number().int() }).passthrough()
@@ -192,6 +181,25 @@ const endpoints = makeApi([
 			}
 		],
 		response: AlbumDetailsResponse
+	},
+	{
+		method: 'put',
+		path: '/api/albums/:id/assets',
+		alias: 'appendAssetsToAlbum',
+		requestFormat: 'json',
+		parameters: [
+			{
+				name: 'body',
+				type: 'Body',
+				schema: AppendAssetsRequest
+			},
+			{
+				name: 'id',
+				type: 'Path',
+				schema: z.string()
+			}
+		],
+		response: z.object({ success: z.boolean() }).passthrough()
 	},
 	{
 		method: 'get',

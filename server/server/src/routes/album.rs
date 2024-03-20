@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    routing::{get, post},
+    routing::{get, post, put},
     Json, Router,
 };
 use eyre::{eyre, Context, Result};
@@ -23,6 +23,7 @@ pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/", get(get_all_albums))
         .route("/", post(create_album))
+        .route("/:id/assets", put(append_assets_to_album))
         .route("/:id", get(get_album_details))
 }
 
@@ -61,7 +62,7 @@ pub async fn get_all_albums(State(app_state): State<SharedState>) -> ApiResult<J
 #[utoipa::path(
     post,
     path = "/api/albums",
-    params(CreateAlbumRequest),
+    request_body = CreateAlbumRequest,
     responses((status = 200, body=CreateAlbumResponse)),
 )]
 #[tracing::instrument(skip(app_state))]
@@ -104,6 +105,7 @@ pub struct AlbumDetailsResponse {
     path = "/api/albums/{id}",
     responses((status = 200, body=AlbumDetailsResponse))
 )]
+#[tracing::instrument(err, skip(app_state))]
 pub async fn get_album_details(
     Path(album_id): Path<String>,
     State(app_state): State<SharedState>,
@@ -126,4 +128,57 @@ pub async fn get_album_details(
         description: album.description,
         assets: assets.into_iter().map(|a| a.into()).collect(),
     }))
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AppendAssetsResponse {
+    pub success: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema, IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub struct AppendAssetsRequest {
+    pub asset_ids: Vec<AssetId>,
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/albums/{id}/assets",
+    request_body = AppendAssetsRequest,
+    responses((status = 200, body=AppendAssetsResponse))
+)]
+pub async fn append_assets_to_album(
+    Path(album_id): Path<String>,
+    State(app_state): State<SharedState>,
+    Json(req): Json<AppendAssetsRequest>,
+) -> ApiResult<Json<AppendAssetsResponse>> {
+    let album_id = album_id
+        .parse()
+        .wrap_err("Invalid albumId")
+        .map(|id| AlbumId(id))?;
+    let asset_ids: Vec<_> = req
+        .asset_ids
+        .into_iter()
+        .map(|id| {
+            id.0.parse::<i64>()
+                .wrap_err("invalid assetId")
+                .map(|id| model::AssetId(id))
+        })
+        .collect::<Result<_>>()?;
+    if asset_ids.is_empty() {
+        return Ok(Json(AppendAssetsResponse { success: true }));
+    }
+    let conn = app_state.pool.get().await?;
+    let append_result = interact!(conn, move |mut conn| {
+        repository::album::append_assets_to_album(&mut conn, album_id, &asset_ids)
+    })
+    .await?
+    .wrap_err("Error appending assets to album");
+    if let Err(err) = append_result {
+        tracing::warn!(?err);
+        Err(err.into())
+    } else {
+        Ok(Json(AppendAssetsResponse { success: true }))
+    }
 }

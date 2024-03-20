@@ -36,38 +36,7 @@
           "crate::routes::album"
         ],
         "operationId": "createAlbum",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "description",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "assets",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "array",
-              "items": {
-                "$ref": "#/components/schemas/AssetId"
-              }
-            }
-          }
-        ],
         "requestBody": {
-          "description": "",
           "content": {
             "application/json": {
               "schema": {
@@ -114,6 +83,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AlbumDetailsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/albums/{id}/assets": {
+      "put": {
+        "tags": [
+          "crate::routes::album"
+        ],
+        "operationId": "appendAssetsToAlbum",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppendAssetsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppendAssetsResponse"
                 }
               }
             }
@@ -478,6 +487,31 @@
       },
       "AlbumId": {
         "type": "string"
+      },
+      "AppendAssetsRequest": {
+        "type": "object",
+        "required": [
+          "assetIds"
+        ],
+        "properties": {
+          "assetIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetId"
+            }
+          }
+        }
+      },
+      "AppendAssetsResponse": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        }
       },
       "Asset": {
         "type": "object",

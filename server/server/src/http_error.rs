@@ -2,6 +2,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use eyre;
 
+#[derive(Debug)]
 pub struct HttpError(eyre::Error);
 
 // Tell axum how to convert `AppError` into a response.
@@ -29,3 +30,9 @@ impl_from!(std::io::Error);
 impl_from!(color_eyre::Report);
 
 pub type ApiResult<T> = Result<T, HttpError>;
+
+impl std::fmt::Display for HttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}

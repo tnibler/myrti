@@ -55,7 +55,7 @@
 <AddToAlbumDialog bind:this={addToAlbumDialog} onSubmit={onCreateAlbumSubmit} />
 
 {#snippet content()}
-	<TimelineGrid {timeline} bind:bodyWrapper={timelineScrollWrapper} />
+	<TimelineGrid {timeline} bind:scrollWrapper={timelineScrollWrapper} />
 {/snippet}
 
 {#snippet timelineSelectAppBar()}

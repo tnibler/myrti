@@ -2,9 +2,9 @@
 	import { onMount } from 'svelte';
 	import Pager, { type PagerProps } from './Pager.svelte';
 
-	type GalleryProps = PagerProps & { bodyWrapper: HTMLElement };
+	type GalleryProps = PagerProps & { scrollWrapper: HTMLElement };
 
-	let { numSlides, getSlide, getThumbnailBounds, bodyWrapper } = $props<GalleryProps>();
+	let { numSlides, getSlide, getThumbnailBounds, scrollWrapper } = $props<GalleryProps>();
 	let isOpen: boolean = $state(false);
 	let slideIndex = $state(0);
 	let pager: Pager;
@@ -17,23 +17,23 @@
 
 	export function open(index: number) {
 		requestAnimationFrame(() => {
-			pagerY = bodyWrapper.scrollTop;
-			bodyWrapper.classList.add('modalOpen');
+			pagerY = scrollWrapper.scrollTop;
+			scrollWrapper.classList.add('modalOpen');
 			topOffset = 0;
-			bodyWrapper.scrollTo(0, pagerY);
+			scrollWrapper.scrollTo(0, pagerY);
 		});
 		slideIndex = index;
-		topOffset = bodyWrapper.scrollTop;
+		topOffset = scrollWrapper.scrollTop;
 		isOpen = true;
 	}
 
 	export function close() {
 		pager.close().then(() => {
 			isOpen = false;
-			bodyWrapper.classList.remove('modalOpen');
-			bodyWrapper.style.height = '100%';
+			scrollWrapper.classList.remove('modalOpen');
+			scrollWrapper.style.height = '100%';
 			requestAnimationFrame(() => {
-				bodyWrapper.scrollTo(0, pagerY);
+				scrollWrapper.scrollTo(0, pagerY);
 			});
 		});
 	}

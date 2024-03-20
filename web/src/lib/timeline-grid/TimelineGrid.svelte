@@ -8,7 +8,7 @@
 
 	type TimelineGridProps = {
 		timeline: TimelineGridStore;
-		bodyWrapper: HTMLElement;
+		scrollWrapper: HTMLElement;
 	};
 
 	let windowScrollY: number = $state(0);
@@ -16,7 +16,7 @@
 	let gallery: Gallery;
 	let gridSections: GridSection[] = $state([]);
 
-	let { timeline, bodyWrapper } = $props<TimelineGridProps>();
+	let { timeline, scrollWrapper: scrollWrapper } = $props<TimelineGridProps>();
 	const inSelectionMode = $derived(Object.keys(timeline.selectedAssetIds).length > 0);
 
 	let sectionsIntersecting: boolean[] = $state([]);
@@ -112,7 +112,7 @@
 
 <svelte:window bind:scrollY={windowScrollY} />
 
-<div class="body-wrapper" bind:this={bodyWrapper}>
+<div class="scroll-wrapper" bind:this={scrollWrapper}>
 	<section id="grid" bind:clientWidth={viewport.width} bind:clientHeight={viewport.height}>
 		{#each timeline.sections as section, idx}
 			<GridSection
@@ -134,7 +134,7 @@
 	numSlides={timeline.totalNumAssets}
 	{getSlide}
 	{getThumbnailBounds}
-	{bodyWrapper}
+	{scrollWrapper}
 />
 
 <style>
@@ -142,7 +142,7 @@
 		position: relative;
 	}
 
-	.body-wrapper {
+	.scroll-wrapper {
 		padding: 0px;
 		height: 100%;
 		width: 100%;

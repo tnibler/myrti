@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "mediathingyrust",
+    "title": "myrti",
     "description": "",
     "license": {
       "name": ""
@@ -999,7 +999,7 @@
   },
   "tags": [
     {
-      "name": "mediathingy"
+      "name": "myrti"
     }
   ]
 }

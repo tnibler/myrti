@@ -5,7 +5,7 @@ use utoipa_discover::utoipa_discover;
     search_paths = [
         crate => "./server/src",
     ],
-    tags((name = "mediathingy"))
+    tags((name = "myrti"))
 )]
 #[derive(OpenApi)]
 pub struct ApiDoc;

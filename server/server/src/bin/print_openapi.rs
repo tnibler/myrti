@@ -1,6 +1,6 @@
 use utoipa::OpenApi;
 
-use mediathingyrust::openapi;
+use myrti::openapi;
 
 fn to_camel_case(s: &str) -> String {
     let mut cs = String::new();

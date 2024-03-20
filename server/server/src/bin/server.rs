@@ -9,7 +9,7 @@ use axum::{
 };
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{self, Context, Result};
-use mediathingyrust::{
+use myrti::{
     app_state::{AppState, SharedState},
     http_error::HttpError,
     routes,

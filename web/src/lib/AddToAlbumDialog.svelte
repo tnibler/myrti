@@ -1,15 +1,28 @@
 <script lang="ts">
 	import { mdiPlus } from '@mdi/js';
 	import Button from './ui/Button.svelte';
+	import { onMount } from 'svelte';
+	import { api } from './apiclient';
+
+	type Submit =
+		| {
+				action: 'createNew';
+				albumName: string;
+		  }
+		| {
+				action: 'addTo';
+				albumId: string;
+		  };
 
 	type Props = {
-		onSubmit: (formData: { albumName: string }) => Promise<void>;
+		onSubmit: (formData: Submit) => Promise<void>;
 	};
 	let { onSubmit } = $props<Props>();
 
 	let dialog: HTMLDialogElement | null = $state(null);
 	let albumNameInput: HTMLInputElement | null = $state(null);
 
+	let albums: Album[] = $state([]);
 	let showCreateAlbumForm = $state(false);
 	let createButtonVisible = $state(true);
 
@@ -23,13 +36,23 @@
 		dialog?.close();
 	}
 
+	onMount(() => {
+		api.getAllAlbums().then((result) => {
+			albums = result;
+		});
+	});
+
 	async function onCreateClicked() {
 		createButtonVisible = false;
 		const albumName = albumNameInput?.value;
 		if (albumName === null || albumName === undefined || albumName.trim() === '') {
 			return;
 		}
-		await onSubmit({ albumName });
+		await onSubmit({ action: 'createNew', albumName });
+	}
+
+	async function onAlbumClicked(albumId: string) {
+		await onSubmit({ action: 'addTo', albumId });
 	}
 
 	function onNewAlbumClicked() {
@@ -70,6 +93,15 @@
 						New Album
 					</div>
 				</button>
+				{#each albums as album (album.id)}
+					<button class="py-4 px-6 hover:bg-gray-200" onclick={() => onAlbumClicked(album.id)}>
+						<div class="flex flex-row items-center justify-start gap-6">
+							<!-- svelte-ignore a11y-missing-attribute -->
+							<img class="w-16 aspect-square rounded-sm bg-gray-400" />
+							{album.name}
+						</div>
+					</button>
+				{/each}
 			</div>
 		{/if}
 	</div>

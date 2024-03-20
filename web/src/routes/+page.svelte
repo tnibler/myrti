@@ -25,15 +25,19 @@
 		addToAlbumDialog?.open();
 	}
 
-	async function onCreateAlbumSubmit({ albumName }: { albumName: string }) {
-		// TODO this is terrible but the whole selection thing is going to change dw
+	async function onCreateAlbumSubmit(
+		submitted: { action: 'createNew'; albumName: string } | { action: 'addTo'; albumId: string }
+	) {
 		const assetIds = Object.keys(timeline.selectedAssetIds);
-		const response = await api.createAlbum({
-			assets: assetIds,
-			name: albumName,
-			description: null
-		});
-		console.log(`albumId: ${response.albumId}`);
+		if (submitted.action === 'createNew') {
+			await api.createAlbum({
+				assets: assetIds,
+				name: submitted.albumName,
+				description: null
+			});
+		} else if (submitted.action === 'addTo') {
+			await api.appendAssetsToAlbum({ assetIds }, { params: { id: submitted.albumId } });
+		}
 		addToAlbumDialog?.close();
 		timeline.clearSelection();
 	}

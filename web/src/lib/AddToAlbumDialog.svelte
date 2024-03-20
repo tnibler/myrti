@@ -61,7 +61,7 @@
 </script>
 
 <dialog bind:this={dialog} class="w-1/3 h-1/2 bg-transparent backdrop:bg-black/50">
-	<div class="w-full h-full flex flex-col rounded-xl bg-white">
+	<div class="w-full h-full flex flex-col rounded-xl bg-white overflow-hidden">
 		<div
 			class="flex flex-row justify-between items-baseline px-5 py-5 border-solid border-gray-200 border-b"
 		>
@@ -84,12 +84,14 @@
 				</div>
 			</form>
 		{:else}
-			<div class="flex-1 py-6 flex flex-col">
+			<div class="flex-1 py-6 flex flex-col overflow-y-scroll">
 				<button class="py-4 px-6 hover:bg-gray-200" onclick={() => onNewAlbumClicked()}>
 					<div class="flex flex-row items-center justify-start gap-6">
-						<svg width="24" height="24" viewBox="0 0 24 24">
-							<path d={mdiPlus} fill="#000" />
-						</svg>
+						<div class="w-16 aspect-square flex justify-around items-center">
+							<svg width="24" height="24" viewBox="0 0 24 24">
+								<path d={mdiPlus} fill="#000" />
+							</svg>
+						</div>
 						New Album
 					</div>
 				</button>

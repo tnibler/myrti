@@ -16,8 +16,11 @@
 		boxSpacing: 4
 	};
 
-	const timeline: TimelineGridStore = $state(createTimeline(layoutConfig, api));
+	const timeline: TimelineGridStore = $state(
+		createTimeline(layoutConfig, onAjustTimelineScrollY, api)
+	);
 	const inSelectionMode = $derived(Object.keys(timeline.selectedAssetIds).length > 0);
+	let timelineScrollWrapper: HTMLElement | null = $state(null);
 
 	let addToAlbumDialog: AddToAlbumDialog | null = $state(null);
 
@@ -41,12 +44,18 @@
 		addToAlbumDialog?.close();
 		timeline.clearSelection();
 	}
+
+	function onAjustTimelineScrollY(delta: number, minApplicableTop: number) {
+		if (timelineScrollWrapper && timelineScrollWrapper.scrollTop > minApplicableTop) {
+			timelineScrollWrapper?.scrollBy(0, delta);
+		}
+	}
 </script>
 
 <AddToAlbumDialog bind:this={addToAlbumDialog} onSubmit={onCreateAlbumSubmit} />
 
 {#snippet content()}
-	<TimelineGrid {timeline} />
+	<TimelineGrid {timeline} bind:bodyWrapper={timelineScrollWrapper} />
 {/snippet}
 
 {#snippet timelineSelectAppBar()}

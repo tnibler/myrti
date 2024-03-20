@@ -8,15 +8,15 @@
 
 	type TimelineGridProps = {
 		timeline: TimelineGridStore;
+		bodyWrapper: HTMLElement;
 	};
 
 	let windowScrollY: number = $state(0);
 	let viewport = $state({ width: 0, height: 0 });
 	let gallery: Gallery;
-	let bodyWrapper: HTMLDivElement;
 	let gridSections: GridSection[] = $state([]);
 
-	let { timeline } = $props<TimelineGridProps>();
+	let { timeline, bodyWrapper } = $props<TimelineGridProps>();
 	const inSelectionMode = $derived(Object.keys(timeline.selectedAssetIds).length > 0);
 
 	let sectionsIntersecting: boolean[] = $state([]);

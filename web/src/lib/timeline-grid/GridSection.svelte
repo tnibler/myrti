@@ -49,12 +49,7 @@
 
 	$effect(() => {
 		if (sectionHeight != 0 && sectionHeight != section.height) {
-			const delta = timeline.setRealSectionHeight(sectionIndex, sectionHeight);
-			// TODO scroll more sveltily or smth
-			if (window.scrollY > section.top) {
-				console.log('scroll delta', delta, 'section', sectionIndex);
-				window.scrollBy(0, delta);
-			}
+			timeline.setRealSectionHeight(sectionIndex, sectionHeight);
 		}
 	});
 

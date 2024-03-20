@@ -22,6 +22,10 @@ type LayoutConfig = {
 export interface TimelineGridStore {
   initialize: (viewport: Viewport) => Promise<void>,
   loadSection: (sectionIndex: number) => void,
+  /**
+   * Initial section heights are estimated and only accurately computed when the assets inside are actually loaded
+   * and laid out. When that happens, the actual height is updated, changing other section positions as required.
+    */
   setRealSectionHeight: (sectionIndex: number, height: number) => void,
   getAssetAtIndex: (assetIndex: number) => Promise<AssetWithSpe | null>,
   preloadAssetAtIndex: (assetIndex: number) => Promise<void>
@@ -42,7 +46,13 @@ export interface TimelineGridStore {
   rangeSelectHover: (hoveredAssetIndex: number) => void;
 }
 
-export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGridStore {
+/**
+ * @param onAdjustScrollY scroll timeline container by `scrollDelta` if `scrollTop > minApplicableTop`
+ * */
+export function createTimeline(
+  layoutConfig: LayoutConfig,
+  onAdjustScrollY: (scrollDelta: number, minApplicableTop: number) => void,
+  api: Api): TimelineGridStore {
   let viewport: Viewport = { width: 0, height: 0 }
   let sections: DisplaySection[] = $state([])
 
@@ -101,13 +111,7 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
     }
   }
 
-  /**
-   * Initial section heights are estimated and only accurately computed when the assets inside are actually loaded
-   * and laid out. When that happens, the actual height is updated, changing other section positions as required.
-   *
-   * @returns Y scroll distance required to compensate for the change in section heights if `window.scrollY > sections[sectionIndex].top`
-    */
-  function setRealSectionHeight(sectionIndex: number, height: number): number {
+  function setRealSectionHeight(sectionIndex: number, height: number) {
     const oldHeight = sections[sectionIndex].height;
     const delta = height - oldHeight;
     if (delta === 0) {
@@ -117,7 +121,8 @@ export function createTimeline(layoutConfig: LayoutConfig, api: Api): TimelineGr
     for (let i = sectionIndex + 1; i < sections.length; i += 1) {
       sections[i].top += delta;
     }
-    return delta;
+    const minApplicableTop = sections[sectionIndex].top;
+    onAdjustScrollY(delta, minApplicableTop);
   }
 
   function estimateHeight(section: TimelineSection, lineWidth: number, targetRowHeight: number): number {

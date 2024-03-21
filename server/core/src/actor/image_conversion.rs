@@ -1,6 +1,5 @@
 use eyre::{Report, Result};
 use tokio::sync::mpsc;
-use tracing::instrument;
 
 use crate::{
     catalog::operation::convert_image::{

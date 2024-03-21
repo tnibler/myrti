@@ -1,4 +1,4 @@
-use super::{repository::db_entity::DbAssetRootDir, AssetRootDirId};
+use super::AssetRootDirId;
 use camino::Utf8PathBuf as PathBuf;
 use serde::Serialize;
 

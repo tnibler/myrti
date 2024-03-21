@@ -12,11 +12,10 @@ use axum::{
     Json, Router,
 };
 use axum_extra::body::AsyncReadBody;
-use chrono::Utc;
 use eyre::{eyre, Context};
 use serde::Deserialize;
 use tokio_util::io::ReaderStream;
-use tracing::{debug, instrument, warn, Instrument};
+use tracing::{warn, Instrument};
 use utoipa::ToSchema;
 
 use core::{
@@ -27,7 +26,7 @@ use core::{
 };
 
 use crate::{
-    app_state::{self, SharedState},
+    app_state::SharedState,
     http_error::{ApiResult, HttpError},
     schema::{asset::Asset, AssetId},
 };
@@ -94,7 +93,7 @@ pub enum ThumbnailFormat {
     Webp,
 }
 
-#[instrument(name = "Get Asset thumbnail", skip(app_state), level = "trace")]
+#[tracing::instrument(name = "Get Asset thumbnail", skip(app_state), level = "trace")]
 #[utoipa::path(get, path = "/api/thumbnail/{id}/{size}/{format}",
 responses(
     (status = 200, body=String, content_type = "application/octet")
@@ -175,7 +174,7 @@ responses(
         ("id" = String, Path, description = "AssetId"),
     )
 )]
-#[instrument(name = "Get Asset file", skip(app_state), level = "trace")]
+#[tracing::instrument(name = "Get Asset file", skip(app_state), level = "trace")]
 async fn get_asset_file(
     Path(id): Path<String>,
     Query(query): Query<HashMap<String, String>>,

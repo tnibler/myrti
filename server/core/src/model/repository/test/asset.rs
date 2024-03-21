@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ops::Not};
+use std::collections::HashSet;
 
 use camino::Utf8PathBuf as PathBuf;
 use chrono::Months;
@@ -14,21 +14,17 @@ use crate::model::{
     ThumbnailType, ThumbnailFormat,
     repository, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType,
     AudioRepresentation, AudioRepresentationId, CreateAsset, CreateAssetBase, CreateAssetImage,
-    CreateAssetSpe, CreateAssetVideo, Image, Size, TimestampInfo, Video, VideoAsset,
+    CreateAssetSpe, Image, Size, TimestampInfo, Video, VideoAsset,
     VideoRepresentation, VideoRepresentationId,
 };
 
-use super::util::{set_asset_root_dir, set_assets_root_dir, set_video_asset_root_dir};
+use super::util::{set_asset_root_dir, set_video_asset_root_dir};
 use super::*;
 
 #[test]
 fn prop_insert_retrieve_asset() {
     proptest!(|(asset in arb_new_asset())| {
         let mut conn = super::db::open_in_memory_and_migrate();
-        let asset_root_dir = AssetRootDir {
-            id: AssetRootDirId(0),
-            path: PathBuf::from("/path/to/assets"),
-        };
         let asset_root_dir = AssetRootDir {
             id: AssetRootDirId(0),
             path: PathBuf::from("/path/to/assets"),

@@ -6,8 +6,8 @@ use tracing::Instrument;
 use crate::core::storage::Storage;
 
 use super::{
-    ffmpeg::{self, FFmpeg, FFmpegLocalOutputTrait, FFmpegTrait},
-    shaka::{self, RepresentationType, ShakaPackager, ShakaPackagerTrait, ShakaResult},
+    ffmpeg::{FFmpeg, FFmpegLocalOutputTrait, FFmpegTrait},
+    shaka::{RepresentationType, ShakaPackager, ShakaPackagerTrait, ShakaResult},
     streams::FFProbeStreamsTrait,
     transcode::{ffmpeg_audio_flags, ffmpeg_video_flags, ProduceAudio, ProduceVideo},
     FFProbe, FFProbeStreams,

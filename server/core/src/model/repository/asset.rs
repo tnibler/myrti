@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use camino::Utf8Path as Path;
 use chrono::Utc;
 use color_eyre::eyre;
-use diesel::dsl::{not, sql};
+use diesel::dsl::sql;
 use diesel::sql_types::Bool;
 use diesel::{insert_into, prelude::*};
 use eyre::{eyre, Context, Result};

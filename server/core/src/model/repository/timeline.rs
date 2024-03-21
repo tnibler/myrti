@@ -10,7 +10,7 @@ use eyre::{Context, Result};
 use tracing::instrument;
 
 use crate::model::{
-    util::datetime_from_db_repr, Asset, AssetId, AssetRootDirId, TimelineGroup, TimelineGroupId,
+    Asset, AssetId, TimelineGroup, TimelineGroupId,
 };
 
 use super::{db::DbConn, db_entity::DbAsset, timeline_group::get_timeline_group};

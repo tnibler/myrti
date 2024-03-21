@@ -2,13 +2,11 @@ use camino::Utf8Path as Path;
 use chrono::{DateTime, Local, Utc};
 use color_eyre::eyre::Result;
 use eyre::{eyre, Context};
-use tokio::sync::mpsc;
-use tracing::{debug, error, instrument, Instrument};
-use walkdir::WalkDir;
+use tracing::debug;
 
 use crate::{
     config, interact,
-    model::{self, repository::db::DbPool, repository::duplicate_asset::NewDuplicateAsset, *},
+    model::{ repository::db::DbPool, repository::duplicate_asset::NewDuplicateAsset, *},
     processing::{self, hash::hash_file},
 };
 
@@ -18,7 +16,7 @@ use super::{
 };
 
 /// Returns Some(AssetId) if a new, non duplicate asset was indexed and added to the database
-#[instrument(skip(pool, asset_root, bin_paths), level = "debug")]
+#[tracing::instrument(skip(pool, asset_root, bin_paths), level = "debug")]
 pub async fn index_file(
     path: &Path,
     asset_root: &AssetRootDir,

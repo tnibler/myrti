@@ -2,8 +2,7 @@ use proptest::prelude::*;
 
 use crate::model::{
     repository::{self, db::DbConn, timeline_group::CreateTimelineGroup},
-    Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, Image, TimelineGroup, TimelineGroupId,
-    Video, VideoAsset,
+    Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, TimelineGroup, TimelineGroupId, VideoAsset,
 };
 
 /// Inserts asset and returns them in the same order, with asset_id set

@@ -1,21 +1,13 @@
 use std::{str::FromStr, sync::Arc};
 
-use axum::{
-    extract::{Query, State},
-    http::Method,
-    response::IntoResponse,
-    routing::{get, post},
-    Router,
-};
+use axum::{http::Method, Router};
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{self, Context, Result};
 use myrti::{
     app_state::{AppState, SharedState},
-    http_error::HttpError,
     routes,
     spa_serve_dir::SpaServeDirService,
 };
-use serde::Deserialize;
 use tokio::signal;
 use tower::ServiceBuilder;
 use tower_http::{
@@ -25,9 +17,8 @@ use tower_http::{
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     ServiceBuilderExt,
 };
-use tracing::{info, instrument, Instrument};
+use tracing::{info, Instrument};
 use tracing_error::ErrorLayer;
-use tracing_forest::{ForestLayer, Processor};
 use tracing_subscriber::{prelude::*, EnvFilter};
 
 use core::{

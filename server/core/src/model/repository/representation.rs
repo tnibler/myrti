@@ -1,6 +1,6 @@
 use diesel::prelude::*;
-use eyre::{eyre, Context, Result};
-use tracing::{instrument, Instrument};
+use eyre::{ Context, Result};
+use tracing::instrument;
 
 use crate::model::{
     repository::db_entity::{DbAudioRepresentation, DbImageRepresentation, DbVideoRepresentation},

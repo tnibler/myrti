@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use eyre::{Context, Result};
-use tracing::{instrument, Instrument};
+use tracing::instrument;
 
 use crate::{
     catalog::{
@@ -285,7 +285,6 @@ pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageV
     })
     .await??;
     if !no_good_reprs.is_empty() || !must_reencode_because_rotation_metadata.is_empty() {
-        use crate::catalog::encoding_target::av1;
         return Ok(no_good_reprs
             .into_iter()
             .chain(must_reencode_because_rotation_metadata.into_iter())

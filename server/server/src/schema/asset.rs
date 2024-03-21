@@ -1,7 +1,6 @@
-use camino::Utf8PathBuf as PathBuf;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use utoipa::{schema, ToSchema};
+use utoipa::ToSchema;
 
 use core::model;
 

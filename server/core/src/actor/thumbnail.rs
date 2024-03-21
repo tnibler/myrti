@@ -2,7 +2,6 @@ use chrono::Utc;
 use deadpool_diesel;
 use eyre::{Report, Result};
 use tokio::sync::mpsc;
-use tracing::instrument;
 
 use crate::{
     catalog::{

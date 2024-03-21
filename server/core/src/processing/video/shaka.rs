@@ -1,4 +1,4 @@
-use std::process::{ExitStatus, Stdio};
+use std::process::Stdio;
 
 use async_trait::async_trait;
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};

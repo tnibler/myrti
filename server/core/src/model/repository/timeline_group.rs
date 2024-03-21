@@ -1,13 +1,13 @@
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
-use eyre::{Context, Result};
+use eyre::Result;
 use tracing::instrument;
 
 use crate::model::{
     repository::db_entity::{DbAsset, DbTimelineGroup},
     timeline_group::TimelineGroup,
     util::datetime_to_db_repr,
-    Asset, AssetId, TimelineGroupEntryId, TimelineGroupId,
+    Asset, AssetId, TimelineGroupId,
 };
 
 use super::{db::DbConn, schema};

@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use eyre::{eyre, Report};
 
 use super::{
-    repository::db_entity::DbAsset, AssetBase, AssetRootDirId, AssetType, GpsCoordinates, Size,
+    AssetBase, AssetRootDirId, GpsCoordinates, Size,
     TimestampInfo,
 };
 

@@ -6,7 +6,7 @@ use std::{
 
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use eyre::{eyre, Context, Result};
-use tracing::{debug_span, error, info_span};
+use tracing::{error, info_span};
 
 use crate::catalog::image_conversion_target::{
     heif::{BitDepth, Compression},

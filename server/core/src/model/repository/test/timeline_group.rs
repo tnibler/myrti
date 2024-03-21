@@ -1,12 +1,9 @@
-use std::collections::{HashMap, HashSet};
-
 use camino::Utf8PathBuf as PathBuf;
-use chrono::{Months, Utc};
+use chrono::Months;
 use claims::{assert_err, assert_ok};
 
 use crate::model::{
-    repository::{self, album::CreateAlbum, timeline_group::CreateTimelineGroup},
-    Album, Asset, AssetId, AssetRootDir, AssetRootDirId, CreateAsset, CreateAssetBase,
+    repository::{self, timeline_group::CreateTimelineGroup}, AssetId, AssetRootDir, AssetRootDirId, CreateAsset, CreateAssetBase,
     CreateAssetImage, CreateAssetSpe, Size, TimestampInfo,
 };
 

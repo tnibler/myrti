@@ -14,7 +14,7 @@ use core::{
 };
 
 use crate::{
-    app_state::{self, SharedState},
+    app_state::SharedState,
     http_error::ApiResult,
     schema::{asset::Asset, Album, AssetId},
 };

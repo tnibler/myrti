@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::model::{
-    AssetId, ImageRepresentation, ImageRepresentationId, ThumbnailFormat, ThumbnailType,
+    AssetId, ThumbnailFormat, ThumbnailType,
 };
 
 use super::image_conversion_target::{ImageConversionTarget, ImageFormatTarget};

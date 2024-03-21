@@ -13,7 +13,7 @@ use crate::{
     app_state::SharedState,
     http_error::ApiResult,
     schema::{
-        asset::{Asset, AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
+        asset::{AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
         timeline::{TimelineChunk, TimelineGroup, TimelineGroupType},
         TimelineGroupId,
     },

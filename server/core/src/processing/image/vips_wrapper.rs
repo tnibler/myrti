@@ -13,7 +13,7 @@ use crate::catalog::image_conversion_target::{
     ImageConversionTarget, ImageFormatTarget,
 };
 
-#[allow(non_snake_case)]
+#[allow(non_snake_case, non_upper_case_globals, unused)]
 mod wrapper {
     include!(concat!(env!("OUT_DIR"), "/vips_wrapper_bindings.rs"));
 }

@@ -13,10 +13,6 @@ struct TomlAssetDir {
 struct TomlDataDir {
     path: String,
     name: Option<String>,
-    #[serde(rename = "maxSize")]
-    max_size: Option<String>,
-    #[serde(rename = "maxDiskUsage")]
-    max_disk_usage: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -48,8 +44,6 @@ pub struct AssetDir {
 pub struct DataDir {
     pub path: PathBuf,
     pub name: Option<String>,
-    pub max_size: Option<u64>,
-    pub max_disk_usage: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,25 +80,9 @@ pub async fn read_config(path: &Path) -> Result<Config> {
         .collect::<Result<_>>()?;
     let data_dir: DataDir = {
         let path = toml_config.data_dir.path.into();
-        let max_size: Option<u64> = toml_config
-            .data_dir
-            .max_size
-            .as_ref()
-            .map(|s| parse_size::parse_size(s))
-            .transpose()?;
-        let max_disk_usage = match toml_config.data_dir.max_disk_usage {
-            Some(percent) if percent > 0 && percent <= 100 => Some(percent as i32),
-            Some(other) => bail!(
-                "Error parsing config: invalid disk use percentage {}",
-                other
-            ),
-            None => None,
-        };
         DataDir {
             path,
             name: toml_config.data_dir.name,
-            max_size,
-            max_disk_usage,
         }
     };
     let bin_paths = toml_config.bin_paths.map(|bin_paths| BinPaths {

@@ -3,6 +3,9 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use core::model;
+use std::borrow::Cow;
+
+use crate::mime_type::guess_mime_type;
 
 use super::{AssetId, AssetMetadata, AssetRootDirId};
 
@@ -26,6 +29,7 @@ pub struct Asset {
     pub added_at: DateTime<Utc>,
     pub taken_date: DateTime<Utc>,
     pub metadata: Option<AssetMetadata>,
+    pub mime_type: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -90,6 +94,13 @@ impl From<model::Asset> for AssetWithSpe {
 
 impl From<&model::Asset> for Asset {
     fn from(value: &model::Asset) -> Self {
+        let mime_type = guess_mime_type(&value.base.file_type)
+            .unwrap_or(match value.base.ty {
+                model::AssetType::Image => Cow::Borrowed("image"),
+                model::AssetType::Video => Cow::Borrowed("video"),
+            })
+            .into_owned();
+
         Asset {
             id: value.base.id.into(),
             asset_root_id: value.base.root_dir_id.into(),
@@ -100,6 +111,7 @@ impl From<&model::Asset> for Asset {
             added_at: value.base.added_at,
             taken_date: value.base.taken_date,
             metadata: None,
+            mime_type,
         }
     }
 }

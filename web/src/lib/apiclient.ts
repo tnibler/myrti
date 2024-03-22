@@ -44,6 +44,7 @@ const Asset = z
 		height: z.number().int(),
 		id: AssetId,
 		metadata: AssetMetadata.nullish(),
+		mimeType: z.string(),
 		pathInRoot: z.string(),
 		takenDate: z.string().datetime({ offset: true }),
 		type: AssetType,

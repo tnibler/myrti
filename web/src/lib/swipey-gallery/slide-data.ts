@@ -13,8 +13,7 @@ export type VideoSlideData = {
   src: string;
   placeholderSrc: string;
   size: Size;
-  mimeType: string;
-} & ({ videoSource: 'dash', mpdManifestUrl: string } | { videoSource: 'original' })
+} & ({ videoSource: 'dash', mpdManifestUrl: string } | { videoSource: 'original', mimeType: string })
 
 export type SlideData = ImageSlideData | VideoSlideData;
 
@@ -30,14 +29,15 @@ export function slideForAsset(asset: AssetWithSpe): SlideData {
       placeholderSrc: '/api/asset/thumbnail/' + asset.id + '/large/avif'
     };
   } else {
-    const videoSource:
-      | { videoSource: 'dash'; mpdManifestUrl: string }
-      | { videoSource: 'original' } = asset.hasDash
-        ? {
-          videoSource: 'dash',
-          mpdManifestUrl: `/api/dash/${asset.id}/stream.mpd`
-        }
-        : { videoSource: 'original' };
+    const videoSource = asset.hasDash
+      ? {
+        videoSource: 'dash' as const,
+        mpdManifestUrl: `/api/dash/${asset.id}/stream.mpd`
+      }
+      : {
+        videoSource: 'original' as const,
+        mimeType: asset.mimeType
+      };
     return {
       type: 'video',
       src: '/api/asset/original/' + asset.id,
@@ -46,7 +46,6 @@ export function slideForAsset(asset: AssetWithSpe): SlideData {
         width: asset.width,
         height: asset.height
       },
-      mimeType: asset.mimeType, // FIXME this is not actually part of Asset reponses
       ...videoSource
     };
   }

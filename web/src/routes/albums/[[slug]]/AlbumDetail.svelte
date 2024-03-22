@@ -37,8 +37,8 @@
 	async function fetchAlbumDetails() {
 		const details = await api.getAlbumDetails({ params: { id: albumId } });
 		assets = details.assets;
-		albumName = details.name;
-		albumDesc = details.description;
+		albumName = details.name ?? null;
+		albumDesc = details.description ?? null;
 	}
 
 	type LayoutOptions = {

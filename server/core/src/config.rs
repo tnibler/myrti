@@ -1,5 +1,5 @@
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
-use color_eyre::eyre::{bail, Context, Result};
+use color_eyre::eyre::{eyre, Context, Result};
 use serde::Deserialize;
 use std::str::FromStr;
 
@@ -32,6 +32,8 @@ struct TomlConfig {
     pub data_dir: TomlDataDir,
     #[serde(rename = "BinPaths")]
     pub bin_paths: Option<TomlBinPaths>,
+    pub address: Option<String>,
+    pub port: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +62,8 @@ pub struct Config {
     pub asset_dirs: Vec<AssetDir>,
     pub data_dir: DataDir,
     pub bin_paths: Option<BinPaths>,
+    pub address: Option<String>,
+    pub port: Option<u16>,
 }
 
 pub async fn read_config(path: &Path) -> Result<Config> {
@@ -92,9 +96,18 @@ pub async fn read_config(path: &Path) -> Result<Config> {
         ffprobe: bin_paths.ffprobe.map(PathBuf::from),
         exiftool: bin_paths.exiftool.map(PathBuf::from),
     });
+    let address = toml_config.address;
+    let port: Option<u16> = toml_config
+        .port
+        .as_ref()
+        .map(|p| p.parse::<u16>())
+        .transpose()
+        .map_err(|_| eyre!("Invalid port {}", toml_config.port.expect("is always Some")))?;
     Ok(Config {
         asset_dirs,
         data_dir,
         bin_paths,
+        address,
+        port,
     })
 }

@@ -1,4 +1,8 @@
-use std::{str::FromStr, sync::Arc};
+use std::{
+    net::{IpAddr, SocketAddr},
+    str::FromStr,
+    sync::Arc,
+};
 
 use axum::{http::Method, Router};
 use camino::Utf8PathBuf as PathBuf;
@@ -99,6 +103,15 @@ async fn main() -> Result<()> {
         core::config::read_config(PathBuf::from_str("server/config.toml").unwrap().as_path())
             .await
             .unwrap();
+
+    let addr: IpAddr = config
+        .address
+        .as_ref()
+        .map(|a| a.parse().wrap_err("error parsing listening address"))
+        .transpose()?
+        .unwrap_or("127.0.0.1".parse().expect("is a valid address"));
+    let port = config.port.unwrap_or(3000);
+
     let pool = db_setup().await.unwrap();
     store_asset_roots_from_config(&config, &pool).await?;
     let storage_path = config.data_dir.path.clone();
@@ -136,7 +149,7 @@ async fn main() -> Result<()> {
         .with_state(shared_state);
     // .route("/api/assets", get(get_assets))
     // .route("/api/assetRoots", get(get_asset_roots))
-    axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
+    axum::Server::bind(&SocketAddr::new(addr, port))
         .serve(app.into_make_service())
         .with_graceful_shutdown(shutdown_signal())
         .await

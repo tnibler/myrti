@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { api } from '$lib/apiclient';
 	import type { Asset } from '$lib/apitypes';
+	import Gallery from '$lib/swipey-gallery/Gallery.svelte';
+	import { type SlideData, slideForAsset } from '$lib/swipey-gallery/slide-data';
+	import type { ThumbnailBounds } from '$lib/swipey-gallery/thumbnail-bounds';
 	import type { TileBox } from '$lib/timeline-grid/GridSegment.svelte';
 	import GridTile from '$lib/ui/GridTile.svelte';
 	import createJustifiedLayout from 'justified-layout';
@@ -65,26 +68,64 @@
 			tiles: layout.boxes
 		};
 	}
+
+	let scrollContainer: HTMLElement;
+	let gallery: Gallery;
+	let thumbnailImgEls: HTMLImageElement[] = $state([]);
+
+	async function getSlide(index: number): Promise<SlideData | null> {
+		const asset = assets[index];
+		if (!asset) {
+			console.log('asset is null');
+			return null;
+		}
+		return slideForAsset(asset);
+	}
+
+	function getThumbnailBounds(assetIndex: number): ThumbnailBounds {
+		const imgEl = thumbnailImgEls[assetIndex];
+		if (!imgEl) {
+			return { rect: { x: 0, y: 0, width: 0, height: 0 } };
+		}
+		return { rect: { x: imgEl.x, y: imgEl.y, width: imgEl.width, height: imgEl.height } };
+	}
+
+	function onAssetClick(index: number) {
+		gallery.open(index);
+	}
 </script>
 
-<div class="flex flex-col mx-60">
-	<p class="text-6xl">{albumName}</p>
-	<div
-		bind:clientWidth={containerWidth}
-		class="relative w-full"
-		style="height: {gridLayout ? gridLayout.height : 0}px;"
-	>
-		{#if gridLayout}
-			{#each gridLayout.tiles as tile, index (assets[index])}
-				{@const asset = assets[index]}
-				<GridTile
-					{asset}
-					box={tile}
-					onAssetClick={() => {}}
-					onSelectToggled={() => {}}
-					selectState={{ inSelectMode: false }}
-				/>
-			{/each}
-		{/if}
+<div class="h-dvh w-full relative overflow-y-hidden">
+	<div bind:this={scrollContainer} class="h-full flex flex-col px-10 overflow-y-scroll">
+		<p class="text-6xl">{albumName}</p>
+		<div
+			bind:clientWidth={containerWidth}
+			class="relative w-full"
+			style="height: {gridLayout ? gridLayout.height : 0}px;"
+		>
+			{#if gridLayout}
+				{#each gridLayout.tiles as tile, index (assets[index])}
+					{@const asset = assets[index]}
+					<GridTile
+						{asset}
+						box={tile}
+						onAssetClick={() => {
+							onAssetClick(index);
+						}}
+						onSelectToggled={() => {}}
+						selectState={{ inSelectMode: false }}
+						bind:imgEl={thumbnailImgEls[index]}
+					/>
+				{/each}
+			{/if}
+		</div>
 	</div>
 </div>
+
+<Gallery
+	bind:this={gallery}
+	scrollWrapper={scrollContainer}
+	numSlides={assets.length}
+	{getSlide}
+	{getThumbnailBounds}
+/>

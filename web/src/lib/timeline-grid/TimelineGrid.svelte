@@ -11,7 +11,6 @@
 		scrollWrapper: HTMLElement;
 	};
 
-	let windowScrollY: number = $state(0);
 	let viewport = $state({ width: 0, height: 0 });
 	let gallery: Gallery;
 	let gridSections: GridSection[] = $state([]);
@@ -109,8 +108,6 @@
 		};
 	}
 </script>
-
-<svelte:window bind:scrollY={windowScrollY} />
 
 <div class="scroll-wrapper" bind:this={scrollWrapper}>
 	<section id="grid" bind:clientWidth={viewport.width} bind:clientHeight={viewport.height}>

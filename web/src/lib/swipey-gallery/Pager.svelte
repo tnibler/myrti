@@ -371,9 +371,10 @@
 		left: 0;
 		width: 100%;
 		height: 100dvh;
+		z-index: 10002;
 	}
 
-	.background,
+	.pager-background,
 	.slide-container {
 		position: absolute;
 		top: 0;
@@ -385,6 +386,7 @@
 	.pager-background {
 		will-change: opacity;
 		background: #000;
+		z-index: 10001;
 	}
 
 	.background.transition-opacity {
@@ -403,6 +405,7 @@
 	.close-button {
 		display: none;
 		position: absolute;
+		z-index: 10003;
 		overflow: hidden;
 		background: none;
 		box-shadow: none;
@@ -421,6 +424,7 @@
 	.icon-button {
 		display: none;
 		position: absolute;
+		z-index: 10003;
 		overflow: hidden;
 		background: none;
 		box-shadow: none;
@@ -439,6 +443,7 @@
 	.arrow-icon {
 		fill: white;
 		opacity: 0.8;
+		z-index: 10003;
 	}
 
 	.icon-button.arrow-right {

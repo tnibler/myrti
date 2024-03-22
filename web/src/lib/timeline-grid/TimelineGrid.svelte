@@ -2,7 +2,7 @@
 	import GridSection from './GridSection.svelte';
 	import Gallery from '$lib/swipey-gallery/Gallery.svelte';
 	import type { ThumbnailBounds } from '$lib/swipey-gallery/thumbnail-bounds';
-	import type { SlideData } from '$lib/swipey-gallery/slide-data';
+	import { slideForAsset, type SlideData } from '$lib/swipey-gallery/slide-data';
 	import type { AssetWithSpe } from '$lib/apitypes';
 	import type { TimelineGridStore } from '$lib/store/timeline.svelte';
 
@@ -30,39 +30,7 @@
 			console.log('asset is null');
 			return null;
 		}
-		if (asset.type === 'image') {
-			return {
-				type: 'image',
-				size: {
-					width: asset.width,
-					height: asset.height
-				},
-				src: '/api/asset/original/' + asset.id,
-				placeholderSrc: '/api/asset/thumbnail/' + asset.id + '/large/avif'
-			};
-		} else if (asset.type === 'video') {
-			const videoSource:
-				| { videoSource: 'dash'; mpdManifestUrl: string }
-				| { videoSource: 'original' } = asset.hasDash
-				? {
-						videoSource: 'dash',
-						mpdManifestUrl: `/api/dash/${asset.id}/stream.mpd`
-					}
-				: { videoSource: 'original' };
-			return {
-				type: 'video',
-				src: '/api/asset/original/' + asset.id,
-				placeholderSrc: '/api/asset/thumbnail/' + asset.id + '/large/avif',
-				size: {
-					width: asset.width,
-					height: asset.height
-				},
-				mimeType: asset.mimeType,
-				...videoSource
-			};
-		}
-		console.error('TODO no asset');
-		return null;
+		return slideForAsset(asset);
 	}
 
 	function getThumbnailBounds(assetIndex: number): ThumbnailBounds {

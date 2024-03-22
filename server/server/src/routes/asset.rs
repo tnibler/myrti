@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ffi::OsString, os::unix::prelude::OsStrExt};
+use std::{collections::HashMap, ffi::OsString, ops::Deref, os::unix::prelude::OsStrExt};
 
 use axum::{
     body::StreamBody,
@@ -28,6 +28,7 @@ use core::{
 use crate::{
     app_state::SharedState,
     http_error::{ApiResult, HttpError},
+    mime_type::{guess_mime_type, guess_mime_type_path},
     schema::{asset::Asset, AssetId},
 };
 
@@ -214,6 +215,7 @@ async fn get_asset_file(
         headers.insert(
             header::CONTENT_TYPE,
             content_type
+                .deref()
                 .try_into()
                 .wrap_err("error setting content-type header")?,
         );
@@ -280,39 +282,10 @@ async fn get_image_asset_representation(
         headers.insert(
             header::CONTENT_TYPE,
             content_type
+                .deref()
                 .try_into()
                 .wrap_err("error setting content-type header")?,
         );
     }
     Ok((headers, body).into_response())
-}
-
-fn guess_mime_type(ext: &str) -> Option<&'static str> {
-    match ext {
-        "mp4" => Some("video/mp4"),
-        "avif" => Some("image/avif"),
-        "webp" => Some("image/webp"),
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "png" => Some("image/png"),
-        "heif" => Some("image/heif"),
-        "heic" => Some("image/heic"),
-        _ => None,
-    }
-}
-
-fn guess_mime_type_path(path: &camino::Utf8Path) -> Option<&'static str> {
-    let ext = path.extension()?.to_ascii_lowercase();
-    match guess_mime_type(&ext) {
-        Some(m) => Some(m),
-        None => {
-            warn!(
-                "can't guess MIME type for filename '{}'",
-                &path
-                    .file_name()
-                    .map(|p| p.to_string())
-                    .unwrap_or(String::new())
-            );
-            None
-        }
-    }
 }

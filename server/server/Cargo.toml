@@ -9,7 +9,7 @@ mock-commands = []
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-geocode = { path = "../geocode" }
+# geocode = { path = "../geocode" }
 core = { path = "../core" }
 
 async-trait = "0.1.73"
@@ -46,6 +46,7 @@ tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 walkdir = "2.3.3"
 utoipa = { version = "4.1.0", features = ["axum_extras", "chrono"] }
 utoipa-discover = { path = "/home/thomas/repos/utoipa-discover" }
+clap = { version = "4.5.3", features = ["derive"] }
 
 [build-dependencies]
 cc = "1.0.79"

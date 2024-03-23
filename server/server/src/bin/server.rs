@@ -6,6 +6,7 @@ use std::{
 
 use axum::{http::Method, Router};
 use camino::Utf8PathBuf as PathBuf;
+use clap::Parser;
 use eyre::{self, Context, Result};
 use myrti::{
     app_state::{AppState, SharedState},
@@ -40,6 +41,13 @@ use core::{
         AssetRootDir, AssetRootDirId,
     },
 };
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    #[arg(short, long)]
+    config: String,
+}
 
 async fn db_setup() -> Result<DbPool> {
     let db_url = "mediathingy.db";
@@ -81,6 +89,8 @@ async fn store_asset_roots_from_config(config: &Config, pool: &DbPool) -> Result
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let args = Cli::parse();
+
     if std::env::var("RUST_LIB_BACKTRACE").is_err() {
         std::env::set_var("RUST_LIB_BACKTRACE", "1")
     }
@@ -99,10 +109,9 @@ async fn main() -> Result<()> {
 
     info!("Starting up...");
     core::global_init();
-    let config =
-        core::config::read_config(PathBuf::from_str("server/config.toml").unwrap().as_path())
-            .await
-            .unwrap();
+    let config = core::config::read_config(&PathBuf::from(args.config))
+        .await
+        .unwrap();
 
     let addr: IpAddr = config
         .address

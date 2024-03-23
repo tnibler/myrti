@@ -1,11 +1,10 @@
 use std::{
     net::{IpAddr, SocketAddr},
-    str::FromStr,
     sync::Arc,
 };
 
 use axum::{http::Method, Router};
-use camino::Utf8PathBuf as PathBuf;
+use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use clap::Parser;
 use eyre::{self, Context, Result};
 use myrti::{
@@ -59,10 +58,21 @@ async fn db_setup() -> Result<DbPool> {
     Ok(pool)
 }
 
-async fn store_asset_roots_from_config(config: &Config, pool: &DbPool) -> Result<()> {
+async fn store_asset_roots_from_config(
+    config_dir: &Path,
+    config: &Config,
+    pool: &DbPool,
+) -> Result<()> {
     let conn = pool.get().in_current_span().await?;
     for asset_dir in config.asset_dirs.iter() {
-        let asset_dir_path = asset_dir.path.to_owned();
+        let asset_dir_path = if asset_dir.path.is_absolute() {
+            asset_dir.path.to_owned()
+        } else {
+            config_dir.join(&asset_dir.path)
+        };
+        // FIXME: this does not handle paths that differ in characters but point to the same
+        // location correctly. The path-clean crate or this function from cargo would do the
+        // job: https://github.com/rust-lang/cargo/blob/fede83ccf973457de319ba6fa0e36ead454d2e20/src/cargo/util/paths.rs#L61
         let existing = interact!(conn, move |mut conn| {
             repository::asset_root_dir::get_asset_root_with_path(&mut conn, &asset_dir_path)
         })
@@ -109,9 +119,12 @@ async fn main() -> Result<()> {
 
     info!("Starting up...");
     core::global_init();
-    let config = core::config::read_config(&PathBuf::from(args.config))
-        .await
-        .unwrap();
+    let config_path = PathBuf::from(args.config);
+    let config = core::config::read_config(&config_path).await.unwrap();
+    // all paths in config are relative to this
+    let config_dir = config_path
+        .parent()
+        .expect("has read config file, so parent must be a directory");
 
     let addr: IpAddr = config
         .address
@@ -122,8 +135,13 @@ async fn main() -> Result<()> {
     let port = config.port.unwrap_or(3000);
 
     let pool = db_setup().await.unwrap();
-    store_asset_roots_from_config(&config, &pool).await?;
-    let storage_path = config.data_dir.path.clone();
+    let data_dir_path = if config.data_dir.path.is_absolute() {
+        config.data_dir.path.clone()
+    } else {
+        config_dir.join(&config.data_dir.path)
+    };
+    let storage_path = data_dir_path.clone();
+    store_asset_roots_from_config(&config_dir, &config, &pool).await?;
     std::fs::create_dir_all(&storage_path).unwrap();
     let storage: Storage = LocalFileStorage::new(storage_path).into();
     let scheduler = SchedulerHandle::new(pool.clone(), storage.clone(), config);

@@ -48,9 +48,9 @@ struct Cli {
     config: String,
 }
 
-async fn db_setup() -> Result<DbPool> {
-    let db_url = "mediathingy.db";
-    let pool = db::open_db_pool(db_url)?;
+async fn db_setup(dir: &Path) -> Result<DbPool> {
+    let db_url = dir.join("myrti_media.db").to_string();
+    let pool = db::open_db_pool(&db_url)?;
     let conn = pool.get().await?;
     interact!(conn, move |mut conn| db::migrate(&mut conn))
         .in_current_span()
@@ -134,13 +134,13 @@ async fn main() -> Result<()> {
         .unwrap_or("127.0.0.1".parse().expect("is a valid address"));
     let port = config.port.unwrap_or(3000);
 
-    let pool = db_setup().await.unwrap();
     let data_dir_path = if config.data_dir.path.is_absolute() {
         config.data_dir.path.clone()
     } else {
         config_dir.join(&config.data_dir.path)
     };
     let storage_path = data_dir_path.clone();
+    let pool = db_setup(&data_dir_path).await.unwrap();
     store_asset_roots_from_config(&config_dir, &config, &pool).await?;
     std::fs::create_dir_all(&storage_path).unwrap();
     let storage: Storage = LocalFileStorage::new(storage_path).into();

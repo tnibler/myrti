@@ -54,7 +54,9 @@
 		</button>
 		<button
 			class="p-3 hover:bg-gray-200 bg-transparent rounded-full transition-colors"
-			onclick={() => {}}
+			onclick={() => {
+				onHideClicked();
+			}}
 		>
 			<svg width="24" height="24" viewBox="0 0 24 24">
 				<path d={mdiEyeOffOutline} fill="#000" />

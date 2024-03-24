@@ -50,6 +50,11 @@
 			timelineScrollWrapper?.scrollBy(0, delta);
 		}
 	}
+
+	async function onHideAssetsClicked() {
+		await timeline.hideSelectedAssets();
+		timeline.clearSelection();
+	}
 </script>
 
 <AddToAlbumDialog bind:this={addToAlbumDialog} onSubmit={onCreateAlbumSubmit} />
@@ -63,6 +68,7 @@
 		numAssetsSelected={Object.keys(timeline.selectedAssetIds).length}
 		onCancelSelectClicked={() => timeline.clearSelection()}
 		{onAddToAlbumClicked}
+		onHideClicked={onHideAssetsClicked}
 	/>
 {/snippet}
 

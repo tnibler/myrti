@@ -44,6 +44,8 @@ export interface TimelineGridStore {
   setRangeSelected: (clickedAssetIndex: number, selected: boolean) => void;
   /** Asset is hoevered while shift is pressed, selection range should be highlighted */
   rangeSelectHover: (hoveredAssetIndex: number) => void;
+
+  hideSelectedAssets: () => Promise<void>;
 }
 
 /**
@@ -211,6 +213,33 @@ export function createTimeline(
     console.error("TODO rangeSelectHover");
   }
 
+  async function hideSelectedAssets() {
+    await api.setAssetsHidden({ what: 'hide', assetIds: Object.keys(selectedAssetIds) });
+    for (let i = 0; i < sections.length; i += 1) {
+      const section = sections[i];
+      const segments = section.segments;
+      if (!segments) {
+        continue;
+      }
+      const segmentsToRemove: Set<number> = new Set();
+      for (let j = 0; j < segments.length; j += 1) {
+        const segment = segments[j];
+        const remainingAssets = segment.assets.filter((asset) => !(asset.id in selectedAssetIds));
+        if (remainingAssets.length === 0) {
+          segmentsToRemove.add(j)
+        } else {
+          segment.assets = remainingAssets;
+        }
+      }
+      if (segmentsToRemove.size > 0) {
+        const remainingSegments = segments.filter((_s, idx) => !segmentsToRemove.has(idx));
+        section.segments = remainingSegments;
+        // a section could now be empty (no segments inside), but that doesn't really matter 
+        // since sections on their own are not displayed or anything
+      }
+    }
+  }
+
   return {
     initialize,
     loadSection,
@@ -230,7 +259,8 @@ export function createTimeline(
     },
     get selectedAssetIds() { return selectedAssetIds },
     get selectionPreviewIds() { return selectionPreviewIds },
-  }
+    hideSelectedAssets,
+  };
 }
 
 function computeSectionStartIndices(sections: DisplaySection[]): number[] {

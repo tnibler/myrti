@@ -200,6 +200,7 @@ WITH timeline AS (
   FROM Asset
   LEFT JOIN TimelineGroupEntry ON TimelineGroupEntry.asset_id = Asset.asset_id
   LEFT JOIN TimelineGroup ON TimelineGroupEntry.group_id = TimelineGroup.timeline_group_id
+  WHERE Asset.is_hidden = 0
 )
 -- assign segment numbers ignoring maximum segment size
 SELECT 

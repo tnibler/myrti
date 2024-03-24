@@ -56,6 +56,10 @@ const AlbumDetailsResponse = z
 	.passthrough();
 const AppendAssetsRequest = z.object({ assetIds: z.array(AssetId) }).passthrough();
 const AppendAssetsResponse = z.object({ success: z.boolean() }).passthrough();
+const HideAssetAction = z.enum(['hide', 'unhide']);
+const HideAssetsRequest = z
+	.object({ assetIds: z.array(AssetId), what: HideAssetAction })
+	.passthrough();
 const TimelineGroupType = z.discriminatedUnion('type', [
 	z.object({ date: z.string(), type: z.literal('day') }).passthrough(),
 	z
@@ -129,6 +133,8 @@ export const schemas = {
 	AlbumDetailsResponse,
 	AppendAssetsRequest,
 	AppendAssetsResponse,
+	HideAssetAction,
+	HideAssetsRequest,
 	TimelineGroupType,
 	ImageRepresentation,
 	Image,
@@ -229,6 +235,20 @@ const endpoints = makeApi([
 				schema: z.void()
 			}
 		]
+	},
+	{
+		method: 'post',
+		path: '/api/asset/hidden',
+		alias: 'setAssetsHidden',
+		requestFormat: 'json',
+		parameters: [
+			{
+				name: 'body',
+				type: 'Body',
+				schema: HideAssetsRequest
+			}
+		],
+		response: z.void()
 	},
 	{
 		method: 'get',

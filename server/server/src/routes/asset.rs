@@ -8,11 +8,11 @@ use axum::{
         HeaderMap, HeaderValue, StatusCode,
     },
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use axum_extra::body::AsyncReadBody;
-use eyre::{eyre, Context};
+use eyre::{eyre, Context, Result};
 use serde::Deserialize;
 use tokio_util::io::ReaderStream;
 use tracing::{warn, Instrument};
@@ -39,6 +39,7 @@ pub fn router() -> Router<SharedState> {
         .route("/thumbnail/:id/:size/:format", get(get_thumbnail))
         .route("/original/:id", get(get_asset_file))
         .route("/timeline", get(super::timeline::get_timeline))
+        .route("/hidden", post(set_assets_hidden))
         .route(
             "/repr/:asset_id/:repr_id",
             get(get_image_asset_representation),
@@ -288,4 +289,45 @@ async fn get_image_asset_representation(
         );
     }
     Ok((headers, body).into_response())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum HideAssetAction {
+    Hide,
+    Unhide,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct HideAssetsRequest {
+    pub what: HideAssetAction,
+    pub asset_ids: Vec<AssetId>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/asset/hidden",
+    responses((status=200)),
+)]
+async fn set_assets_hidden(
+    State(app_state): State<SharedState>,
+    Json(req): Json<HideAssetsRequest>,
+) -> ApiResult<()> {
+    let asset_ids = req
+        .asset_ids
+        .into_iter()
+        .map(|id| {
+            id.0.parse::<i64>()
+                .wrap_err("invalid AssetId")
+                .map(|i| core::model::AssetId(i))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let conn = app_state.pool.get().await?;
+    interact!(conn, move |conn| {
+        repository::asset::set_assets_hidden(conn, true, &asset_ids)
+    })
+    .await?
+    .wrap_err("error setting Assets hidden")?;
+    Ok(())
 }

@@ -419,3 +419,12 @@ pub fn get_ffprobe_output(conn: &mut DbConn, asset_id: AssetId) -> Result<Vec<u8
         .first(conn)?;
     Ok(ffprobe_output)
 }
+
+pub fn set_assets_hidden(conn: &mut DbConn, set_hidden: bool, asset_ids: &[AssetId]) -> Result<()> {
+    use schema::Asset;
+    diesel::update(Asset::table.filter(Asset::asset_id.eq_any(asset_ids.iter().map(|id| id.0))))
+        .set(Asset::is_hidden.eq(bool_to_int(set_hidden)))
+        .execute(conn)
+        .wrap_err("error updating column Asset.is_hidden")?;
+    Ok(())
+}

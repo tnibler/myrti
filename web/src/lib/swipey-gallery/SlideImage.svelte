@@ -45,7 +45,8 @@
 
 <!-- svelte-ignore a11y-missing-attribute -->
 <img
-	class="slide-image zoom-in"
+	class="slide-image"
+	ss="slide-image zoom-in"
 	bind:this={imgEl}
 	src={slideData.src}
 	onload={onContentReady}
@@ -70,13 +71,5 @@
 
 	.slide-image.hidden {
 		display: none;
-	}
-
-	.zoom-in {
-		cursor: zoom-in;
-	}
-
-	.zoom-out {
-		cursor: zoom-out;
 	}
 </style>

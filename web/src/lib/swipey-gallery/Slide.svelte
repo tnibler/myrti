@@ -63,6 +63,15 @@
 	let slideImage: SlideImage | undefined = $state();
 	let slideVideo: SlideVideo | undefined = $state();
 	let placeholderEl: HTMLImageElement | undefined;
+	let cursor: null | 'zoom-in' | 'grab' | 'grabbing' = $derived.call(() => {
+		if (effectiveZoom <= zoomLevels.fit) {
+			return 'zoom-in';
+		}
+		if (isGrabbing) {
+			return 'grabbing';
+		}
+		return 'grab';
+	});
 
 	enum PlaceholderTransition {
 		No,
@@ -302,6 +311,9 @@
 	bind:this={zoomWrapperDiv}
 	class="zoom-wrapper"
 	class:transition-transform={transitionTransformClass}
+	class:cursor-zoom-in={cursor === 'zoom-in'}
+	class:cursor-grab={cursor === 'grab'}
+	class:cursor-grabbing={cursor === 'grabbing'}
 	style="
   	transform-origin: 0px 0px 0px;
 	transform: translate3d({pan.x}px, {pan.y}px, 0) scale3d({cssTransformZoom}, {cssTransformZoom}, 1);"

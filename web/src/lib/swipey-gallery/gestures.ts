@@ -110,6 +110,7 @@ export function newGestureController(
         points: 1,
         p1
       }
+      gallery.currentSlide?.onGrabbingStateChange(true);
     } else if (state.points === 1
       && !gallery.pager.isShifted) { // only start zooming if not currently scrolling
       const x = e.pageX;
@@ -122,7 +123,9 @@ export function newGestureController(
         p1: state.p1,
         p2: p2
       }
+      gallery.currentSlide?.onGrabbingStateChange(false);
     } else if (state.points === 2) {
+      gallery.currentSlide?.onGrabbingStateChange(false);
       // do nothing for now
       clearTapState();
     }
@@ -150,6 +153,7 @@ export function newGestureController(
       state = {
         points: 0
       }
+      gallery.currentSlide?.onGrabbingStateChange(false);
     } else if (state.points === 2) {
       if ('gesture' in state && state.gesture === 'zoom') {
         finishZoom(state, gallery.currentSlide, gallery)

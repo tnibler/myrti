@@ -20,6 +20,7 @@
 		setZoomLevel: (z: number) => void;
 		toggleZoom: (p: Point) => void;
 		closeTransition: (toBounds: ThumbnailBounds, onTransitionEnd: () => void) => void;
+		onGrabbingStateChange: (isDragging: boolean) => void;
 	};
 </script>
 
@@ -170,9 +171,13 @@
 				userHasZoomed = true;
 			}
 		},
-		closeTransition
+		closeTransition,
+		onGrabbingStateChange: (grabbing: boolean) => {
+			isGrabbing = grabbing;
+		}
 	};
 
+	let isGrabbing = $state(false);
 	let transitionTransformClass = $state(false);
 	let { width, height } = $derived({
 		width: data.size.width * domZoom,

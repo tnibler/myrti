@@ -148,23 +148,6 @@
 		});
 	});
 
-	$effect(() => {
-		// run when slide size or panAreaSize (viewport) changes
-		const newZoomLevels = computeZoomLevels({
-			maxSize: data.size,
-			panAreaSize: panAreaSize
-		});
-		const _effectiveZoom = untrack(() => effectiveZoom); // this block must not run on zoom change
-		if (_effectiveZoom < newZoomLevels.fit || !userHasZoomed) {
-			domZoom = newZoomLevels.fit;
-			cssTransformZoom = 1;
-		}
-		const newPanBounds = computePanBounds(data.size, panAreaSize, _effectiveZoom);
-		pan = {
-			x: newPanBounds.center.x,
-			y: newPanBounds.center.y
-		};
-	});
 
 	$effect(() => {
 		if (

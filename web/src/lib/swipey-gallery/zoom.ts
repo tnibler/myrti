@@ -40,6 +40,17 @@ export type ZoomUpdate = {
   newZoomLevel: number
 };
 
+export function zoomTo(toZoomLevel: number, zoomPoint: Point, currentZoomLevel: number, slide: SlideState): ZoomUpdate {
+  const newSlidePan = {
+    x: computePanForChangedZoomLevel('x', toZoomLevel, slide.currentZoomLevel, zoomPoint, zoomPoint, slide.pan),
+    y: computePanForChangedZoomLevel('y', toZoomLevel, slide.currentZoomLevel, zoomPoint, zoomPoint, slide.pan),
+  }
+  return {
+    newSlidePan,
+    newZoomLevel: zoomLevel
+  };
+}
+
 export function updateZoom(state: ZoomState, slide: SlideState): ZoomUpdate | null {
   if (!state.doZoom
     || (pointsEqual(state.p1, state.p1.prev) && pointsEqual(state.p2, state.p2.prev))) {
@@ -61,8 +72,8 @@ export function updateZoom(state: ZoomState, slide: SlideState): ZoomUpdate | nu
     zoomLevel = maxZoomLevel + (rawZoomLevel - maxZoomLevel) * ZOOM_IN_FRICTION;
   }
   const newSlidePan = {
-    x: computePan('x', zoomLevel, state.startZoomLevel, zoomPoint, zoomStartPoint, state.zoomStartPan),
-    y: computePan('y', zoomLevel, state.startZoomLevel, zoomPoint, zoomStartPoint, state.zoomStartPan),
+    x: computePanForChangedZoomLevel('x', zoomLevel, state.startZoomLevel, zoomPoint, zoomStartPoint, state.zoomStartPan),
+    y: computePanForChangedZoomLevel('y', zoomLevel, state.startZoomLevel, zoomPoint, zoomStartPoint, state.zoomStartPan),
   }
   return {
     newSlidePan,
@@ -100,8 +111,8 @@ export function correctZoomPan(
   const zoomAdjustedPan = {
     // zoomPoint is passed as both zoomPoint and zoomStartPoint since the bounce back animation
     // is really a new zoom gesture without any movement of the finger points
-    x: computePan('x', correctedZoomLevel, initialZoomLevel, zoomPoint, zoomPoint, initialPan),
-    y: computePan('y', correctedZoomLevel, initialZoomLevel, zoomPoint, zoomPoint, initialPan),
+    x: computePanForChangedZoomLevel('x', correctedZoomLevel, initialZoomLevel, zoomPoint, zoomPoint, initialPan),
+    y: computePanForChangedZoomLevel('y', correctedZoomLevel, initialZoomLevel, zoomPoint, zoomPoint, initialPan),
   }
   // now clamp zoomAdjustedPan to bounds after hypothetically setting correctedZoomLevel
   // panAreaSize is really always gallery.viewportSize
@@ -146,7 +157,7 @@ export function correctZoomPan(
   }, 'pan');
 }
 
-function computePan(axis: 'x' | 'y', zoomLevel: number, startZoomLevel: number, zoomPoint: Point, zoomStartPoint: Point, zoomStartPan: Point): number {
+export function computePanForChangedZoomLevel(axis: 'x' | 'y', zoomLevel: number, startZoomLevel: number, zoomPoint: Point, zoomStartPoint: Point, zoomStartPan: Point): number {
   const zoomFactor = zoomLevel / startZoomLevel;
   return zoomPoint[axis] - ((zoomStartPoint[axis] - zoomStartPan[axis]) * zoomFactor);
 }

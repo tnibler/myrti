@@ -244,8 +244,8 @@ export function newGestureController(
       return;
     }
     if (e.pointerType === 'mouse') {
-      // TODO signal click
-      console.log("click")
+      e.preventDefault();
+      gallery.currentSlide?.toggleZoom({ x: e.x, y: e.y });
       return;
     }
     if (tapState !== null) {

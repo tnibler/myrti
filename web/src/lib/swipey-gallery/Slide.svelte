@@ -18,6 +18,7 @@
 		pan: Point;
 		applyCurrentZoomPan: () => void;
 		setZoomLevel: (z: number) => void;
+		toggleZoom: (p: Point) => void;
 		closeTransition: (toBounds: ThumbnailBounds, onTransitionEnd: () => void) => void;
 	};
 </script>
@@ -25,8 +26,8 @@
 <script lang="ts">
 	import { getContext, untrack } from 'svelte';
 	import type { Point, Size } from './util_types';
-	import { type ZoomLevels, computeZoomLevels } from './zoom';
-	import { computePanBounds, type PanBounds } from './pan-bounds';
+	import { type ZoomLevels, computeZoomLevels, computePanForChangedZoomLevel } from './zoom';
+	import { clampPanToBounds, computePanBounds, type PanBounds } from './pan-bounds';
 	import type { ThumbnailBounds } from './thumbnail-bounds';
 	import { fade } from 'svelte/transition';
 	import type { VideoSlideData, ImageSlideData, SlideData } from './slide-data';
@@ -76,6 +77,7 @@
 	/** Wait this long after the real content is ready to hide the placeholder to reveal the <img> underneath.
 	Without this, there is a flicker on some devices/browsers. */
 	const PLACEHOLDER_HIDE_DELAY = data.type === 'image' ? 450 : 0;
+	let zoomWrapperDiv: HTMLDivElement | null = $state(null);
 
 	// for some reason the slideImage/slideVideo bindings don't get unset when the bound component
 	// is removed, so we do it manually here
@@ -133,9 +135,45 @@
 			domZoom *= cssTransformZoom;
 			cssTransformZoom = 1;
 		},
+		toggleZoom: (p: Point) => {
+			if (!zoomWrapperDiv) {
+				return;
+			}
+			const endListener = () => {
+				transitionTransformClass = false;
+				domZoom *= cssTransformZoom;
+				cssTransformZoom = 1;
+				zoomWrapperDiv?.removeEventListener('transitionend', endListener, false);
+				zoomWrapperDiv?.removeEventListener('transitioncancel', endListener, false);
+			};
+			const startListener = () => {
+				transitionTransformClass = false;
+				zoomWrapperDiv?.removeEventListener('transitionstart', startListener, false);
+			};
+			zoomWrapperDiv.addEventListener('transitionstart', startListener, false);
+			zoomWrapperDiv.addEventListener('transitionend', endListener, false);
+			zoomWrapperDiv.addEventListener('transitioncancel', endListener, false);
+			transitionTransformClass = true;
+			if (userHasZoomed) {
+				const currentZoom = domZoom * cssTransformZoom;
+				cssTransformZoom *= zoomLevels.fit / currentZoom;
+				pan = panBounds.center;
+				userHasZoomed = false;
+			} else {
+				const currentZoom = domZoom * cssTransformZoom;
+				const newPan = {
+					x: computePanForChangedZoomLevel('x', zoomLevels.secondary, currentZoom, p, p, pan),
+					y: computePanForChangedZoomLevel('y', zoomLevels.secondary, currentZoom, p, p, pan)
+				};
+				cssTransformZoom = zoomLevels.secondary / domZoom;
+				pan = clampPanToBounds(newPan, panBounds);
+				userHasZoomed = true;
+			}
+		},
 		closeTransition
 	};
 
+	let transitionTransformClass = $state(false);
 	let { width, height } = $derived({
 		width: data.size.width * domZoom,
 		height: data.size.height * domZoom
@@ -143,11 +181,13 @@
 
 	$effect(() => {
 		const slide = data;
-		untrack(() => {
-			initializeForNewSlide(slide, panAreaSize);
-		});
+		if (isActive) {
+			// reinitialize zoom/pan transition states everytime slide is displayed
+			untrack(() => {
+				initializeForNewSlide(slide, panAreaSize);
+			});
+		}
 	});
-
 
 	$effect(() => {
 		if (
@@ -254,7 +294,9 @@
 </script>
 
 <div
+	bind:this={zoomWrapperDiv}
 	class="zoom-wrapper"
+	class:transition-transform={transitionTransformClass}
 	style="
   	transform-origin: 0px 0px 0px;
 	transform: translate3d({pan.x}px, {pan.y}px, 0) scale3d({cssTransformZoom}, {cssTransformZoom}, 1);"
@@ -301,8 +343,12 @@
 
 <style>
 	.zoom-wrapper {
-		transform-origin: 0px 0px 0px;
 		position: absolute;
+	}
+
+	.transition-transform {
+		transition: transform;
+		transition-duration: 150ms;
 	}
 
 	.placeholder {

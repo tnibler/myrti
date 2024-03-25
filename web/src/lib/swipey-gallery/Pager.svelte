@@ -306,6 +306,10 @@
 		});
 		return p;
 	}
+
+	function onSlideClick(slide: SlideControls, e: MouseEvent) {
+		slide.toggleZoom({ x: e.x, y: e.y });
+	}
 </script>
 
 <!--Taken from photoswipe util/viewport-size.js getViewportSize -->
@@ -331,6 +335,12 @@
 			/>
 		{/each}
 	</div>
+  <!-- Note: idk what capture really means at time of writing. The intent is for the pointerdown/up/.. listeners in bindEvent()
+       to not be triggered when ui elements in this div are clicked. -->
+  <div class="absolute w-full h-full"
+	onpointerdowncapture={(e) => { e.stopPropagation(); }}
+	onpointerupcapture={(e) => { e.stopPropagation(); }}
+  >
 	<button
 		class="icon-button"
 		class:button-visible={hasMouse}
@@ -361,6 +371,7 @@
 			<path d="M24 10l-2-2-6 6-6-6-2 2 6 6-6 6 2 2 6-6 6 6 2-2-6-6z"></path>
 		</svg>
 	</button>
+  	</div>
 </div>
 
 <style>

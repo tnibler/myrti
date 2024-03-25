@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { mdiClose, mdiGroup, mdiImageAlbum, mdiEyeOffOutline } from '@mdi/js';
+	import IconButton from './ui/IconButton.svelte';
+	import { BookImageIcon, EyeOffIcon, ImagesIcon } from 'lucide-svelte';
 
 	type Props = {
 		numAssetsSelected: number;
@@ -33,34 +35,21 @@
 		</div>
 	</div>
 
-	<div class="flex flex-row items-center">
-		<button
-			class="p-3 hover:bg-gray-200 bg-transparent rounded-full transition-colors"
-			onclick={() => {}}
-		>
-			<svg width="24" height="24" viewBox="0 0 24 24">
-				<path d={mdiGroup} fill="#000" />
-			</svg>
-		</button>
-		<button
-			class="p-3 hover:bg-gray-200 bg-transparent rounded-full transition-colors"
+	<div class="flex flex-row items-center gap-3 px-2">
+		<IconButton onclick={() => {}} text="Add to group"><ImagesIcon /></IconButton>
+		<IconButton
 			onclick={() => {
 				onAddToAlbumClicked();
 			}}
-		>
-			<svg width="24" height="24" viewBox="0 0 24 24">
-				<path d={mdiImageAlbum} fill="#000" />
-			</svg>
-		</button>
-		<button
-			class="p-3 hover:bg-gray-200 bg-transparent rounded-full transition-colors"
+			text="Add to album"
+			><BookImageIcon />
+		</IconButton>
+		<IconButton
 			onclick={() => {
 				onHideClicked();
 			}}
-		>
-			<svg width="24" height="24" viewBox="0 0 24 24">
-				<path d={mdiEyeOffOutline} fill="#000" />
-			</svg>
-		</button>
+			text="Hide"
+			><EyeOffIcon />
+		</IconButton>
 	</div>
 </div>

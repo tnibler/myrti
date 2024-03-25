@@ -43,6 +43,7 @@
 		"axios": "^1.6.5",
 		"dayjs": "^1.11.10",
 		"justified-layout": "^4.1.0",
+		"lucide-svelte": "^0.363.0",
 		"zod": "^3.22.4"
 	}
 }

@@ -3,7 +3,7 @@
 </script>
 
 <script lang="ts">
-	import { mdiImage, mdiImageAlbum, mdiMap } from '@mdi/js';
+	import { BookImageIcon, ImagesIcon, MapIcon } from 'lucide-svelte';
 	import SidebarItem from './SidebarItem.svelte';
 
 	type Props = {
@@ -15,12 +15,18 @@
 
 <aside id="sidebar" class="h-dvh w-56 flex flex-col py-4">
 	<a href="/" draggable="false"
-		><SidebarItem title="Photos" iconSvg={mdiImage} isActive={activeEntry === 'timeline'} /></a
-	>
-	<a href="/albums" draggable="false"
-		><SidebarItem title="Albums" iconSvg={mdiImageAlbum} isActive={activeEntry === 'albums'} /></a
-	>
-	<a href="/map" draggable="false"
-		><SidebarItem title="Map" iconSvg={mdiMap} isActive={activeEntry === 'map'} /></a
-	>
+		><SidebarItem title="Photos" isActive={activeEntry === 'timeline'}>
+			<ImagesIcon />
+		</SidebarItem>
+	</a>
+	<a href="/albums" draggable="false">
+		<SidebarItem title="Albums" isActive={activeEntry === 'albums'}>
+			<BookImageIcon />
+		</SidebarItem>
+	</a>
+	<a href="/map" draggable="false">
+		<SidebarItem title="Map" isActive={activeEntry === 'map'}>
+			<MapIcon />
+		</SidebarItem>
+	</a>
 </aside>

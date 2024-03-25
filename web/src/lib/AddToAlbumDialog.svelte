@@ -27,6 +27,9 @@
 	let createButtonVisible = $state(true);
 
 	export function open() {
+		api.getAllAlbums().then((result) => {
+			albums = result;
+		});
 		showCreateAlbumForm = false;
 		createButtonVisible = true;
 		dialog?.showModal();
@@ -35,12 +38,6 @@
 	export function close() {
 		dialog?.close();
 	}
-
-	onMount(() => {
-		api.getAllAlbums().then((result) => {
-			albums = result;
-		});
-	});
 
 	async function onCreateClicked() {
 		createButtonVisible = false;

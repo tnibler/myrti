@@ -45,7 +45,7 @@ tracing-forest = { version = "0.1.6", features = ["ansi", "tokio", "serde", "env
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 walkdir = "2.3.3"
 utoipa = { version = "4.1.0", features = ["axum_extras", "chrono"] }
-utoipa-discover = { path = "/home/thomas/repos/utoipa-discover" }
+utoipa-discover = { git = "https://github.com/tnibler/utoipa-discover", ref = "3dffbfc4c46bb30cd957ca4f997f88758a95ae28" }
 clap = { version = "4.5.3", features = ["derive"] }
 
 [build-dependencies]

@@ -33,6 +33,7 @@ use crate::{
             FFProbe,
         },
     },
+    util::OptionPathExt,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -227,18 +228,12 @@ pub async fn perform_side_effects_package_video(
     .in_current_span()
     .await??;
 
-    let ffmpeg_path = bin_paths
-        .map(|bp| bp.ffmpeg.as_ref().map(|p| p.as_path()))
-        .flatten();
-    let ffprobe_path = bin_paths
-        .map(|bp| bp.ffprobe.as_ref().map(|p| p.as_path()))
-        .flatten();
+    let ffmpeg_path = bin_paths.map(|bp| bp.ffmpeg.as_opt_path()).flatten();
+    let ffprobe_path = bin_paths.map(|bp| bp.ffprobe.as_opt_path()).flatten();
     let shaka_packager_path = bin_paths
-        .map(|bp| bp.shaka_packager.as_ref().map(|p| p.as_path()))
+        .map(|bp| bp.shaka_packager.as_opt_path())
         .flatten();
-    let mpd_generator_path = bin_paths
-        .map(|bp| bp.mpd_generator.as_ref().map(|p| p.as_path()))
-        .flatten();
+    let mpd_generator_path = bin_paths.map(|bp| bp.mpd_generator.as_opt_path()).flatten();
 
     let ffmpeg_video_op: Option<ProduceVideo> = match package_video.create_video_repr.clone() {
         CreateVideoRepr::Transcode(video_transcode) => {

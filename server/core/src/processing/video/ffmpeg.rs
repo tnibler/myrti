@@ -14,7 +14,7 @@ pub trait CommandInputOutput {}
 pub trait FFmpegLocalOutputTrait {
     async fn run_with_local_output(
         &self,
-        input: &Path,
+        input: &str,
         output: &Path,
         ffmpeg_bin_path: Option<&Path>,
     ) -> Result<()>;
@@ -25,7 +25,7 @@ pub trait FFmpegTrait {
     fn new(pre_input_flags: Vec<OsString>, flags: Vec<OsString>) -> Self;
     async fn run(
         &self,
-        input: &Path,
+        input: &str,
         output_key: &str,
         storage: &Storage,
         ffmpeg_bin_path: Option<&Path>,
@@ -42,7 +42,7 @@ impl FFmpegLocalOutputTrait for FFmpeg {
     #[instrument(name = "ffmpeg", skip(self), level = "debug")]
     async fn run_with_local_output(
         &self,
-        input: &Path,
+        input: &str,
         output: &Path,
         ffmpeg_bin_path: Option<&Path>,
     ) -> Result<()> {
@@ -83,7 +83,7 @@ impl FFmpegTrait for FFmpeg {
 
     async fn run(
         &self,
-        input: &Path,
+        input: &str,
         output_key: &str,
         storage: &Storage,
         ffmpeg_bin_path: Option<&Path>,
@@ -109,7 +109,7 @@ impl FFmpegTrait for FFmpegMock {
 
     async fn run(
         &self,
-        input: &Path,
+        input: &str,
         output_key: &str,
         storage: &Storage,
         ffmpeg_bin_path: Option<&Path>,

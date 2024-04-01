@@ -71,7 +71,7 @@ impl FFmpegIntoShakaFFmpegTrait for FFmpegIntoShaka {
             .try_into()
             .expect("temp files should have utf8 paths");
         self.ffmpeg
-            .run_with_local_output(&self.input, &utf8_path, ffmpeg_bin_path)
+            .run_with_local_output(self.input.as_str(), &utf8_path, ffmpeg_bin_path)
             .await?;
         Ok(FFmpegIntoShakaAfterFFmpeg { ffmpeg_out_path })
     }

@@ -75,7 +75,12 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
             .await?;
 
         ffmpeg
-            .run(&shaka_out_path, output_key, storage, ffmpeg_bin_path)
+            .run(
+                shaka_out_path.as_str(),
+                output_key,
+                storage,
+                ffmpeg_bin_path,
+            )
             .in_current_span()
             .await?;
         Ok(ShakaResult { media_info_key })

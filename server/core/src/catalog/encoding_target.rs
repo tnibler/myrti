@@ -26,7 +26,7 @@ pub mod avc {
     use eyre::{eyre, Report};
 
     #[allow(dead_code)]
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, Default)]
     pub struct AVCTarget {
         pub preset: Preset,
         pub tune: Option<Tune>,
@@ -140,7 +140,7 @@ pub mod av1 {
     use eyre::{eyre, Report};
 
     /// For libsvtav1 only
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, Default)]
     pub struct AV1Target {
         pub crf: Crf,
         pub fast_decode: Option<FastDecode>,

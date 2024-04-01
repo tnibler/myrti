@@ -117,7 +117,6 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
         .init();
 
-    info!("Starting up...");
     core::global_init();
     let config_path = PathBuf::from(args.config);
     let config = core::config::read_config(&config_path).await.unwrap();
@@ -125,6 +124,12 @@ async fn main() -> Result<()> {
     let config_dir = config_path
         .parent()
         .expect("has read config file, so parent must be a directory");
+
+    tracing::info!("Running self check");
+    core::startup_self_check::run_self_check(config.bin_paths.as_ref())
+        .await
+        .expect("Self check failed");
+    tracing::info!("Self check successful");
 
     let addr: IpAddr = config
         .address
@@ -140,6 +145,7 @@ async fn main() -> Result<()> {
         config_dir.join(&config.data_dir.path)
     };
     let storage_path = data_dir_path.clone();
+    info!("Starting up...");
     let pool = db_setup(&data_dir_path).await.unwrap();
     store_asset_roots_from_config(&config_dir, &config, &pool).await?;
     std::fs::create_dir_all(&storage_path).unwrap();
@@ -162,7 +168,7 @@ async fn main() -> Result<()> {
         .nest("/api/assetRoots", routes::asset_roots::router())
         .nest("/api/dash", routes::dash::router())
         .nest("/api", routes::api_router())
-        .fallback_service(SpaServeDirService::new(ServeDir::new("../web/build")))
+        .fallback_service(SpaServeDirService::new(ServeDir::new("./static")))
         .layer(
             ServiceBuilder::new()
                 .set_x_request_id(MakeRequestUuid::default())

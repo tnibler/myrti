@@ -9,7 +9,8 @@ use eyre::{eyre, Context, Result};
 use tracing::{error, info_span};
 
 use crate::catalog::image_conversion_target::{
-    heif::{BitDepth, Compression},
+    heif::{AvifTarget, BitDepth, Compression},
+    jpeg::JpegTarget,
     ImageConversionTarget, ImageFormatTarget,
 };
 
@@ -141,21 +142,7 @@ pub fn convert_image(
     };
     match &target.format {
         ImageFormatTarget::AVIF(avif) => {
-            let c_save_params = wrapper::HeifSaveParams {
-                quality: avif.quality.into(),
-                lossless: if avif.lossless { 1 } else { 0 },
-                bit_depth: match avif.bit_depth {
-                    BitDepth::Eight => 8,
-                    BitDepth::Ten => 10,
-                    BitDepth::Twelve => 12,
-                },
-                compression: match avif.compression {
-                    Compression::HEVC => 1,
-                    Compression::AVC => 2,
-                    Compression::JPEG => 3,
-                    Compression::AV1 => 4,
-                },
-            };
+            let c_save_params = to_wrapper_heif_params(avif);
             let ret = unsafe {
                 wrapper::convert_heif(
                     c_in_path.as_ptr(),
@@ -176,9 +163,7 @@ pub fn convert_image(
             }
         }
         ImageFormatTarget::JPEG(jpeg) => {
-            let c_save_params = wrapper::JpegSaveParams {
-                quality: jpeg.quality.into(),
-            };
+            let c_save_params = to_wrapper_jpeg_params(jpeg);
             let ret = unsafe {
                 wrapper::convert_jpeg(
                     c_in_path.as_ptr(),
@@ -198,5 +183,61 @@ pub fn convert_image(
                 _ => Err(eyre!("Error converting image to HEIF with libvips")),
             }
         }
+    }
+}
+
+pub fn save_test_jpeg_image(out_path: &Path, jpeg_target: &JpegTarget) -> Result<()> {
+    let wrapper_params = to_wrapper_jpeg_params(jpeg_target);
+    let c_out_path = CString::new(out_path.as_os_str().as_bytes())
+        .wrap_err(format!("Could not convert path {} to bytes", out_path))?;
+    let err = unsafe { wrapper::save_test_jpeg_image(c_out_path.as_ptr(), wrapper_params) };
+    match err {
+        0 => Ok(()),
+        _ => Err(eyre!("Error saving test JPEG image")),
+    }
+}
+
+pub fn save_test_heif_image(out_path: &Path, avif_target: &AvifTarget) -> Result<()> {
+    let wrapper_params = to_wrapper_heif_params(avif_target);
+    let c_out_path = CString::new(out_path.as_os_str().as_bytes())
+        .wrap_err(format!("Could not convert path {} to bytes", out_path))?;
+    let err = unsafe { wrapper::save_test_heif_image(c_out_path.as_ptr(), wrapper_params) };
+    match err {
+        0 => Ok(()),
+        _ => Err(eyre!("Error saving test AVIF image")),
+    }
+}
+
+pub fn save_test_webp_image(out_path: &Path) -> Result<()> {
+    let c_out_path = CString::new(out_path.as_os_str().as_bytes())
+        .wrap_err(format!("Could not convert path {} to bytes", out_path))?;
+    let err = unsafe { wrapper::save_test_webp_image(c_out_path.as_ptr()) };
+    match err {
+        0 => Ok(()),
+        _ => Err(eyre!("Error saving test WEBP image")),
+    }
+}
+
+fn to_wrapper_jpeg_params(jpeg_target: &JpegTarget) -> wrapper::JpegSaveParams {
+    wrapper::JpegSaveParams {
+        quality: jpeg_target.quality.into(),
+    }
+}
+
+fn to_wrapper_heif_params(avif_target: &AvifTarget) -> wrapper::HeifSaveParams {
+    wrapper::HeifSaveParams {
+        quality: avif_target.quality.into(),
+        lossless: if avif_target.lossless { 1 } else { 0 },
+        bit_depth: match avif_target.bit_depth {
+            BitDepth::Eight => 8,
+            BitDepth::Ten => 10,
+            BitDepth::Twelve => 12,
+        },
+        compression: match avif_target.compression {
+            Compression::HEVC => 1,
+            Compression::AVC => 2,
+            Compression::JPEG => 3,
+            Compression::AV1 => 4,
+        },
     }
 }

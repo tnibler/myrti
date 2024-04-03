@@ -19,6 +19,10 @@ int save_heif(VipsImage* img, const char* out_path, HeifSaveParams params) {
       NULL);
 }
 
+int save_webp(VipsImage* img, const char* out_path) {
+  return vips_webpsave(img, out_path, NULL);
+}
+
 ConvertHeifResult convert_heif(const char * in_path, const char * out_path, HeifSaveParams params, Scale scale) {
   VipsImage* img = NULL;
   ConvertHeifResult result = {
@@ -81,4 +85,43 @@ ConvertJpegResult convert_jpeg(const char * in_path, const char * out_path, Jpeg
   result.err = save_jpeg(img, out_path, params);
   g_object_unref(img);
   return result;
+}
+
+int save_test_heif_image(const char* out_path, HeifSaveParams params) {
+  VipsImage* img = NULL;
+  int width = 400;
+  int height = 400;
+  int err = vips_black(&img, width, height, "bands", 3, NULL);
+  if (err != 0) {
+    return err;
+  } 
+  err = save_heif(img, out_path, params);
+  g_object_unref(img);
+  return err;
+}
+
+int save_test_jpeg_image(const char* out_path, JpegSaveParams params) {
+  VipsImage* img = NULL;
+  int width = 400;
+  int height = 400;
+  int err = vips_black(&img, width, height, "bands", 3, NULL);
+  if (err != 0) {
+    return err;
+  } 
+  err = save_jpeg(img, out_path, params);
+  g_object_unref(img);
+  return err;
+}
+
+int save_test_webp_image(const char* out_path) {
+  VipsImage* img = NULL;
+  int width = 400;
+  int height = 400;
+  int err = vips_black(&img, width, height, "bands", 3, NULL);
+  if (err != 0) {
+    return err;
+  } 
+  err = save_webp(img, out_path);
+  g_object_unref(img);
+  return err;
 }

@@ -63,4 +63,7 @@ typedef struct ConvertJpegResult {
 ConvertJpegResult convert_jpeg(const char *, const char *, JpegSaveParams,
                                Scale);
 
+int save_test_heif_image(const char *, HeifSaveParams);
+int save_test_jpeg_image(const char *, JpegSaveParams);
+int save_test_webp_image(const char *);
 #endif // __VIPS_WRAPPER_H

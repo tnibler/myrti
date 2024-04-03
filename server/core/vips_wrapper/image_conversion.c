@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <vips/vips.h>
 #include <vips/conversion.h>
 #include <vips/error.h>
@@ -7,6 +6,18 @@
 #include <vips/memory.h>
 #include <vips/image.h>
 #include "vips_wrapper.h"
+
+int save_jpeg(VipsImage* img, const char* out_path, JpegSaveParams params) {
+  return vips_jpegsave(img, out_path, "Q", params.quality, NULL);
+}
+
+int save_heif(VipsImage* img, const char* out_path, HeifSaveParams params) {
+  return vips_heifsave(img, out_path, "Q", params.quality,
+      "bitdepth", params.bit_depth,
+      "lossless", params.lossless,
+      "compression", params.compression,
+      NULL);
+}
 
 ConvertHeifResult convert_heif(const char * in_path, const char * out_path, HeifSaveParams params, Scale scale) {
   VipsImage* img = NULL;
@@ -36,11 +47,7 @@ ConvertHeifResult convert_heif(const char * in_path, const char * out_path, Heif
     result.height = scaled->Ysize;
     img = scaled;
   }
-  result.err = vips_heifsave(img, out_path, "Q", params.quality,
-      "bitdepth", params.bit_depth,
-      "lossless", params.lossless,
-      "compression", params.compression,
-      NULL);
+  result.err = save_heif(img, out_path, params);
   g_object_unref(img);
   return result;
 }
@@ -71,7 +78,7 @@ ConvertJpegResult convert_jpeg(const char * in_path, const char * out_path, Jpeg
     g_object_unref(img);
     img = scaled;
   }
-  result.err = vips_jpegsave(img, out_path, "Q", params.quality, NULL);
+  result.err = save_jpeg(img, out_path, params);
   g_object_unref(img);
   return result;
 }

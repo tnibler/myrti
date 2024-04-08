@@ -73,6 +73,7 @@ impl Clone for Storage {
 }
 
 #[enum_dispatch]
+#[derive(Debug)]
 pub enum CommandOutputFile {
     LocalOutputFile,
 }

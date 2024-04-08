@@ -40,7 +40,7 @@ pub fn open_in_memory_and_migrate() -> diesel::sqlite::SqliteConnection {
 pub fn migrate(conn: &mut diesel::SqliteConnection) -> Result<()> {
     match conn.run_pending_migrations(MIGRATIONS) {
         Ok(_) => {}
-        Err(e) => return Err(eyre::eyre!("error running migrations")),
+        Err(e) => return Err(eyre::eyre!("error running migrations: {:?}", e)),
     }
     Ok(())
 }

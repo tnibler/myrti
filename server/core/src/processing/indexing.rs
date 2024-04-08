@@ -2,11 +2,10 @@ use camino::Utf8Path as Path;
 use chrono::{DateTime, Local, Utc};
 use color_eyre::eyre::Result;
 use eyre::{eyre, Context};
-use tracing::debug;
 
 use crate::{
     config, interact,
-    model::{ repository::db::DbPool, repository::duplicate_asset::NewDuplicateAsset, *},
+    model::{repository::db::DbPool, repository::duplicate_asset::NewDuplicateAsset, *},
     processing::{self, hash::hash_file},
 };
 
@@ -54,16 +53,22 @@ pub async fn index_file(
     let file_type = match &metadata.file.file_type {
         Some(ft) => ft.to_ascii_lowercase(),
         None => {
-            debug!(%path, "Ignoring file: No file type in exiftool output");
+            tracing::trace!(%path, "Ignoring file: No file type in exiftool output");
             return Ok(None);
         }
     };
+    // mime type is a very rough guess that is often wrong. If vips can't open it, we say it's not an
+    // image, same with ffprobe and video
     let (create_asset_spe, size): (CreateAssetSpe, Size) = match metadata.file.mime_type.as_ref() {
         Some(mime) if mime.starts_with("video") => {
             // FIXME ffprobe path should come from config
-            let (ffprobe_output, streams) = FFProbe::streams(path, ffprobe_path)
-                .await
-                .wrap_err("error getting stream info from file")?;
+            let (ffprobe_output, streams) = match FFProbe::streams(path, ffprobe_path).await {
+                Ok(r) => r,
+                Err(err) => {
+                    tracing::trace!(%path, %err, "Could not get stream info with ffprobe, ignoring file");
+                    return Ok(None);
+                }
+            };
             let video = streams.video;
             let create_video = CreateAssetVideo {
                 video_codec_name: video.codec_name.to_ascii_lowercase(),
@@ -93,6 +98,18 @@ pub async fn index_file(
             (CreateAssetSpe::Video(create_video), size)
         }
         Some(mime) if mime.starts_with("image") => {
+            let p = path.to_owned();
+            let vips_get_size_result = tokio::task::spawn_blocking(move || {
+                processing::image::get_image_size(&p).wrap_err("could not read image size")
+            })
+            .await?;
+            let size = match vips_get_size_result {
+                Ok(s) => s,
+                Err(_) => {
+                    tracing::trace!(%path, "Could not read image size, ignoring file");
+                    return Ok(None);
+                }
+            };
             let format = metadata
                 .file
                 .file_type
@@ -102,19 +119,14 @@ pub async fn index_file(
             let create_image = CreateAssetImage {
                 image_format_name: format,
             };
-            let p = path.to_owned();
-            let s = tokio::task::spawn_blocking(move || {
-                processing::image::get_image_size(&p).wrap_err("could not read image size")
-            })
-            .await??;
             let size = Size {
-                width: s.width.into(),
-                height: s.height.into(),
+                width: size.width.into(),
+                height: size.height.into(),
             };
             (CreateAssetSpe::Image(create_image), size)
         }
         None | Some(_) => {
-            debug!(%path, "Ignoring file");
+            tracing::trace!(%path, "Ignoring file with no or unknown MIME type");
             return Ok(None);
         }
     };

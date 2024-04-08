@@ -100,6 +100,73 @@ pub fn get_assets(conn: &mut DbConn) -> Result<Vec<Asset>> {
 
 #[derive(Debug, Clone, QueryableByName)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+struct DbAssetMissingThumbnails {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub asset_id: i64,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub lg_orig_missing: i32,
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub sm_sq_missing: i32,
+}
+
+#[instrument(skip(conn))]
+pub fn get_assets_with_missing_thumbnail(
+    conn: &mut DbConn,
+    limit: Option<i64>,
+) -> Result<Vec<AssetThumbnails>> {
+    let rows: Vec<DbAssetMissingThumbnails> = diesel::sql_query(
+        r#"
+    WITH lg_orig_missing AS 
+    (
+        SELECT Asset.asset_id, (COUNT(at0.thumbnail_id) < $1) AS missing
+        FROM Asset LEFT OUTER JOIN
+          (
+          SELECT AssetThumbnail.asset_id, thumbnail_id FROM `AssetThumbnail` WHERE ty = $2
+          ) at0
+        ON Asset.asset_id = at0.asset_id
+        GROUP BY Asset.asset_id
+    ),
+    sm_sq_missing AS 
+    (
+        SELECT Asset.asset_id, (COUNT(at1.thumbnail_id) < $1) AS missing
+        FROM Asset LEFT OUTER JOIN
+          (
+          SELECT AssetThumbnail.asset_id, thumbnail_id FROM `AssetThumbnail` WHERE ty=$3
+          ) at1
+        ON Asset.asset_id=at1.asset_id
+        GROUP BY Asset.asset_id
+    )
+    SELECT 
+    lg_orig_missing.asset_id AS asset_id,
+    lg_orig_missing.missing AS lg_orig_missing,
+    sm_sq_missing.missing AS sm_sq_missing
+    FROM lg_orig_missing 
+    LEFT OUTER JOIN sm_sq_missing
+    ON lg_orig_missing.asset_id = sm_sq_missing.asset_id
+    WHERE lg_orig_missing.missing != 0 OR sm_sq_missing != 0;
+"#,
+    )
+    // number of thumbnails per type we want. we could have only some formats for a thumbnail
+    // missing, but we don't really handle that here. Instead consider only assets with 0
+    // thumbnails as missing
+    .bind::<diesel::sql_types::Integer, _>(1)
+    .bind::<diesel::sql_types::Integer, _>(to_db_thumbnail_type(ThumbnailType::LargeOrigAspect))
+    .bind::<diesel::sql_types::Integer, _>(to_db_thumbnail_type(ThumbnailType::SmallSquare))
+    .load(conn)
+    .wrap_err("error querying for assets with missing thumbnails")?;
+    let res = rows
+        .into_iter()
+        .map(|row| AssetThumbnails {
+            id: AssetId(row.asset_id),
+            has_thumb_large_orig: row.lg_orig_missing != 0,
+            has_thumb_small_square: row.sm_sq_missing != 0,
+        })
+        .collect();
+    Ok(res)
+}
+
+#[derive(Debug, Clone, QueryableByName)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 struct DbAssetHasThumbnails {
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub asset_id: i64,
@@ -107,35 +174,6 @@ struct DbAssetHasThumbnails {
     pub has_lg_orig: i32,
     #[diesel(sql_type = diesel::sql_types::Integer)]
     pub has_sm_sq: i32,
-}
-
-#[instrument(skip(conn), level = "trace")]
-pub fn get_assets_with_missing_thumbnail(
-    conn: &mut DbConn,
-    limit: Option<i64>,
-) -> Result<Vec<AssetThumbnails>> {
-    let rows: Vec<DbAssetHasThumbnails> = diesel::sql_query(r#"
-SELECT Asset.asset_id AS asset_id, (lg_orig.thumbnail_id IS NOT NULL) as has_lg_orig, (sm_sq.thumbnail_id IS NOT NULL) AS has_sm_sq
-FROM Asset
-LEFT OUTER JOIN AssetThumbnail lg_orig ON (Asset.asset_id = lg_orig.asset_id AND lg_orig.ty = ?)
-LEFT OUTER JOIN AssetThumbnail sm_sq ON (Asset.asset_id = sm_sq.asset_id AND sm_sq.ty = ?)
-WHERE 
-lg_orig.thumbnail_id IS NULL 
-OR sm_sq.thumbnail_id IS NULL;
-    "#)
-        .bind::<diesel::sql_types::Integer, _>(to_db_thumbnail_type(ThumbnailType::LargeOrigAspect))
-        .bind::<diesel::sql_types::Integer, _>(to_db_thumbnail_type(ThumbnailType::SmallSquare))
-        .load(conn)
-        .wrap_err("error querying for assets with missing thumbnails")?;
-    let res = rows
-        .into_iter()
-        .map(|row| AssetThumbnails {
-            id: AssetId(row.asset_id),
-            has_thumb_large_orig: row.has_lg_orig != 0,
-            has_thumb_small_square: row.has_sm_sq != 0,
-        })
-        .collect();
-    Ok(res)
 }
 
 #[instrument(skip(conn), level = "trace")]

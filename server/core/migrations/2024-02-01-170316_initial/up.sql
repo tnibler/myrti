@@ -89,8 +89,8 @@ CREATE TABLE AssetThumbnail (
   asset_id INTEGER NOT NULL,
   -- 0 = large original aspect ratio, 1 = small cropped square
   ty INTEGER NOT NULL CHECK(ty IN (0, 1)),
-  width INTEGER NOT NULL,
-  height INTEGER NOT NULL,
+  width INTEGER NOT NULL CHECK(width > 0),
+  height INTEGER NOT NULL CHECK(height > 0),
   format_name TEXT NOT NULL,
   FOREIGN KEY (asset_id) REFERENCES Asset(asset_id),
   UNIQUE(asset_id, ty, width, height, format_name)

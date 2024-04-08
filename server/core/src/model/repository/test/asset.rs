@@ -173,10 +173,10 @@ fn prop_get_assets_with_missing_thumbnails() {
                 ..asset
             };
             if has_lg_orig {
-                assert_ok!(repository::asset::set_asset_has_thumbnail(&mut conn, asset_id, ThumbnailType::LargeOrigAspect, Size { width: 0, height: 0}, &[ThumbnailFormat::Webp, ThumbnailFormat::Avif]));
+                assert_ok!(repository::asset::set_asset_has_thumbnail(&mut conn, asset_id, ThumbnailType::LargeOrigAspect, Size { width: 100, height: 100 }, &[ThumbnailFormat::Webp, ThumbnailFormat::Avif]));
             }
             if has_sm_sq {
-                assert_ok!(repository::asset::set_asset_has_thumbnail(&mut conn, asset_id, ThumbnailType::SmallSquare, Size { width: 0, height: 0}, &[ThumbnailFormat::Webp, ThumbnailFormat::Avif]));
+                assert_ok!(repository::asset::set_asset_has_thumbnail(&mut conn, asset_id, ThumbnailType::SmallSquare, Size { width: 100, height: 100 }, &[ThumbnailFormat::Webp, ThumbnailFormat::Avif]));
             }
             assets_with_ids.push((asset_with_id, has_lg_orig, has_sm_sq));
         }

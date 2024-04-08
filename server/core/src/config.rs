@@ -33,7 +33,7 @@ struct TomlConfig {
     #[serde(rename = "BinPaths")]
     pub bin_paths: Option<TomlBinPaths>,
     pub address: Option<String>,
-    pub port: Option<String>,
+    pub port: Option<u16>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,12 +97,7 @@ pub async fn read_config(path: &Path) -> Result<Config> {
         exiftool: bin_paths.exiftool.map(PathBuf::from),
     });
     let address = toml_config.address;
-    let port: Option<u16> = toml_config
-        .port
-        .as_ref()
-        .map(|p| p.parse::<u16>())
-        .transpose()
-        .map_err(|_| eyre!("Invalid port {}", toml_config.port.expect("is always Some")))?;
+    let port: Option<u16> = toml_config.port;
     Ok(Config {
         asset_dirs,
         data_dir,

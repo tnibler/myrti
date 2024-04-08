@@ -3,10 +3,12 @@ use tracing::instrument;
 
 use crate::{
     actor::{
-        image_conversion::{ImageConversionActorHandle, ImageConversionMessage},
+        image_conversion::{
+            ImageConversionActorHandle, ImageConversionMessage, ImageConversionResult,
+        },
         indexing::{IndexingActorHandle, IndexingMessage, IndexingResult},
         thumbnail::{ThumbnailActorHandle, ThumbnailMessage},
-        video_packaging::{VideoPackagingActorHandle, VideoPackagingMessage},
+        video_packaging::{VideoPackagingActorHandle, VideoPackagingMessage, VideoPackagingResult},
     },
     catalog::rules,
     config::Config,
@@ -95,6 +97,9 @@ async fn run_scheduler(sched: Scheduler) {
         video_packaging_actor,
         image_conversion_actor,
     } = sched;
+    let mut video_result_recv = video_packaging_actor.recv_result;
+    let mut thumbnail_result_recv = thumbnail_actor.recv_result;
+    let mut image_conversion_result_recv = image_conversion_actor.recv_result;
     loop {
         tokio::select! {
             Some(msg) = recv.recv() => {
@@ -116,6 +121,21 @@ async fn run_scheduler(sched: Scheduler) {
                     IndexingResult::FailedToStartIndexing { root_dir_id, report } => {
                         tracing::error!(?root_dir_id, %report, "TODO unhandled failed to start indexing job");
                     },
+                }
+            }
+            Some(video_packaging_result) = video_result_recv.recv() => {
+                if let VideoPackagingResult::PackagingError { package_video, report } = video_packaging_result {
+                    tracing::error!("Error packaging video {}:\n{:?}", package_video.asset_id, report);
+                }
+            }
+            Some(thumbnail_result) = thumbnail_result_recv.recv() => {
+                tracing::error!("Error creating thumbnail:\n{:?}", thumbnail_result);
+            }
+            Some(image_conversion_result) = image_conversion_result_recv.recv() => {
+                match image_conversion_result {
+                    ImageConversionResult::ConversionError { convert_image, report } => {
+                        tracing::error!("Error converting image {:?}:\n{:?}", convert_image, report);
+                    }
                 }
             }
         }

@@ -114,7 +114,7 @@ async fn main() -> Result<()> {
         std::env::set_var("RUST_LOG", "debug,hyper=info")
     }
     tracing_subscriber::registry()
-        .with(EnvFilter::from_default_env())
+        .with(EnvFilter::from_env("MYRTI_LOG"))
         .with(ErrorLayer::default())
         .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
         .init();

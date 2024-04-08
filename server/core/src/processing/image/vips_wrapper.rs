@@ -55,8 +55,13 @@ pub struct VipsThumbnailParams {
     pub out_dimension: OutDimension,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VipsThumbailResult {
+    pub actual_size: Size,
+}
+
 #[tracing::instrument(level = "debug")]
-pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<()> {
+pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<VipsThumbailResult> {
     // let span = debug_span!("Generate image thumbnail (libvips)");
     // let _enter = span.enter();
     let c_path = CString::new(params.in_path.as_os_str().as_bytes()).wrap_err(format!(
@@ -104,14 +109,14 @@ pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<()> {
             "An error occurred while creating thumbnail with libvips"
         ));
     }
-    Ok(())
     let actual_size = Size {
         width: c_result.actual_width,
         height: c_result.actual_height,
     };
+    Ok(VipsThumbailResult { actual_size })
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Size {
     pub width: i32,
     pub height: i32,

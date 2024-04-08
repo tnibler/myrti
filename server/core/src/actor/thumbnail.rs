@@ -185,15 +185,17 @@ async fn handle_thumbnail_op(actor: &mut ThumbnailActor, op: CreateThumbnail) ->
             tracing::warn!(%err, "failed inserting FailedThumbnailJob");
         }
     }
-    let apply_result = apply_create_thumbnail(&mut conn, op_resolved).await;
-    if let Err(report) = apply_result {
-        let _ = actor
-            .send_result
-            .send(ThumbnailResult::ThumbnailError {
-                thumbnail: op.clone(),
-                report,
-            })
-            .await;
+    for succeeded in side_effect_results.succeeded {
+        let apply_result = apply_create_thumbnail(&mut conn, succeeded).await;
+        if let Err(report) = apply_result {
+            let _ = actor
+                .send_result
+                .send(ThumbnailResult::ThumbnailError {
+                    thumbnail: op.clone(),
+                    report,
+                })
+                .await;
+        }
     }
     Ok(())
 }

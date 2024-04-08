@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{Context, Result};
-use tracing::Instrument;
 
 use crate::{
     core::storage::{CommandOutputFile, StorageCommandOutput},
+    model::Size,
     processing::image::ffmpeg_snapshot::ffmpeg_snapshot,
 };
 
@@ -13,16 +13,22 @@ use super::{
     OutDimension,
 };
 
+#[derive(Debug)]
 pub struct ThumbnailParams<'a> {
     pub in_path: PathBuf,
     pub outputs: Vec<&'a CommandOutputFile>,
     pub out_dimension: OutDimension,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThumbnailResult {
+    pub actual_size: Size,
+}
+
 #[async_trait]
 pub trait GenerateThumbnailTrait {
-    async fn generate_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<()>;
-    async fn generate_video_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<()>;
+    async fn generate_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<ThumbnailResult>;
+    async fn generate_video_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<ThumbnailResult>;
 }
 
 pub struct GenerateThumbnail {}
@@ -31,7 +37,8 @@ pub struct GenerateThumbnailMock {}
 
 #[async_trait]
 impl GenerateThumbnailTrait for GenerateThumbnail {
-    async fn generate_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<()> {
+    #[tracing::instrument]
+    async fn generate_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<ThumbnailResult> {
         let out_paths: Vec<PathBuf> = params
             .outputs
             .iter()
@@ -42,17 +49,25 @@ impl GenerateThumbnailTrait for GenerateThumbnail {
             out_paths,
             out_dimension: params.out_dimension,
         };
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<()>>();
+        let (tx, rx) = tokio::sync::oneshot::channel::<Result<_>>();
         rayon::spawn(move || {
             let res = vips_wrapper::generate_thumbnail(vips_params);
             tx.send(res).unwrap();
         });
-        rx.await
+        let vips_result = rx
+            .await
             .wrap_err("error generating thumbnail with libvips")?
-            .wrap_err("error generating thumbnail with libvips")
+            .wrap_err("error generating thumbnail with libvips")?;
+        Ok(ThumbnailResult {
+            actual_size: Size {
+                width: vips_result.actual_size.width,
+                height: vips_result.actual_size.height,
+            },
+        })
     }
 
-    async fn generate_video_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<()> {
+    #[tracing::instrument]
+    async fn generate_video_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<ThumbnailResult> {
         let snapshot_path = tempfile::Builder::new()
             .prefix("snap")
             .suffix(".webp")
@@ -64,29 +79,34 @@ impl GenerateThumbnailTrait for GenerateThumbnail {
             .try_into()
             .expect("tempfile paths should be UTF8");
         // fixme ffmpeg path should come from config
-        ffmpeg_snapshot(&params.in_path, &utf8_snapshot_path, Some("ffmpeg"))
-            .in_current_span()
-            .await?;
+        ffmpeg_snapshot(&params.in_path, &utf8_snapshot_path, Some("ffmpeg")).await?;
         Self::generate_thumbnail(ThumbnailParams {
             in_path: utf8_snapshot_path,
             ..params
         })
-        .in_current_span()
-        .await?;
-        snapshot_path
-            .persist(PathBuf::from("/tmp/snap.webp"))
-            .unwrap();
-        Ok(())
+        .await
     }
 }
 
 #[async_trait]
 impl GenerateThumbnailTrait for GenerateThumbnailMock {
-    async fn generate_thumbnail<'a>(_params: ThumbnailParams<'a>) -> Result<()> {
-        Ok(())
+    #[tracing::instrument]
+    async fn generate_thumbnail<'a>(_params: ThumbnailParams<'a>) -> Result<ThumbnailResult> {
+        Ok(ThumbnailResult {
+            actual_size: Size {
+                width: 400,
+                height: 400,
+            },
+        })
     }
 
-    async fn generate_video_thumbnail<'a>(_params: ThumbnailParams<'a>) -> Result<()> {
-        Ok(())
+    #[tracing::instrument]
+    async fn generate_video_thumbnail<'a>(_params: ThumbnailParams<'a>) -> Result<ThumbnailResult> {
+        Ok(ThumbnailResult {
+            actual_size: Size {
+                width: 400,
+                height: 400,
+            },
+        })
     }
 }

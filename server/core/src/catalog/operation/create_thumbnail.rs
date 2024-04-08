@@ -15,7 +15,7 @@ use crate::{
     processing::{
         self,
         commands::GenerateThumbnail,
-        image::thumbnail::{GenerateThumbnailTrait, ThumbnailParams},
+        image::thumbnail::{GenerateThumbnailTrait, ThumbnailParams, ThumbnailResult},
     },
 };
 
@@ -46,32 +46,31 @@ pub struct ThumbnailToCreateWithPaths {
 #[instrument(skip(conn), level = "debug")]
 pub async fn apply_create_thumbnail(
     conn: &mut PooledDbConn,
-    op: CreateThumbnailWithPaths,
+    result: ThumbnailSideEffectSuccess,
 ) -> Result<()> {
     interact!(conn, move |mut conn| {
-        for thumb in &op.thumbnails {
-            // we never query thumbnail sizes and don't have access to them right here so ignore
-            // for now
-            let size = Size {
-                width: 0,
-                height: 0,
-            };
-            repository::asset::set_asset_has_thumbnail(
-                &mut conn,
-                op.asset_id,
-                thumb.ty,
-                size,
-                &[ThumbnailFormat::Avif, ThumbnailFormat::Webp],
-            )?;
-        }
+        repository::asset::set_asset_has_thumbnail(
+            &mut conn,
+            result.asset_id,
+            result.thumb.ty,
+            result.actual_size,
+            &[ThumbnailFormat::Avif, ThumbnailFormat::Webp],
+        )?;
         Ok(())
     })
-    .in_current_span()
     .await??;
     Ok(())
 }
 
+#[derive(Debug, Clone)]
+pub struct ThumbnailSideEffectSuccess {
+    pub asset_id: AssetId,
+    pub thumb: ThumbnailToCreateWithPaths,
+    pub actual_size: Size,
+}
+
 pub struct ThumbnailSideEffectResult {
+    pub succeeded: Vec<ThumbnailSideEffectSuccess>,
     pub failed: Vec<(ThumbnailToCreateWithPaths, Report)>,
 }
 
@@ -82,6 +81,7 @@ pub async fn perform_side_effects_create_thumbnail(
     op: CreateThumbnailWithPaths,
 ) -> Result<ThumbnailSideEffectResult> {
     let mut result = ThumbnailSideEffectResult {
+        succeeded: Vec::default(),
         failed: Vec::default(),
     };
     if op.thumbnails.is_empty() {
@@ -96,12 +96,18 @@ pub async fn perform_side_effects_create_thumbnail(
     })
     .await??;
     // TODO don't await sequentially. Not super bad because op.thumbnails is small but still
-    for thumb in &op.thumbnails {
-        match create_thumbnail(in_path.clone(), asset.base.ty, thumb, storage)
+    for thumb in op.thumbnails {
+        match create_thumbnail(in_path.clone(), asset.base.ty, &thumb, storage)
             .in_current_span()
             .await
         {
-            Ok(_) => (),
+            Ok(res) => {
+                result.succeeded.push(ThumbnailSideEffectSuccess {
+                    asset_id: op.asset_id,
+                    thumb,
+                    actual_size: res.actual_size,
+                });
+            }
             Err(err) => {
                 result.failed.push((thumb.clone(), err));
             }
@@ -116,7 +122,7 @@ async fn create_thumbnail(
     asset_type: AssetType,
     thumb: &ThumbnailToCreateWithPaths,
     storage: &Storage,
-) -> Result<()> {
+) -> Result<ThumbnailResult> {
     let out_file_avif = storage.new_command_out_file(&thumb.avif_key).await?;
     let out_file_webp = storage.new_command_out_file(&thumb.webp_key).await?;
     let out_dimension = match thumb.ty {
@@ -143,9 +149,8 @@ async fn create_thumbnail(
     let result = rx
         .in_current_span()
         .await
-        .wrap_err("thumbnail task died or something")?;
-    result?;
+        .wrap_err("thumbnail task died or something")??;
     out_file_webp.flush_to_storage().await?;
     out_file_avif.flush_to_storage().await?;
-    Ok(())
+    Ok(result)
 }

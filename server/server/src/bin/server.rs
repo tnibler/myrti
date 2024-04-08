@@ -46,6 +46,8 @@ use core::{
 struct Cli {
     #[arg(short, long)]
     config: String,
+    #[arg(long)]
+    skip_startup_check: bool,
 }
 
 async fn db_setup(dir: &Path) -> Result<DbPool> {
@@ -125,11 +127,15 @@ async fn main() -> Result<()> {
         .parent()
         .expect("has read config file, so parent must be a directory");
 
-    tracing::info!("Running self check");
-    core::startup_self_check::run_self_check(config.bin_paths.as_ref())
-        .await
-        .expect("Self check failed");
-    tracing::info!("Self check successful");
+    if !args.skip_startup_check {
+        tracing::info!("Running self check");
+        core::startup_self_check::run_self_check(config.bin_paths.as_ref())
+            .await
+            .expect("Self check failed");
+        tracing::info!("Self check successful");
+    } else {
+        tracing::info!("Skipping self check");
+    }
 
     let addr: IpAddr = config
         .address

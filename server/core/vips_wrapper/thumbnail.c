@@ -18,7 +18,11 @@ int init() {
 
 void teardown() { vips_shutdown(); }
 
-int thumbnail(ThumbnailParams params) {
+int thumbnail(ThumbnailParams params, ThumbnailResult* result) {
+  if (result == NULL) {
+    return -1;
+  }
+
   for (unsigned long long i = 0; i < params.num_out_paths; ++i) {
     VipsImage* out = NULL;
     int ret;
@@ -36,6 +40,8 @@ int thumbnail(ThumbnailParams params) {
     }
     assert(out);
     ret = vips_image_write_to_file(out, params.out_paths[i], NULL);
+    result->actual_width = out->Xsize;
+    result->actual_height = out->Ysize;
     if (out != NULL) {
       g_object_unref(out);
     }

@@ -15,7 +15,12 @@ typedef struct ThumbnailOptions {
   int height;
 } ThumbnailParams;
 
-int thumbnail(ThumbnailParams);
+typedef struct ThumbnailResult {
+  int actual_width;
+  int actual_height;
+} ThumbnailResult;
+
+int thumbnail(ThumbnailParams, ThumbnailResult *);
 
 typedef struct ImageInfo {
   int width;

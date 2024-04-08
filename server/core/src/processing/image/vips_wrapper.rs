@@ -74,6 +74,10 @@ pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
     let c_out_path_ptrs: Vec<*const c_char> =
         c_out_paths.iter().map(|c_str| c_str.as_ptr()).collect();
+    let mut c_result = wrapper::ThumbnailResult {
+        actual_width: 0,
+        actual_height: 0,
+    };
     let params = wrapper::ThumbnailParams {
         in_path: c_path.as_ptr(),
         out_paths: c_out_path_ptrs.as_ptr(),
@@ -94,13 +98,17 @@ pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<()> {
             } => false,
         },
     };
-    let ret = unsafe { wrapper::thumbnail(params) };
+    let ret = unsafe { wrapper::thumbnail(params, &mut c_result as *mut _) };
     if ret != 0 {
         return Err(eyre!(
             "An error occurred while creating thumbnail with libvips"
         ));
     }
     Ok(())
+    let actual_size = Size {
+        width: c_result.actual_width,
+        height: c_result.actual_height,
+    };
 }
 
 #[derive(Debug, Clone)]

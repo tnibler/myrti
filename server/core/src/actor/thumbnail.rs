@@ -90,12 +90,10 @@ async fn handle_message(
     actor: &mut ThumbnailActor,
     create_thumbnails: Vec<CreateThumbnail>,
 ) -> Result<()> {
-    let thumbnail_count = create_thumbnails.len();
-    tracing::info!(thumbnail_count, "Start processing message");
     for op in create_thumbnails {
+        tracing::debug!(?op, "Creating thumbnail");
         handle_thumbnail_op(actor, op).await?;
     }
-    tracing::info!(thumbnail_count, "Finished handling message");
     Ok(())
 }
 

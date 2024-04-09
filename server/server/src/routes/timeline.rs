@@ -6,7 +6,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use eyre::{eyre, Context};
 use serde::{Deserialize, Serialize};
-use tracing::{debug, instrument, Instrument};
+use tracing::{debug, instrument};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
@@ -52,7 +52,7 @@ pub struct TimelineRequest {
     (status = 200, body=TimelineChunk)
     )
 )]
-#[instrument(skip(app_state), level = "trace")]
+#[instrument(skip(app_state))]
 pub async fn get_timeline(
     State(app_state): State<SharedState>,
     Query(req_body): Query<TimelineRequest>,
@@ -64,7 +64,7 @@ pub async fn get_timeline(
         Some(s) => Some(model::AssetId(s.parse().wrap_err("bad asset id")?)),
         None => None,
     };
-    let conn = app_state.pool.get().in_current_span().await?;
+    let conn = app_state.pool.get().await?;
     let groups = interact!(conn, move |mut conn| {
         repository::timeline::get_timeline_chunk(
             &mut conn,
@@ -72,7 +72,6 @@ pub async fn get_timeline(
             req_body.max_count.into(),
         )
     })
-    .in_current_span()
     .await??;
     let filtered_nonempty_groups = groups.into_iter().filter(|group| match group {
         TimelineElement::DayGrouped(assets) => !assets.is_empty(),
@@ -143,15 +142,14 @@ pub struct TimelineSection {
     (status = 200, body=TimelineSectionsResponse)
     )
 )]
-#[instrument(skip(app_state), level = "trace")]
+#[instrument(skip(app_state))]
 pub async fn get_timeline_sections(
     State(app_state): State<SharedState>,
 ) -> ApiResult<Json<TimelineSectionsResponse>> {
-    let conn = app_state.pool.get().in_current_span().await?;
+    let conn = app_state.pool.get().await?;
     let sections: Vec<TimelineSection> = interact!(conn, move |mut conn| {
         repository::timeline::get_sections(&mut conn)
     })
-    .in_current_span()
     .await??
     .into_iter()
     .map(|section| TimelineSection {
@@ -202,7 +200,7 @@ pub struct TimelineSegmentsResponse {
     (status = 200, body=TimelineSegmentsResponse)
     )
 )]
-#[instrument(skip(app_state), level = "trace")]
+#[tracing::instrument(fields(request = true), skip(app_state))]
 pub async fn get_timeline_segments(
     Path(section_id): Path<String>,
     State(app_state): State<SharedState>,
@@ -212,11 +210,10 @@ pub async fn get_timeline_segments(
         .ok_or(eyre!("invalid sectionId"))?;
     let segment_min: i64 = segment_min.parse().wrap_err("invalid sectionId")?;
     let segment_max: i64 = segment_max.parse().wrap_err("invalid sectionId")?;
-    let conn = app_state.pool.get().in_current_span().await?;
+    let conn = app_state.pool.get().await?;
     let segments = interact!(conn, move |mut conn| {
         repository::timeline::get_segments_in_section(&mut conn, segment_min, segment_max)
     })
-    .in_current_span()
     .await??
     .into_iter()
     .map(|segment| TimelineSegment {
@@ -240,14 +237,13 @@ pub async fn get_timeline_segments(
 }
 
 async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<AssetWithSpe> {
-    let conn = pool.get().in_current_span().await?;
+    let conn = pool.get().await?;
     match &asset.sp {
         model::AssetSpe::Image(_image) => {
             let asset_id = asset.base.id;
             let reprs = interact!(conn, move |mut conn| {
                 repository::representation::get_image_representations(&mut conn, asset_id)
             })
-            .in_current_span()
             .await??;
             let api_reprs = reprs
                 .into_iter()

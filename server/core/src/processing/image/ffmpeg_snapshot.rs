@@ -5,7 +5,7 @@ use eyre::{eyre, Context, Result};
 use tokio::process::Command;
 use tracing::instrument;
 
-#[instrument(level = "debug")]
+#[instrument]
 pub async fn ffmpeg_snapshot(
     video_path: &Path,
     output: &Path,

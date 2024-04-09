@@ -21,11 +21,10 @@ pub fn router() -> Router<SharedState> {
 }
 
 async fn get_asset_roots(app_state: State<SharedState>) -> ApiResult<Json<Vec<AssetRoot>>> {
-    let conn = app_state.pool.get().in_current_span().await?;
+    let conn = app_state.pool.get().await?;
     let asset_roots = interact!(conn, move |mut conn| {
         repository::asset_root_dir::get_asset_roots(&mut conn)
     })
-    .in_current_span()
     .await??;
     Ok(asset_roots
         .into_iter()
@@ -45,11 +44,10 @@ async fn get_asset_root_by_id(
     app_state: State<SharedState>,
 ) -> ApiResult<Json<AssetRoot>> {
     let id: model::AssetRootDirId = AssetRootDirId(path_id).try_into()?;
-    let conn = app_state.pool.get().in_current_span().await?;
+    let conn = app_state.pool.get().await?;
     let model = interact!(conn, move |mut conn| {
         repository::asset_root_dir::get_asset_root(&mut conn, id)
     })
-    .in_current_span()
     .await??;
     Ok(AssetRoot {
         id: model.id.into(),

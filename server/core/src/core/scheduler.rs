@@ -142,7 +142,7 @@ async fn run_scheduler(sched: Scheduler) {
     }
 }
 
-#[instrument(skip_all, level = "debug")]
+#[instrument(skip_all)]
 async fn on_startup(
     db_pool: DbPool,
     indexing_send: mpsc::Sender<IndexingMessage>,
@@ -211,6 +211,7 @@ async fn handle_msg(msg: SchedulerMessage, indexing_send: &mpsc::Sender<Indexing
     }
 }
 
+#[tracing::instrument(skip(db_pool, thumbnail_send, video_packaging_send, image_conversion_send))]
 async fn on_new_asset_indexed(
     asset_id: AssetId,
     db_pool: DbPool,

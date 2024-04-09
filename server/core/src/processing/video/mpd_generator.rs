@@ -74,7 +74,6 @@ impl MpdGeneratorTrait for MpdGenerator {
             .spawn()
             .wrap_err(format!("error calling mpd_generator ({})", mpd_generator))?
             .wait()
-            .in_current_span()
             .await?;
         command_out_file.flush_to_storage().await?;
         // FIXME mpd_generator just skips input media_info files that fail to open/don't exist

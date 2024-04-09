@@ -9,9 +9,7 @@ use diesel::{
 use eyre::{Context, Result};
 use tracing::instrument;
 
-use crate::model::{
-    Asset, AssetId, TimelineGroup, TimelineGroupId,
-};
+use crate::model::{Asset, AssetId, TimelineGroup, TimelineGroupId};
 
 use super::{db::DbConn, db_entity::DbAsset, timeline_group::get_timeline_group};
 
@@ -49,7 +47,7 @@ struct RowAssetGroupId {
 // TODO when the time comes: figure out how to handle dates of different timezones.
 // Right now assets are grouped by Asset::taken_date_local().date_naive() and sorted by timestamp,
 // which may or may not by what we want.
-#[tracing::instrument(skip(conn), level = "trace")]
+#[tracing::instrument(skip(conn))]
 pub fn get_timeline_chunk(
     conn: &mut DbConn,
     last_id: Option<AssetId>,
@@ -181,7 +179,7 @@ struct RowTimelineSection {
     pub asset_count: i64,
 }
 
-#[tracing::instrument(skip(conn), level = "trace")]
+#[tracing::instrument(skip(conn))]
 pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
     // Right now a section always contains entire segments,
     // even if
@@ -267,7 +265,7 @@ struct RowTimelineSegmentInSection {
     pub segment_idx: i64,
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn get_segments_in_section(
     conn: &mut DbConn,
     segment_min: i64,

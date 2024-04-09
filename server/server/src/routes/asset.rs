@@ -15,7 +15,7 @@ use axum_extra::body::AsyncReadBody;
 use eyre::{eyre, Context, Result};
 use serde::Deserialize;
 use tokio_util::io::ReaderStream;
-use tracing::{warn, Instrument};
+use tracing::Instrument;
 use utoipa::ToSchema;
 
 use core::{
@@ -51,12 +51,12 @@ responses(
     (status = 200, body=[Asset])
         ),
 )]
+#[tracing::instrument(fields(request = true), skip(app_state))]
 async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Asset>>> {
-    let conn = app_state.pool.get().in_current_span().await?;
+    let conn = app_state.pool.get().await?;
     let assets: Vec<Asset> = interact!(conn, move |mut conn| {
         repository::asset::get_assets(&mut conn)
     })
-    .in_current_span()
     .await??
     .into_iter()
     .map(|a| a.into())
@@ -95,7 +95,6 @@ pub enum ThumbnailFormat {
     Webp,
 }
 
-#[tracing::instrument(name = "Get Asset thumbnail", skip(app_state), level = "trace")]
 #[utoipa::path(get, path = "/api/thumbnail/{id}/{size}/{format}",
 responses(
     (status = 200, body=String, content_type = "application/octet")
@@ -106,6 +105,7 @@ responses(
         ("format" = ThumbnailFormat, Path, description = "Image format for thumbnail")
     )
 )]
+#[tracing::instrument(fields(request = true), skip(app_state))]
 async fn get_thumbnail(
     Path((id, size, format)): Path<(String, ThumbnailSize, ThumbnailFormat)>,
     State(app_state): State<SharedState>,
@@ -176,18 +176,17 @@ responses(
         ("id" = String, Path, description = "AssetId"),
     )
 )]
-#[tracing::instrument(name = "Get Asset file", skip(app_state), level = "trace")]
+#[tracing::instrument(fields(request = true), skip(app_state))]
 async fn get_asset_file(
     Path(id): Path<String>,
     Query(query): Query<HashMap<String, String>>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Response> {
     let id: model::AssetId = AssetId(id).try_into()?;
-    let conn = app_state.pool.get().in_current_span().await?;
+    let conn = app_state.pool.get().await?;
     let path = interact!(conn, move |mut conn| {
         repository::asset::get_asset_path_on_disk(&mut conn, id)
     })
-    .in_current_span()
     .await??
     .path_on_disk();
     let file = tokio::fs::File::open(&path).await?;
@@ -234,6 +233,7 @@ responses(
         ("reprId" = String, Path, description = "ImageRepresentationId"),
     )
 )]
+#[tracing::instrument(fields(request = true), skip(app_state))]
 async fn get_image_asset_representation(
     Path((asset_id, repr_id)): Path<(String, String)>,
     Query(query): Query<HashMap<String, String>>,
@@ -244,11 +244,10 @@ async fn get_image_asset_representation(
     // removing format name/file extension from storage key would make this query unnecessary but
     // it's nice to have for now
     // Or maybe not since we need to set a MIME type?
-    let conn = app_state.pool.get().in_current_span().await?;
+    let conn = app_state.pool.get().await?;
     let repr = interact!(conn, move |mut conn| {
         repository::representation::get_image_representation(&mut conn, repr_id)
     })
-    .in_current_span()
     .await?
     .wrap_err("no such repr_id")?;
     let storage_key = repr.file_key;
@@ -310,6 +309,7 @@ pub struct HideAssetsRequest {
     path = "/api/asset/hidden",
     responses((status=200)),
 )]
+#[tracing::instrument(fields(request = true), skip(app_state))]
 async fn set_assets_hidden(
     State(app_state): State<SharedState>,
     Json(req): Json<HideAssetsRequest>,

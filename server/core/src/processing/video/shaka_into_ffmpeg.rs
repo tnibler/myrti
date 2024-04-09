@@ -58,21 +58,14 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
             .expect("tempfile path should be utf8");
         let shaka_out_path = utf8_temp_path.join(&out_filename);
         ShakaPackager::run_with_local_output(input, repr_type, &shaka_out_path, shaka_bin_path)
-            .in_current_span()
             .await?;
         let media_info_filename = format!("{}.media_info", &out_filename);
         let media_info_key = format!("{}.media_info", output_key);
-        let mut write_media_info = storage
-            .open_write_stream(&media_info_key)
-            .in_current_span()
-            .await?;
+        let mut write_media_info = storage.open_write_stream(&media_info_key).await?;
         let mut read_media_info = File::open(tempdir.path().join(&media_info_filename))
-            .in_current_span()
             .await
             .wrap_err("error opening media_info file")?;
-        tokio::io::copy(&mut read_media_info, &mut write_media_info)
-            .in_current_span()
-            .await?;
+        tokio::io::copy(&mut read_media_info, &mut write_media_info).await?;
 
         ffmpeg
             .run(
@@ -81,7 +74,6 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
                 storage,
                 ffmpeg_bin_path,
             )
-            .in_current_span()
             .await?;
         Ok(ShakaResult { media_info_key })
     }
@@ -115,7 +107,6 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpegMock {
                 storage,
                 ffmpeg_bin_path,
             )
-            .in_current_span()
             .await?;
         let media_info_key = format!("{}.media_info", output_key);
         Ok(ShakaResult { media_info_key })

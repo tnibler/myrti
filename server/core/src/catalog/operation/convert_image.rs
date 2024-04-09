@@ -41,7 +41,7 @@ pub async fn apply_convert_image(
         repository::representation::insert_image_representation(&mut conn, &image_representation)
             .wrap_err("error inserting image representation")
     })
-    .in_current_span()
+    
     .await??;
     Ok(())
 }
@@ -67,7 +67,7 @@ pub async fn perform_side_effects_convert_image(
         let asset_path = repository::asset::get_asset_path_on_disk(&mut conn, asset_id)?;
         Ok((asset, asset_path))
     })
-    .in_current_span()
+    
     .await??;
     let scaled_size = processing::image::image_conversion::ConvertImage::convert_image(
         asset_path.path_on_disk(),

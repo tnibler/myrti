@@ -9,7 +9,7 @@ use axum::{
 use eyre::Context;
 use serde::Deserialize;
 use tower::ServiceExt;
-use tracing::{instrument, Instrument};
+use tracing::Instrument;
 
 use core::{catalog::storage_key, core::storage::StorageProvider, model};
 
@@ -25,7 +25,7 @@ struct DashFilePath {
     pub path: String,
 }
 
-#[instrument(skip(app_state), level = "trace")]
+#[tracing::instrument(fields(request = true), skip(app_state))]
 async fn get_dash_file(
     Path(path): Path<DashFilePath>,
     State(app_state): State<SharedState>,
@@ -51,7 +51,6 @@ async fn get_dash_file(
         .expect("not implemented for non-local StorageProvider");
     let serve_dir = tower_http::services::ServeFile::new(&path)
         .oneshot(request)
-        .in_current_span()
         .await
         .wrap_err("error serving file")?;
     Ok(serve_dir.into_response())

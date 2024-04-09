@@ -2,6 +2,7 @@ use camino::Utf8Path as Path;
 use chrono::{DateTime, Local, Utc};
 use color_eyre::eyre::Result;
 use eyre::{eyre, Context};
+use tracing::Instrument;
 
 use crate::{
     config, interact,
@@ -15,7 +16,7 @@ use super::{
 };
 
 /// Returns Some(AssetId) if a new, non duplicate asset was indexed and added to the database
-#[tracing::instrument(skip(pool, asset_root, bin_paths), level = "debug")]
+#[tracing::instrument(skip(pool, asset_root, bin_paths))]
 pub async fn index_file(
     path: &Path,
     asset_root: &AssetRootDir,

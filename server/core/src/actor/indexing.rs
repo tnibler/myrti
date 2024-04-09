@@ -132,7 +132,7 @@ async fn handle_indexing_message(
     Ok(())
 }
 
-#[instrument(skip(pool, send_result, bin_paths), level = "debug")]
+#[instrument(skip(pool, send_result, bin_paths))]
 async fn index_asset_root(
     pool: DbPool,
     send_result: mpsc::Sender<IndexingResult>,

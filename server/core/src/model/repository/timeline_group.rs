@@ -12,7 +12,7 @@ use crate::model::{
 
 use super::{db::DbConn, schema};
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn get_timeline_group(conn: &mut DbConn, id: TimelineGroupId) -> Result<TimelineGroup> {
     use schema::TimelineGroup;
 
@@ -20,7 +20,7 @@ pub fn get_timeline_group(conn: &mut DbConn, id: TimelineGroupId) -> Result<Time
     db_timeline_group.try_into()
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn get_timeline_group_album_for_asset(
     conn: &mut DbConn,
     asset_id: AssetId,
@@ -46,7 +46,7 @@ pub struct CreateTimelineGroup {
     pub asset_ids: Vec<AssetId>,
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn create_timeline_group(
     conn: &mut DbConn,
     ctg: CreateTimelineGroup,
@@ -76,7 +76,7 @@ pub fn create_timeline_group(
     })
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn add_assets_to_group(
     conn: &mut DbConn,
     group_id: TimelineGroupId,
@@ -99,7 +99,7 @@ pub fn add_assets_to_group(
     })
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn get_assets_in_group(conn: &mut DbConn, group_id: TimelineGroupId) -> Result<Vec<Asset>> {
     use schema::{Asset, TimelineGroupEntry};
     let db_assets: Vec<DbAsset> = TimelineGroupEntry::table

@@ -132,7 +132,7 @@ pub async fn apply_package_video(conn: &mut PooledDbConn, op: CompletedPackageVi
     let asset: VideoAsset = interact!(conn, move |mut conn| {
         repository::asset::get_asset(&mut conn, op.asset_id)?.try_into()
     })
-    .in_current_span()
+    
     .await??;
     let asset = VideoAsset {
         video: Video {
@@ -209,7 +209,7 @@ pub async fn apply_package_video(conn: &mut PooledDbConn, op: CompletedPackageVi
         }
         Ok(())
     }))
-    .in_current_span()
+    
     .await?
 }
 
@@ -221,11 +221,11 @@ pub async fn perform_side_effects_package_video(
     bin_paths: Option<&config::BinPaths>,
 ) -> Result<CompletedPackageVideo> {
     let asset_id = package_video.asset_id;
-    let conn = pool.get().in_current_span().await?;
+    let conn = pool.get().await?;
     let asset_path = interact!(conn, move |mut conn| {
         repository::asset::get_asset_path_on_disk(&mut conn, asset_id)
     })
-    .in_current_span()
+    
     .await??;
 
     let ffmpeg_path = bin_paths.map(|bp| bp.ffmpeg.as_opt_path()).flatten();
@@ -297,7 +297,7 @@ pub async fn perform_side_effects_package_video(
                     &storage,
                     shaka_packager_path,
                 )
-                .in_current_span()
+                
                 .await?;
             Some(CreatedAudioRepr::Transcode(AudioTranscodeResult {
                 target: transcode.target.clone(),
@@ -379,7 +379,7 @@ pub async fn perform_side_effects_package_video(
                     &storage,
                     shaka_packager_path,
                 )
-                .in_current_span()
+                
                 .await?;
             let probe = ffmpeg_into_shaka
                 .ffprobe_get_streams(ffprobe_path)

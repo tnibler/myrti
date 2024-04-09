@@ -39,7 +39,7 @@ pub struct FFmpeg {
 
 #[async_trait]
 impl FFmpegLocalOutputTrait for FFmpeg {
-    #[instrument(name = "ffmpeg", skip(self), level = "debug")]
+    #[instrument(err, name = "ffmpeg", skip(self))]
     async fn run_with_local_output(
         &self,
         input: &str,
@@ -61,7 +61,6 @@ impl FFmpegLocalOutputTrait for FFmpeg {
             .spawn()
             .wrap_err("error calling ffmpeg")?
             .wait()
-            .in_current_span()
             .await
             .wrap_err("error waiting for ffmpeg")?;
         if result.success() {
@@ -90,7 +89,6 @@ impl FFmpegTrait for FFmpeg {
     ) -> Result<()> {
         let command_out_file = storage.new_command_out_file(output_key).await?;
         self.run_with_local_output(input, command_out_file.path(), ffmpeg_bin_path)
-            .in_current_span()
             .await?;
         command_out_file.flush_to_storage().await?;
         Ok(())

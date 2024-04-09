@@ -17,15 +17,16 @@ pub mod timeline_group;
 #[macro_export()]
 macro_rules! interact {
     ($conn:ident, $block:expr) => {
-        <_ as futures::TryFutureExt>::map_err($conn.interact::<_, eyre::Result<_>>($block), |err| {
-            match err {
+        tracing::Instrument::in_current_span(<_ as futures::TryFutureExt>::map_err(
+            $conn.interact::<_, eyre::Result<_>>($block),
+            |err| match err {
                 deadpool_diesel::InteractError::Panic(_) => {
                     eyre::eyre!("database interaction panicked")
                 }
                 deadpool_diesel::InteractError::Aborted => {
                     eyre::eyre!("database interaction was aborted")
                 }
-            }
-        })
+            },
+        ))
     };
 }

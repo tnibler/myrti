@@ -28,7 +28,7 @@ use super::{
     },
 };
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub async fn required_thumbnails_for_asset(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
@@ -54,7 +54,7 @@ pub async fn required_thumbnails_for_asset(
     })
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub async fn required_video_packaging_for_asset(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
@@ -153,7 +153,7 @@ pub async fn required_video_packaging_for_asset(
     }])
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub async fn required_image_conversion_for_asset(
     conn: &mut PooledDbConn,
     asset_id: AssetId,

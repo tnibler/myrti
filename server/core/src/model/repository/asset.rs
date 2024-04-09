@@ -21,14 +21,14 @@ use super::db::DbConn;
 use super::db_entity::DbAsset;
 use super::schema;
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn get_asset(conn: &mut DbConn, id: AssetId) -> Result<Asset> {
     use schema::Asset::dsl::*;
     let db_asset: DbAsset = Asset.select(DbAsset::as_select()).find(id.0).first(conn)?;
     db_asset.try_into()
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn get_asset_with_hash(conn: &mut DbConn, with_hash: u64) -> Result<Option<AssetId>> {
     use schema::Asset::dsl::*;
     let with_hash = hash_u64_to_vec8(with_hash);
@@ -40,7 +40,7 @@ pub fn get_asset_with_hash(conn: &mut DbConn, with_hash: u64) -> Result<Option<A
     Ok(maybe_id.map(|id| AssetId(id)))
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn get_asset_path_on_disk(conn: &mut DbConn, id: AssetId) -> Result<AssetPathOnDisk> {
     use schema::Asset;
     use schema::AssetRootDir;
@@ -56,7 +56,7 @@ pub fn get_asset_path_on_disk(conn: &mut DbConn, id: AssetId) -> Result<AssetPat
     })
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn asset_or_duplicate_with_path_exists(
     conn: &mut DbConn,
     asset_root_dir_id: AssetRootDirId,
@@ -88,7 +88,7 @@ pub fn asset_or_duplicate_with_path_exists(
     Ok(!r.is_empty())
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn get_assets(conn: &mut DbConn) -> Result<Vec<Asset>> {
     use schema::Asset::dsl::*;
     let db_assets: Vec<DbAsset> = Asset.select(DbAsset::as_select()).load(conn)?;
@@ -176,7 +176,7 @@ struct DbAssetHasThumbnails {
     pub has_sm_sq: i32,
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn get_thumbnails_for_asset(conn: &mut DbConn, asset_id: AssetId) -> Result<AssetThumbnails> {
     let row: DbAssetHasThumbnails = diesel::sql_query(r#"
 SELECT Asset.asset_id AS asset_id, (lg_orig.thumbnail_id IS NOT NULL) as has_lg_orig, (sm_sq.thumbnail_id IS NOT NULL) AS has_sm_sq
@@ -198,7 +198,7 @@ Asset.asset_id = ?;
     })
 }
 
-#[instrument(skip(conn, ffprobe_output), level = "trace")]
+#[instrument(skip(conn, ffprobe_output))]
 #[deprecated = "use create_asset instead"]
 #[doc(hidden)]
 /// Only really used for tests an in create_asset
@@ -237,7 +237,7 @@ pub fn insert_asset(
     Ok(AssetId(id))
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<AssetId> {
     let (ty, sp, ffprobe_output) = match create_asset.spe {
         CreateAssetSpe::Image(image) => (
@@ -287,7 +287,7 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
     Ok(AssetId(id))
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn set_asset_has_thumbnail(
     conn: &mut DbConn,
     asset_id: AssetId,
@@ -322,7 +322,7 @@ pub fn set_asset_has_thumbnail(
     Ok(())
 }
 
-#[instrument(skip(conn), level = "debug")]
+#[instrument(skip(conn))]
 pub fn set_asset_has_dash(conn: &mut DbConn, asset_id: AssetId, has_dash: bool) -> Result<()> {
     use schema::Asset;
     diesel::update(Asset::table.find(asset_id.0))
@@ -331,7 +331,7 @@ pub fn set_asset_has_dash(conn: &mut DbConn, asset_id: AssetId, has_dash: bool) 
     Ok(())
 }
 
-#[instrument(skip(conn), level = "debug")]
+#[instrument(skip(conn))]
 pub fn get_video_assets_without_dash(conn: &mut DbConn) -> Result<Vec<VideoAsset>> {
     use schema::Asset::dsl::*;
     let db_assets: Vec<DbAsset> = Asset
@@ -347,7 +347,7 @@ pub fn get_video_assets_without_dash(conn: &mut DbConn) -> Result<Vec<VideoAsset
         .collect::<Result<Vec<VideoAsset>>>()
 }
 
-#[instrument(skip(conn), level = "debug")]
+#[instrument(skip(conn))]
 pub fn get_video_assets_with_no_acceptable_repr(conn: &mut DbConn) -> Result<Vec<VideoAsset>> {
     use schema::Asset;
     let query = Asset::table
@@ -395,7 +395,7 @@ pub fn get_video_assets_with_no_acceptable_repr(conn: &mut DbConn) -> Result<Vec
         .collect::<Result<Vec<_>>>()
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn get_videos_in_acceptable_codec_without_dash(conn: &mut DbConn) -> Result<Vec<VideoAsset>> {
     use schema::Asset;
     let db_assets: Vec<DbAsset> = Asset::table
@@ -448,7 +448,7 @@ pub fn get_image_assets_with_no_acceptable_repr(
     Ok(asset_ids.into_iter().map(|id| AssetId(id)).collect())
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn get_ffprobe_output(conn: &mut DbConn, asset_id: AssetId) -> Result<Vec<u8>> {
     use schema::Asset;
     let ffprobe_output: Vec<u8> = Asset::table

@@ -60,10 +60,7 @@ pub struct VipsThumbailResult {
     pub actual_size: Size,
 }
 
-#[tracing::instrument(level = "debug")]
 pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<VipsThumbailResult> {
-    // let span = debug_span!("Generate image thumbnail (libvips)");
-    // let _enter = span.enter();
     let c_path = CString::new(params.in_path.as_os_str().as_bytes()).wrap_err(format!(
         "Could not convert path {} to bytes",
         &params.in_path
@@ -139,7 +136,6 @@ pub fn get_image_size(path: &Path) -> Result<Size> {
     }
 }
 
-#[tracing::instrument(level = "debug")]
 pub fn convert_image(
     input: &Path,
     output: &Path,

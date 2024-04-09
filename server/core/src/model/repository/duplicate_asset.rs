@@ -15,7 +15,7 @@ pub struct NewDuplicateAsset<'a> {
     pub path_in_asset_root: &'a Path,
 }
 
-#[instrument(skip(conn), level = "trace")]
+#[instrument(skip(conn))]
 pub fn insert_duplicate_asset<'a>(
     conn: &mut DbConn,
     dupe: NewDuplicateAsset<'a>,

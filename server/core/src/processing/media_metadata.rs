@@ -90,6 +90,7 @@ pub mod exiftool {
     }
 }
 
+#[tracing::instrument]
 pub async fn read_media_metadata(
     path: &Path,
     exiftool_bin_path: Option<&Path>,

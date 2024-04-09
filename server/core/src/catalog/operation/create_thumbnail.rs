@@ -87,7 +87,7 @@ pub async fn perform_side_effects_create_thumbnail(
     if op.thumbnails.is_empty() {
         return Ok(result);
     }
-    let conn = pool.get().in_current_span().await?;
+    let conn = pool.get().await?;
     let (in_path, asset) = interact!(conn, move |mut conn| {
         let in_path =
             repository::asset::get_asset_path_on_disk(&mut conn, op.asset_id)?.path_on_disk();
@@ -97,10 +97,7 @@ pub async fn perform_side_effects_create_thumbnail(
     .await??;
     // TODO don't await sequentially. Not super bad because op.thumbnails is small but still
     for thumb in op.thumbnails {
-        match create_thumbnail(in_path.clone(), asset.base.ty, &thumb, storage)
-            .in_current_span()
-            .await
-        {
+        match create_thumbnail(in_path.clone(), asset.base.ty, &thumb, storage).await {
             Ok(res) => {
                 result.succeeded.push(ThumbnailSideEffectSuccess {
                     asset_id: op.asset_id,
@@ -116,7 +113,7 @@ pub async fn perform_side_effects_create_thumbnail(
     Ok(result)
 }
 
-#[instrument(skip(storage), level = "debug")]
+#[instrument(skip(storage))]
 async fn create_thumbnail(
     asset_path: PathBuf,
     asset_type: AssetType,
@@ -146,10 +143,7 @@ async fn create_thumbnail(
         AssetType::Video => GenerateThumbnail::generate_video_thumbnail(thumbnail_params).await,
     };
     tx.send(res).unwrap();
-    let result = rx
-        .in_current_span()
-        .await
-        .wrap_err("thumbnail task died or something")??;
+    let result = rx.await.wrap_err("thumbnail task died or something")??;
     out_file_webp.flush_to_storage().await?;
     out_file_avif.flush_to_storage().await?;
     Ok(result)

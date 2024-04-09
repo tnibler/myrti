@@ -3,7 +3,7 @@ use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use enum_dispatch::enum_dispatch;
 use eyre::{Context, Result};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tracing::{instrument, Instrument};
+use tracing::instrument;
 
 /// Abstraction for storing data files in any backing store.
 /// This interface is basically a blob store, where every object has
@@ -135,7 +135,6 @@ impl StorageProvider for LocalFileStorage {
         let open = tokio::fs::OpenOptions::new()
             .read(true)
             .open(self.root.join(key))
-            .in_current_span()
             .await;
         match open {
             Ok(f) => Ok(Box::new(f)),

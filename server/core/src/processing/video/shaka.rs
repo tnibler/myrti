@@ -50,7 +50,7 @@ pub struct ShakaResult {
 
 #[async_trait]
 impl ShakaPackagerWithLocalOutputTrait for ShakaPackager {
-    #[instrument(name = "shaka_packager", level = "debug")]
+    #[instrument(err, name = "shaka_packager")]
     async fn run_with_local_output(
         input: &Path,
         repr_type: RepresentationType,
@@ -104,6 +104,7 @@ impl ShakaPackagerWithLocalOutputTrait for ShakaPackager {
 
 #[async_trait]
 impl ShakaPackagerTrait for ShakaPackager {
+    #[tracing::instrument(err, skip(storage))]
     async fn run(
         input: &Path,
         repr_type: RepresentationType,

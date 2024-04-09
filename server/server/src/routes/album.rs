@@ -46,9 +46,9 @@ pub struct CreateAlbumResponse {
     path = "/api/albums",
     responses((status = 200, body=Vec<Album>)),
 )]
-#[tracing::instrument(skip(app_state))]
+#[tracing::instrument(fields(request = true), skip(app_state))]
 pub async fn get_all_albums(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Album>>> {
-    let conn = app_state.pool.get().in_current_span().await?;
+    let conn = app_state.pool.get().await?;
     let albums: Vec<Album> = interact!(conn, move |mut conn| {
         repository::album::get_all_albums_with_asset_count(&mut conn)
     })
@@ -65,7 +65,7 @@ pub async fn get_all_albums(State(app_state): State<SharedState>) -> ApiResult<J
     request_body = CreateAlbumRequest,
     responses((status = 200, body=CreateAlbumResponse)),
 )]
-#[tracing::instrument(skip(app_state))]
+#[tracing::instrument(fields(request = true), skip(app_state))]
 pub async fn create_album(
     State(app_state): State<SharedState>,
     Json(request): Json<CreateAlbumRequest>,
@@ -105,7 +105,7 @@ pub struct AlbumDetailsResponse {
     path = "/api/albums/{id}",
     responses((status = 200, body=AlbumDetailsResponse))
 )]
-#[tracing::instrument(err, skip(app_state))]
+#[tracing::instrument(fields(request = true), err, skip(app_state))]
 pub async fn get_album_details(
     Path(album_id): Path<String>,
     State(app_state): State<SharedState>,
@@ -148,6 +148,7 @@ pub struct AppendAssetsRequest {
     request_body = AppendAssetsRequest,
     responses((status = 200, body=AppendAssetsResponse))
 )]
+#[tracing::instrument(fields(request = true), skip(app_state))]
 pub async fn append_assets_to_album(
     Path(album_id): Path<String>,
     State(app_state): State<SharedState>,

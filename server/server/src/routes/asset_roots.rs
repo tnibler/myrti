@@ -3,7 +3,6 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use tracing::Instrument;
 
 use core::model::{self, repository};
 use core::{deadpool_diesel, interact};
@@ -22,8 +21,8 @@ pub fn router() -> Router<SharedState> {
 
 async fn get_asset_roots(app_state: State<SharedState>) -> ApiResult<Json<Vec<AssetRoot>>> {
     let conn = app_state.pool.get().await?;
-    let asset_roots = interact!(conn, move |mut conn| {
-        repository::asset_root_dir::get_asset_roots(&mut conn)
+    let asset_roots = interact!(conn, move |conn| {
+        repository::asset_root_dir::get_asset_roots(conn)
     })
     .await??;
     Ok(asset_roots
@@ -45,8 +44,8 @@ async fn get_asset_root_by_id(
 ) -> ApiResult<Json<AssetRoot>> {
     let id: model::AssetRootDirId = AssetRootDirId(path_id).try_into()?;
     let conn = app_state.pool.get().await?;
-    let model = interact!(conn, move |mut conn| {
-        repository::asset_root_dir::get_asset_root(&mut conn, id)
+    let model = interact!(conn, move |conn| {
+        repository::asset_root_dir::get_asset_root(conn, id)
     })
     .await??;
     Ok(AssetRoot {

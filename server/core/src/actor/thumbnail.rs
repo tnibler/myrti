@@ -119,13 +119,13 @@ fn resolve(op: &CreateThumbnail) -> CreateThumbnailWithPaths {
 async fn handle_thumbnail_op(actor: &mut ThumbnailActor, op: CreateThumbnail) -> Result<()> {
     let conn = actor.db_pool.get().await?;
     let asset_id = op.asset_id;
-    let past_failed_job = interact!(conn, move |mut conn| {
-        repository::failed_job::get_failed_thumbnail_job_for_asset(&mut conn, asset_id)
+    let past_failed_job = interact!(conn, move |conn| {
+        repository::failed_job::get_failed_thumbnail_job_for_asset(conn, asset_id)
     })
     .await??;
     if let Some(past_failed_job) = past_failed_job {
-        let asset_path = interact!(conn, move |mut conn| {
-            repository::asset::get_asset_path_on_disk(&mut conn, asset_id)
+        let asset_path = interact!(conn, move |conn| {
+            repository::asset::get_asset_path_on_disk(conn, asset_id)
         })
         .await??
         .path_on_disk();
@@ -199,8 +199,8 @@ async fn handle_thumbnail_op(actor: &mut ThumbnailActor, op: CreateThumbnail) ->
 }
 
 async fn save_failed_thumbnail(conn: &mut PooledDbConn, asset_id: AssetId) -> Result<()> {
-    let asset_path = interact!(conn, move |mut conn| {
-        repository::asset::get_asset_path_on_disk(&mut conn, asset_id)
+    let asset_path = interact!(conn, move |conn| {
+        repository::asset::get_asset_path_on_disk(conn, asset_id)
     })
     .await??
     .path_on_disk();
@@ -209,9 +209,9 @@ async fn save_failed_thumbnail(conn: &mut PooledDbConn, asset_id: AssetId) -> Re
         .try_into_std()
         .expect("no operation has touched this file");
     let hash = hash_file(file).await?;
-    let insert_res = interact!(conn, move |mut conn| {
+    interact!(conn, move |conn| {
         repository::failed_job::insert_failed_thumbnail_job(
-            &mut conn,
+            conn,
             &FailedThumbnailJob {
                 asset_id,
                 file_hash: hash,
@@ -219,6 +219,6 @@ async fn save_failed_thumbnail(conn: &mut PooledDbConn, asset_id: AssetId) -> Re
             },
         )
     })
-    .await?;
+    .await??;
     Ok(())
 }

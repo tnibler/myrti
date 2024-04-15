@@ -32,9 +32,9 @@ pub mod jpeg {
         }
     }
 
-    impl Into<i32> for QualityFactor {
-        fn into(self) -> i32 {
-            self.0
+    impl From<QualityFactor> for i32 {
+        fn from(val: QualityFactor) -> Self {
+            val.0
         }
     }
 
@@ -87,9 +87,9 @@ pub mod heif {
         }
     }
 
-    impl Into<i32> for QualityFactor {
-        fn into(self) -> i32 {
-            self.0
+    impl From<QualityFactor> for i32 {
+        fn from(val: QualityFactor) -> Self {
+            val.0
         }
     }
 

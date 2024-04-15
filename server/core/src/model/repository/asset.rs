@@ -37,7 +37,7 @@ pub fn get_asset_with_hash(conn: &mut DbConn, with_hash: u64) -> Result<Option<A
         .filter(hash.eq(Some(with_hash)))
         .first(conn)
         .optional()?;
-    Ok(maybe_id.map(|id| AssetId(id)))
+    Ok(maybe_id.map(AssetId))
 }
 
 #[instrument(skip(conn))]
@@ -228,7 +228,7 @@ pub fn insert_asset(
     }
     let ffprobe_output: Option<&[u8]> = ffprobe_output.as_ref().map(|o| o.as_ref());
 
-    let insertable = asset.as_insertable(ffprobe_output.map(|o| Cow::Borrowed(o)));
+    let insertable = asset.as_insertable(ffprobe_output.map(Cow::Borrowed));
     let id: i64 = insert_into(schema::Asset::table)
         .values(&insertable)
         .returning(schema::Asset::asset_id)
@@ -445,7 +445,7 @@ pub fn get_image_assets_with_no_acceptable_repr(
         )))
         .select(Asset::asset_id)
         .load(conn)?;
-    Ok(asset_ids.into_iter().map(|id| AssetId(id)).collect())
+    Ok(asset_ids.into_iter().map(AssetId).collect())
 }
 
 #[instrument(skip(conn))]

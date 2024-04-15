@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use eyre::{Context, Result};
-use tracing::Instrument;
 
 use crate::core::storage::Storage;
 
@@ -110,6 +109,7 @@ pub struct FFmpegIntoShakaMock {
     audio: Option<ProduceAudio>,
 }
 
+#[allow(inactive-code)]
 #[cfg(feature = "mock-commands")]
 #[async_trait]
 impl FFmpegIntoShakaFFmpegTrait for FFmpegIntoShakaMock {
@@ -127,6 +127,7 @@ impl FFmpegIntoShakaFFmpegTrait for FFmpegIntoShakaMock {
     }
 }
 
+#[allow(inactive-code)]
 #[cfg(feature = "mock-commands")]
 #[async_trait]
 impl FFmpegIntoShakaTrait for FFmpegIntoShakaMock {

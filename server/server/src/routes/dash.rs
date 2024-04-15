@@ -9,7 +9,6 @@ use axum::{
 use eyre::Context;
 use serde::Deserialize;
 use tower::ServiceExt;
-use tracing::Instrument;
 
 use core::{catalog::storage_key, core::storage::StorageProvider, model};
 

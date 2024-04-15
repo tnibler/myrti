@@ -44,7 +44,7 @@ pub async fn ffprobe_get_streams(
     ffprobe_bin_path: Option<&Path>,
 ) -> Result<(Vec<u8>, FFProbeStreams)> {
     let ffprobe_result = Command::new(ffprobe_bin_path.unwrap_or("ffprobe".into()))
-        .args(&["-v", "error", "-show_streams", "-of", "json=compact=1"])
+        .args(["-v", "error", "-show_streams", "-of", "json=compact=1"])
         .arg(path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -119,7 +119,7 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
                     .parse()
                     .wrap_err("could not parse bit_rate ffprobe output")?,
                 rotation: match video.side_data_list {
-                    Some(side_datas) => side_datas.get(0).map(|sd| sd.rotation).flatten(),
+                    Some(side_datas) => side_datas.first().and_then(|sd| sd.rotation),
                     _ => None,
                 },
             })),
@@ -245,7 +245,7 @@ fn ffprobe_output_parsed_correctly() {
     .into_iter()
     .collect();
     let parsed_video_audio: HashSet<_> =
-        assert_ok!(parse_ffprobe_output(&output_video_audio.as_bytes()))
+        assert_ok!(parse_ffprobe_output(output_video_audio.as_bytes()))
             .into_iter()
             .collect();
     assert_eq!(parsed_video_audio, expected_video_audio);
@@ -302,7 +302,7 @@ fn ffprobe_output_parsed_correctly() {
     .into_iter()
     .collect();
     let parsed_video_only: HashSet<_> =
-        assert_ok!(parse_ffprobe_output(&output_video_only.as_bytes()))
+        assert_ok!(parse_ffprobe_output(output_video_only.as_bytes()))
             .into_iter()
             .collect();
     assert_eq!(parsed_video_only, expected_video_only);
@@ -355,7 +355,7 @@ fn ffprobe_output_parsed_correctly() {
 }
     "#;
     let parsed_video_and_unknown: HashSet<_> =
-        assert_ok!(parse_ffprobe_output(&output_video_and_unknown.as_bytes()))
+        assert_ok!(parse_ffprobe_output(output_video_and_unknown.as_bytes()))
             .into_iter()
             .collect();
     assert_eq!(parsed_video_and_unknown, expected_video_only);

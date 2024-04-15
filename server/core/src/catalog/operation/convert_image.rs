@@ -1,5 +1,4 @@
 use eyre::{Context, Result};
-use tracing::Instrument;
 
 use crate::{
     catalog::image_conversion_target::{image_format_name, ImageConversionTarget},
@@ -37,11 +36,10 @@ pub async fn apply_convert_image(
         width: result.final_size.width,
         height: result.final_size.height,
     };
-    interact!(conn, move |mut conn| {
-        repository::representation::insert_image_representation(&mut conn, &image_representation)
+    interact!(conn, move |conn| {
+        repository::representation::insert_image_representation(conn, &image_representation)
             .wrap_err("error inserting image representation")
     })
-    
     .await??;
     Ok(())
 }
@@ -61,13 +59,12 @@ pub async fn perform_side_effects_convert_image(
     let command_out_file = storage.new_command_out_file(&op.output_file_key).await?;
     let conn = pool.get().await?;
     let asset_id = op.asset_id;
-    let (asset, asset_path) = interact!(conn, move |mut conn| {
+    let (asset, asset_path) = interact!(conn, move |conn| {
         // FIXME (low) unnecessarily querying same row twice
-        let asset = repository::asset::get_asset(&mut conn, asset_id)?;
-        let asset_path = repository::asset::get_asset_path_on_disk(&mut conn, asset_id)?;
+        let asset = repository::asset::get_asset(conn, asset_id)?;
+        let asset_path = repository::asset::get_asset_path_on_disk(conn, asset_id)?;
         Ok((asset, asset_path))
     })
-    
     .await??;
     let scaled_size = processing::image::image_conversion::ConvertImage::convert_image(
         asset_path.path_on_disk(),

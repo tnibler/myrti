@@ -130,7 +130,7 @@ pub enum TimestampGuess {
 pub fn figure_out_utc_timestamp(et: &exiftool::Output) -> TimestampGuess {
     // manufacturer-specific tags in MakerNotes
     if let Some(ref maker_notes) = et.maker_notes {
-        if let Some(make) = et.exif.as_ref().map(|exif| exif.make.as_ref()).flatten() {
+        if let Some(make) = et.exif.as_ref().and_then(|exif| exif.make.as_ref()) {
             match make.to_lowercase().as_str() {
                 "samsung" => {
                     let json_val = maker_notes.get("TimeStamp");
@@ -195,7 +195,7 @@ pub fn figure_out_utc_timestamp(et: &exiftool::Output) -> TimestampGuess {
             return TimestampGuess::WithTimezone(timestamp);
         }
     }
-    return TimestampGuess::None;
+    TimestampGuess::None
 }
 
 fn parse_exiftool_timestamp_with_offset_time(

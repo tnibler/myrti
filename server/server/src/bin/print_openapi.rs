@@ -5,7 +5,7 @@ use myrti::openapi;
 fn to_camel_case(s: &str) -> String {
     let mut cs = String::new();
     cs.reserve(s.len());
-    let mut it = s.chars().into_iter().peekable();
+    let mut it = s.chars().peekable();
     while let Some(c) = it.next() {
         match (c, it.peek()) {
             ('_', Some(nc)) if *nc != '_' => {

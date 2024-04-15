@@ -45,11 +45,7 @@ impl TryFrom<DbAsset> for Asset {
         let ty = from_db_asset_ty(value.ty)?;
         let timestamp_info =
             from_db_timezone_info(value.timezone_info, value.timezone_offset.as_deref())?;
-        let hash: Option<u64> = value
-            .hash
-            .as_ref()
-            .map(|a| hash_vec8_to_u64(&a))
-            .transpose()?;
+        let hash: Option<u64> = value.hash.as_ref().map(hash_vec8_to_u64).transpose()?;
         let coords = match (value.gps_latitude, value.gps_longitude) {
             (Some(lat), Some(lon)) => Some(GpsCoordinates { lat, lon }),
             (None, None) => None,
@@ -201,7 +197,7 @@ impl AsInsertableAsset for Asset {
             ty: to_db_asset_ty(self.base.ty),
             root_dir_id: self.base.root_dir_id.0,
             file_type: Cow::Borrowed(&self.base.file_type),
-            file_path: Cow::Borrowed(&self.base.file_path.as_str()),
+            file_path: Cow::Borrowed(self.base.file_path.as_str()),
             is_hidden: bool_to_int(self.base.is_hidden),
             hash: self.base.hash.map(|h| Cow::Owned(h.to_le_bytes().to_vec())),
             added_at: datetime_to_db_repr(&self.base.added_at),
@@ -236,13 +232,9 @@ impl AsInsertableAsset for Asset {
                 _ => None,
             },
             audio_codec_name: match &self.sp {
-                AssetSpe::Video(video) => Some(
-                    video
-                        .audio_codec_name
-                        .as_deref()
-                        .map(|cn| Cow::Borrowed(cn)),
-                )
-                .flatten(),
+                AssetSpe::Video(video) => {
+                    Some(video.audio_codec_name.as_deref().map(Cow::Borrowed)).flatten()
+                }
                 _ => None,
             },
             has_dash: match &self.sp {

@@ -18,7 +18,7 @@ pub async fn ffmpeg_snapshot(
         .arg("-y")
         .arg("-i")
         .arg(video_path)
-        .args(&["-ss", "00:00:00.00", "-frames:v", "1"])
+        .args(["-ss", "00:00:00.00", "-frames:v", "1"])
         .arg(output)
         .spawn()
         .wrap_err("failed to call ffmpeg")?

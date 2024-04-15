@@ -20,10 +20,7 @@ pub fn guess_mime_type_path(path: &camino::Utf8Path) -> Option<Cow<'static, str>
         None => {
             tracing::warn!(
                 "can't guess MIME type for filename '{}'",
-                &path
-                    .file_name()
-                    .map(|p| p.to_string())
-                    .unwrap_or(String::new())
+                &path.file_name().map(|p| p.to_string()).unwrap_or_default()
             );
             None
         }

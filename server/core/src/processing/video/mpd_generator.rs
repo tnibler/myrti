@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use eyre::{eyre, Context, Result};
 use tokio::process::Command;
-use tracing::{debug, instrument, Instrument};
+use tracing::{debug, instrument};
 
 use crate::core::storage::{Storage, StorageCommandOutput, StorageProvider};
 
@@ -57,7 +57,7 @@ impl MpdGeneratorTrait for MpdGenerator {
             .iter()
             .map(|p| match p {
                 MediaInfoPath::Local(path) => path.as_str(),
-                MediaInfoPath::Tempfile(temp_path) => camino::Utf8Path::from_path(&temp_path)
+                MediaInfoPath::Tempfile(temp_path) => camino::Utf8Path::from_path(temp_path)
                     .expect("tempfile path should be utf8")
                     .as_str(),
             })
@@ -85,9 +85,11 @@ impl MpdGeneratorTrait for MpdGenerator {
     }
 }
 
+#[allow(inactive-code)]
 #[cfg(feature = "mock-commands")]
 pub struct MpdGeneratorMock {}
 
+#[allow(inactive-code)]
 #[cfg(feature = "mock-commands")]
 #[async_trait]
 impl MpdGeneratorTrait for MpdGeneratorMock {

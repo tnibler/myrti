@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{eyre, Context, Result};
 use tokio::sync::{mpsc, watch};
@@ -76,7 +74,6 @@ struct IndexingActor {
 #[instrument(skip(actor), level = "debug")]
 async fn run_indexing_actor(mut actor: IndexingActor) {
     // TODO deduplicate job requests in actors where necessary
-    let mut running_jobs: HashSet<AssetRootDirId> = HashSet::default();
     // Passed to the tasks actually doing the indexing.
     // Bounded and without the logic to signal dropped result messages because
     // this actor loop here doesn't do much and there's really no reason for the channel
@@ -121,8 +118,8 @@ async fn handle_indexing_message(
     root_dir_id: AssetRootDirId,
 ) -> Result<()> {
     let conn = db_pool.get().await?;
-    let asset_root = interact!(conn, move |mut conn| {
-        repository::asset_root_dir::get_asset_root(&mut conn, root_dir_id)
+    let asset_root = interact!(conn, move |conn| {
+        repository::asset_root_dir::get_asset_root(conn, root_dir_id)
     })
     .await?
     .wrap_err("Error getting AssetRootDir from db")?;
@@ -164,7 +161,7 @@ async fn index_asset_root(
                                 report,
                             },
                         };
-                        let _ = send_result.send(msg).await.unwrap();
+                        send_result.send(msg).await.unwrap();
                     }
                 }
             }

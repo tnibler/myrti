@@ -33,8 +33,8 @@ pub async fn required_thumbnails_for_asset(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
 ) -> Result<CreateThumbnail> {
-    let existing_thumbnails = interact!(conn, move |mut conn| {
-        repository::asset::get_thumbnails_for_asset(&mut conn, asset_id)
+    let existing_thumbnails = interact!(conn, move |conn| {
+        repository::asset::get_thumbnails_for_asset(conn, asset_id)
     })
     .await??;
     let mut create_thumbs = Vec::default();
@@ -63,14 +63,14 @@ pub async fn required_video_packaging_for_asset(
     let acceptable_audio_codecs = ["aac", "opus", "flac", "mp3"];
     // TODO yes we're clearing and putting the config back in every time lol
     interact!(conn, move |conn| {
-        repository::config::set_acceptable_audio_codecs(conn, &acceptable_audio_codecs)?;
-        repository::config::set_acceptable_video_codecs(conn, &acceptable_video_codecs)?;
+        repository::config::set_acceptable_audio_codecs(conn, acceptable_audio_codecs)?;
+        repository::config::set_acceptable_video_codecs(conn, acceptable_video_codecs)?;
         Ok(())
     })
     .await??;
 
-    let asset = interact!(conn, move |mut conn| {
-        repository::asset::get_asset(&mut conn, asset_id)
+    let asset = interact!(conn, move |conn| {
+        repository::asset::get_asset(conn, asset_id)
     })
     .await??;
     let video = match asset.sp {
@@ -79,15 +79,15 @@ pub async fn required_video_packaging_for_asset(
         }
         crate::model::AssetSpe::Video(video) => video,
     };
-    let existing_video_reprs = interact!(conn, move |mut conn| {
-        repository::representation::get_video_representations(&mut conn, asset_id)
+    let existing_video_reprs = interact!(conn, move |conn| {
+        repository::representation::get_video_representations(conn, asset_id)
     })
     .await??;
     let has_acceptable_video_repr = existing_video_reprs
         .iter()
         .any(|repr| acceptable_video_codecs.contains(&repr.codec_name.as_str()));
-    let audio_reprs = interact!(conn, move |mut conn| {
-        repository::representation::get_audio_representations(&mut conn, asset_id)
+    let audio_reprs = interact!(conn, move |conn| {
+        repository::representation::get_audio_representations(conn, asset_id)
     })
     .await??;
     let has_acceptable_audio_repr = video.audio_codec_name.is_none()
@@ -100,8 +100,8 @@ pub async fn required_video_packaging_for_asset(
 
     let orig_codec_ok = acceptable_video_codecs.contains(&video.video_codec_name.as_str());
 
-    let ffprobe_output = interact!(conn, move |mut conn| repository::asset::get_ffprobe_output(
-        &mut conn, asset_id
+    let ffprobe_output = interact!(conn, move |conn| repository::asset::get_ffprobe_output(
+        conn, asset_id
     ))
     .await??;
     let streams = processing::video::ffprobe_get_streams_from_json(&ffprobe_output)
@@ -167,8 +167,8 @@ pub async fn required_image_conversion_for_asset(
 pub async fn thumbnails_to_create(conn: &mut PooledDbConn) -> Result<Vec<CreateThumbnail>> {
     // always create all thumbnails if any are missing for now
     let limit: Option<i64> = None;
-    let assets: Vec<AssetThumbnails> = interact!(conn, move |mut conn| {
-        repository::asset::get_assets_with_missing_thumbnail(&mut conn, limit)
+    let assets: Vec<AssetThumbnails> = interact!(conn, move |conn| {
+        repository::asset::get_assets_with_missing_thumbnail(conn, limit)
             .wrap_err("could not query for Assets with missing thumbnails")
     })
     .await??;
@@ -210,23 +210,23 @@ pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageV
     let acceptable_audio_codecs = ["aac", "opus", "flac", "mp3"];
     // TODO yes we're clearing and putting the config back in every time lol
     interact!(conn, move |conn| {
-        repository::config::set_acceptable_audio_codecs(conn, &acceptable_audio_codecs)?;
-        repository::config::set_acceptable_video_codecs(conn, &acceptable_video_codecs)?;
+        repository::config::set_acceptable_audio_codecs(conn, acceptable_audio_codecs)?;
+        repository::config::set_acceptable_video_codecs(conn, acceptable_video_codecs)?;
         Ok(())
     })
     .await??;
 
-    let acceptable_codecs_no_dash = interact!(conn, move |mut conn| {
-        repository::asset::get_videos_in_acceptable_codec_without_dash(&mut conn)
+    let acceptable_codecs_no_dash = interact!(conn, move |conn| {
+        repository::asset::get_videos_in_acceptable_codec_without_dash(conn)
     })
     .await??;
     let mut acceptable_codecs_no_dash_and_no_rotation_metadata: Vec<VideoAsset> = Vec::default();
     let mut must_reencode_because_rotation_metadata: Vec<VideoAsset> = Vec::default();
     for asset in acceptable_codecs_no_dash {
-        let ffprobe_output = interact!(
+        let ffprobe_output = interact!(conn, move |conn| repository::asset::get_ffprobe_output(
             conn,
-            move |mut conn| repository::asset::get_ffprobe_output(&mut conn, asset.base.id)
-        )
+            asset.base.id
+        ))
         .await??;
         let streams = processing::video::ffprobe_get_streams_from_json(&ffprobe_output)
             .wrap_err("failed to parse ffprobe output stored in db")?;
@@ -270,8 +270,8 @@ pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageV
             }
         });
 
-    let no_good_reprs: Vec<VideoAsset> = interact!(conn, move |mut conn| {
-        repository::asset::get_video_assets_with_no_acceptable_repr(&mut conn)
+    let no_good_reprs: Vec<VideoAsset> = interact!(conn, move |conn| {
+        repository::asset::get_video_assets_with_no_acceptable_repr(conn)
     })
     .await??;
     let reencode_tasks = no_good_reprs
@@ -330,8 +330,8 @@ pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageV
 
 pub async fn image_conversion_due(conn: &mut PooledDbConn) -> Result<Vec<ConvertImage>> {
     let acceptable_formats = ["jpeg", "avif", "png", "webp"];
-    let assets_no_good_repr = interact!(conn, move |mut conn| {
-        repository::asset::get_image_assets_with_no_acceptable_repr(&mut conn, &acceptable_formats)
+    let assets_no_good_repr = interact!(conn, move |conn| {
+        repository::asset::get_image_assets_with_no_acceptable_repr(conn, &acceptable_formats)
     })
     .await??;
     // there should be no duplicates

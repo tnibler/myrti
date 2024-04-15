@@ -76,9 +76,9 @@ async fn handle_message(
     convert_image: &ConvertImage,
 ) -> Result<()> {
     let size =
-        perform_side_effects_convert_image(&convert_image, actor.db_pool.clone(), &actor.storage)
+        perform_side_effects_convert_image(convert_image, actor.db_pool.clone(), &actor.storage)
             .await?;
     let mut conn = actor.db_pool.get().await?;
-    let apply_result = apply_convert_image(&mut conn, &convert_image, size).await?;
+    apply_convert_image(&mut conn, convert_image, size).await?;
     Ok(())
 }

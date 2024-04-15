@@ -1,5 +1,5 @@
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
-use color_eyre::eyre::{eyre, Context, Result};
+use color_eyre::eyre::{Context, Result};
 use serde::Deserialize;
 use std::str::FromStr;
 

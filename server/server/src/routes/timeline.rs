@@ -65,12 +65,8 @@ pub async fn get_timeline(
         None => None,
     };
     let conn = app_state.pool.get().await?;
-    let groups = interact!(conn, move |mut conn| {
-        repository::timeline::get_timeline_chunk(
-            &mut conn,
-            last_asset_id,
-            req_body.max_count.into(),
-        )
+    let groups = interact!(conn, move |conn| {
+        repository::timeline::get_timeline_chunk(conn, last_asset_id, req_body.max_count.into())
     })
     .await??;
     let filtered_nonempty_groups = groups.into_iter().filter(|group| match group {
@@ -147,8 +143,8 @@ pub async fn get_timeline_sections(
     State(app_state): State<SharedState>,
 ) -> ApiResult<Json<TimelineSectionsResponse>> {
     let conn = app_state.pool.get().await?;
-    let sections: Vec<TimelineSection> = interact!(conn, move |mut conn| {
-        repository::timeline::get_sections(&mut conn)
+    let sections: Vec<TimelineSection> = interact!(conn, move |conn| {
+        repository::timeline::get_sections(conn)
     })
     .await??
     .into_iter()
@@ -206,13 +202,13 @@ pub async fn get_timeline_segments(
     State(app_state): State<SharedState>,
 ) -> ApiResult<Json<TimelineSegmentsResponse>> {
     let (segment_min, segment_max) = section_id
-        .split_once("_")
+        .split_once('_')
         .ok_or(eyre!("invalid sectionId"))?;
     let segment_min: i64 = segment_min.parse().wrap_err("invalid sectionId")?;
     let segment_max: i64 = segment_max.parse().wrap_err("invalid sectionId")?;
     let conn = app_state.pool.get().await?;
-    let segments = interact!(conn, move |mut conn| {
-        repository::timeline::get_segments_in_section(&mut conn, segment_min, segment_max)
+    let segments = interact!(conn, move |conn| {
+        repository::timeline::get_segments_in_section(conn, segment_min, segment_max)
     })
     .await??
     .into_iter()
@@ -241,8 +237,8 @@ async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<Ass
     match &asset.sp {
         model::AssetSpe::Image(_image) => {
             let asset_id = asset.base.id;
-            let reprs = interact!(conn, move |mut conn| {
-                repository::representation::get_image_representations(&mut conn, asset_id)
+            let reprs = interact!(conn, move |conn| {
+                repository::representation::get_image_representations(conn, asset_id)
             })
             .await??;
             let api_reprs = reprs

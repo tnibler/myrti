@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use camino::Utf8Path as Path;
 use eyre::{eyre, Context, Result};
 use tokio::process::Command;
-use tracing::{debug, instrument, Instrument};
+use tracing::{debug, instrument};
 
 use crate::core::storage::{Storage, StorageCommandOutput, StorageProvider};
 
@@ -95,9 +95,11 @@ impl FFmpegTrait for FFmpeg {
     }
 }
 
+#[allow(inactive_code)]
 #[cfg(feature = "mock-commands")]
 pub struct FFmpegMock {}
 
+#[allow(inactive_code)]
 #[cfg(feature = "mock-commands")]
 #[async_trait]
 impl FFmpegTrait for FFmpegMock {

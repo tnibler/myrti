@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use eyre::{Context, Result};
 use tokio::fs::File;
-use tracing::{instrument, Instrument};
+use tracing::instrument;
 
 use crate::core::storage::{Storage, StorageProvider};
 
@@ -79,12 +79,15 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
     }
 }
 
+#[allow(inactive-code)]
 #[cfg(feature = "mock-commands")]
 pub struct ShakaIntoFFmpegMock {}
 
+#[allow(inactive-code)]
 #[cfg(feature = "mock-commands")]
 use super::ffmpeg::FFmpegMock;
 
+#[allow(inactive-code)]
 #[cfg(feature = "mock-commands")]
 #[async_trait]
 impl ShakaIntoFFmpegTrait for ShakaIntoFFmpegMock {

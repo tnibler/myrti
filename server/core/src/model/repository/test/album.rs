@@ -59,11 +59,11 @@ fn prop_create_retrieve_albums() {
         let mut albums_by_asset: HashMap<AssetId, Vec<Album>> = HashMap::default();
         for (album, (_album_no_id, asset_idxs)) in albums_with_ids.iter().zip(albums_asset_idxs.iter()) {
             // removing duplicates
-            let assets_to_append: Vec<Asset> = asset_idxs.iter().map(|idx| idx.get(&assets_with_ids).clone()).into_iter().collect::<HashSet<_>>().into_iter().collect();
+            let assets_to_append: Vec<Asset> = asset_idxs.iter().map(|idx| idx.get(&assets_with_ids).clone()).collect::<HashSet<_>>().into_iter().collect();
             let mut assets_actually_appended: Vec<Asset> = Vec::default();
             let append_chunks: Vec<&[Asset]> = assets_to_append.chunks(append_chunk_size).collect();
             for chunk in append_chunks {
-                let chunk_ids: Vec<AssetId> = chunk.into_iter().map(|asset| asset.base.id).collect();
+                let chunk_ids: Vec<AssetId> = chunk.iter().map(|asset| asset.base.id).collect();
                 let append_result = repository::album::append_assets_to_album(&mut conn, album.id, &chunk_ids);
                 // if any asset was already in a group album and the album we're inserting into
                 // is also a group, adding to the album should fail

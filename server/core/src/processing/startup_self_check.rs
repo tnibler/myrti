@@ -20,17 +20,15 @@ use crate::{
 use super::video::transcode::{ffmpeg_audio_flags, ffmpeg_video_flags, ProduceAudio, ProduceVideo};
 
 pub async fn run_self_check(bin_paths: Option<&BinPaths>) -> Result<(), ()> {
-    let ffmpeg_bin_path: Option<&Path> = bin_paths.map(|bp| bp.ffmpeg.as_opt_path()).flatten();
+    let ffmpeg_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.ffmpeg.as_opt_path());
     check_can_run_ffmpeg(ffmpeg_bin_path).await?;
     check_can_encode_video(ffmpeg_bin_path).await?;
     check_can_encode_audio(ffmpeg_bin_path).await?;
-    let shaka_bin_path: Option<&Path> = bin_paths
-        .map(|bp| bp.shaka_packager.as_opt_path())
-        .flatten();
+    let shaka_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.shaka_packager.as_opt_path());
     let mpd_generator_bin_path: Option<&Path> =
-        bin_paths.map(|bp| bp.mpd_generator.as_opt_path()).flatten();
+        bin_paths.and_then(|bp| bp.mpd_generator.as_opt_path());
     check_can_run_shaka_and_mpd_generator(shaka_bin_path, mpd_generator_bin_path).await?;
-    let exiftool_bin_path: Option<&Path> = bin_paths.map(|bp| bp.exiftool.as_opt_path()).flatten();
+    let exiftool_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.exiftool.as_opt_path());
     check_can_run_exiftool(exiftool_bin_path).await?;
     check_can_encode_vips_images().await?;
     Ok(())

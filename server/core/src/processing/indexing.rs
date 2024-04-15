@@ -2,7 +2,6 @@ use camino::Utf8Path as Path;
 use chrono::{DateTime, Local, Utc};
 use color_eyre::eyre::Result;
 use eyre::{eyre, Context};
-use tracing::Instrument;
 
 use crate::{
     config, interact,
@@ -29,9 +28,9 @@ pub async fn index_file(
     let path_in_asset_root2 = path_in_asset_root.to_owned();
     let asset_root_id = asset_root.id;
     let conn = pool.get().await?;
-    let existing = interact!(conn, move |mut conn| {
+    let existing = interact!(conn, move |conn| {
         repository::asset::asset_or_duplicate_with_path_exists(
-            &mut conn,
+            conn,
             asset_root_id,
             &path_in_asset_root2,
         )
@@ -41,12 +40,10 @@ pub async fn index_file(
         return Ok(None);
     }
     let exiftool_path = bin_paths
-        .map(|bp| bp.exiftool.as_ref())
-        .flatten()
+        .and_then(|bp| bp.exiftool.as_ref())
         .map(|p| p.as_path());
     let ffprobe_path = bin_paths
-        .map(|bp| bp.ffprobe.as_ref())
-        .flatten()
+        .and_then(|bp| bp.ffprobe.as_ref())
         .map(|p| p.as_path());
     let metadata = read_media_metadata(path, exiftool_path)
         .await
@@ -121,8 +118,8 @@ pub async fn index_file(
                 image_format_name: format,
             };
             let size = Size {
-                width: size.width.into(),
-                height: size.height.into(),
+                width: size.width,
+                height: size.height,
             };
             (CreateAssetSpe::Image(create_image), size)
         }
@@ -139,11 +136,11 @@ pub async fn index_file(
     let hash = hash_file(file).await?;
     let conn = pool.get().await?;
     let path_in_asset_root2 = path_in_asset_root.to_owned();
-    let is_duplicate = interact!(conn, move |mut conn| {
-        let existing_with_same_hash = repository::asset::get_asset_with_hash(&mut conn, hash)?;
+    let is_duplicate = interact!(conn, move |conn| {
+        let existing_with_same_hash = repository::asset::get_asset_with_hash(conn, hash)?;
         if let Some(existing_asset_id) = existing_with_same_hash {
             repository::duplicate_asset::insert_duplicate_asset(
-                &mut conn,
+                conn,
                 NewDuplicateAsset {
                     existing_asset_id,
                     asset_root_dir_id: asset_root_id,
@@ -172,16 +169,16 @@ pub async fn index_file(
             TimestampInfo::TzGuessedLocal(*Local::now().offset()),
         ),
     };
-    let coordinates = metadata
-        .composite
-        .map(|comp| match (comp.gps_latitude, comp.gps_longitude) {
-            (Some(lat), Some(lon)) => Some(GpsCoordinates {
-                lat: (lat * 10e8) as i64,
-                lon: (lon * 10e8) as i64,
-            }),
-            _ => None,
-        })
-        .flatten();
+    let coordinates =
+        metadata
+            .composite
+            .and_then(|comp| match (comp.gps_latitude, comp.gps_longitude) {
+                (Some(lat), Some(lon)) => Some(GpsCoordinates {
+                    lat: (lat * 10e8) as i64,
+                    lon: (lon * 10e8) as i64,
+                }),
+                _ => None,
+            });
     let create_asset_base = CreateAssetBase {
         root_dir_id: asset_root.id,
         file_type: file_type.clone(),
@@ -197,8 +194,8 @@ pub async fn index_file(
         base: create_asset_base,
         spe: create_asset_spe,
     };
-    let id = interact!(conn, move |mut conn| {
-        repository::asset::create_asset(&mut conn, create_asset)
+    let id = interact!(conn, move |conn| {
+        repository::asset::create_asset(conn, create_asset)
     })
     .await??;
     Ok(Some(id))

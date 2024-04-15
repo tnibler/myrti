@@ -24,8 +24,8 @@ impl Album {
             name: value.name.clone(),
             description: value.description.clone(),
             num_assets,
-            created_at: value.created_at.clone(),
-            changed_at: value.changed_at.clone(),
+            created_at: value.created_at,
+            changed_at: value.changed_at,
         }
     }
 }

@@ -21,7 +21,7 @@ use tower_http::{
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     ServiceBuilderExt,
 };
-use tracing::{info, Instrument};
+use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{prelude::*, EnvFilter};
 
@@ -57,7 +57,7 @@ async fn db_setup(dir: &Path) -> Result<DbPool> {
     let db_url = dir.join("myrti_media.db").to_string();
     let pool = db::open_db_pool(&db_url)?;
     let conn = pool.get().await?;
-    interact!(conn, move |mut conn| db::migrate(&mut conn)).await??;
+    interact!(conn, db::migrate).await??;
     Ok(pool)
 }
 
@@ -76,16 +76,16 @@ async fn store_asset_roots_from_config(
         // FIXME: this does not handle paths that differ in characters but point to the same
         // location correctly. The path-clean crate or this function from cargo would do the
         // job: https://github.com/rust-lang/cargo/blob/fede83ccf973457de319ba6fa0e36ead454d2e20/src/cargo/util/paths.rs#L61
-        let existing = interact!(conn, move |mut conn| {
-            repository::asset_root_dir::get_asset_root_with_path(&mut conn, &asset_dir_path)
+        let existing = interact!(conn, move |conn| {
+            repository::asset_root_dir::get_asset_root_with_path(conn, &asset_dir_path)
         })
         .await?
         .wrap_err("Error checkng if AssetRootDir already exists")?;
         if existing.is_none() {
             let asset_dir_path = asset_dir.path.to_owned();
-            interact!(conn, move |mut conn| {
+            interact!(conn, move |conn| {
                 repository::asset_root_dir::insert_asset_root(
-                    &mut conn,
+                    conn,
                     &AssetRootDir {
                         id: AssetRootDirId(0),
                         path: asset_dir_path,
@@ -180,7 +180,7 @@ async fn main() -> Result<()> {
     let storage_path = data_dir_path.clone();
     info!("Starting up...");
     let pool = db_setup(&data_dir_path).await.unwrap();
-    store_asset_roots_from_config(&config_dir, &config, &pool).await?;
+    store_asset_roots_from_config(config_dir, &config, &pool).await?;
     std::fs::create_dir_all(&storage_path).unwrap();
     let storage: Storage = LocalFileStorage::new(storage_path).into();
     let scheduler = SchedulerHandle::new(pool.clone(), storage.clone(), config);
@@ -204,7 +204,7 @@ async fn main() -> Result<()> {
         .fallback_service(SpaServeDirService::new(ServeDir::new("./static")))
         .layer(
             ServiceBuilder::new()
-                .set_x_request_id(MakeRequestUuid::default())
+                .set_x_request_id(MakeRequestUuid)
                 .layer(
                     TraceLayer::new_for_http()
                         .make_span_with(DefaultMakeSpan::new().include_headers(true))

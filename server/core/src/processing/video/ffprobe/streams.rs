@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use camino::Utf8Path as Path;
 use eyre::Result;
-use tracing::Instrument;
 
 use super::{command::ffprobe_get_streams, FFProbe, FFProbeStreams};
 

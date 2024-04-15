@@ -183,8 +183,8 @@ async fn on_startup(
             .await;
     }
 
-    let asset_roots = interact!(conn, move |mut conn| {
-        repository::asset_root_dir::get_asset_roots(&mut conn)
+    let asset_roots = interact!(conn, move |conn| {
+        repository::asset_root_dir::get_asset_roots(conn)
     })
     .await
     .expect("TODO how do we handle errors in scheduler")

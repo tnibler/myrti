@@ -79,7 +79,7 @@ async fn handle_message(
     let completed_package_video = perform_side_effects_package_video(
         actor.db_pool.clone(),
         &actor.storage,
-        &package_video,
+        package_video,
         actor.config.bin_paths.as_ref(),
     )
     .await?;

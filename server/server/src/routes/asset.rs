@@ -15,7 +15,6 @@ use axum_extra::body::AsyncReadBody;
 use eyre::{eyre, Context, Result};
 use serde::Deserialize;
 use tokio_util::io::ReaderStream;
-use tracing::Instrument;
 use utoipa::ToSchema;
 
 use core::{
@@ -54,13 +53,11 @@ responses(
 #[tracing::instrument(fields(request = true), skip(app_state))]
 async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Asset>>> {
     let conn = app_state.pool.get().await?;
-    let assets: Vec<Asset> = interact!(conn, move |mut conn| {
-        repository::asset::get_assets(&mut conn)
-    })
-    .await??
-    .into_iter()
-    .map(|a| a.into())
-    .collect();
+    let assets: Vec<Asset> = interact!(conn, move |conn| { repository::asset::get_assets(conn) })
+        .await??
+        .into_iter()
+        .map(|a| a.into())
+        .collect();
     Ok(Json(assets))
 }
 
@@ -184,8 +181,8 @@ async fn get_asset_file(
 ) -> ApiResult<Response> {
     let id: model::AssetId = AssetId(id).try_into()?;
     let conn = app_state.pool.get().await?;
-    let path = interact!(conn, move |mut conn| {
-        repository::asset::get_asset_path_on_disk(&mut conn, id)
+    let path = interact!(conn, move |conn| {
+        repository::asset::get_asset_path_on_disk(conn, id)
     })
     .await??
     .path_on_disk();
@@ -239,14 +236,13 @@ async fn get_image_asset_representation(
     Query(query): Query<HashMap<String, String>>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Response> {
-    let asset_id = model::AssetId(asset_id.parse().wrap_err("invalid asset_id")?);
     let repr_id = model::ImageRepresentationId(repr_id.parse().wrap_err("invalid repr_id")?);
     // removing format name/file extension from storage key would make this query unnecessary but
     // it's nice to have for now
     // Or maybe not since we need to set a MIME type?
     let conn = app_state.pool.get().await?;
-    let repr = interact!(conn, move |mut conn| {
-        repository::representation::get_image_representation(&mut conn, repr_id)
+    let repr = interact!(conn, move |conn| {
+        repository::representation::get_image_representation(conn, repr_id)
     })
     .await?
     .wrap_err("no such repr_id")?;
@@ -320,7 +316,7 @@ async fn set_assets_hidden(
         .map(|id| {
             id.0.parse::<i64>()
                 .wrap_err("invalid AssetId")
-                .map(|i| core::model::AssetId(i))
+                .map(core::model::AssetId)
         })
         .collect::<Result<Vec<_>>>()?;
     let conn = app_state.pool.get().await?;

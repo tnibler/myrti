@@ -8,7 +8,7 @@ use crate::model::{
 };
 
 fn path_strategy() -> BoxedStrategy<PathBuf> {
-    r"[^\\0].{5,}".prop_map(|s| PathBuf::from(s)).boxed()
+    r"[^\\0].{5,}".prop_map(PathBuf::from).boxed()
 }
 
 fn fixed_offset_strategy() -> BoxedStrategy<chrono::FixedOffset> {
@@ -43,10 +43,10 @@ pub fn timestamp_info_strategy() -> BoxedStrategy<TimestampInfo> {
     prop_oneof![
         Just(TimestampInfo::NoTimestamp),
         Just(TimestampInfo::UtcCertain),
-        fixed_offset_strategy().prop_map(|offset| TimestampInfo::TzCertain(offset)),
-        fixed_offset_strategy().prop_map(|offset| TimestampInfo::TzGuessedLocal(offset)),
-        fixed_offset_strategy().prop_map(|offset| TimestampInfo::TzInferredLocation(offset)),
-        fixed_offset_strategy().prop_map(|offset| TimestampInfo::TzSetByUser(offset)),
+        fixed_offset_strategy().prop_map(TimestampInfo::TzCertain),
+        fixed_offset_strategy().prop_map(TimestampInfo::TzGuessedLocal),
+        fixed_offset_strategy().prop_map(TimestampInfo::TzInferredLocation),
+        fixed_offset_strategy().prop_map(TimestampInfo::TzSetByUser),
     ]
     .boxed()
 }
@@ -71,7 +71,7 @@ prop_compose! {
         ],
         gps_coordinates in prop_oneof![
             Just(None),
-            gps_coords_strategy().prop_map(|coords| Some(coords))
+            gps_coords_strategy().prop_map(Some)
         ],
         hash in any::<Option<u64>>().no_shrink(),
     ) -> AssetBase {
@@ -121,7 +121,7 @@ prop_compose! {
         video_bitrate in 800_000_i64..5_000_000,
         audio_codec_name in prop_oneof![
             1 => Just(None),
-            4 => "mp3|aac|opus|pcm_u8".prop_map(|codec| Some(codec)),
+            4 => "mp3|aac|opus|pcm_u8".prop_map(Some),
         ],
     ) -> VideoAsset {
         VideoAsset {
@@ -199,7 +199,7 @@ prop_compose! {
         ],
         gps_coordinates in prop_oneof![
             Just(None),
-            gps_coords_strategy().prop_map(|coords| Some(coords))
+            gps_coords_strategy().prop_map(Some)
         ],
         hash in any::<Option<u64>>().no_shrink(),
     ) -> CreateAssetBase {
@@ -245,7 +245,7 @@ prop_compose! {
         video_bitrate in 800_000_i64..5_000_000,
         audio_codec_name in prop_oneof![
             1 => Just(None),
-            4 => "mp3|aac|opus|pcm_u8".prop_map(|codec| Some(codec)),
+            4 => "mp3|aac|opus|pcm_u8".prop_map(Some),
         ],
     ) -> CreateAsset {
         CreateAsset {
@@ -259,12 +259,4 @@ prop_compose! {
             })
         }
     }
-}
-
-pub fn arb_new_create_asset(asset_root_dir_id: AssetRootDirId) -> BoxedStrategy<CreateAsset> {
-    prop_oneof![
-        arb_new_create_image_asset(asset_root_dir_id).prop_map(|image| image.into()),
-        arb_new_create_video_asset(asset_root_dir_id).prop_map(|video| video.into())
-    ]
-    .boxed()
 }

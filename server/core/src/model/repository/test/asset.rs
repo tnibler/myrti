@@ -39,7 +39,7 @@ fn prop_insert_retrieve_asset() {
             return Ok(());
         }
         let ffprobe_output: Option<&[u8]> = match &asset.sp {
-            AssetSpe::Video(video) => Some(&[]),
+            AssetSpe::Video(_) => Some(&[]),
             _ => None
         };
         #[allow(deprecated)]
@@ -158,7 +158,7 @@ fn prop_get_assets_with_missing_thumbnails() {
         let mut assets_with_ids: Vec<(Asset, bool, bool)> = Vec::default();
         for (asset, has_lg_orig, has_sm_sq) in assets_thumb_present {
             let ffprobe_output: Option<&[u8]> = match &asset.sp {
-                AssetSpe::Video(video) => Some(&[]),
+                AssetSpe::Video(_) => Some(&[]),
                 _ => None
             };
             #[allow(deprecated)]
@@ -181,7 +181,7 @@ fn prop_get_assets_with_missing_thumbnails() {
             assets_with_ids.push((asset_with_id, has_lg_orig, has_sm_sq));
         }
         let expected_with_missing_thumb: HashSet<AssetId> = assets_with_ids.into_iter()
-            .filter(|(asset, has_lg_orig, has_sm_sq)| {
+            .filter(|(_asset, has_lg_orig, has_sm_sq)| {
                 !(*has_lg_orig && *has_sm_sq)
             })
             .map(|(asset, _, _)| asset.base.id)
@@ -462,8 +462,8 @@ fn get_videos_in_acceptable_codec_without_dash() {
     ));
     let acceptable_video_codecs1 = ["h264"];
     let acceptable_audio_codecs1 = ["aac", "flac"];
-    repository::config::set_acceptable_video_codecs(&mut conn, &acceptable_video_codecs1).unwrap();
-    repository::config::set_acceptable_audio_codecs(&mut conn, &acceptable_audio_codecs1).unwrap();
+    repository::config::set_acceptable_video_codecs(&mut conn, acceptable_video_codecs1).unwrap();
+    repository::config::set_acceptable_audio_codecs(&mut conn, acceptable_audio_codecs1).unwrap();
     let result1: HashSet<AssetId> =
         assert_ok!(repository::asset::get_videos_in_acceptable_codec_without_dash(&mut conn,))
             .into_iter()
@@ -474,8 +474,8 @@ fn get_videos_in_acceptable_codec_without_dash() {
 
     let acceptable_video_codecs2 = ["h264", "hevc"];
     let acceptable_audio_codecs2 = ["aac"];
-    repository::config::set_acceptable_video_codecs(&mut conn, &acceptable_video_codecs2).unwrap();
-    repository::config::set_acceptable_audio_codecs(&mut conn, &acceptable_audio_codecs2).unwrap();
+    repository::config::set_acceptable_video_codecs(&mut conn, acceptable_video_codecs2).unwrap();
+    repository::config::set_acceptable_audio_codecs(&mut conn, acceptable_audio_codecs2).unwrap();
     let result2: HashSet<AssetId> =
         assert_ok!(repository::asset::get_videos_in_acceptable_codec_without_dash(&mut conn,))
             .into_iter()
@@ -486,8 +486,8 @@ fn get_videos_in_acceptable_codec_without_dash() {
 
     let acceptable_video_codecs3 = ["h264", "hevc"];
     let acceptable_audio_codecs3 = ["aac", "mp3", "flac"];
-    repository::config::set_acceptable_video_codecs(&mut conn, &acceptable_video_codecs3).unwrap();
-    repository::config::set_acceptable_audio_codecs(&mut conn, &acceptable_audio_codecs3).unwrap();
+    repository::config::set_acceptable_video_codecs(&mut conn, acceptable_video_codecs3).unwrap();
+    repository::config::set_acceptable_audio_codecs(&mut conn, acceptable_audio_codecs3).unwrap();
     let result3: HashSet<AssetId> =
         assert_ok!(repository::asset::get_videos_in_acceptable_codec_without_dash(&mut conn,))
             .into_iter()
@@ -544,15 +544,15 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
             video_repr_codecs in prop::collection::vec("h264|hevc|av1|vp9", 0..3),
             audio_repr_codec in prop_oneof![
                 1 => Just(None),
-                3 => "mp3|aac|opus".prop_map(|codec| Some(codec))
+                3 => "mp3|aac|opus".prop_map(Some)
             ],
         )
         (
             asset in Just(asset),
-            video_reprs in video_repr_codecs.into_iter().map(|codec| arb_new_video_repr(codec)).collect::<Vec<_>>(),
+            video_reprs in video_repr_codecs.into_iter().map(arb_new_video_repr).collect::<Vec<_>>(),
             audio_repr in match audio_repr_codec {
                     None => Just(None).boxed(),
-                    Some(codec) => arb_new_audio_repr(codec).prop_map(|r| Some(r)).boxed()
+                    Some(codec) => arb_new_audio_repr(codec).prop_map(Some).boxed()
             }
         )-> (VideoAsset, Vec<VideoRepresentation>, Option<AudioRepresentation>) {
             let audio_repr = match (&asset.video.audio_codec_name, audio_repr) {
@@ -604,7 +604,7 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
                     let repr_insert_result = repository::representation::insert_video_representation(
                         conn,
                         &VideoRepresentation {
-                            asset_id: asset_id,
+                            asset_id,
                             ..repr.clone()
                     });
                     prop_assert!(repr_insert_result.is_ok());
@@ -613,7 +613,7 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
                     let repr_insert_result = repository::representation::insert_audio_representation(
                         conn,
                         &AudioRepresentation {
-                            asset_id: asset_id,
+                            asset_id,
                             ..repr.clone()
                     });
                     prop_assert!(repr_insert_result.is_ok());

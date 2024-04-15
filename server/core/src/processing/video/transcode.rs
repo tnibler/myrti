@@ -30,11 +30,11 @@ pub fn ffmpeg_video_flags(produce_video: &ProduceVideo) -> Vec<String> {
                         target.preset.to_string(),
                     ];
                     if let Some(tune) = target.tune {
-                        f.push(format!("-tune"));
+                        f.push("-tune".to_string());
                         f.push(tune.to_string());
                     }
                     if let Some(max_bitrate) = target.max_bitrate {
-                        f.push(format!("-maxrate"));
+                        f.push("-maxrate".to_string());
                         f.push(max_bitrate.to_string());
                     }
 
@@ -48,19 +48,16 @@ pub fn ffmpeg_video_flags(produce_video: &ProduceVideo) -> Vec<String> {
                         target.crf.crf().to_string(),
                     ];
                     if let Some(preset) = target.preset {
-                        f.push(format!("-preset"));
+                        f.push("-preset".to_string());
                         f.push(preset.preset().to_string());
                     }
                     if let Some(max_bitrate) = target.max_bitrate {
-                        f.push(format!("-maxrate"));
+                        f.push("-maxrate".to_string());
                         f.push(max_bitrate.to_string());
                     }
                     if let Some(fast_decode) = target.fast_decode {
-                        f.push(format!("-svtav1-params"));
-                        f.push(format!(
-                            "fast-decode={}",
-                            fast_decode.fast_decode().to_string()
-                        ));
+                        f.push("-svtav1-params".to_string());
+                        f.push(format!("fast-decode={}", fast_decode.fast_decode()));
                     }
                     f
                 }
@@ -70,7 +67,7 @@ pub fn ffmpeg_video_flags(produce_video: &ProduceVideo) -> Vec<String> {
                     CodecTarget::AVC(_) => 2,
                     CodecTarget::AV1(_) => 2,
                 };
-                flags.push(format!("-vf"));
+                flags.push("-vf".to_string());
                 let scale_str = match scale {
                     Scale::HeightKeepAspect { height } => format!("-{}:{}", scale_multiple, height),
                     Scale::WidthKeepAspect { width } => format!("{}:-{}", width, scale_multiple),
@@ -88,10 +85,10 @@ pub fn ffmpeg_audio_flags(produce_audio: &ProduceAudio) -> Vec<String> {
         ProduceAudio::Transcode(encoding_target) => vec![
             format!("-c:a"),
             match encoding_target {
-                AudioEncodingTarget::AAC => format!("libopus"),
-                AudioEncodingTarget::OPUS => format!("aac"),
-                AudioEncodingTarget::FLAC => format!("flac"),
-                AudioEncodingTarget::MP3 => format!("libmp3lame"),
+                AudioEncodingTarget::AAC => "libopus".to_string(),
+                AudioEncodingTarget::OPUS => "aac".to_string(),
+                AudioEncodingTarget::FLAC => "flac".to_string(),
+                AudioEncodingTarget::MP3 => "libmp3lame".to_string(),
             },
         ],
     }

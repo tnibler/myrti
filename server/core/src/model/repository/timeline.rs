@@ -25,8 +25,8 @@ pub enum TimelineElement {
 impl TimelineElement {
     pub fn get_assets(&self) -> &[Asset] {
         match self {
-            TimelineElement::DayGrouped(assets) => &assets,
-            TimelineElement::Group { group: _, assets } => &assets,
+            TimelineElement::DayGrouped(assets) => assets,
+            TimelineElement::Group { group: _, assets } => assets,
         }
     }
 }
@@ -100,7 +100,7 @@ pub fn get_timeline_chunk(
     let mut timeline_els: Vec<TimelineElement> = Vec::default();
     for row in assets_groupid {
         let asset: Asset = row.asset.try_into()?;
-        let group_id = row.group_id.map(|id| TimelineGroupId(id));
+        let group_id = row.group_id.map(TimelineGroupId);
         // let sort_group_date = datetime_from_db_repr(row.sort_group_date)?;
         let mut last_el = timeline_els.last_mut();
         match &mut last_el {

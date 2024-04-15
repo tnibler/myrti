@@ -69,7 +69,7 @@ fn prop_test_timeline() {
         // assets and groups with ids set
         let assets_not_in_groups: Vec<Asset> = prop_insert_create_test_assets(&mut conn, &assets_not_in_groups)?;
         let groups_with_assets: Vec<GroupWithAssets> = prop_insert_timeline_groups_insert_add_assets(&mut conn, &groups_with_assets)?;
-        let expected_all_assets: HashSet<Asset> = assets_not_in_groups.iter().chain(groups_with_assets.iter().map(|gwa| &gwa.assets).flatten()).cloned().collect();
+        let expected_all_assets: HashSet<Asset> = assets_not_in_groups.iter().chain(groups_with_assets.iter().flat_map(|gwa| &gwa.assets)).cloned().collect();
         let actual_all_assets_in_db: HashSet<Asset> = repository::asset::get_assets(&mut conn).unwrap().into_iter().collect();
         prop_assert_eq!(&expected_all_assets, &actual_all_assets_in_db, "Setup went wrong: not all assets in db");
         let expected_num_chunks =  expected_all_assets.len().div_ceil(timeline_chunk_size);
@@ -100,7 +100,7 @@ fn prop_test_timeline() {
             for timeline_element in &chunk {
                 match timeline_element {
                     TimelineElement::DayGrouped(assets) => {
-                        dbgstr.push_str(&"Day group:\n");
+                        dbgstr.push_str("Day group:\n");
                         for a in assets {
                             dbgstr.push_str(&format!("\t{} {}\n", a.base.id, a.base.taken_date));
                         }
@@ -132,7 +132,7 @@ fn prop_test_timeline() {
         let actual_num_chunks = chunks.len();
         prop_assert_eq!(expected_num_chunks, actual_num_chunks);
         // check we got all assets
-        let actual_all_assets: HashSet<Asset> = chunks.iter().map(|chunk| chunk.iter().map(|tl_el| tl_el.get_assets().iter()).flatten()).flatten().cloned().collect();
+        let actual_all_assets: HashSet<Asset> = chunks.iter().flat_map(|chunk| chunk.iter().flat_map(|tl_el| tl_el.get_assets().iter())).cloned().collect();
         prop_assert_eq!(expected_all_assets, actual_all_assets);
 
         // check TimelineElements are ordered chronologically:
@@ -143,7 +143,7 @@ fn prop_test_timeline() {
         // A single DayGrouped may be split accross multiple chunks, in which case the two
         // resulting DayGrouped are allowed to have the same date (<=).
         // Within a chunk, dates should be strictly decreasing (<)
-        let mut crossed_chunk_boundary = true;
+        let mut crossed_chunk_boundary: bool;
         for chunk in &chunks {
             crossed_chunk_boundary = true;
             for tlel in chunk {

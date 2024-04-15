@@ -1,6 +1,6 @@
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{Context, Report, Result};
-use tracing::{instrument, Instrument};
+use tracing::instrument;
 
 use crate::{
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
@@ -48,9 +48,9 @@ pub async fn apply_create_thumbnail(
     conn: &mut PooledDbConn,
     result: ThumbnailSideEffectSuccess,
 ) -> Result<()> {
-    interact!(conn, move |mut conn| {
+    interact!(conn, move |conn| {
         repository::asset::set_asset_has_thumbnail(
-            &mut conn,
+            conn,
             result.asset_id,
             result.thumb.ty,
             result.actual_size,
@@ -88,10 +88,9 @@ pub async fn perform_side_effects_create_thumbnail(
         return Ok(result);
     }
     let conn = pool.get().await?;
-    let (in_path, asset) = interact!(conn, move |mut conn| {
-        let in_path =
-            repository::asset::get_asset_path_on_disk(&mut conn, op.asset_id)?.path_on_disk();
-        let asset = repository::asset::get_asset(&mut conn, op.asset_id)?;
+    let (in_path, asset) = interact!(conn, move |conn| {
+        let in_path = repository::asset::get_asset_path_on_disk(conn, op.asset_id)?.path_on_disk();
+        let asset = repository::asset::get_asset(conn, op.asset_id)?;
         Ok::<_, eyre::Report>((in_path, asset))
     })
     .await??;

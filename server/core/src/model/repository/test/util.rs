@@ -2,7 +2,8 @@ use proptest::prelude::*;
 
 use crate::model::{
     repository::{self, db::DbConn, timeline_group::CreateTimelineGroup},
-    Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, TimelineGroup, TimelineGroupId, VideoAsset,
+    Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, TimelineGroup, TimelineGroupId,
+    VideoAsset,
 };
 
 /// Inserts asset and returns them in the same order, with asset_id set
@@ -18,7 +19,7 @@ pub fn prop_insert_create_test_assets(
             _ => None,
         };
         #[allow(deprecated)]
-        let asset_insert_result = repository::asset::insert_asset(conn, &asset, ffprobe_output);
+        let asset_insert_result = repository::asset::insert_asset(conn, asset, ffprobe_output);
         prop_assert!(
             asset_insert_result.is_ok(),
             "Inserting Asset returned error: {}",
@@ -33,7 +34,7 @@ pub fn prop_insert_create_test_assets(
             ..asset.clone()
         };
         prop_assert_ne!(asset_with_id.base.id, AssetId(0));
-        assets_with_ids.push(asset_with_id.into());
+        assets_with_ids.push(asset_with_id);
     }
     Ok(assets_with_ids)
 }

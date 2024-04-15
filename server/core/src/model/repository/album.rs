@@ -32,11 +32,7 @@ pub fn get_all_albums_with_asset_count(conn: &mut DbConn) -> Result<Vec<(Album, 
         .load(conn)?;
     db_albums
         .into_iter()
-        .map(|a| {
-            a.album
-                .try_into()
-                .and_then(|album| Ok((album, a.asset_count)))
-        })
+        .map(|a| a.album.try_into().map(|album| (album, a.asset_count)))
         .collect::<Result<Vec<(model::Album, i64)>>>()
 }
 
@@ -66,10 +62,10 @@ pub fn create_album(
             })
             .returning(Album::album_id)
             .get_result(conn)
-            .map(|id| AlbumId(id))
+            .map(AlbumId)
             .wrap_err("Error inserting Album")?;
         let album_entry_ids = assets
-            .into_iter()
+            .iter()
             .enumerate()
             .map(|(idx, asset_id)| {
                 let album_entry_id: i64 = diesel::insert_into(AlbumEntry::table)
@@ -126,7 +122,7 @@ pub fn append_assets_to_album(
             .get_result(conn)?;
         let first_insert_index = last_index.map(|last| last + 1).unwrap_or(0);
         let _album_entry_ids = asset_ids
-            .into_iter()
+            .iter()
             .zip(first_insert_index..)
             .map(|(asset_id, idx)| {
                 let album_entry_id: i64 = diesel::insert_into(AlbumEntry::table)

@@ -2,7 +2,7 @@ use std::ffi::OsString;
 
 use diesel::Connection;
 use eyre::{eyre, Context, Result};
-use tracing::{error, instrument, Instrument};
+use tracing::{error, instrument};
 
 use crate::{
     catalog::{
@@ -129,10 +129,9 @@ pub struct AudioTranscodeResult {
 
 #[instrument(skip(conn), level = "debug")]
 pub async fn apply_package_video(conn: &mut PooledDbConn, op: CompletedPackageVideo) -> Result<()> {
-    let asset: VideoAsset = interact!(conn, move |mut conn| {
-        repository::asset::get_asset(&mut conn, op.asset_id)?.try_into()
+    let asset: VideoAsset = interact!(conn, move |conn| {
+        repository::asset::get_asset(conn, op.asset_id)?.try_into()
     })
-    
     .await??;
     let asset = VideoAsset {
         video: Video {
@@ -209,7 +208,6 @@ pub async fn apply_package_video(conn: &mut PooledDbConn, op: CompletedPackageVi
         }
         Ok(())
     }))
-    
     .await?
 }
 
@@ -222,18 +220,15 @@ pub async fn perform_side_effects_package_video(
 ) -> Result<CompletedPackageVideo> {
     let asset_id = package_video.asset_id;
     let conn = pool.get().await?;
-    let asset_path = interact!(conn, move |mut conn| {
-        repository::asset::get_asset_path_on_disk(&mut conn, asset_id)
+    let asset_path = interact!(conn, move |conn| {
+        repository::asset::get_asset_path_on_disk(conn, asset_id)
     })
-    
     .await??;
 
-    let ffmpeg_path = bin_paths.map(|bp| bp.ffmpeg.as_opt_path()).flatten();
-    let ffprobe_path = bin_paths.map(|bp| bp.ffprobe.as_opt_path()).flatten();
-    let shaka_packager_path = bin_paths
-        .map(|bp| bp.shaka_packager.as_opt_path())
-        .flatten();
-    let mpd_generator_path = bin_paths.map(|bp| bp.mpd_generator.as_opt_path()).flatten();
+    let ffmpeg_path = bin_paths.and_then(|bp| bp.ffmpeg.as_opt_path());
+    let ffprobe_path = bin_paths.and_then(|bp| bp.ffprobe.as_opt_path());
+    let shaka_packager_path = bin_paths.and_then(|bp| bp.shaka_packager.as_opt_path());
+    let mpd_generator_path = bin_paths.and_then(|bp| bp.mpd_generator.as_opt_path());
 
     let ffmpeg_video_op: Option<ProduceVideo> = match package_video.create_video_repr.clone() {
         CreateVideoRepr::Transcode(video_transcode) => {
@@ -267,7 +262,7 @@ pub async fn perform_side_effects_package_video(
             ShakaPackager::run(
                 &asset_path.path_on_disk(),
                 RepresentationType::Audio,
-                &output_key,
+                output_key,
                 storage,
                 shaka_packager_path,
             )
@@ -294,10 +289,9 @@ pub async fn perform_side_effects_package_video(
                 .run_shaka_packager(
                     RepresentationType::Audio,
                     &transcode.output_key,
-                    &storage,
+                    storage,
                     shaka_packager_path,
                 )
-                
                 .await?;
             Some(CreatedAudioRepr::Transcode(AudioTranscodeResult {
                 target: transcode.target.clone(),
@@ -376,10 +370,9 @@ pub async fn perform_side_effects_package_video(
                 .run_shaka_packager(
                     RepresentationType::Video,
                     &transcode.output_key,
-                    &storage,
+                    storage,
                     shaka_packager_path,
                 )
-                
                 .await?;
             let probe = ffmpeg_into_shaka
                 .ffprobe_get_streams(ffprobe_path)

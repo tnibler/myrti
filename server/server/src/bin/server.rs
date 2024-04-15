@@ -48,15 +48,16 @@ struct Cli {
     config: String,
     #[arg(long)]
     skip_startup_check: bool,
+    #[cfg(feature = "opentelemetry")]
+    #[arg(long)]
+    otel_endpoint: Option<String>,
 }
 
 async fn db_setup(dir: &Path) -> Result<DbPool> {
     let db_url = dir.join("myrti_media.db").to_string();
     let pool = db::open_db_pool(&db_url)?;
     let conn = pool.get().await?;
-    interact!(conn, move |mut conn| db::migrate(&mut conn))
-        .in_current_span()
-        .await??;
+    interact!(conn, move |mut conn| db::migrate(&mut conn)).await??;
     Ok(pool)
 }
 
@@ -65,7 +66,7 @@ async fn store_asset_roots_from_config(
     config: &Config,
     pool: &DbPool,
 ) -> Result<()> {
-    let conn = pool.get().in_current_span().await?;
+    let conn = pool.get().await?;
     for asset_dir in config.asset_dirs.iter() {
         let asset_dir_path = if asset_dir.path.is_absolute() {
             asset_dir.path.to_owned()
@@ -78,7 +79,6 @@ async fn store_asset_roots_from_config(
         let existing = interact!(conn, move |mut conn| {
             repository::asset_root_dir::get_asset_root_with_path(&mut conn, &asset_dir_path)
         })
-        .in_current_span()
         .await?
         .wrap_err("Error checkng if AssetRootDir already exists")?;
         if existing.is_none() {
@@ -92,7 +92,6 @@ async fn store_asset_roots_from_config(
                     },
                 )
             })
-            .in_current_span()
             .await??;
         }
     }
@@ -113,13 +112,41 @@ async fn main() -> Result<()> {
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "debug,hyper=info")
     }
-    tracing_subscriber::registry()
+    let tracing = tracing_subscriber::registry()
         .with(EnvFilter::from_env("MYRTI_LOG"))
         .with(ErrorLayer::default())
-        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
-        .init();
+        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr));
+    #[cfg(feature = "opentelemetry")]
+    {
+        use opentelemetry_otlp::WithExportConfig;
+        let telemetry = args.otel_endpoint.map(|otel_endpoint| {
+            let tracer = opentelemetry_otlp::new_pipeline()
+                .tracing()
+                .with_exporter(
+                    opentelemetry_otlp::new_exporter()
+                        .tonic()
+                        .with_endpoint(otel_endpoint),
+                )
+                .with_trace_config(opentelemetry_sdk::trace::config().with_resource(
+                    opentelemetry_sdk::Resource::new(vec![opentelemetry::KeyValue::new(
+                        opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                        "myrti",
+                    )]),
+                ))
+                .install_batch(opentelemetry_sdk::runtime::Tokio)
+                .unwrap();
+            let _tracer = opentelemetry::global::tracer("myrti");
+            tracing_opentelemetry::layer().with_tracer(tracer)
+        });
+        tracing.with(telemetry).init();
+    }
+    #[cfg(not(feature = "opentelemetry"))]
+    {
+        tracing.init();
+    }
 
     core::global_init();
+    // TODO make all paths in config absolute relative to config_dir if they're not already
     let config_path = PathBuf::from(args.config);
     let config = core::config::read_config(&config_path).await.unwrap();
     // all paths in config are relative to this

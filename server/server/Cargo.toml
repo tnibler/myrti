@@ -4,7 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+default = ["opentelemetry"]
 mock-commands = []
+opentelemetry = [
+  "dep:opentelemetry_sdk",
+  "dep:opentelemetry",
+  "dep:opentelemetry-otlp",
+  "dep:opentelemetry-semantic-conventions",
+  "dep:tracing-opentelemetry"
+]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -47,6 +55,11 @@ walkdir = "2.3.3"
 utoipa = { version = "4.1.0", features = ["axum_extras", "chrono"] }
 utoipa-discover = { git = "https://github.com/tnibler/utoipa-discover", ref = "3dffbfc4c46bb30cd957ca4f997f88758a95ae28" }
 clap = { version = "4.5.3", features = ["derive"] }
+opentelemetry_sdk = { version = "0.22.1", features = ["rt-tokio"], optional = true }
+opentelemetry = { version = "0.22.0", optional = true }
+opentelemetry-otlp = { version = "0.15.0", optional = true }
+opentelemetry-semantic-conventions = { version = "0.14.0", optional = true }
+tracing-opentelemetry = { version = "0.23.0", optional = true }
 
 [build-dependencies]
 cc = "1.0.79"

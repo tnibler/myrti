@@ -26,7 +26,7 @@ export function computeZoomLevels({ maxSize, panAreaSize }: { maxSize: Size, pan
   const fill = Math.min(1, hRatio > vRatio ? hRatio : vRatio);
   const vFill = Math.min(1, vRatio);
 
-  const fit3x = Math.min(1, fit * 3);
+  const fit3x = fit * 3;
 
   const secondary = (maxSize.width * fit3x <= MAX_IMAGE_WIDTH) ? fit3x : MAX_IMAGE_WIDTH / maxSize.width;
   const max = fit * 20;

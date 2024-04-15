@@ -15,7 +15,7 @@
 		appBarOverride = undefined,
 		showAppBarOverride,
 		activeSideBarEntry
-	} = $props<Props>();
+	}: Props = $props();
 </script>
 
 <div class="flex flex-col h-dvh">

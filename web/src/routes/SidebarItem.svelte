@@ -7,7 +7,7 @@
 		children: Snippet;
 	};
 
-	const { title, isActive, children } = $props<Props>();
+	const { title, isActive, children }: Props = $props();
 </script>
 
 <div

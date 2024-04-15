@@ -42,7 +42,7 @@
 		isActive: boolean;
 		openTransition: OpenTransitionParams | null;
 	};
-	let { data, isActive, openTransition } = $props<SlideProps>();
+	let { data, isActive, openTransition }: SlideProps = $props();
 
 	let gallery: GalleryControls = getContext('gallery');
 	let pan: Point = $state({ x: 0, y: 0 });
@@ -60,10 +60,10 @@
 	let cssTransformZoom: number = $state(1);
 	const effectiveZoom = $derived(domZoom * cssTransformZoom);
 	const panBounds = $derived(computePanBounds(data.size, panAreaSize, effectiveZoom));
-	let slideImage: SlideImage | undefined = $state();
-	let slideVideo: SlideVideo | undefined = $state();
-	let placeholderEl: HTMLImageElement | undefined;
-	let cursor: null | 'zoom-in' | 'grab' | 'grabbing' = $derived.call(() => {
+	let slideImage: SlideImage | null = $state(null);
+	let slideVideo: SlideVideo | null = $state(null);
+	let placeholderEl: HTMLImageElement | null = $state(null);
+	let cursor: null | 'zoom-in' | 'grab' | 'grabbing' = $derived.by(() => {
 		if (effectiveZoom <= zoomLevels.fit) {
 			return 'zoom-in';
 		}
@@ -78,7 +78,7 @@
 		Running,
 		Finished
 	}
-	let placeholderTransitionState = $state(PlaceholderTransition.No as OpenTransitionState);
+	let placeholderTransitionState = $state(PlaceholderTransition.No as PlaceholderTransition);
 	let contentHasLoaded = $state(false);
 	let isContentVisible = $state(false);
 	let placeholderVisible = $derived(
@@ -94,8 +94,8 @@
 	$effect(() => {
 		data.type;
 		untrack(() => {
-			slideImage = data.type === 'image' ? slideImage : undefined;
-			slideVideo = data.type === 'video' ? slideVideo : undefined;
+			slideImage = data.type === 'image' ? slideImage : null;
+			slideVideo = data.type === 'video' ? slideVideo : null;
 		});
 	});
 
@@ -279,8 +279,8 @@
 
 			const listener = (e: TransitionEvent) => {
 				if (e.target === placeholderEl) {
-					placeholderEl.removeEventListener('transitionend', listener, false);
-					placeholderEl.removeEventListener('transitioncancel', listener, false);
+					placeholderEl?.removeEventListener('transitionend', listener, false);
+					placeholderEl?.removeEventListener('transitioncancel', listener, false);
 					onTransitionEnd();
 				}
 			};

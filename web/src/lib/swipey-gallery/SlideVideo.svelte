@@ -14,7 +14,7 @@
 		onContentReady: () => void;
 	};
 
-	const { size, slideData, isVisible, isActive, onContentReady } = $props<SlideVideoProps>();
+	const { size, slideData, isVisible, isActive, onContentReady }: SlideVideoProps = $props();
 
 	let isCloseTransitionRunning = $state(false);
 	let videoEl: HTMLVideoElement | undefined = $state();

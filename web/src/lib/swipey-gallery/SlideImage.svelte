@@ -12,7 +12,7 @@
 		onContentReady: () => void;
 	};
 
-	const { size, slideData, isVisible, onContentReady } = $props<SlideImageProps>();
+	const { size, slideData, isVisible, onContentReady }: SlideImageProps = $props();
 
 	let isCloseTransitionRunning = $state(false);
 	let imgEl: HTMLImageElement | undefined = $state();

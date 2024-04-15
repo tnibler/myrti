@@ -8,7 +8,7 @@
 		class?: string;
 		children: Snippet;
 	};
-	const { text, onclick, children, ...otherProps } = $props<Props>();
+	const { text, onclick, children, ...otherProps }: Props = $props();
 </script>
 
 <button

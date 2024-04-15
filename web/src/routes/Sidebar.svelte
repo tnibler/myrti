@@ -10,7 +10,7 @@
 		activeEntry: SidebarEntry;
 	};
 
-	const { activeEntry } = $props<Props>();
+	const { activeEntry }: Props = $props();
 </script>
 
 <aside id="sidebar" class="h-dvh w-56 flex flex-col py-4">

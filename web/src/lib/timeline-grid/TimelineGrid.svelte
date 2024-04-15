@@ -15,7 +15,7 @@
 	let gallery: Gallery;
 	let gridSections: GridSection[] = $state([]);
 
-	let { timeline, scrollWrapper: scrollWrapper } = $props<TimelineGridProps>();
+	let { timeline, scrollWrapper = $bindable() }: TimelineGridProps = $props();
 	const inSelectionMode = $derived(Object.keys(timeline.selectedAssetIds).length > 0);
 
 	let sectionsIntersecting: boolean[] = $state([]);

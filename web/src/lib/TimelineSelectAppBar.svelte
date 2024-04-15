@@ -9,8 +9,8 @@
 		onAddToAlbumClicked: () => void;
 		onHideClicked: () => void;
 	};
-	let { numAssetsSelected, onCancelSelectClicked, onAddToAlbumClicked, onHideClicked } =
-		$props<Props>();
+	let { numAssetsSelected, onCancelSelectClicked, onAddToAlbumClicked, onHideClicked }: Props =
+		$props();
 </script>
 
 <div

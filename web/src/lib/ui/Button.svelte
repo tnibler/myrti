@@ -7,7 +7,7 @@
 		primary: boolean | undefined;
 		class: string | undefined;
 	};
-	const { text, onclick, primary = undefined, ...otherProps } = $props<Props>();
+	const { text, onclick, primary = undefined, ...otherProps }: Props = $props();
 </script>
 
 <button

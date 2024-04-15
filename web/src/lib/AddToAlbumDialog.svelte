@@ -17,7 +17,7 @@
 	type Props = {
 		onSubmit: (formData: Submit) => Promise<void>;
 	};
-	let { onSubmit } = $props<Props>();
+	let { onSubmit }: Props = $props();
 
 	let dialog: HTMLDialogElement | null = $state(null);
 	let albumNameInput: HTMLInputElement | null = $state(null);

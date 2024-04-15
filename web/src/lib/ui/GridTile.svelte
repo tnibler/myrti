@@ -27,7 +27,14 @@
 		onAssetClick: () => void;
 		imgEl: HTMLImageElement;
 	};
-	let { asset, box, selectState, onSelectToggled, onAssetClick, imgEl } = $props<GridTileProps>();
+	let {
+		asset,
+		box,
+		selectState,
+		onSelectToggled,
+		onAssetClick,
+		imgEl = $bindable()
+	}: GridTileProps = $props();
 	let isMouseOver = $state(false);
 	const isSelected = $derived(selectState.inSelectMode && selectState.isSelected);
 
@@ -59,7 +66,7 @@
 		isMouseOver = false;
 	}}
 >
-	<div class="h-full h-full bg-blue-100">
+	<div class="h-full w-full bg-blue-100">
 		<!-- svelte-ignore a11y-missing-attribute -->
 		<img
 			bind:this={imgEl}

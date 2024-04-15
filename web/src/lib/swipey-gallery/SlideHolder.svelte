@@ -10,8 +10,14 @@
 		slideControls: SlideControls;
 		openTransition: OpenTransitionParams | null;
 	};
-	let { isActive, xTransform, id, slide, slideControls, openTransition } =
-		$props<SlideHolderProps>();
+	let {
+		isActive,
+		xTransform,
+		id,
+		slide,
+		slideControls = $bindable(),
+		openTransition
+	}: SlideHolderProps = $props();
 	const transformStr: string = $derived(`translate3d(${Math.round(xTransform)}px, 0px, 0px)`);
 </script>
 

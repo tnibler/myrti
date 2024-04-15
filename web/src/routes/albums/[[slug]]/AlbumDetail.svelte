@@ -13,7 +13,7 @@
 		albumId: string;
 	};
 
-	const { albumId } = $props<Props>();
+	const { albumId }: Props = $props();
 	let albumName: string | null = $state(null);
 	let albumDesc: string | null = $state(null);
 
@@ -23,7 +23,7 @@
 	};
 	let containerWidth: number | null = $state(null);
 	let assets: Asset[] = $state([]);
-	const gridLayout: GridLayout | null = $derived.call(() => {
+	const gridLayout: GridLayout | null = $derived.by(() => {
 		if (!containerWidth) {
 			return null;
 		}
@@ -69,7 +69,7 @@
 		};
 	}
 
-	let scrollContainer: HTMLElement;
+	let scrollContainer: HTMLElement | null = $state(null);
 	let gallery: Gallery;
 	let thumbnailImgEls: HTMLImageElement[] = $state([]);
 

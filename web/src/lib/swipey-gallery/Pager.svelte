@@ -44,12 +44,12 @@
 	let {
 		numSlides,
 		getSlide,
-		slideIndex,
+		slideIndex = $bindable(),
 		getThumbnailBounds,
 		closeGallery,
 		onOpenTransitionFinished,
 		topOffset
-	} = $props<PagerProps>();
+	}: PagerProps = $props();
 
 	let viewport = $state({ width: 0, height: 0 });
 	const slideSpacing = 0.1;
@@ -335,43 +335,48 @@
 			/>
 		{/each}
 	</div>
-  <!-- Note: idk what capture really means at time of writing. The intent is for the pointerdown/up/.. listeners in bindEvent()
+	<!-- Note: idk what capture really means at time of writing. The intent is for the pointerdown/up/.. listeners in bindEvent()
        to not be triggered when ui elements in this div are clicked. -->
-  <div class="absolute w-full h-full"
-	onpointerdowncapture={(e) => { e.stopPropagation(); }}
-	onpointerupcapture={(e) => { e.stopPropagation(); }}
-  >
-	<button
-		class="icon-button"
-		class:button-visible={hasMouse}
-		in:fade
-		onclick={() => moveSlide('left')}
+	<div
+		class="absolute w-full h-full"
+		onpointerdowncapture={(e) => {
+			e.stopPropagation();
+		}}
+		onpointerupcapture={(e) => {
+			e.stopPropagation();
+		}}
 	>
-		<svg class="arrow-icon" id="arrow" viewBox="0 0 60 60" width="60" height="60"
-			><path d="M29 43l-3 3-16-16 16-16 3 3-13 13 13 13z"></path></svg
+		<button
+			class="icon-button"
+			class:button-visible={hasMouse}
+			in:fade
+			onclick={() => moveSlide('left')}
 		>
-	</button>
-	<button
-		class="icon-button arrow-right"
-		class:button-visible={hasMouse}
-		in:fade
-		onclick={() => moveSlide('right')}
-	>
-		<svg class="arrow-icon arrow-right" viewBox="0 0 60 60" width="60" height="60"
-			><use class="" xlink:href="#arrow"></use></svg
+			<svg class="arrow-icon" id="arrow" viewBox="0 0 60 60" width="60" height="60"
+				><path d="M29 43l-3 3-16-16 16-16 3 3-13 13 13 13z"></path></svg
+			>
+		</button>
+		<button
+			class="icon-button arrow-right"
+			class:button-visible={hasMouse}
+			in:fade
+			onclick={() => moveSlide('right')}
 		>
-	</button>
-	<button
-		class="close-button"
-		class:button-visible={hasMouse}
-		in:fade
-		onclick={() => closeGallery()}
-	>
-		<svg class="arrow-icon" id="arrow" viewBox="0 0 60 60" width="60" height="60">
-			<path d="M24 10l-2-2-6 6-6-6-2 2 6 6-6 6 2 2 6-6 6 6 2-2-6-6z"></path>
-		</svg>
-	</button>
-  	</div>
+			<svg class="arrow-icon arrow-right" viewBox="0 0 60 60" width="60" height="60"
+				><use class="" xlink:href="#arrow"></use></svg
+			>
+		</button>
+		<button
+			class="close-button"
+			class:button-visible={hasMouse}
+			in:fade
+			onclick={() => closeGallery()}
+		>
+			<svg class="arrow-icon" id="arrow" viewBox="0 0 60 60" width="60" height="60">
+				<path d="M24 10l-2-2-6 6-6-6-2 2 6 6-6 6 2 2 6-6 6 6 2-2-6-6z"></path>
+			</svg>
+		</button>
+	</div>
 </div>
 
 <style>

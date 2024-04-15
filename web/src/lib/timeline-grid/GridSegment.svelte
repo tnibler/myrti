@@ -22,9 +22,9 @@
 		assetBaseIndex: number;
 		onAssetClick: (assetIndex: number) => void;
 	};
-	let { timeline, inSelectionMode, layout, assetBaseIndex, onAssetClick } =
-		$props<GridSegmentProps>();
-	const segmentTitle = $derived.call(() => {
+	let { timeline, inSelectionMode, layout, assetBaseIndex, onAssetClick }: GridSegmentProps =
+		$props();
+	const segmentTitle = $derived.by(() => {
 		const segment = layout.segment.segment;
 		if (segment.type === 'userGroup') {
 			return segment.name;

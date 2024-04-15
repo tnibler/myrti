@@ -23,7 +23,7 @@
 		registerElementWithIntersectObserver,
 		isIntersecting,
 		onAssetClick
-	} = $props<GridSectionProps>();
+	}: GridSectionProps = $props();
 	let sectionDivEl: HTMLElement;
 	const section: DisplaySection = $derived(timeline.sections[sectionIndex]);
 

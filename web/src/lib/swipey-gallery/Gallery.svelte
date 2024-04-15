@@ -4,10 +4,15 @@
 
 	type GalleryProps = PagerProps & { scrollWrapper: HTMLElement };
 
-	let { numSlides, getSlide, getThumbnailBounds, scrollWrapper } = $props<GalleryProps>();
+	let {
+		numSlides,
+		getSlide,
+		getThumbnailBounds,
+		scrollWrapper = $bindable()
+	}: GalleryProps = $props();
 	let isOpen: boolean = $state(false);
 	let slideIndex = $state(0);
-	let pager: Pager;
+	let pager: Pager | null = $state(null);
 	let pagerY = 0;
 	let topOffset = $state(0);
 
@@ -28,7 +33,7 @@
 	}
 
 	export function close() {
-		pager.close().then(() => {
+		pager?.close().then(() => {
 			isOpen = false;
 			scrollWrapper.classList.remove('modalOpen');
 			scrollWrapper.style.height = '100%';

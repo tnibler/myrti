@@ -215,8 +215,10 @@ async fn main() -> Result<()> {
         .with_state(shared_state);
     // .route("/api/assets", get(get_assets))
     // .route("/api/assetRoots", get(get_asset_roots))
-    axum::Server::bind(&SocketAddr::new(addr, port))
-        .serve(app.into_make_service())
+    let listener = tokio::net::TcpListener::bind(SocketAddr::new(addr, port))
+        .await
+        .wrap_err("Error binding socket")?;
+    axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();

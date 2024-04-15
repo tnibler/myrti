@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ffi::OsString, ops::Deref, os::unix::prelude::OsStrExt};
 
 use axum::{
-    body::StreamBody,
+    body::Body,
     extract::{Path, Query, State},
     http::{
         header::{self, CONTENT_TYPE},
@@ -15,6 +15,7 @@ use axum_extra::body::AsyncReadBody;
 use eyre::{eyre, Context, Result};
 use serde::Deserialize;
 use tokio_util::io::ReaderStream;
+use tracing::Instrument;
 use utoipa::ToSchema;
 
 use core::{
@@ -188,7 +189,7 @@ async fn get_asset_file(
     .path_on_disk();
     let file = tokio::fs::File::open(&path).await?;
     let stream = ReaderStream::new(file);
-    let body = StreamBody::new(stream);
+    let body = Body::from_stream(stream);
     let download = query
         .get("download")
         .map(|s| s.to_lowercase() == "true")
@@ -253,7 +254,7 @@ async fn get_image_asset_representation(
         .await
         .wrap_err("error opening read stream")?;
     let stream = ReaderStream::new(read_stream);
-    let body = StreamBody::new(stream);
+    let body = Body::from_stream(stream);
     let download = query
         .get("download")
         .map(|s| s.to_lowercase() == "true")

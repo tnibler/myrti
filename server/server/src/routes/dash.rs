@@ -1,7 +1,6 @@
 use axum::{
     body::Body,
-    extract::{Path, State},
-    http::Request,
+    extract::{Path, Request, State},
     response::{IntoResponse, Response},
     routing::get,
     Router,

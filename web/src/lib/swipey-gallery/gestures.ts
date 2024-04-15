@@ -256,8 +256,8 @@ export function newGestureController(
       // this is the second tap within DOUBLETAP_DELAY ms,
       // if they are spatially close enough, trigger double tap
       if (distance(p, tapState.lastTapPoint) < DOUBLETAP_MAX_DISTANCE) {
-        // TODO signal double tap
-        console.log("double tap")
+        e.preventDefault();
+        gallery.currentSlide?.toggleZoom({ x: e.x, y: e.y });
       }
       clearTapState();
     } else {

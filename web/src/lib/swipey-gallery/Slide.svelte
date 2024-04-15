@@ -195,12 +195,10 @@
 
 	$effect(() => {
 		const slide = data;
-		if (isActive) {
-			// reinitialize zoom/pan transition states everytime slide is displayed
-			untrack(() => {
-				initializeForNewSlide(slide, panAreaSize);
-			});
-		}
+		// reinitialize zoom/pan transition states everytime slide is displayed
+		untrack(() => {
+			initializeForNewSlide(slide, panAreaSize);
+		});
 	});
 
 	$effect(() => {

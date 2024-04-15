@@ -211,7 +211,7 @@
 		}
 	});
 
-	function initializeForNewSlide(slide: ImageSlideData, panAreaSize: Size) {
+	function initializeForNewSlide(slide: SlideData, panAreaSize: Size) {
 		const newZoomLevels = computeZoomLevels({
 			maxSize: untrack(() => slide.size),
 			panAreaSize: untrack(() => panAreaSize)

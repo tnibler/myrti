@@ -279,8 +279,6 @@
 		const newActiveHolder = holderStates[holderOrder[1]];
 		previousActiveHolder.isActive = false;
 		newActiveHolder.isActive = true;
-		// FIXME this is the same as isActive. onActive and onScrollAway should both
-		// just be replaced with setting isActive
 		newActiveHolder.showContent = true;
 		// not setting previousActiveHolder.showContent = false, because it's not getting assigned a new slide
 		// if the current slide is already loaded, movedHolder can start loading slide content right away.
@@ -314,10 +312,6 @@
 			});
 		});
 		return p;
-	}
-
-	function onSlideClick(slide: SlideControls, e: MouseEvent) {
-		slide.toggleZoom({ x: e.x, y: e.y });
 	}
 
 	function onSlideContentReady(slideHolderId: number) {

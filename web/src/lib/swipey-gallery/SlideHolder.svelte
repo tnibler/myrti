@@ -7,6 +7,8 @@
 		xTransform: number;
 		id: number;
 		slide: Promise<SlideData> | null;
+		onContentReady: (() => void) | undefined;
+		showContent: boolean;
 		slideControls: SlideControls;
 		openTransition: OpenTransitionParams | null;
 	};
@@ -15,6 +17,8 @@
 		xTransform,
 		id,
 		slide,
+		onContentReady,
+		showContent,
 		slideControls = $bindable(),
 		openTransition
 	}: SlideHolderProps = $props();
@@ -24,7 +28,14 @@
 <div id="id-{id}" class="item" style="transform: {transformStr};">
 	{#await slide then awaitedSlide}
 		{#if awaitedSlide !== null}
-			<Slide data={awaitedSlide} {isActive} {openTransition} bind:controls={slideControls} />
+			<Slide
+				data={awaitedSlide}
+				{isActive}
+				{openTransition}
+				{onContentReady}
+				{showContent}
+				bind:controls={slideControls}
+			/>
 		{/if}
 	{/await}
 </div>

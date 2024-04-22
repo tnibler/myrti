@@ -66,6 +66,8 @@
 		slideIndex: number | null;
 		openTransition: OpenTransitionParams | null;
 		isActive: boolean;
+		showContent: boolean;
+		isContentReady: boolean;
 	};
 	// permutation of the SlideHolders that get shuffled while scrolling
 	// holderOrder[0] is the index into holderStates for the SlideHolder to the left of the screen,
@@ -147,7 +149,9 @@
 				xTransform: (id - 1) * slideWidth,
 				slideIndex: idxs[id],
 				openTransition: id === 1 ? openTransition : null,
-				isActive: id === 1
+				isActive: id === 1,
+				showContent: id === 1,
+				isContentReady: false
 			};
 		});
 		backgroundOpacity = 1;
@@ -277,6 +281,10 @@
 		newActiveHolder.isActive = true;
 		// FIXME this is the same as isActive. onActive and onScrollAway should both
 		// just be replaced with setting isActive
+		newActiveHolder.showContent = true;
+		// not setting previousActiveHolder.showContent = false, because it's not getting assigned a new slide
+		// if the current slide is already loaded, movedHolder can start loading slide content right away.
+		movedHolder.showContent = newActiveHolder.isContentReady;
 		const currentSlideIndex = newActiveHolder.slideIndex;
 		console.assert(
 			currentSlideIndex !== null,
@@ -290,6 +298,7 @@
 			movedHolder.slideIndex = nextSlideIndex;
 		}
 		movedHolder.openTransition = null;
+		movedHolder.isContentReady = false;
 	}
 
 	export async function close() {
@@ -309,6 +318,16 @@
 
 	function onSlideClick(slide: SlideControls, e: MouseEvent) {
 		slide.toggleZoom({ x: e.x, y: e.y });
+	}
+
+	function onSlideContentReady(slideHolderId: number) {
+		holderStates[holderOrder[slideHolderId]].isContentReady = true;
+		// if the currently shown slide is ready, start loading those to the left and right
+		if (slideHolderId == holderOrder[1]) {
+			console.log('center content ready', slideHolderId);
+			holderStates[holderOrder[0]].showContent = true;
+			holderStates[holderOrder[2]].showContent = true;
+		}
 	}
 </script>
 
@@ -330,6 +349,8 @@
 				isActive={slideHolder.isActive}
 				xTransform={slideHolder.xTransform}
 				openTransition={slideHolder.openTransition}
+				showContent={slideHolder.showContent}
+				onContentReady={() => onSlideContentReady(slideHolder.id)}
 				slide={slideHolder.slideIndex !== null ? getSlide(slideHolder.slideIndex) : null}
 				bind:slideControls={slideControls[slideHolder.id]}
 			/>

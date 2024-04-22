@@ -41,8 +41,10 @@
 		data: SlideData;
 		isActive: boolean;
 		openTransition: OpenTransitionParams | null;
+		showContent: boolean;
+		onContentReady: (() => void) | undefined;
 	};
-	let { data, isActive, openTransition }: SlideProps = $props();
+	let { data, isActive, openTransition, showContent, onContentReady }: SlideProps = $props();
 
 	let gallery: GalleryControls = getContext('gallery');
 	let pan: Point = $state({ x: 0, y: 0 });
@@ -303,6 +305,13 @@
 			onTransitionEnd();
 		}
 	}
+
+	function onSlideContentReady() {
+		if (onContentReady) {
+			onContentReady();
+		}
+		contentHasLoaded = true; // hide thumbnail and show real content
+	}
 </script>
 
 <div
@@ -317,26 +326,22 @@
 	transform: translate3d({pan.x}px, {pan.y}px, 0) scale3d({cssTransformZoom}, {cssTransformZoom}, 1);"
 >
 	{#key data.type}
-		{#if data.type === 'image'}
+		{#if data.type === 'image' && showContent}
 			<SlideImage
 				bind:this={slideImage}
 				size={{ width, height }}
 				slideData={data as ImageSlideData}
 				isVisible={isContentVisible}
-				onContentReady={() => {
-					contentHasLoaded = true;
-				}}
+				onContentReady={onSlideContentReady}
 			/>
-		{:else if data.type === 'video'}
+		{:else if data.type === 'video' && showContent}
 			<SlideVideo
 				bind:this={slideVideo}
 				size={{ width, height }}
 				slideData={data as VideoSlideData}
 				isVisible={isContentVisible}
 				{isActive}
-				onContentReady={() => {
-					contentHasLoaded = true;
-				}}
+				onContentReady={onSlideContentReady}
 			/>
 		{/if}
 	{/key}

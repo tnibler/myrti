@@ -46,7 +46,6 @@
 <!-- svelte-ignore a11y-missing-attribute -->
 <img
 	class="slide-image"
-	ss="slide-image zoom-in"
 	bind:this={imgEl}
 	src={slideData.src}
 	onload={onContentReady}

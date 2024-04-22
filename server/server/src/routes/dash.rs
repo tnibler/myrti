@@ -8,6 +8,7 @@ use axum::{
 use eyre::Context;
 use serde::Deserialize;
 use tower::ServiceExt;
+use tracing::Instrument;
 
 use core::{catalog::storage_key, core::storage::StorageProvider, model};
 
@@ -49,6 +50,7 @@ async fn get_dash_file(
         .expect("not implemented for non-local StorageProvider");
     let serve_dir = tower_http::services::ServeFile::new(&path)
         .oneshot(request)
+        .in_current_span()
         .await
         .wrap_err("error serving file")?;
     Ok(serve_dir.into_response())

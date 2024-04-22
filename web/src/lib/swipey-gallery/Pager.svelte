@@ -420,7 +420,7 @@
 		z-index: 10001;
 	}
 
-	.background.transition-opacity {
+	.pager-background.transition-opacity {
 		transition: opacity 200ms ease-in-out;
 	}
 

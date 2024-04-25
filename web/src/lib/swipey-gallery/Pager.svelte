@@ -319,7 +319,6 @@
 		holderStates[holderOrder[slideHolderId]].isContentReady = true;
 		// if the currently shown slide is ready, start loading those to the left and right
 		if (slideHolderId == holderOrder[1]) {
-			console.log('center content ready', slideHolderId);
 			holderStates[holderOrder[0]].showContent = true;
 			holderStates[holderOrder[2]].showContent = true;
 		}

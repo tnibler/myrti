@@ -187,6 +187,7 @@
 		window.onpointermove = gestureController.onPointerMove;
 		pagerWrapper.onpointercancel = gestureController.onPointerUp;
 		pagerWrapper.onclick = gestureController.onClick;
+		document.documentElement.onpointerleave = gestureController.onPointerUp;
 	}
 
 	function unbindEvents() {

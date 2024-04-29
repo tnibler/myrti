@@ -138,8 +138,8 @@ diesel::table! {
 }
 
 diesel::table! {
-    TimelineGroupEntry (timeline_group_entry_id) {
-        timeline_group_entry_id -> BigInt,
+    TimelineGroupItem (timeline_group_item_id) {
+        timeline_group_item_id -> BigInt,
         group_id -> BigInt,
         asset_id -> BigInt,
     }
@@ -178,8 +178,8 @@ diesel::joinable!(AudioRepresentation -> Asset (asset_id));
 diesel::joinable!(DuplicateAsset -> Asset (asset_id));
 diesel::joinable!(DuplicateAsset -> AssetRootDir (root_dir_id));
 diesel::joinable!(ImageRepresentation -> Asset (asset_id));
-diesel::joinable!(TimelineGroupEntry -> Asset (asset_id));
-diesel::joinable!(TimelineGroupEntry -> TimelineGroup (group_id));
+diesel::joinable!(TimelineGroupItem -> Asset (asset_id));
+diesel::joinable!(TimelineGroupItem -> TimelineGroup (group_id));
 diesel::joinable!(VideoRepresentation -> Asset (asset_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
@@ -195,6 +195,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     FailedThumbnailJob,
     ImageRepresentation,
     TimelineGroup,
-    TimelineGroupEntry,
+    TimelineGroupItem,
     VideoRepresentation,
 );

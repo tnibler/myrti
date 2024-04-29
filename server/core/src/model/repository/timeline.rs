@@ -63,8 +63,8 @@ pub fn get_timeline_chunk(
         CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.timeline_group_id ELSE 0 END AS album_id,
         CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.display_date ELSE Asset.taken_date END AS sort_group_date
         FROM Asset
-        LEFT JOIN TimelineGroupEntry ON TimelineGroupEntry.asset_id = Asset.asset_id
-        LEFT JOIN TimelineGroup ON TimelineGroupEntry.group_id = TimelineGroup.timeline_group_id
+        LEFT JOIN TimelineGroupItem ON TimelineGroupItem.asset_id = Asset.asset_id
+        LEFT JOIN TimelineGroup ON TimelineGroupItem.group_id = TimelineGroup.timeline_group_id
         WHERE Asset.asset_id = $1
     )
     SELECT
@@ -75,8 +75,8 @@ pub fn get_timeline_chunk(
     CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.timeline_group_id ELSE NULL END AS group_id,
     CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.display_date ELSE Asset.taken_date END AS sort_group_date
     FROM Asset
-    LEFT JOIN TimelineGroupEntry ON TimelineGroupEntry.asset_id = Asset.asset_id
-    LEFT JOIN TimelineGroup ON TimelineGroupEntry.group_id = TimelineGroup.timeline_group_id
+    LEFT JOIN TimelineGroupItem ON TimelineGroupItem.asset_id = Asset.asset_id
+    LEFT JOIN TimelineGroup ON TimelineGroupItem.group_id = TimelineGroup.timeline_group_id
     WHERE
     (
         ($1 IS NULL)

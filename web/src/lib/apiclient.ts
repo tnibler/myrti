@@ -51,8 +51,16 @@ const Asset = z
 		width: z.number().int()
 	})
 	.passthrough();
+const AlbumItem = z.union([
+	Asset.and(z.object({ type: z.literal('Asset') }).passthrough()),
+	z.object({ type: z.literal('Text') }).passthrough()
+]);
 const AlbumDetailsResponse = z
-	.object({ assets: z.array(Asset), description: z.string().nullish(), name: z.string().nullish() })
+	.object({
+		description: z.string().nullish(),
+		items: z.array(AlbumItem),
+		name: z.string().nullish()
+	})
 	.passthrough();
 const AppendAssetsRequest = z.object({ assetIds: z.array(AssetId) }).passthrough();
 const AppendAssetsResponse = z.object({ success: z.boolean() }).passthrough();
@@ -130,6 +138,7 @@ export const schemas = {
 	AssetMetadata,
 	AssetType,
 	Asset,
+	AlbumItem,
 	AlbumDetailsResponse,
 	AppendAssetsRequest,
 	AppendAssetsResponse,

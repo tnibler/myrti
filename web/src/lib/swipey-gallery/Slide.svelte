@@ -11,6 +11,8 @@
 		readonly currentZoomLevel: number;
 		readonly zoomLevels: ZoomLevels;
 		readonly canBeZoomed: boolean;
+		readonly isAtMinZoom: boolean;
+		readonly isAtMaxZoom: boolean;
 		readonly size: Size;
 	};
 
@@ -19,6 +21,8 @@
 		applyCurrentZoomPan: () => void;
 		setZoomLevel: (z: number) => void;
 		toggleZoom: (p: Point) => void;
+		zoomIn: () => void;
+		zoomOut: () => void;
 		closeTransition: (toBounds: ThumbnailBounds, onTransitionEnd: () => void) => void;
 		onGrabbingStateChange: (isDragging: boolean) => void;
 	};
@@ -114,6 +118,7 @@
 	});
 
 	let userHasZoomed = $state(false);
+	let lastZoomPoint: Point | null = $state(null);
 	export const controls: SlideControls = {
 		get canBePanned() {
 			return effectiveZoom > zoomLevels.fit;
@@ -148,39 +153,39 @@
 			cssTransformZoom = 1;
 		},
 		toggleZoom: (p: Point) => {
-			if (!zoomWrapperDiv) {
-				return;
-			}
-			const endListener = () => {
-				transitionTransformClass = false;
-				domZoom *= cssTransformZoom;
-				cssTransformZoom = 1;
-				zoomWrapperDiv?.removeEventListener('transitionend', endListener, false);
-				zoomWrapperDiv?.removeEventListener('transitioncancel', endListener, false);
-			};
-			const startListener = () => {
-				transitionTransformClass = false;
-				zoomWrapperDiv?.removeEventListener('transitionstart', startListener, false);
-			};
-			zoomWrapperDiv.addEventListener('transitionstart', startListener, false);
-			zoomWrapperDiv.addEventListener('transitionend', endListener, false);
-			zoomWrapperDiv.addEventListener('transitioncancel', endListener, false);
-			transitionTransformClass = true;
+			console.log(p);
 			if (userHasZoomed) {
-				const currentZoom = domZoom * cssTransformZoom;
-				cssTransformZoom *= zoomLevels.fit / currentZoom;
-				pan = panBounds.center;
-				userHasZoomed = false;
+				animateZoomTo('reset');
+				lastZoomPoint = null;
 			} else {
-				const currentZoom = domZoom * cssTransformZoom;
-				const newPan = {
-					x: computePanForChangedZoomLevel('x', zoomLevels.secondary, currentZoom, p, p, pan),
-					y: computePanForChangedZoomLevel('y', zoomLevels.secondary, currentZoom, p, p, pan)
-				};
-				cssTransformZoom = zoomLevels.secondary / domZoom;
-				pan = clampPanToBounds(newPan, panBounds);
-				userHasZoomed = true;
+				animateZoomTo({ toPoint: p, toLevel: zoomLevels.secondary });
+				lastZoomPoint = p;
 			}
+		},
+		zoomIn: () => {
+			console.log(pan);
+			if (userHasZoomed && lastZoomPoint) {
+				animateZoomTo({
+					toPoint: lastZoomPoint,
+					toLevel: effectiveZoom * 2
+				});
+			} else {
+				const point = { x: innerWidth / 2, y: innerHeight / 2 };
+				animateZoomTo({
+					toPoint: point,
+					toLevel: zoomLevels.secondary
+				});
+				lastZoomPoint = point;
+			}
+		},
+		zoomOut: () => {
+			animateZoomTo('reset');
+		},
+		get isAtMaxZoom() {
+			return effectiveZoom >= zoomLevels.max;
+		},
+		get isAtMinZoom() {
+			return effectiveZoom <= zoomLevels.fit;
 		},
 		closeTransition,
 		onGrabbingStateChange: (grabbing: boolean) => {
@@ -311,6 +316,43 @@
 			onContentReady();
 		}
 		contentHasLoaded = true; // hide thumbnail and show real content
+	}
+
+	function animateZoomTo(p: { toLevel: number; toPoint: Point } | 'reset') {
+		if (!zoomWrapperDiv) {
+			return;
+		}
+		const endListener = () => {
+			transitionTransformClass = false;
+			domZoom *= cssTransformZoom;
+			cssTransformZoom = 1;
+			zoomWrapperDiv?.removeEventListener('transitionend', endListener, false);
+			zoomWrapperDiv?.removeEventListener('transitioncancel', endListener, false);
+		};
+		const startListener = () => {
+			transitionTransformClass = false;
+			zoomWrapperDiv?.removeEventListener('transitionstart', startListener, false);
+		};
+		zoomWrapperDiv.addEventListener('transitionstart', startListener, false);
+		zoomWrapperDiv.addEventListener('transitionend', endListener, false);
+		zoomWrapperDiv.addEventListener('transitioncancel', endListener, false);
+		transitionTransformClass = true;
+		if (p === 'reset') {
+			const currentZoom = domZoom * cssTransformZoom;
+			cssTransformZoom *= zoomLevels.fit / currentZoom;
+			pan = panBounds.center;
+			userHasZoomed = false;
+		} else {
+			const currentZoom = domZoom * cssTransformZoom;
+			const point = p.toPoint;
+			const newPan = {
+				x: computePanForChangedZoomLevel('x', p.toLevel, currentZoom, point, point, pan),
+				y: computePanForChangedZoomLevel('y', p.toLevel, currentZoom, point, point, pan)
+			};
+			cssTransformZoom = p.toLevel / domZoom;
+			pan = clampPanToBounds(newPan, panBounds);
+			userHasZoomed = true;
+		}
 	}
 </script>
 

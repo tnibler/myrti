@@ -25,10 +25,10 @@ pub fn get_timeline_group_album_for_asset(
     conn: &mut DbConn,
     asset_id: AssetId,
 ) -> Result<Option<TimelineGroup>> {
-    use schema::{Asset, TimelineGroup, TimelineGroupEntry};
+    use schema::{Asset, TimelineGroup, TimelineGroupItem};
 
-    let db_timeline_group: Option<DbTimelineGroup> = TimelineGroupEntry::table
-        .filter(TimelineGroupEntry::asset_id.eq(asset_id.0))
+    let db_timeline_group: Option<DbTimelineGroup> = TimelineGroupItem::table
+        .filter(TimelineGroupItem::asset_id.eq(asset_id.0))
         .inner_join(TimelineGroup::table)
         .inner_join(Asset::table)
         .select(DbTimelineGroup::as_select())
@@ -51,7 +51,7 @@ pub fn create_timeline_group(
     conn: &mut DbConn,
     ctg: CreateTimelineGroup,
 ) -> Result<TimelineGroupId> {
-    use schema::{TimelineGroup, TimelineGroupEntry};
+    use schema::{TimelineGroup, TimelineGroupItem};
     let now = Utc::now();
     conn.transaction(|conn| {
         let group_id: i64 = diesel::insert_into(TimelineGroup::table)
@@ -65,10 +65,10 @@ pub fn create_timeline_group(
             .get_result(conn)?;
 
         for asset_id in &ctg.asset_ids {
-            diesel::insert_into(TimelineGroupEntry::table)
+            diesel::insert_into(TimelineGroupItem::table)
                 .values((
-                    TimelineGroupEntry::group_id.eq(group_id),
-                    TimelineGroupEntry::asset_id.eq(asset_id.0),
+                    TimelineGroupItem::group_id.eq(group_id),
+                    TimelineGroupItem::asset_id.eq(asset_id.0),
                 ))
                 .execute(conn)?;
         }
@@ -82,16 +82,16 @@ pub fn add_assets_to_group(
     group_id: TimelineGroupId,
     asset_ids: &[AssetId],
 ) -> Result<()> {
-    use schema::TimelineGroupEntry;
+    use schema::TimelineGroupItem;
     if asset_ids.is_empty() {
         return Ok(());
     }
     conn.transaction(|conn| {
         for asset_id in asset_ids {
-            diesel::insert_into(TimelineGroupEntry::table)
+            diesel::insert_into(TimelineGroupItem::table)
                 .values((
-                    TimelineGroupEntry::group_id.eq(group_id.0),
-                    TimelineGroupEntry::asset_id.eq(asset_id.0),
+                    TimelineGroupItem::group_id.eq(group_id.0),
+                    TimelineGroupItem::asset_id.eq(asset_id.0),
                 ))
                 .execute(conn)?;
         }
@@ -101,9 +101,9 @@ pub fn add_assets_to_group(
 
 #[instrument(skip(conn))]
 pub fn get_assets_in_group(conn: &mut DbConn, group_id: TimelineGroupId) -> Result<Vec<Asset>> {
-    use schema::{Asset, TimelineGroupEntry};
-    let db_assets: Vec<DbAsset> = TimelineGroupEntry::table
-        .filter(TimelineGroupEntry::group_id.eq(group_id.0))
+    use schema::{Asset, TimelineGroupItem};
+    let db_assets: Vec<DbAsset> = TimelineGroupItem::table
+        .filter(TimelineGroupItem::group_id.eq(group_id.0))
         .inner_join(Asset::table)
         .select(DbAsset::as_select())
         .load(conn)?;

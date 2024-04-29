@@ -173,8 +173,8 @@ CREATE TABLE TimelineGroup (
   changed_at INTEGER NOT NULL
 ) STRICT;
 
-CREATE TABLE TimelineGroupEntry (
-  timeline_group_entry_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+CREATE TABLE TimelineGroupItem (
+  timeline_group_item_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   group_id INTEGER NOT NULL,
   asset_id INTEGER NOT NULL,
   -- an Asset can only belong to one TimelineGroup
@@ -198,8 +198,8 @@ WITH timeline AS (
   CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.timeline_group_id ELSE NULL END AS group_id,
   CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.display_date ELSE Asset.taken_date END AS sort_date
   FROM Asset
-  LEFT JOIN TimelineGroupEntry ON TimelineGroupEntry.asset_id = Asset.asset_id
-  LEFT JOIN TimelineGroup ON TimelineGroupEntry.group_id = TimelineGroup.timeline_group_id
+  LEFT JOIN TimelineGroupItem ON TimelineGroupItem.asset_id = Asset.asset_id
+  LEFT JOIN TimelineGroup ON TimelineGroupItem.group_id = TimelineGroup.timeline_group_id
   WHERE Asset.is_hidden = 0
 )
 -- assign segment numbers ignoring maximum segment size

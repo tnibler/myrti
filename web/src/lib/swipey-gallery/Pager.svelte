@@ -85,7 +85,9 @@
 	let hasMouse = $state(false);
 
 	const animations: AnimationControls = newAnimationControls();
-	const slide: SlideControls = $derived(slideControls[holderOrder[1]]);
+	const slide: SlideControls | null = $derived(
+		holderOrder[1] < slideControls.length ? slideControls[holderOrder[1]] : null
+	);
 	const pagerControls: PagerControls = {
 		get viewportSize() {
 			return viewport;
@@ -303,15 +305,18 @@
 
 	export async function close() {
 		const thumbnailBounds = getThumbnailBounds(slideIndex);
-		const slide = slideControls[holderOrder[1]];
 		backgroundOpacityTransition = true;
 		// requestAnimationFrame(() => {
 		backgroundOpacity = 0;
 		// });
 		const p = new Promise<void>((resolve) => {
-			slide.closeTransition(thumbnailBounds, () => {
+			if (slide) {
+				slide.closeTransition(thumbnailBounds, () => {
+					resolve();
+				});
+			} else {
 				resolve();
-			});
+			}
 		});
 		return p;
 	}
@@ -322,6 +327,20 @@
 		if (slideHolderId == holderOrder[1]) {
 			holderStates[holderOrder[0]].showContent = true;
 			holderStates[holderOrder[2]].showContent = true;
+		}
+	}
+
+	let isZoomOutDisabled = $derived(slide != null && slide.isAtMinZoom);
+	let isZoomInDisabled = $derived(slide != null && slide.isAtMaxZoom);
+	function onZoomInClicked() {
+		if (slide && slide.canBeZoomed) {
+			slide.zoomIn();
+		}
+	}
+
+	function onZoomOutClicked() {
+		if (slide && slide.canBeZoomed) {
+			slide.zoomOut();
 		}
 	}
 </script>
@@ -366,11 +385,23 @@
 			class="flex flex-row flex-shrink justify-end items-center
 	  h-16 px-2 gap-4 bg-gradient-to-b from-black/50 pointer-events-auto"
 		>
-			<button class="p-2" class:button-visible={hasMouse} in:fade onclick={() => {}}>
-				<ZoomOutIcon color="white" />
+			<button
+				class="p-2"
+				class:button-visible={hasMouse}
+				in:fade
+				onclick={() => onZoomOutClicked()}
+				disabled={isZoomOutDisabled}
+			>
+				<ZoomOutIcon color={isZoomOutDisabled ? '#aaa' : 'white'} />
 			</button>
-			<button class="p-2" class:button-visible={hasMouse} in:fade onclick={() => {}}>
-				<ZoomInIcon color="white" />
+			<button
+				class="p-2"
+				class:button-visible={hasMouse}
+				in:fade
+				onclick={() => onZoomInClicked()}
+				disabled={isZoomInDisabled}
+			>
+				<ZoomInIcon color={isZoomInDisabled ? '#aaa' : 'white'} />
 			</button>
 			<button class="p-2" class:button-visible={hasMouse} in:fade onclick={() => {}}>
 				<EyeOffIcon color="white" />

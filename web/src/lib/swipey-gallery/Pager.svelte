@@ -40,6 +40,7 @@
 	import type { ThumbnailBounds } from './thumbnail-bounds';
 	import type { OpenTransitionParams, SlideControls } from './Slide.svelte';
 	import { fade } from 'svelte/transition';
+	import { EyeOffIcon, InfoIcon, XIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-svelte';
 
 	let {
 		numSlides,
@@ -330,12 +331,12 @@
 <!-- VV errors out, idk svelte 5 bug? -->
 <!-- <svelte:document bind:clientWidth={viewport.width} /> -->
 
-<div class="pager-wrapper" bind:this={pagerWrapper} style:top={`${topOffset}px`}>
+<div class="pager-wrapper z-5" bind:this={pagerWrapper} style:top={`${topOffset}px`}>
 	<div
-		class="pager-background"
+		class="absolute w-full h-full top-0 left-0 bg-black z-0 transition-opacity duration-200 ease-in-out"
 		style:opacity={backgroundOpacity}
 		class:transition-opacity={backgroundOpacityTransition}
-	/>
+	></div>
 	<div class="slide-container" style="transform: {transformString};">
 		{#each holderStates as slideHolder (slideHolder.id)}
 			<SlideHolder
@@ -353,7 +354,7 @@
 	<!-- Note: idk what capture really means at time of writing. The intent is for the pointerdown/up/.. listeners in bindEvent()
        to not be triggered when ui elements in this div are clicked. -->
 	<div
-		class="absolute w-full h-full"
+		class="absolute top-0 left-0 w-full h-full flex flex-col z-10 pointer-events-none"
 		onpointerdowncapture={(e) => {
 			e.stopPropagation();
 		}}
@@ -361,67 +362,56 @@
 			e.stopPropagation();
 		}}
 	>
-		<button
-			class="icon-button"
-			class:button-visible={hasMouse}
-			in:fade
-			onclick={() => moveSlide('left')}
+		<div
+			class="flex flex-row flex-shrink justify-end items-center
+	  h-16 px-2 gap-4 bg-gradient-to-b from-black/50 pointer-events-auto"
 		>
-			<svg class="arrow-icon" id="arrow" viewBox="0 0 60 60" width="60" height="60"
-				><path d="M29 43l-3 3-16-16 16-16 3 3-13 13 13 13z"></path></svg
-			>
-		</button>
-		<button
-			class="icon-button arrow-right"
-			class:button-visible={hasMouse}
-			in:fade
-			onclick={() => moveSlide('right')}
-		>
-			<svg class="arrow-icon arrow-right" viewBox="0 0 60 60" width="60" height="60"
-				><use class="" xlink:href="#arrow"></use></svg
-			>
-		</button>
-		<button
-			class="close-button"
-			class:button-visible={hasMouse}
-			in:fade
-			onclick={() => closeGallery()}
-		>
-			<svg class="arrow-icon" id="arrow" viewBox="0 0 60 60" width="60" height="60">
-				<path d="M24 10l-2-2-6 6-6-6-2 2 6 6-6 6 2 2 6-6 6 6 2-2-6-6z"></path>
-			</svg>
-		</button>
+			<button class="p-2" class:button-visible={hasMouse} in:fade onclick={() => {}}>
+				<ZoomOutIcon color="white" />
+			</button>
+			<button class="p-2" class:button-visible={hasMouse} in:fade onclick={() => {}}>
+				<ZoomInIcon color="white" />
+			</button>
+			<button class="p-2" class:button-visible={hasMouse} in:fade onclick={() => {}}>
+				<EyeOffIcon color="white" />
+			</button>
+			<button class="p-2" class:button-visible={hasMouse} in:fade onclick={() => {}}>
+				<InfoIcon color="white" />
+			</button>
+			<button class="p-4" class:button-visible={hasMouse} in:fade onclick={() => closeGallery()}>
+				<XIcon color="white" />
+			</button>
+		</div>
+		<div class="flex flex-row flex-grow justify-between {hasMouse ? '' : 'hidden'} ">
+			<button class="pl-5 pointer-events-auto" in:fade onclick={() => moveSlide('left')}>
+				<svg class="fill-white" id="arrow" viewBox="0 0 60 60" width="60" height="60"
+					><path d="M29 43l-3 3-16-16 16-16 3 3-13 13 13 13z"></path></svg
+				>
+			</button>
+			<button class="pr-5 pointer-events-auto" in:fade onclick={() => moveSlide('right')}>
+				<svg class="fill-white -scale-x-[1]" viewBox="0 0 60 60" width="60" height="60"
+					><use class="" xlink:href="#arrow"></use></svg
+				>
+			</button>
+		</div>
 	</div>
 </div>
 
 <style>
 	.pager-wrapper,
-	.pager-background,
 	.slide-container {
 		position: absolute;
 		left: 0;
 		width: 100%;
 		height: 100dvh;
-		z-index: 10002;
 	}
 
-	.pager-background,
 	.slide-container {
 		position: absolute;
 		top: 0;
 		left: 0;
 		width: 100%;
 		height: 100%;
-	}
-
-	.pager-background {
-		will-change: opacity;
-		background: #000;
-		z-index: 10001;
-	}
-
-	.pager-background.transition-opacity {
-		transition: opacity 200ms ease-in-out;
 	}
 
 	.pager-wrapper {
@@ -431,64 +421,5 @@
 
 	.slide-container {
 		user-select: none;
-	}
-
-	.close-button {
-		display: none;
-		position: absolute;
-		z-index: 10003;
-		overflow: hidden;
-		background: none;
-		box-shadow: none;
-		border: 0;
-
-		top: 10px;
-		right: 0px;
-
-		pointer-events: auto;
-		cursor: pointer;
-
-		-webkit-appearance: none;
-		appearance: none;
-	}
-
-	.icon-button {
-		display: none;
-		position: absolute;
-		z-index: 10003;
-		overflow: hidden;
-		background: none;
-		box-shadow: none;
-		border: 0;
-		height: 100%;
-		padding-left: 10px;
-		padding-right: 100px;
-
-		pointer-events: auto;
-		cursor: pointer;
-
-		-webkit-appearance: none;
-		appearance: none;
-	}
-
-	.arrow-icon {
-		fill: white;
-		opacity: 0.8;
-		z-index: 10003;
-	}
-
-	.icon-button.arrow-right {
-		right: 0px;
-		padding-right: 10px;
-		padding-left: 100px;
-	}
-
-	.arrow-icon.arrow-right {
-		transform: scale(-1, 1);
-		right: 0px;
-	}
-
-	.button-visible {
-		display: block;
 	}
 </style>

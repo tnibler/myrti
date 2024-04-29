@@ -2,17 +2,17 @@ use std::borrow::Cow;
 
 use chrono::Utc;
 use diesel::prelude::*;
-use eyre::{Context, Result};
+use eyre::{eyre, Context, Result};
 use tracing::instrument;
 
 use crate::model::{
     self,
     repository::db_entity::{DbAlbum, DbAlbumWithAssetCount, DbAsset, DbInsertAlbum},
     util::datetime_to_db_repr,
-    Album, AlbumId, AlbumItem, AlbumItemId, Asset, AssetId,
+    Album, AlbumId, AlbumItem, AlbumItemId, AlbumItemType, Asset, AssetId,
 };
 
-use super::{db::DbConn, schema};
+use super::{db::DbConn, db_entity::DbAlbumItem, schema};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct CreateAlbum {
@@ -85,6 +85,57 @@ pub fn create_album(
         Ok::<AlbumId, eyre::Report>(album_id)
     })?;
     Ok(album_id)
+}
+
+#[derive(Debug, Clone, diesel::Queryable, diesel::Selectable)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+struct AlbumItemRow {
+    #[diesel(embed)]
+    pub album_item: DbAlbumItem,
+    #[diesel(embed)]
+    pub asset: Option<DbAsset>,
+}
+
+#[instrument(skip(conn))]
+pub fn get_items_in_album(conn: &mut DbConn, album_id: AlbumId) -> Result<Vec<AlbumItem>> {
+    use schema::{AlbumItem, Asset};
+    let rows: Vec<AlbumItemRow> = AlbumItem::table
+        .inner_join(Asset::table)
+        .filter(AlbumItem::album_id.eq(album_id.0))
+        .order_by(AlbumItem::idx)
+        .select(AlbumItemRow::as_select())
+        .load(conn)
+        .wrap_err("error querying for album items")?;
+    let items = rows
+        .into_iter()
+        .map(|row| match (row.asset, row.album_item.text) {
+            (Some(asset), None) => {
+                assert!(row.album_item.ty == 1);
+                let asset = asset.try_into()?;
+                Ok(model::AlbumItem {
+                    id: AlbumItemId(row.album_item.album_item_id),
+                    item: AlbumItemType::Asset(asset),
+                })
+            }
+            (None, Some(text)) => {
+                assert!(row.album_item.ty == 2);
+                Ok(model::AlbumItem {
+                    id: AlbumItemId(row.album_item.album_item_id),
+                    item: AlbumItemType::Text(text),
+                })
+            }
+            (asset, text) => {
+                tracing::error!(album_item_id=?row.album_item.album_item_id, ?asset, ?text, "Invalid result row");
+                Err(eyre!(
+                    "Invalid result row: asset={}, text={}",
+                    asset.is_some(),
+                    text.is_some()
+                ))
+            }
+        })
+        .collect::<Result<Vec<_>>>()
+        .wrap_err("error getting items in album")?;
+    Ok(items)
 }
 
 /// Get assets in album ordered by the index of their AlbumItem index

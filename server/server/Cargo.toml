@@ -52,7 +52,7 @@ tracing-error = "0.2.0"
 tracing-forest = { version = "0.1.6", features = ["ansi", "tokio", "serde", "env-filter"] }
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 walkdir = "2.3.3"
-utoipa = { version = "4.1.0", features = ["axum_extras", "chrono"] }
+utoipa = { version = "4.2.0", features = ["axum_extras", "chrono"] }
 utoipa-discover = { git = "https://github.com/tnibler/utoipa-discover", ref = "3dffbfc4c46bb30cd957ca4f997f88758a95ae28" }
 clap = { version = "4.5.3", features = ["derive"] }
 opentelemetry_sdk = { version = "0.22.1", features = ["rt-tokio"], optional = true }

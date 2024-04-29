@@ -88,6 +88,11 @@
 	const slide: SlideControls | null = $derived(
 		holderOrder[1] < slideControls.length ? slideControls[holderOrder[1]] : null
 	);
+	const hideUiTimeoutDuration = 3000;
+	let hideUiTimeout: ReturnType<typeof setTimeout> | null = setTimeout(
+		onHideUiTimeout,
+		hideUiTimeoutDuration
+	);
 	const pagerControls: PagerControls = {
 		get viewportSize() {
 			return viewport;
@@ -185,12 +190,22 @@
 			hasMouse = true;
 		};
 		let gestureController = newGestureController(gallery, onMouseDetected);
-		pagerWrapper.onpointerdown = gestureController.onPointerDown;
+		pagerWrapper.onpointerdown = (e) => {
+			if (!uiVisible) {
+				showUi();
+				// don't initiate drag or anything if ui was hidden
+				return;
+			}
+			gestureController.onPointerDown(e);
+		};
 		window.onpointerup = gestureController.onPointerUp;
 		window.onpointermove = gestureController.onPointerMove;
 		pagerWrapper.onpointercancel = gestureController.onPointerUp;
 		pagerWrapper.onclick = gestureController.onClick;
 		document.documentElement.onpointerleave = gestureController.onPointerUp;
+		window.onmousemove = () => {
+			showUi();
+		};
 	}
 
 	function unbindEvents() {
@@ -199,6 +214,20 @@
 		window.onpointermove = null;
 		pagerWrapper.onpointercancel = null;
 		pagerWrapper.onclick = null;
+		window.onmousemove = null;
+	}
+
+	function onHideUiTimeout() {
+		uiVisible = false;
+	}
+
+	function showUi() {
+		uiVisible = true;
+		if (hideUiTimeout) {
+			clearTimeout(hideUiTimeout);
+			hideUiTimeout = null;
+		}
+		hideUiTimeout = setTimeout(onHideUiTimeout, hideUiTimeoutDuration);
 	}
 
 	function moveSlideAnimate(direction: 'left' | 'right' | 'backToCenter') {
@@ -343,6 +372,8 @@
 			slide.zoomOut();
 		}
 	}
+
+	let uiVisible = $state(true);
 </script>
 
 <!--Taken from photoswipe util/viewport-size.js getViewportSize -->
@@ -350,7 +381,12 @@
 <!-- VV errors out, idk svelte 5 bug? -->
 <!-- <svelte:document bind:clientWidth={viewport.width} /> -->
 
-<div class="pager-wrapper z-5" bind:this={pagerWrapper} style:top={`${topOffset}px`}>
+<div
+	class="pager-wrapper z-5"
+	class:cursor-hidden={!uiVisible}
+	bind:this={pagerWrapper}
+	style:top={`${topOffset}px`}
+>
 	<div
 		class="absolute w-full h-full top-0 left-0 bg-black z-0 transition-opacity duration-200 ease-in-out"
 		style:opacity={backgroundOpacity}
@@ -370,62 +406,63 @@
 			/>
 		{/each}
 	</div>
-	<!-- Note: idk what capture really means at time of writing. The intent is for the pointerdown/up/.. listeners in bindEvent()
+	{#if uiVisible}
+		<!-- Note: idk what capture really means at time of writing. The intent is for the pointerdown/up/.. listeners in bindEvent()
        to not be triggered when ui elements in this div are clicked. -->
-	<div
-		class="absolute top-0 left-0 w-full h-full flex flex-col z-10 pointer-events-none"
-		onpointerdowncapture={(e) => {
-			e.stopPropagation();
-		}}
-		onpointerupcapture={(e) => {
-			e.stopPropagation();
-		}}
-	>
 		<div
-			class="flex flex-row flex-shrink justify-end items-center
-	  h-16 px-2 gap-4 bg-gradient-to-b from-black/50 pointer-events-auto"
+			class="absolute top-0 left-0 w-full h-full flex flex-col z-10 pointer-events-none"
+			out:fade
+			onpointerdowncapture={(e) => {
+				e.stopPropagation();
+			}}
+			onpointerupcapture={(e) => {
+				e.stopPropagation();
+			}}
 		>
-			<button
-				class="p-2"
-				class:button-visible={hasMouse}
-				in:fade
-				onclick={() => onZoomOutClicked()}
-				disabled={isZoomOutDisabled}
+			<div
+				class="flex flex-row flex-shrink justify-end items-center
+	  h-16 px-2 gap-4 bg-gradient-to-b from-black/50 pointer-events-auto"
 			>
-				<ZoomOutIcon color={isZoomOutDisabled ? '#aaa' : 'white'} />
-			</button>
-			<button
-				class="p-2"
-				class:button-visible={hasMouse}
-				in:fade
-				onclick={() => onZoomInClicked()}
-				disabled={isZoomInDisabled}
-			>
-				<ZoomInIcon color={isZoomInDisabled ? '#aaa' : 'white'} />
-			</button>
-			<button class="p-2" class:button-visible={hasMouse} in:fade onclick={() => {}}>
-				<EyeOffIcon color="white" />
-			</button>
-			<button class="p-2" class:button-visible={hasMouse} in:fade onclick={() => {}}>
-				<InfoIcon color="white" />
-			</button>
-			<button class="p-4" class:button-visible={hasMouse} in:fade onclick={() => closeGallery()}>
-				<XIcon color="white" />
-			</button>
-		</div>
-		<div class="flex flex-row flex-grow justify-between {hasMouse ? '' : 'hidden'} ">
-			<button class="pl-5 pointer-events-auto" in:fade onclick={() => moveSlide('left')}>
-				<svg class="fill-white" id="arrow" viewBox="0 0 60 60" width="60" height="60"
-					><path d="M29 43l-3 3-16-16 16-16 3 3-13 13 13 13z"></path></svg
+				<button
+					class="p-2"
+					class:button-visible={hasMouse}
+					onclick={() => onZoomOutClicked()}
+					disabled={isZoomOutDisabled}
 				>
-			</button>
-			<button class="pr-5 pointer-events-auto" in:fade onclick={() => moveSlide('right')}>
-				<svg class="fill-white -scale-x-[1]" viewBox="0 0 60 60" width="60" height="60"
-					><use class="" xlink:href="#arrow"></use></svg
+					<ZoomOutIcon color={isZoomOutDisabled ? '#aaa' : 'white'} />
+				</button>
+				<button
+					class="p-2"
+					class:button-visible={hasMouse}
+					onclick={() => onZoomInClicked()}
+					disabled={isZoomInDisabled}
 				>
-			</button>
+					<ZoomInIcon color={isZoomInDisabled ? '#aaa' : 'white'} />
+				</button>
+				<button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
+					<EyeOffIcon color="white" />
+				</button>
+				<button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
+					<InfoIcon color="white" />
+				</button>
+				<button class="p-4" class:button-visible={hasMouse} onclick={() => closeGallery()}>
+					<XIcon color="white" />
+				</button>
+			</div>
+			<div class="flex flex-row flex-grow justify-between {hasMouse ? '' : 'hidden'} ">
+				<button class="pl-5 pointer-events-auto" onclick={() => moveSlide('left')}>
+					<svg class="fill-white" id="arrow" viewBox="0 0 60 60" width="60" height="60"
+						><path d="M29 43l-3 3-16-16 16-16 3 3-13 13 13 13z"></path></svg
+					>
+				</button>
+				<button class="pr-5 pointer-events-auto" onclick={() => moveSlide('right')}>
+					<svg class="fill-white -scale-x-[1]" viewBox="0 0 60 60" width="60" height="60"
+						><use class="" xlink:href="#arrow"></use></svg
+					>
+				</button>
+			</div>
 		</div>
-	</div>
+	{/if}
 </div>
 
 <style>
@@ -435,6 +472,10 @@
 		left: 0;
 		width: 100%;
 		height: 100dvh;
+	}
+
+	.pager-wrapper.cursor-hidden {
+		cursor: none;
 	}
 
 	.slide-container {

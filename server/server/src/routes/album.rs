@@ -92,9 +92,17 @@ pub async fn create_album(
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(tag = "albumItemType")]
+pub enum AlbumItem {
+    Asset(Asset),
+    Text { text: String }, // not a tuple struct because that doesn't work with utoipa (String field is not
+                           // generated, only type tag)
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AlbumDetailsResponse {
-    pub assets: Vec<Asset>,
+    pub items: Vec<AlbumItem>,
     pub name: Option<String>,
     pub description: Option<String>,
 }
@@ -111,10 +119,17 @@ pub async fn get_album_details(
 ) -> ApiResult<Json<AlbumDetailsResponse>> {
     let album_id = album_id.parse().wrap_err("Invalid albumId").map(AlbumId)?;
     let conn = app_state.pool.get().await?;
-    let assets = interact!(conn, move |conn| {
-        repository::album::get_assets_in_album(conn, album_id)
+    let items = interact!(conn, move |conn| {
+        repository::album::get_items_in_album(conn, album_id)
     })
     .await??;
+    let items: Vec<_> = items
+        .into_iter()
+        .map(|item| match item.item {
+            model::AlbumItemType::Asset(asset) => AlbumItem::Asset(asset.into()),
+            model::AlbumItemType::Text(text) => AlbumItem::Text { text },
+        })
+        .collect();
     let album = interact!(conn, move |conn| {
         repository::album::get_album(conn, album_id)
     })
@@ -122,7 +137,7 @@ pub async fn get_album_details(
     Ok(Json(AlbumDetailsResponse {
         name: album.name,
         description: album.description,
-        assets: assets.into_iter().map(|a| a.into()).collect(),
+        items,
     }))
 }
 

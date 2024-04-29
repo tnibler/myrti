@@ -490,18 +490,18 @@
       "AlbumDetailsResponse": {
         "type": "object",
         "required": [
-          "assets"
+          "items"
         ],
         "properties": {
-          "assets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Asset"
-            }
-          },
           "description": {
             "type": "string",
             "nullable": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlbumItem"
+            }
           },
           "name": {
             "type": "string",
@@ -511,6 +511,48 @@
       },
       "AlbumId": {
         "type": "string"
+      },
+      "AlbumItem": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Asset"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "Asset"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "Text"
+                ]
+              }
+            }
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type"
+        }
       },
       "AppendAssetsRequest": {
         "type": "object",

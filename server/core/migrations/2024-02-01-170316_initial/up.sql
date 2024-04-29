@@ -142,8 +142,8 @@ CREATE TABLE Album (
 
 -- -- surrogate key here because
 -- -- https://dba.stackexchange.com/a/761
-CREATE TABLE AlbumEntry (
-  album_entry_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+CREATE TABLE AlbumItem (
+  album_item_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   album_id INTEGER NOT NULL,
   -- 1 = asset, 2 = text
   ty INTEGER NOT NULL,
@@ -160,7 +160,7 @@ CREATE TABLE AlbumEntry (
   FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 
-CREATE INDEX album_id_index ON AlbumEntry(album_id);
+CREATE INDEX album_id_index ON AlbumItem(album_id);
 
 CREATE TABLE TimelineGroup (
   timeline_group_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,

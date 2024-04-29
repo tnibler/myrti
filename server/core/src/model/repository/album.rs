@@ -9,7 +9,7 @@ use crate::model::{
     self,
     repository::db_entity::{DbAlbum, DbAlbumWithAssetCount, DbAsset, DbInsertAlbum},
     util::datetime_to_db_repr,
-    Album, AlbumEntryId, AlbumId, Asset, AssetId,
+    Album, AlbumId, AlbumItem, AlbumItemId, Asset, AssetId,
 };
 
 use super::{db::DbConn, schema};
@@ -24,11 +24,11 @@ pub struct CreateAlbum {
 #[instrument(skip(conn), level = "trace")]
 pub fn get_all_albums_with_asset_count(conn: &mut DbConn) -> Result<Vec<(Album, i64)>> {
     use diesel::dsl::count;
-    use schema::{Album, AlbumEntry};
+    use schema::{Album, AlbumItem};
     let db_albums: Vec<DbAlbumWithAssetCount> = Album::table
-        .inner_join(AlbumEntry::table)
+        .inner_join(AlbumItem::table)
         .group_by(Album::album_id)
-        .select((DbAlbum::as_select(), count(AlbumEntry::album_entry_id)))
+        .select((DbAlbum::as_select(), count(AlbumItem::album_item_id)))
         .load(conn)?;
     db_albums
         .into_iter()
@@ -49,7 +49,7 @@ pub fn create_album(
     create_album: CreateAlbum,
     assets: &[AssetId],
 ) -> Result<AlbumId> {
-    use schema::{Album, AlbumEntry};
+    use schema::{Album, AlbumItem};
     let now = datetime_to_db_repr(&Utc::now());
     let album_id: AlbumId = conn.transaction(|conn| {
         let album_id = diesel::insert_into(Album::table)
@@ -64,41 +64,37 @@ pub fn create_album(
             .get_result(conn)
             .map(AlbumId)
             .wrap_err("Error inserting Album")?;
-        let album_entry_ids = assets
+        let _album_item_ids = assets
             .iter()
             .enumerate()
             .map(|(idx, asset_id)| {
-                let album_entry_id: i64 = diesel::insert_into(AlbumEntry::table)
+                let album_item_id: i64 = diesel::insert_into(AlbumItem::table)
                     .values((
-                        AlbumEntry::album_id.eq(album_id.0),
-                        AlbumEntry::ty.eq(1),
-                        AlbumEntry::asset_id.eq(Some(asset_id.0)),
-                        AlbumEntry::text.eq(Option::<String>::None),
-                        AlbumEntry::idx.eq(i32::try_from(idx)?),
+                        AlbumItem::album_id.eq(album_id.0),
+                        AlbumItem::ty.eq(1),
+                        AlbumItem::asset_id.eq(Some(asset_id.0)),
+                        AlbumItem::text.eq(Option::<String>::None),
+                        AlbumItem::idx.eq(i32::try_from(idx)?),
                     ))
-                    .returning(AlbumEntry::album_entry_id)
+                    .returning(AlbumItem::album_item_id)
                     .get_result(conn)?;
-                Ok(AlbumEntryId(album_entry_id))
+                Ok(AlbumItemId(album_item_id))
             })
             .collect::<Result<Vec<_>>>()
-            .wrap_err("error inserting one or more AlbumEntry")?;
+            .wrap_err("error inserting one or more AlbumItem")?;
         Ok::<AlbumId, eyre::Report>(album_id)
     })?;
     Ok(album_id)
 }
 
-/// Get assets in album ordered by the index of their AlbumEntry index
+/// Get assets in album ordered by the index of their AlbumItem index
 #[instrument(skip(conn), level = "trace")]
 pub fn get_assets_in_album(conn: &mut DbConn, album_id: AlbumId) -> Result<Vec<Asset>> {
-    use schema::{AlbumEntry, Asset};
-    let db_assets: Vec<DbAsset> = AlbumEntry::table
-        .filter(
-            AlbumEntry::album_id
-                .eq(album_id.0)
-                .and(AlbumEntry::ty.eq(1)),
-        )
+    use schema::{AlbumItem, Asset};
+    let db_assets: Vec<DbAsset> = AlbumItem::table
+        .filter(AlbumItem::album_id.eq(album_id.0).and(AlbumItem::ty.eq(1)))
         .inner_join(Asset::table)
-        .order_by(AlbumEntry::idx)
+        .order_by(AlbumItem::idx)
         .select(DbAsset::as_select())
         .load(conn)?;
     db_assets
@@ -114,28 +110,28 @@ pub fn append_assets_to_album(
     asset_ids: &[AssetId],
 ) -> Result<()> {
     use diesel::dsl::max;
-    use schema::{Album, AlbumEntry};
+    use schema::{Album, AlbumItem};
     conn.transaction(|conn| {
-        let last_index: Option<i32> = AlbumEntry::table
-            .filter(AlbumEntry::album_id.eq(album_id.0))
-            .select(max(AlbumEntry::idx))
+        let last_index: Option<i32> = AlbumItem::table
+            .filter(AlbumItem::album_id.eq(album_id.0))
+            .select(max(AlbumItem::idx))
             .get_result(conn)?;
         let first_insert_index = last_index.map(|last| last + 1).unwrap_or(0);
-        let _album_entry_ids = asset_ids
+        let _album_item_ids = asset_ids
             .iter()
             .zip(first_insert_index..)
             .map(|(asset_id, idx)| {
-                let album_entry_id: i64 = diesel::insert_into(AlbumEntry::table)
+                let album_item_id: i64 = diesel::insert_into(AlbumItem::table)
                     .values((
-                        AlbumEntry::album_id.eq(album_id.0),
-                        AlbumEntry::ty.eq(1),
-                        AlbumEntry::asset_id.eq(Some(asset_id.0)),
-                        AlbumEntry::text.eq(Option::<String>::None),
-                        AlbumEntry::idx.eq(idx),
+                        AlbumItem::album_id.eq(album_id.0),
+                        AlbumItem::ty.eq(1),
+                        AlbumItem::asset_id.eq(Some(asset_id.0)),
+                        AlbumItem::text.eq(Option::<String>::None),
+                        AlbumItem::idx.eq(idx),
                     ))
-                    .returning(AlbumEntry::album_entry_id)
+                    .returning(AlbumItem::album_item_id)
                     .get_result(conn)?;
-                Ok(AlbumEntryId(album_entry_id))
+                Ok(AlbumItemId(album_item_id))
             })
             .collect::<Result<Vec<_>>>()?;
         let now = datetime_to_db_repr(&Utc::now());

@@ -23,7 +23,7 @@ macro_rules! impl_id {
 impl_id!(AssetId);
 impl_id!(AssetRootDirId);
 impl_id!(AlbumId);
-impl_id!(AlbumEntryId);
+impl_id!(AlbumItemId);
 impl_id!(DataDirId);
 impl_id!(DuplicateAssetId);
 impl_id!(VideoRepresentationId);

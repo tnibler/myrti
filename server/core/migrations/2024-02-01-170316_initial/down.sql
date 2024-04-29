@@ -6,7 +6,7 @@ DROP TABLE VideoRepresentation;
 DROP TABLE AudioRepresentation;
 DROP TABLE ImageRepresentation;
 DROP TABLE Album;
-DROP TABLE AlbumEntry;
+DROP TABLE AlbumItem;
 DROP TABLE TimelineGroup;
 DROP TABLE TimelineGroupEntry;
 

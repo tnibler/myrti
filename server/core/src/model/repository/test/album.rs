@@ -86,11 +86,11 @@ fn prop_create_retrieve_albums() {
             prop_assert_eq!(expected_assets, actual_assets_in_album);
             let actual_indices: Vec<usize> = {
                 use diesel::prelude::*;
-                use super::super::schema::AlbumEntry;
-                AlbumEntry::table
-                    .filter(AlbumEntry::album_id.eq(album.id.0).and(AlbumEntry::ty.eq(1)))
-                    .select(AlbumEntry::idx)
-                    .order_by(AlbumEntry::idx)
+                use super::super::schema::AlbumItem;
+                AlbumItem::table
+                    .filter(AlbumItem::album_id.eq(album.id.0).and(AlbumItem::ty.eq(1)))
+                    .select(AlbumItem::idx)
+                    .order_by(AlbumItem::idx)
                     .load(&mut conn).unwrap()
                 }.into_iter().map(|i: i32| i.try_into()).collect::<Result<Vec<usize>, _>>()?;
             prop_assert_eq!(expected_indices, actual_indices);

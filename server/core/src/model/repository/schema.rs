@@ -9,8 +9,8 @@ diesel::table! {
 }
 
 diesel::table! {
-    AlbumEntry (album_entry_id) {
-        album_entry_id -> BigInt,
+    AlbumItem (album_item_id) {
+        album_item_id -> BigInt,
         album_id -> BigInt,
         ty -> Integer,
         asset_id -> Nullable<BigInt>,
@@ -170,8 +170,8 @@ diesel::table! {
     }
 }
 
-diesel::joinable!(AlbumEntry -> Album (album_id));
-diesel::joinable!(AlbumEntry -> Asset (asset_id));
+diesel::joinable!(AlbumItem -> Album (album_id));
+diesel::joinable!(AlbumItem -> Asset (asset_id));
 diesel::joinable!(Asset -> AssetRootDir (root_dir_id));
 diesel::joinable!(AssetThumbnail -> Asset (asset_id));
 diesel::joinable!(AudioRepresentation -> Asset (asset_id));
@@ -184,7 +184,7 @@ diesel::joinable!(VideoRepresentation -> Asset (asset_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     Album,
-    AlbumEntry,
+    AlbumItem,
     Asset,
     AssetRootDir,
     AudioRepresentation,

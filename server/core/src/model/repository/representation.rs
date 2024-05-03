@@ -1,5 +1,5 @@
 use diesel::prelude::*;
-use eyre::{ Context, Result};
+use eyre::{Context, Result};
 use tracing::instrument;
 
 use crate::model::{
@@ -121,6 +121,7 @@ pub fn get_image_representations(
         .into_iter()
         .map(|db_image_repr| db_image_repr.try_into())
         .collect::<Result<Vec<_>>>()
+        .wrap_err("error querying for Image Asset representations")
 }
 
 #[tracing::instrument(skip(conn), level = "trace")]

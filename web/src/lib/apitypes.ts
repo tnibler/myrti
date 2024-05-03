@@ -9,3 +9,4 @@ export type Asset = z.infer<typeof schemas.Asset>;
 export type TimelineGroup = z.infer<typeof schemas.TimelineGroup>;
 export type TimelineSection = z.infer<typeof schemas.TimelineSection>;
 export type TimelineSegment = z.infer<typeof schemas.TimelineSegment>;
+export type ImageRepresentation = z.infer<typeof schemas.ImageRepresentation>;

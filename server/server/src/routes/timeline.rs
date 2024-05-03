@@ -4,7 +4,11 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Utc};
-use eyre::{eyre, Context};
+use eyre::{eyre, Context, Result};
+use futures::{
+    stream::{FuturesOrdered, FuturesUnordered},
+    StreamExt, TryStreamExt,
+};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument};
 use utoipa::{IntoParams, ToSchema};
@@ -13,7 +17,7 @@ use crate::{
     app_state::SharedState,
     http_error::ApiResult,
     schema::{
-        asset::{AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
+        asset::{Asset, AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
         timeline::{TimelineChunk, TimelineGroup, TimelineGroupType},
         TimelineGroupId,
     },
@@ -24,7 +28,7 @@ use core::{
         self,
         repository::{
             self,
-            db::DbPool,
+            db::{DbConn, DbPool},
             timeline::{TimelineElement, TimelineSegmentType},
         },
     },
@@ -207,29 +211,92 @@ pub async fn get_timeline_segments(
     let segment_min: i64 = segment_min.parse().wrap_err("invalid sectionId")?;
     let segment_max: i64 = segment_max.parse().wrap_err("invalid sectionId")?;
     let conn = app_state.pool.get().await?;
-    let segments = interact!(conn, move |conn| {
+    let pool = app_state.pool.clone();
+    let segments_result: Result<Vec<TimelineSegment>> = interact!(conn, move |conn| {
         repository::timeline::get_segments_in_section(conn, segment_min, segment_max)
     })
     .await??
     .into_iter()
-    .map(|segment| TimelineSegment {
-        assets: segment
-            .assets
-            .into_iter()
-            .map(|asset| asset.into())
-            .collect(),
-        segment: match segment.ty {
-            TimelineSegmentType::Group(repository::timeline::TimelineGroupType::UserCreated(
-                group,
-            )) => SegmentType::UserGroup {
-                id: TimelineGroupId(group.id.to_string()),
-                name: group.name,
+    .map(|segment| async {
+        // convert model::Asset to schema::AssetWithSpe, populating the representations field
+        // with the list of available image representions if the original format is not in a
+        // (hardcoded) list of acceptable formats.
+        // This does some async stream stuff which is probably unnecessary and could just as
+        // well run sequentially, there was no thought put into performace at the time of writing.
+        let assets_with_reprs =
+            assets_with_alt_reprs_if_required(pool.clone(), segment.assets).await?;
+        Ok(TimelineSegment {
+            assets: assets_with_reprs,
+            segment: match segment.ty {
+                TimelineSegmentType::Group(
+                    repository::timeline::TimelineGroupType::UserCreated(group),
+                ) => SegmentType::UserGroup {
+                    id: TimelineGroupId(group.id.to_string()),
+                    name: group.name,
+                },
+                TimelineSegmentType::DateRange { start, end } => {
+                    SegmentType::DateRange { start, end }
+                }
             },
-            TimelineSegmentType::DateRange { start, end } => SegmentType::DateRange { start, end },
-        },
+        })
     })
-    .collect();
+    .collect::<FuturesOrdered<_>>()
+    .try_collect::<Vec<_>>()
+    .await;
+    let segments = segments_result?;
+
     Ok(Json(TimelineSegmentsResponse { segments }))
+}
+
+#[tracing::instrument(skip(pool))]
+async fn asset_with_reprs(pool: DbPool, asset: model::Asset) -> eyre::Result<AssetWithSpe> {
+    let spe: AssetSpe = match &asset.sp {
+        model::AssetSpe::Image(image) => {
+            let reprs = match image.image_format_name.as_str() {
+                // TODO hardcoded list of client accepted image formats
+                "jpeg" | "avif" | "png" => Vec::new(),
+                _ => {
+                    let conn = pool.get().await?;
+                    interact!(conn, move |conn| {
+                        repository::representation::get_image_representations(conn, asset.base.id)
+                    })
+                    .await??
+                }
+            };
+            AssetSpe::Image(Image {
+                representations: reprs
+                    .into_iter()
+                    .map(|repr| ImageRepresentation {
+                        id: repr.id.0.to_string(),
+                        format: repr.format_name,
+                        width: repr.width,
+                        height: repr.height,
+                        size: repr.file_size,
+                    })
+                    .collect(),
+            })
+        }
+        model::AssetSpe::Video(video) => AssetSpe::Video(Video {
+            has_dash: video.has_dash,
+        }),
+    };
+    Ok(AssetWithSpe {
+        asset: asset.into(),
+        spe,
+    })
+}
+
+#[tracing::instrument(skip(pool))]
+async fn assets_with_alt_reprs_if_required(
+    pool: DbPool,
+    assets: Vec<model::Asset>,
+) -> Result<Vec<AssetWithSpe>> {
+    assets
+        .into_iter()
+        .map(|asset| async { asset_with_reprs(pool.clone(), asset).await })
+        .collect::<FuturesOrdered<_>>()
+        .try_collect::<Vec<_>>()
+        .await
 }
 
 async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<AssetWithSpe> {

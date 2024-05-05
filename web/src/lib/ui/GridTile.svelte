@@ -77,9 +77,8 @@
 			class:rounded-xl={isSelected}
 			class:scale-[0.85]={isSelected}
 			style:transform-origin="top left"
-			style:top={box.height + 'px'}
-			style:left={0 + 'px'}
-			style:rotate="-90deg"
+			style:left={box.width + 'px'}
+			style:rotate="90deg"
 		/>
 		<div
 			class="absolute z-10 h-full w-full bg-gradient-to-b from-black/25 via-[transparent_25%] opacity-0 transition-opacity group-hover:opacity-100"

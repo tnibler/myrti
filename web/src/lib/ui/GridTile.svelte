@@ -54,7 +54,7 @@
 <a
 	href="#"
 	class="absolute group select-none"
-	style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
+	style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px; "
 	onclick={(e) => {
 		e.preventDefault();
 		onTileClick();
@@ -71,9 +71,15 @@
 		<img
 			bind:this={imgEl}
 			src="/api/asset/thumbnail/{asset.id}/large/avif"
-			class="absolute bg-black h-full w-full transition-transform"
+			height={box.width}
+			width={box.height}
+			class="absolute bg-black transition-transform"
 			class:rounded-xl={isSelected}
 			class:scale-[0.85]={isSelected}
+			style:transform-origin="top left"
+			style:top={box.height + 'px'}
+			style:left={0 + 'px'}
+			style:rotate="-90deg"
 		/>
 		<div
 			class="absolute z-10 h-full w-full bg-gradient-to-b from-black/25 via-[transparent_25%] opacity-0 transition-opacity group-hover:opacity-100"
@@ -118,3 +124,9 @@
 		</div>
 	</div>
 </a>
+
+<style>
+	img {
+		max-width: none;
+	}
+</style>

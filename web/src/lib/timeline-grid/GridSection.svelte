@@ -78,8 +78,8 @@
 		for (const segment of segments) {
 			const assetSizes = segment.assets.map((asset) => {
 				return {
-					width: asset.width,
-					height: asset.height
+					width: asset.height,
+					height: asset.width
 				};
 			});
 			const geometry = createJustifiedLayout(assetSizes, {

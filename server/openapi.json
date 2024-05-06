@@ -160,11 +160,33 @@
         ],
         "operationId": "setAssetsHidden",
         "requestBody": {
-          "description": "",
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/HideAssetsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/asset/rotation": {
+      "post": {
+        "tags": [
+          "crate::routes::asset"
+        ],
+        "operationId": "setAssetRotationCorrection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAssetRotationRequest"
               }
             }
           },
@@ -522,10 +544,10 @@
               {
                 "type": "object",
                 "required": [
-                  "type"
+                  "albumItemType"
                 ],
                 "properties": {
-                  "type": {
+                  "albumItemType": {
                     "type": "string",
                     "enum": [
                       "Asset"
@@ -538,20 +560,24 @@
           {
             "type": "object",
             "required": [
-              "type"
+              "text",
+              "albumItemType"
             ],
             "properties": {
-              "type": {
+              "albumItemType": {
                 "type": "string",
                 "enum": [
                   "Text"
                 ]
+              },
+              "text": {
+                "type": "string"
               }
             }
           }
         ],
         "discriminator": {
-          "propertyName": "type"
+          "propertyName": "albumItemType"
         }
       },
       "AppendAssetsRequest": {
@@ -620,6 +646,11 @@
           },
           "pathInRoot": {
             "type": "string"
+          },
+          "rotationCorrection": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
           },
           "takenDate": {
             "type": "string",
@@ -890,6 +921,16 @@
         ],
         "discriminator": {
           "propertyName": "type"
+        }
+      },
+      "SetAssetRotationRequest": {
+        "type": "object",
+        "properties": {
+          "rotation": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
         }
       },
       "ThumbnailFormat": {

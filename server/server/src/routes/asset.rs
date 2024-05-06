@@ -44,6 +44,7 @@ pub fn router() -> Router<SharedState> {
             "/repr/:asset_id/:repr_id",
             get(get_image_asset_representation),
         )
+        .route("/:id/rotation", post(set_asset_rotation_correction))
 }
 
 #[utoipa::path(get, path = "/api/asset",
@@ -304,6 +305,7 @@ pub struct HideAssetsRequest {
 #[utoipa::path(
     post,
     path = "/api/asset/hidden",
+    request_body=HideAssetsRequest,
     responses((status=200)),
 )]
 #[tracing::instrument(fields(request = true), skip(app_state))]
@@ -327,4 +329,35 @@ async fn set_assets_hidden(
     .await?
     .wrap_err("error setting Assets hidden")?;
     Ok(())
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAssetRotationRequest {
+    pub rotation: Option<i32>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/asset/rotation",
+    request_body=SetAssetRotationRequest,
+    responses((status=200))
+)]
+async fn set_asset_rotation_correction(
+    State(app_state): State<SharedState>,
+    Path(asset_id): Path<AssetId>,
+    Json(req): Json<SetAssetRotationRequest>,
+) -> ApiResult<()> {
+    match req.rotation {
+        Some(rot) if rot % 90 != 0 => Err(eyre!("Invalid rotation value").into()),
+        rotation => {
+            let asset_id = model::AssetId(asset_id.0.parse().wrap_err("invalid asset id")?);
+            let conn = app_state.pool.get().await?;
+            interact!(conn, move |conn| {
+                repository::asset::set_asset_rotation_correction(conn, asset_id, rotation)
+            })
+            .await??;
+            Ok(())
+        }
+    }
 }

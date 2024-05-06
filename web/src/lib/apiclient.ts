@@ -46,14 +46,15 @@ const Asset = z
 		metadata: AssetMetadata.nullish(),
 		mimeType: z.string(),
 		pathInRoot: z.string(),
+		rotationCorrection: z.number().int().nullish(),
 		takenDate: z.string().datetime({ offset: true }),
 		type: AssetType,
 		width: z.number().int()
 	})
 	.passthrough();
 const AlbumItem = z.union([
-	Asset.and(z.object({ type: z.literal('Asset') }).passthrough()),
-	z.object({ type: z.literal('Text') }).passthrough()
+	Asset.and(z.object({ albumItemType: z.literal('Asset') }).passthrough()),
+	z.object({ albumItemType: z.literal('Text'), text: z.string() }).passthrough()
 ]);
 const AlbumDetailsResponse = z
 	.object({
@@ -67,6 +68,10 @@ const AppendAssetsResponse = z.object({ success: z.boolean() }).passthrough();
 const HideAssetAction = z.enum(['hide', 'unhide']);
 const HideAssetsRequest = z
 	.object({ assetIds: z.array(AssetId), what: HideAssetAction })
+	.passthrough();
+const SetAssetRotationRequest = z
+	.object({ rotation: z.number().int().nullable() })
+	.partial()
 	.passthrough();
 const TimelineGroupType = z.discriminatedUnion('type', [
 	z.object({ date: z.string(), type: z.literal('day') }).passthrough(),
@@ -144,6 +149,7 @@ export const schemas = {
 	AppendAssetsResponse,
 	HideAssetAction,
 	HideAssetsRequest,
+	SetAssetRotationRequest,
 	TimelineGroupType,
 	ImageRepresentation,
 	Image,
@@ -255,6 +261,20 @@ const endpoints = makeApi([
 				name: 'body',
 				type: 'Body',
 				schema: HideAssetsRequest
+			}
+		],
+		response: z.void()
+	},
+	{
+		method: 'post',
+		path: '/api/asset/rotation',
+		alias: 'setAssetRotationCorrection',
+		requestFormat: 'json',
+		parameters: [
+			{
+				name: 'body',
+				type: 'Body',
+				schema: z.object({ rotation: z.number().int().nullable() }).partial().passthrough()
 			}
 		],
 		response: z.void()

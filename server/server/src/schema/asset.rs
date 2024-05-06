@@ -30,6 +30,7 @@ pub struct Asset {
     pub taken_date: DateTime<Utc>,
     pub metadata: Option<AssetMetadata>,
     pub mime_type: String,
+    pub rotation_correction: Option<i32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -90,6 +91,7 @@ impl From<&model::Asset> for Asset {
             taken_date: value.base.taken_date,
             metadata: None,
             mime_type,
+            rotation_correction: value.base.rotation_correction,
         }
     }
 }

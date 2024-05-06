@@ -15,7 +15,10 @@ use core::{
 use crate::{
     app_state::SharedState,
     http_error::ApiResult,
-    schema::{asset::Asset, Album, AssetId},
+    schema::{
+        asset::{Asset, AssetSpe, AssetWithSpe, Image, Video},
+        Album, AssetId,
+    },
 };
 
 pub fn router() -> Router<SharedState> {
@@ -92,11 +95,11 @@ pub async fn create_album(
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
-#[serde(tag = "albumItemType")]
+#[serde(tag = "albumItemType", rename_all = "camelCase")]
 pub enum AlbumItem {
-    Asset(Asset),
-    Text { text: String }, // not a tuple struct because that doesn't work with utoipa (String field is not
-                           // generated, only type tag)
+    // not a tuple struct because that doesn't work with utoipa
+    Asset { asset: AssetWithSpe },
+    Text { text: String },
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -126,7 +129,19 @@ pub async fn get_album_details(
     let items: Vec<_> = items
         .into_iter()
         .map(|item| match item.item {
-            model::AlbumItemType::Asset(asset) => AlbumItem::Asset(asset.into()),
+            model::AlbumItemType::Asset(asset) => AlbumItem::Asset {
+                asset: AssetWithSpe {
+                    spe: match &asset.sp {
+                        model::AssetSpe::Image(_image) => AssetSpe::Image(Image {
+                            representations: Vec::default(), //FIXME
+                        }),
+                        model::AssetSpe::Video(video) => AssetSpe::Video(Video {
+                            has_dash: video.has_dash,
+                        }),
+                    },
+                    asset: asset.into(),
+                },
+            },
             model::AlbumItemType::Text(text) => AlbumItem::Text { text },
         })
         .collect();

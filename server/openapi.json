@@ -537,25 +537,22 @@
       "AlbumItem": {
         "oneOf": [
           {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Asset"
+            "type": "object",
+            "required": [
+              "asset",
+              "albumItemType"
+            ],
+            "properties": {
+              "albumItemType": {
+                "type": "string",
+                "enum": [
+                  "asset"
+                ]
               },
-              {
-                "type": "object",
-                "required": [
-                  "albumItemType"
-                ],
-                "properties": {
-                  "albumItemType": {
-                    "type": "string",
-                    "enum": [
-                      "Asset"
-                    ]
-                  }
-                }
+              "asset": {
+                "$ref": "#/components/schemas/AssetWithSpe"
               }
-            ]
+            }
           },
           {
             "type": "object",
@@ -567,7 +564,7 @@
               "albumItemType": {
                 "type": "string",
                 "enum": [
-                  "Text"
+                  "text"
                 ]
               },
               "text": {

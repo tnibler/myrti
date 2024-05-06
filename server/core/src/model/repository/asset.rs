@@ -458,11 +458,26 @@ pub fn get_ffprobe_output(conn: &mut DbConn, asset_id: AssetId) -> Result<Vec<u8
     Ok(ffprobe_output)
 }
 
+#[instrument(skip(conn))]
 pub fn set_assets_hidden(conn: &mut DbConn, set_hidden: bool, asset_ids: &[AssetId]) -> Result<()> {
     use schema::Asset;
     diesel::update(Asset::table.filter(Asset::asset_id.eq_any(asset_ids.iter().map(|id| id.0))))
         .set(Asset::is_hidden.eq(bool_to_int(set_hidden)))
         .execute(conn)
         .wrap_err("error updating column Asset.is_hidden")?;
+    Ok(())
+}
+
+#[instrument(skip(conn))]
+pub fn set_asset_rotation_correction(
+    conn: &mut DbConn,
+    asset_id: AssetId,
+    rotation: Option<i32>,
+) -> Result<()> {
+    use schema::Asset;
+    diesel::update(Asset::table.filter(Asset::asset_id.eq(asset_id.0)))
+        .set(Asset::rotation_correction.eq(rotation))
+        .execute(conn)
+        .wrap_err("error updating column Asset.rotation_correction")?;
     Ok(())
 }

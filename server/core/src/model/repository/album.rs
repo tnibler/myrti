@@ -100,7 +100,7 @@ struct AlbumItemRow {
 pub fn get_items_in_album(conn: &mut DbConn, album_id: AlbumId) -> Result<Vec<AlbumItem>> {
     use schema::{AlbumItem, Asset};
     let rows: Vec<AlbumItemRow> = AlbumItem::table
-        .inner_join(Asset::table)
+        .left_join(Asset::table)
         .filter(AlbumItem::album_id.eq(album_id.0))
         .order_by(AlbumItem::idx)
         .select(AlbumItemRow::as_select())

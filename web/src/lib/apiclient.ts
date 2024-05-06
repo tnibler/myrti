@@ -52,9 +52,22 @@ const Asset = z
 		width: z.number().int()
 	})
 	.passthrough();
-const AlbumItem = z.union([
-	Asset.and(z.object({ albumItemType: z.literal('Asset') }).passthrough()),
-	z.object({ albumItemType: z.literal('Text'), text: z.string() }).passthrough()
+const ImageRepresentation = z
+	.object({
+		format: z.string(),
+		height: z.number().int(),
+		id: z.string(),
+		size: z.number().int(),
+		width: z.number().int()
+	})
+	.passthrough();
+const Image = z.object({ representations: z.array(ImageRepresentation) }).passthrough();
+const Video = z.object({ hasDash: z.boolean() }).passthrough();
+const AssetSpe = z.union([Image, Video]);
+const AssetWithSpe = Asset.and(AssetSpe).and(z.object({}).partial().passthrough());
+const AlbumItem = z.discriminatedUnion('albumItemType', [
+	z.object({ albumItemType: z.literal('asset'), asset: AssetWithSpe }).passthrough(),
+	z.object({ albumItemType: z.literal('text'), text: z.string() }).passthrough()
 ]);
 const AlbumDetailsResponse = z
 	.object({
@@ -85,19 +98,6 @@ const TimelineGroupType = z.discriminatedUnion('type', [
 		})
 		.passthrough()
 ]);
-const ImageRepresentation = z
-	.object({
-		format: z.string(),
-		height: z.number().int(),
-		id: z.string(),
-		size: z.number().int(),
-		width: z.number().int()
-	})
-	.passthrough();
-const Image = z.object({ representations: z.array(ImageRepresentation) }).passthrough();
-const Video = z.object({ hasDash: z.boolean() }).passthrough();
-const AssetSpe = z.union([Image, Video]);
-const AssetWithSpe = Asset.and(AssetSpe).and(z.object({}).partial().passthrough());
 const TimelineGroup = TimelineGroupType.and(
 	z.object({ assets: z.array(AssetWithSpe) }).passthrough()
 );
@@ -143,6 +143,11 @@ export const schemas = {
 	AssetMetadata,
 	AssetType,
 	Asset,
+	ImageRepresentation,
+	Image,
+	Video,
+	AssetSpe,
+	AssetWithSpe,
 	AlbumItem,
 	AlbumDetailsResponse,
 	AppendAssetsRequest,
@@ -151,11 +156,6 @@ export const schemas = {
 	HideAssetsRequest,
 	SetAssetRotationRequest,
 	TimelineGroupType,
-	ImageRepresentation,
-	Image,
-	Video,
-	AssetSpe,
-	AssetWithSpe,
 	TimelineGroup,
 	TimelineChunk,
 	TimelineSection,

@@ -77,10 +77,17 @@
 		let nextSegmentYMin = segmentMargin + headerHeight;
 		for (const segment of segments) {
 			const assetSizes = segment.assets.map((asset) => {
-				return {
-					width: asset.width,
-					height: asset.height
-				};
+				if (asset.rotationCorrection && asset.rotationCorrection % 180 != 0) {
+					return {
+						width: asset.height,
+						height: asset.width
+					};
+				} else {
+					return {
+						width: asset.width,
+						height: asset.height
+					};
+				}
 			});
 			const geometry = createJustifiedLayout(assetSizes, {
 				targetRowHeight,

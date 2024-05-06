@@ -49,6 +49,13 @@
 			onAssetClick();
 		}
 	}
+
+	const rotateImgMod180 = (asset.rotationCorrection ?? 0) % 180;
+	const imgTop = $derived(rotateImgMod180 == -90 ? box.height : 0);
+	const imgLeft = $derived(rotateImgMod180 == 90 ? box.width : 0);
+	const imgTransformOrigin = $derived(rotateImgMod180 != 0 ? 'top left' : 'center');
+	const imgHeight = rotateImgMod180 != 0 ? box.width : box.height;
+	const imgWidth = rotateImgMod180 != 0 ? box.height : box.width;
 </script>
 
 <a
@@ -71,15 +78,22 @@
 		<img
 			bind:this={imgEl}
 			src="/api/asset/thumbnail/{asset.id}/large/avif"
-			class="absolute bg-black h-full w-full transition-transform"
+			class="absolute bg-black transition-transform"
 			class:rounded-xl={isSelected}
 			class:scale-[0.85]={isSelected}
+			width={imgWidth}
+			height={imgHeight}
+			style:transform-origin={imgTransformOrigin}
+			style:top={imgTop + 'px'}
+			style:left={imgLeft + 'px'}
+			style:max-width="none"
+			style:rotate={asset.rotationCorrection ? asset.rotationCorrection + 'deg' : null}
 		/>
 		<div
 			class="absolute z-10 h-full w-full bg-gradient-to-b from-black/25 via-[transparent_25%] opacity-0 transition-opacity group-hover:opacity-100"
 			class:rounded-xl={isSelected}
 			class:scale-[0.85]={isSelected}
-		/>
+		></div>
 		{#if asset.type === 'video'}
 			{@const icon = asset.hasDash ? mdiPlayCircleOutline : mdiProgressWrench}
 			<svg

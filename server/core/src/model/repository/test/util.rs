@@ -14,29 +14,37 @@ pub fn prop_insert_create_test_assets(
 ) -> Result<Vec<Asset>, TestCaseError> {
     let mut assets_with_ids: Vec<Asset> = Vec::default();
     for asset in assets {
-        let ffprobe_output: Option<&[u8]> = match &asset.sp {
-            AssetSpe::Video(_video) => Some(&[]),
-            _ => None,
-        };
-        #[allow(deprecated)]
-        let asset_insert_result = repository::asset::insert_asset(conn, asset, ffprobe_output);
-        prop_assert!(
-            asset_insert_result.is_ok(),
-            "Inserting Asset returned error: {}",
-            asset_insert_result.unwrap_err()
-        );
-        let asset_id = asset_insert_result.unwrap();
-        let asset_with_id = Asset {
-            base: AssetBase {
-                id: asset_id,
-                ..asset.base.clone()
-            },
-            ..asset.clone()
-        };
-        prop_assert_ne!(asset_with_id.base.id, AssetId(0));
+        let asset_with_id = prop_insert_create_test_asset(conn, asset)?;
         assets_with_ids.push(asset_with_id);
     }
     Ok(assets_with_ids)
+}
+
+pub fn prop_insert_create_test_asset(
+    conn: &mut DbConn,
+    asset: &Asset,
+) -> Result<Asset, TestCaseError> {
+    let ffprobe_output: Option<&[u8]> = match &asset.sp {
+        AssetSpe::Video(_video) => Some(&[]),
+        _ => None,
+    };
+    #[allow(deprecated)]
+    let asset_insert_result = repository::asset::insert_asset(conn, asset, ffprobe_output);
+    prop_assert!(
+        asset_insert_result.is_ok(),
+        "Inserting Asset returned error: {}",
+        asset_insert_result.unwrap_err()
+    );
+    let asset_id = asset_insert_result.unwrap();
+    let asset_with_id = Asset {
+        base: AssetBase {
+            id: asset_id,
+            ..asset.base.clone()
+        },
+        ..asset.clone()
+    };
+    prop_assert_ne!(asset_with_id.base.id, AssetId(0));
+    Ok(asset_with_id)
 }
 
 /// Inserts empty albums, then adds assets to them

@@ -2,33 +2,38 @@ use std::collections::{HashMap, HashSet};
 
 use camino::Utf8PathBuf as PathBuf;
 use claims::assert_ok;
+use itertools::Itertools;
 use proptest::prelude::*;
 
 use super::proptest_arb::{arb_new_album, arb_new_asset};
 use super::util::{prop_insert_create_test_assets, set_assets_root_dir};
 
+use crate::model::repository::album::AddItemToAlbum;
+use crate::model::repository::test::proptest_arb::arb_new_album_item;
+use crate::model::repository::test::util::prop_insert_create_test_asset;
 use crate::model::{
     repository::{self, album::CreateAlbum},
     Album, Asset, AssetId, AssetRootDir, AssetRootDirId,
 };
+use crate::model::{AlbumItem, AlbumItemType, AssetBase};
 
 #[test]
 fn prop_create_retrieve_albums() {
     prop_compose! {
         fn arb_assets_and_albums()
         (
-            assets in prop::collection::vec(arb_new_asset(), 1..5),
+            items in prop::collection::vec(arb_new_album_item(), 0..20),
             albums in prop::collection::vec(arb_new_album(), 1..2)
         )
             (
-                albums_asset_idxs in albums.into_iter().map(|album| (Just(album), prop::collection::vec(any::<prop::sample::Index>(), 0..assets.len()))).collect::<Vec<_>>(),
-                assets in Just(assets),
-            ) -> (Vec<Asset>, Vec<(Album, Vec<prop::sample::Index>)>) {
-                (assets, albums_asset_idxs)
+                albums_asset_idxs in albums.into_iter().map(|album| (Just(album), prop::collection::vec(any::<prop::sample::Index>(), 0..=items.len()))).collect::<Vec<_>>(),
+                items in Just(items),
+            ) -> (Vec<AlbumItemType>, Vec<(Album, Vec<prop::sample::Index>)>) {
+                (items, albums_asset_idxs)
             }
     }
     proptest!(|(
-    (assets, albums_asset_idxs) in arb_assets_and_albums(),
+    (items, albums_asset_idxs) in arb_assets_and_albums(),
     append_chunk_size in 1usize..5)| {
         let mut conn = super::db::open_in_memory_and_migrate();
         let asset_root_dir = AssetRootDir {
@@ -39,9 +44,22 @@ fn prop_create_retrieve_albums() {
             &mut conn,
             &asset_root_dir
         ));
-        let assets = set_assets_root_dir(assets, root_dir_id);
+        // set root_dir_id for Asset items, insert into the db and set assset_id
+        let items = items.into_iter().map(|item| match item {
+            AlbumItemType::Asset(asset) => {
+                let asset_to_insert = Asset {
+                    base: AssetBase {
+                        root_dir_id,
+                        ..asset.base
+                    },
+                    ..asset
+                };
+                let asset_with_id = prop_insert_create_test_asset(&mut conn, &asset_to_insert)?;
+                Ok(AlbumItemType::Asset(asset_with_id))
+            },
+            item @ AlbumItemType::Text(_) => Ok(item),
+        }).collect::<Result<Vec<_>, TestCaseError>>()?;
 
-        let assets_with_ids: Vec<Asset> = prop_insert_create_test_assets(&mut conn, &assets)?;
         let mut albums_with_ids: Vec<Album> = Vec::default();
         for (album, _) in &albums_asset_idxs {
             let create_album = CreateAlbum {
@@ -55,40 +73,42 @@ fn prop_create_retrieve_albums() {
             let album_with_id = Album { id: album_id, ..album.clone() };
             albums_with_ids.push(album_with_id);
         }
-        let mut albums_assets_with_ids: Vec<(Album, Vec<Asset>)> = Vec::default();
-        let mut albums_by_asset: HashMap<AssetId, Vec<Album>> = HashMap::default();
+        let mut albums_items_with_ids: Vec<(Album, Vec<AlbumItemType>)> = Vec::default();
         for (album, (_album_no_id, asset_idxs)) in albums_with_ids.iter().zip(albums_asset_idxs.iter()) {
             // removing duplicates
-            let assets_to_append: Vec<Asset> = asset_idxs.iter().map(|idx| idx.get(&assets_with_ids).clone()).collect::<HashSet<_>>().into_iter().collect();
-            let mut assets_actually_appended: Vec<Asset> = Vec::default();
-            let append_chunks: Vec<&[Asset]> = assets_to_append.chunks(append_chunk_size).collect();
+            let assets_to_append: Vec<AlbumItemType> = asset_idxs.iter().map(|idx| idx.get(&items).clone()).collect::<HashSet<_>>().into_iter().collect();
+            let mut assets_actually_appended: Vec<AlbumItemType> = Vec::default();
+            let append_chunks: Vec<&[AlbumItemType]> = assets_to_append.chunks(append_chunk_size).collect();
             for chunk in append_chunks {
-                let chunk_ids: Vec<AssetId> = chunk.iter().map(|asset| asset.base.id).collect();
-                let append_result = repository::album::append_assets_to_album(&mut conn, album.id, &chunk_ids);
-                // if any asset was already in a group album and the album we're inserting into
-                // is also a group, adding to the album should fail
+                let append_items = chunk.iter().map(|item| match item {
+                    AlbumItemType::Asset(asset) => AddItemToAlbum::Asset(asset.base.id),
+                    AlbumItemType::Text(text) => AddItemToAlbum::Text(text.clone()),
+                }).collect_vec();
+                let append_result = repository::album::append_items_to_album(&mut conn, album.id, &append_items);
                 prop_assert!(append_result.is_ok());
                 assets_actually_appended.extend_from_slice(chunk);
-                chunk_ids.iter().for_each(|asset_id| match albums_by_asset.get_mut(asset_id) {
-                    None => {
-                        albums_by_asset.insert(*asset_id, vec![album.clone()]);
-                    },
-                    Some(ref mut albums) => albums.push(album.clone())
-                });
             }
-            albums_assets_with_ids.push((album.clone(), assets_actually_appended));
+            albums_items_with_ids.push((album.clone(), assets_actually_appended));
         }
-        for (album, expected_assets) in albums_assets_with_ids {
-            let retrieve_result = repository::album::get_assets_in_album(&mut conn, album.id);
+        for (album, expected_items) in albums_items_with_ids {
+            let retrieve_result = repository::album::get_items_in_album(&mut conn, album.id);
             prop_assert!(retrieve_result.is_ok());
-            let actual_assets_in_album: Vec<Asset> = retrieve_result.unwrap();
-            let expected_indices: Vec<usize> = (0..expected_assets.len()).collect();
-            prop_assert_eq!(expected_assets, actual_assets_in_album);
+            let actual_items_in_album: Vec<AlbumItem> = retrieve_result.unwrap();
+            let expected_indices: Vec<usize> = (0..expected_items.len()).collect();
+            prop_assert!(expected_items.len() == actual_items_in_album.len());
+            actual_items_in_album.into_iter().zip(expected_items.into_iter()).map(|(actual, expected)| {
+                match (actual.item, expected) {
+                    (AlbumItemType::Asset(asset_actual), AlbumItemType::Asset(asset_expected)) => prop_assert!(asset_actual.base.id == asset_expected.base.id),
+                    (AlbumItemType::Text(text_actual), AlbumItemType::Text(text_expected)) => prop_assert!(text_actual == text_expected),
+                    _ => prop_assert!(false)
+                }
+                Ok(())
+            }).collect::<Result<Vec<_>, _>>()?;
             let actual_indices: Vec<usize> = {
                 use diesel::prelude::*;
                 use super::super::schema::AlbumItem;
                 AlbumItem::table
-                    .filter(AlbumItem::album_id.eq(album.id.0).and(AlbumItem::ty.eq(1)))
+                    .filter(AlbumItem::album_id.eq(album.id.0))
                     .select(AlbumItem::idx)
                     .order_by(AlbumItem::idx)
                     .load(&mut conn).unwrap()

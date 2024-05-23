@@ -192,3 +192,58 @@ pub fn append_assets_to_album(
         Ok(())
     })
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AddItemToAlbum {
+    Asset(AssetId),
+    Text(String),
+}
+
+#[instrument(skip(conn))]
+pub fn append_items_to_album(
+    conn: &mut DbConn,
+    album_id: AlbumId,
+    items: &[AddItemToAlbum],
+) -> Result<()> {
+    use diesel::dsl::max;
+    use schema::{Album, AlbumItem};
+    conn.immediate_transaction(|conn| {
+        let last_index: Option<i32> = AlbumItem::table
+            .filter(AlbumItem::album_id.eq(album_id.0))
+            .select(max(AlbumItem::idx))
+            .get_result(conn)?;
+        let first_insert_index = last_index.map(|last| last + 1).unwrap_or(0);
+        let _album_item_ids = items
+            .iter()
+            .zip(first_insert_index..)
+            .map(|(item, idx)| {
+                let insert_row = match item {
+                    AddItemToAlbum::Asset(asset_id) => (
+                        AlbumItem::album_id.eq(album_id.0),
+                        AlbumItem::ty.eq(1),
+                        AlbumItem::asset_id.eq(Some(asset_id.0)),
+                        AlbumItem::text.eq(Option::<&str>::None),
+                        AlbumItem::idx.eq(idx),
+                    ),
+                    AddItemToAlbum::Text(text) => (
+                        AlbumItem::album_id.eq(album_id.0),
+                        AlbumItem::ty.eq(2),
+                        AlbumItem::asset_id.eq(Option::<i64>::None),
+                        AlbumItem::text.eq(Some(text.as_str())),
+                        AlbumItem::idx.eq(idx),
+                    ),
+                };
+                let album_item_id: i64 = diesel::insert_into(AlbumItem::table)
+                    .values(insert_row)
+                    .returning(AlbumItem::album_item_id)
+                    .get_result(conn)?;
+                Ok(AlbumItemId(album_item_id))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let now = datetime_to_db_repr(&Utc::now());
+        diesel::update(Album::table)
+            .set(Album::changed_at.eq(now))
+            .execute(conn)?;
+        Ok(())
+    })
+}

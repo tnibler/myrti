@@ -2,9 +2,10 @@ use camino::Utf8PathBuf as PathBuf;
 use proptest::prelude::*;
 
 use crate::model::{
-    Album, AlbumId, Asset, AssetBase, AssetId, AssetRootDirId, AssetType, CreateAsset,
-    CreateAssetBase, CreateAssetImage, CreateAssetSpe, CreateAssetVideo, GpsCoordinates, Image,
-    ImageAsset, Size, TimelineGroup, TimelineGroupId, TimestampInfo, Video, VideoAsset,
+    Album, AlbumId, AlbumItem, AlbumItemType, Asset, AssetBase, AssetId, AssetRootDirId, AssetType,
+    CreateAsset, CreateAssetBase, CreateAssetImage, CreateAssetSpe, CreateAssetVideo,
+    GpsCoordinates, Image, ImageAsset, Size, TimelineGroup, TimelineGroupId, TimestampInfo, Video,
+    VideoAsset,
 };
 
 fn path_strategy() -> BoxedStrategy<PathBuf> {
@@ -134,6 +135,16 @@ prop_compose! {
             }
         }
     }
+}
+
+pub fn arb_new_album_item() -> BoxedStrategy<AlbumItemType> {
+    prop_oneof![
+        arb_new_asset().prop_map(AlbumItemType::Asset),
+        prop::string::string_regex("[a-zA-Z0-9 .,-]+")
+            .unwrap()
+            .prop_map(AlbumItemType::Text)
+    ]
+    .boxed()
 }
 
 pub fn arb_new_asset() -> BoxedStrategy<Asset> {

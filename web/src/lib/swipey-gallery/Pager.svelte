@@ -1,4 +1,4 @@
-<script context="module">
+<script lang="ts" context="module">
 	export type PagerProps = {
 		slideIndex: number;
 		numSlides: number;

@@ -1,4 +1,4 @@
-<script context="module">
+<script lang="ts" context="module">
 	export type OpenTransitionParams = {
 		fromBounds: ThumbnailBounds;
 		onTransitionEnd: () => void;

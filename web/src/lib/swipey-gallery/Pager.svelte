@@ -40,7 +40,14 @@
 	import type { ThumbnailBounds } from './thumbnail-bounds';
 	import type { OpenTransitionParams, SlideControls } from './Slide.svelte';
 	import { fade } from 'svelte/transition';
-	import { EyeOffIcon, InfoIcon, XIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-svelte';
+	import {
+		EyeOffIcon,
+		InfoIcon,
+		RotateCwIcon,
+		XIcon,
+		ZoomInIcon,
+		ZoomOutIcon
+	} from 'lucide-svelte';
 
 	let {
 		numSlides,
@@ -423,6 +430,9 @@
 				class="flex flex-row flex-shrink justify-end items-center
 	  h-16 px-2 gap-4 bg-gradient-to-b from-black/50 pointer-events-auto"
 			>
+				<button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
+					<RotateCwIcon color="white" />
+				</button>
 				<button
 					class="p-2"
 					class:button-visible={hasMouse}

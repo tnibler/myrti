@@ -115,28 +115,26 @@ pub async fn required_video_packaging_for_asset(
         asset.base.id,
         format_args!("{}x{}.mp4", asset.base.size.width, asset.base.size.height),
     );
-    let create_video_repr = match orig_codec_ok && !has_rotation_metadata {
-        true => {
-            // no need to reencode
-            CreateVideoRepr::PackageOriginalFile {
-                output_key: video_out_key,
-            }
+    let is_mp4 = asset.base.file_type == "mp4";
+    let create_video_repr = if is_mp4 && orig_codec_ok && !has_rotation_metadata {
+        // no need to reencode
+        CreateVideoRepr::PackageOriginalFile {
+            output_key: video_out_key,
         }
-        false => {
-            // reencode
-            CreateVideoRepr::Transcode(VideoTranscode {
-                target: VideoEncodingTarget {
-                    codec: CodecTarget::AV1(av1::AV1Target {
-                        crf: av1::Crf::default(),
-                        fast_decode: None,
-                        preset: None,
-                        max_bitrate: None,
-                    }),
-                    scale: None,
-                },
-                output_key: video_out_key,
-            })
-        }
+    } else {
+        // reencode
+        CreateVideoRepr::Transcode(VideoTranscode {
+            target: VideoEncodingTarget {
+                codec: CodecTarget::AV1(av1::AV1Target {
+                    crf: av1::Crf::default(),
+                    fast_decode: None,
+                    preset: None,
+                    max_bitrate: None,
+                }),
+                scale: None,
+            },
+            output_key: video_out_key,
+        })
     };
     let create_audio_repr = match has_acceptable_audio_repr {
         true => None,

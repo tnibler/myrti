@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import AppBar from './appbar/AppBar.svelte';
-	import Sidebar, { type SidebarEntry } from '../routes/Sidebar.svelte';
+	import Sidebar, { type SidebarEntry } from '@lib/Sidebar.svelte';
 
 	type Props = {
 		content: Snippet;

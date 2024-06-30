@@ -1,6 +1,6 @@
 <script lang="ts" context="module">
-	import type { TimelineSegment } from '$lib/apitypes';
-	import type { TimelineGridStore } from '$lib/store/timeline.svelte';
+	import type { TimelineSegment } from "@lib/apitypes";
+	import type { TimelineGridStore } from "@lib/store/timeline.svelte";
 
 	export type SegmentLayout = {
 		segment: TimelineSegment;
@@ -13,7 +13,7 @@
 </script>
 
 <script lang="ts">
-	import GridTile, { type TileBox } from '$lib/ui/GridTile.svelte';
+	import GridTile, { type TileBox } from "@lib/ui/GridTile.svelte";
 
 	type GridSegmentProps = {
 		timeline: TimelineGridStore;
@@ -22,21 +22,26 @@
 		assetBaseIndex: number;
 		onAssetClick: (assetIndex: number) => void;
 	};
-	let { timeline, inSelectionMode, layout, assetBaseIndex, onAssetClick }: GridSegmentProps =
-		$props();
+	let {
+		timeline,
+		inSelectionMode,
+		layout,
+		assetBaseIndex,
+		onAssetClick,
+	}: GridSegmentProps = $props();
 	const segmentTitle = $derived.by(() => {
 		const segment = layout.segment.segment;
-		if (segment.type === 'userGroup') {
+		if (segment.type === "userGroup") {
 			return segment.name;
 		} else {
 			const options = {
-				weekday: 'long',
-				year: 'numeric',
-				month: 'long',
-				day: 'numeric'
+				weekday: "long",
+				year: "numeric",
+				month: "long",
+				day: "numeric",
 			};
 			const date = new Date(segment.start);
-			return date.toLocaleDateString('de-DE', options);
+			return date.toLocaleDateString("de-DE", options);
 		}
 	});
 
@@ -49,7 +54,9 @@
 	export function getThumbImgForAsset(assetIndex: number): HTMLImageElement {
 		console.assert(assetIndex >= 0);
 		if (assetIndex >= imgEls.length) {
-			console.error('segment was asked for thumbnail with index higher than number of assets');
+			console.error(
+				"segment was asked for thumbnail with index higher than number of assets",
+			);
 		}
 		return imgEls[assetIndex];
 	}
@@ -60,7 +67,7 @@
 	}
 
 	function getSelectState(
-		assetId: string
+		assetId: string,
 	): { inSelectMode: false } | { inSelectMode: true; isSelected: boolean } {
 		const inSelectMode = Object.keys(timeline.selectedAssetIds).length > 0;
 		const isSelected = assetId in timeline.selectedAssetIds;

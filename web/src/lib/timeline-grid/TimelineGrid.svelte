@@ -1,10 +1,13 @@
 <script lang="ts">
-	import GridSection from './GridSection.svelte';
-	import Gallery from '$lib/swipey-gallery/Gallery.svelte';
-	import type { ThumbnailBounds } from '$lib/swipey-gallery/thumbnail-bounds';
-	import { slideForAsset, type SlideData } from '$lib/swipey-gallery/slide-data';
-	import type { AssetWithSpe } from '$lib/apitypes';
-	import type { TimelineGridStore } from '$lib/store/timeline.svelte';
+	import GridSection from "./GridSection.svelte";
+	import Gallery from "@lib/swipey-gallery/Gallery.svelte";
+	import type { ThumbnailBounds } from "@lib/swipey-gallery/thumbnail-bounds";
+	import {
+		slideForAsset,
+		type SlideData,
+	} from "@lib/swipey-gallery/slide-data";
+	import type { AssetWithSpe } from "@lib/apitypes";
+	import type { TimelineGridStore } from "@lib/store/timeline.svelte";
 
 	type TimelineGridProps = {
 		timeline: TimelineGridStore;
@@ -16,7 +19,9 @@
 	let gridSections: GridSection[] = $state([]);
 
 	let { timeline, scrollWrapper = $bindable() }: TimelineGridProps = $props();
-	const inSelectionMode = $derived(Object.keys(timeline.selectedAssetIds).length > 0);
+	const inSelectionMode = $derived(
+		Object.keys(timeline.selectedAssetIds).length > 0,
+	);
 
 	let sectionsIntersecting: boolean[] = $state([]);
 	$effect(async () => {
@@ -27,7 +32,7 @@
 	async function getSlide(index: number): Promise<SlideData | null> {
 		const asset: AssetWithSpe | null = await timeline.getAssetAtIndex(index);
 		if (!asset) {
-			console.log('asset is null');
+			console.log("asset is null");
 			return null;
 		}
 		return slideForAsset(asset);
@@ -38,23 +43,35 @@
 			return section.assetStartIndex <= assetIndex;
 		});
 		if (sectionIndex < 0) {
-			console.error(`did not find section containing asset at index ${assetIndex}`);
+			console.error(
+				`did not find section containing asset at index ${assetIndex}`,
+			);
 			return { rect: { x: 100, y: 100, width: 100, height: 100 } };
 		}
 		const imgEl = gridSections[sectionIndex].getThumbImgForAsset(assetIndex);
 		if (!imgEl) {
 			return { rect: { x: 100, y: 100, width: 100, height: 100 } };
 		}
-		return { rect: { x: imgEl.x, y: imgEl.y, width: imgEl.width, height: imgEl.height } };
+		return {
+			rect: {
+				x: imgEl.x,
+				y: imgEl.y,
+				width: imgEl.width,
+				height: imgEl.height,
+			},
+		};
 	}
 
 	function onAssetClick(index: number) {
 		gallery.open(index);
 	}
 
-	const intersectionObserver = new IntersectionObserver(handleSectionIntersect, {
-		rootMargin: '200px 0px'
-	});
+	const intersectionObserver = new IntersectionObserver(
+		handleSectionIntersect,
+		{
+			rootMargin: "200px 0px",
+		},
+	);
 
 	function handleSectionIntersect(entries: IntersectionObserverEntry[]) {
 		entries.forEach((entry) => {
@@ -78,7 +95,11 @@
 </script>
 
 <div class="scroll-wrapper" bind:this={scrollWrapper}>
-	<section id="grid" bind:clientWidth={viewport.width} bind:clientHeight={viewport.height}>
+	<section
+		id="grid"
+		bind:clientWidth={viewport.width}
+		bind:clientHeight={viewport.height}
+	>
 		{#each timeline.sections as section, idx}
 			<GridSection
 				bind:this={gridSections[idx]}

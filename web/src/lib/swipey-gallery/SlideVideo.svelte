@@ -1,8 +1,8 @@
 <script lang="ts">
-	import type { Size } from './util_types';
-	import type { VideoSlideData } from './slide-data';
-	import './slide.css';
-	import { onMount } from 'svelte';
+	import type { Size } from "./util_types";
+	import type { VideoSlideData } from "./slide-data";
+	import "./slide.css";
+	import { onMount } from "svelte";
 
 	type SlideVideoProps = {
 		/** size of the DOM element */
@@ -14,7 +14,13 @@
 		onContentReady: () => void;
 	};
 
-	const { size, slideData, isVisible, isActive, onContentReady }: SlideVideoProps = $props();
+	const {
+		size,
+		slideData,
+		isVisible,
+		isActive,
+		onContentReady,
+	}: SlideVideoProps = $props();
 
 	let isCloseTransitionRunning = $state(false);
 	let videoEl: HTMLVideoElement | undefined = $state();
@@ -32,7 +38,7 @@
 	});
 	$effect(() => {
 		slideData.src;
-		if (slideData.videoSource === 'dash') {
+		if (slideData.videoSource === "dash") {
 			shakaInitPlayer(slideData.mpdManifestUrl);
 		} else {
 			enableVideoSrcOrig = true;
@@ -47,21 +53,26 @@
 		}, 400);
 	});
 
-	export function closeTransition(transform: string, onTransitionEnd: () => void) {
+	export function closeTransition(
+		transform: string,
+		onTransitionEnd: () => void,
+	) {
 		if (!videoEl) {
-			console.error('SlideVideo.closeTransition called, but <video> element is not bound');
+			console.error(
+				"SlideVideo.closeTransition called, but <video> element is not bound",
+			);
 			return;
 		}
 		const listener = (e: TransitionEvent) => {
 			if (e.target === videoEl) {
-				videoEl.removeEventListener('transitionend', listener, false);
-				videoEl.removeEventListener('transitioncancel', listener, false);
+				videoEl.removeEventListener("transitionend", listener, false);
+				videoEl.removeEventListener("transitioncancel", listener, false);
 				isCloseTransitionRunning = false;
 				onTransitionEnd();
 			}
 		};
-		videoEl.addEventListener('transitionend', listener, false);
-		videoEl.addEventListener('transitioncancel', listener, false);
+		videoEl.addEventListener("transitionend", listener, false);
+		videoEl.addEventListener("transitioncancel", listener, false);
 
 		isCloseTransitionRunning = true;
 		requestAnimationFrame(() => {
@@ -84,7 +95,7 @@
 	muted={true}
 	class="slide-video max-w-none"
 	bind:this={videoEl}
-	on:loadeddata={onContentReady}
+	onloadeddata={onContentReady}
 	width={size.width}
 	style:width="{size.width}px"
 	style:height="{size.height}px"
@@ -98,7 +109,7 @@
 			src={slideData.src}
 			type={slideData.mimeType}
 			onerror={(e) => {
-				console.log('TODO handle video codec errors', e);
+				console.log("TODO handle video codec errors", e);
 				onContentReady();
 			}}
 		/>

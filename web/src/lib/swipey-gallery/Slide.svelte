@@ -153,7 +153,6 @@
 			cssTransformZoom = 1;
 		},
 		toggleZoom: (p: Point) => {
-			console.log(p);
 			if (userHasZoomed) {
 				animateZoomTo('reset');
 				lastZoomPoint = null;
@@ -163,7 +162,6 @@
 			}
 		},
 		zoomIn: () => {
-			console.log(pan);
 			if (userHasZoomed && lastZoomPoint) {
 				animateZoomTo({
 					toPoint: lastZoomPoint,

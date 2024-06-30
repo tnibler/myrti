@@ -1,5 +1,5 @@
-import { api } from '../apiclient';
-import type { TimelineGroup } from '$lib/apitypes';
+import { api } from 'lib/apiclient';
+import type { TimelineGroup } from 'lib/apitypes';
 
 type AssetStore = {
 	groups: TimelineGroup[];

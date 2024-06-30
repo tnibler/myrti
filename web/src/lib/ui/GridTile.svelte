@@ -8,21 +8,23 @@
 </script>
 
 <script lang="ts">
-	import type { Asset } from '$lib/apitypes';
+	import type { Asset } from "@lib/apitypes";
 	import {
 		mdiProgressWrench,
 		mdiPlayCircleOutline,
 		mdiCheckCircle,
 		mdiCheckCircleOutline,
 		mdiCheckboxMarkedCircle,
-		mdiCircleOutline
-	} from '@mdi/js';
-	import { fade } from 'svelte/transition';
+		mdiCircleOutline,
+	} from "@mdi/js";
+	import { fade } from "svelte/transition";
 
 	type GridTileProps = {
 		asset: Asset;
 		box: TileBox;
-		selectState: { inSelectMode: false } | { inSelectMode: true; isSelected: boolean };
+		selectState:
+			| { inSelectMode: false }
+			| { inSelectMode: true; isSelected: boolean };
 		onSelectToggled: () => void;
 		onAssetClick: () => void;
 		imgEl: HTMLImageElement;
@@ -33,10 +35,12 @@
 		selectState,
 		onSelectToggled,
 		onAssetClick,
-		imgEl = $bindable()
+		imgEl = $bindable(),
 	}: GridTileProps = $props();
 	let isMouseOver = $state(false);
-	const isSelected = $derived(selectState.inSelectMode && selectState.isSelected);
+	const isSelected = $derived(
+		selectState.inSelectMode && selectState.isSelected,
+	);
 
 	function onSelectButtonClick() {
 		onSelectToggled();
@@ -53,13 +57,15 @@
 	const rotateImgMod180 = (asset.rotationCorrection ?? 0) % 180;
 	const imgTop = $derived(rotateImgMod180 == -90 ? box.height : 0);
 	const imgLeft = $derived(rotateImgMod180 == 90 ? box.width : 0);
-	const imgTransformOrigin = $derived(rotateImgMod180 != 0 ? 'top left' : 'center');
+	const imgTransformOrigin = $derived(
+		rotateImgMod180 != 0 ? "top left" : "center",
+	);
 	const imgHeight = rotateImgMod180 != 0 ? box.width : box.height;
 	const imgWidth = rotateImgMod180 != 0 ? box.height : box.width;
 </script>
 
 <a
-	href="#"
+	href=""
 	class="absolute group select-none"
 	style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
 	onclick={(e) => {
@@ -84,17 +90,19 @@
 			width={imgWidth}
 			height={imgHeight}
 			style:transform-origin={imgTransformOrigin}
-			style:top={imgTop + 'px'}
-			style:left={imgLeft + 'px'}
+			style:top={imgTop + "px"}
+			style:left={imgLeft + "px"}
 			style:max-width="none"
-			style:rotate={asset.rotationCorrection ? asset.rotationCorrection + 'deg' : null}
+			style:rotate={asset.rotationCorrection
+				? asset.rotationCorrection + "deg"
+				: null}
 		/>
 		<div
 			class="absolute z-10 h-full w-full bg-gradient-to-b from-black/25 via-[transparent_25%] opacity-0 transition-opacity group-hover:opacity-100"
 			class:rounded-xl={isSelected}
 			class:scale-[0.85]={isSelected}
 		></div>
-		{#if asset.type === 'video'}
+		{#if asset.type === "video"}
 			{@const icon = asset.hasDash ? mdiPlayCircleOutline : mdiProgressWrench}
 			<svg
 				class="absolute right-0 mr-1 mt-1 md:mr-2 md:mt-2"
@@ -124,7 +132,11 @@
 					}}
 					transition:fade={{ duration: 80 }}
 				>
-					<svg style:opacity={isSelected ? 1 : 0.75} width="24" height="24" viewBox="0 0 24 24"
+					<svg
+						style:opacity={isSelected ? 1 : 0.75}
+						width="24"
+						height="24"
+						viewBox="0 0 24 24"
 						><path d={icon} fill="#fff" />
 					</svg>
 				</button>

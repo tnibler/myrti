@@ -1,6 +1,9 @@
 <script lang="ts">
-	import Slide, { type OpenTransitionParams, type SlideControls } from './Slide.svelte';
-	import type { SlideData } from './slide-data';
+	import Slide, {
+		type OpenTransitionParams,
+		type SlideControls,
+	} from "./Slide.svelte";
+	import type { SlideData } from "./slide-data";
 
 	type SlideHolderProps = {
 		isActive: boolean;
@@ -19,10 +22,15 @@
 		slide,
 		onContentReady,
 		showContent,
-		slideControls = $bindable(),
-		openTransition
+		openTransition,
 	}: SlideHolderProps = $props();
-	const transformStr: string = $derived(`translate3d(${Math.round(xTransform)}px, 0px, 0px)`);
+	let slideComponent: Slide | null = $state(null);
+	export const controls: SlideControls | null = $derived(
+		slideComponent?.controls,
+	);
+	const transformStr: string = $derived(
+		`translate3d(${Math.round(xTransform)}px, 0px, 0px)`,
+	);
 </script>
 
 <div id="id-{id}" class="item" style="transform: {transformStr};">
@@ -34,7 +42,7 @@
 				{openTransition}
 				{onContentReady}
 				{showContent}
-				bind:controls={slideControls}
+				bind:this={slideComponent}
 			/>
 		{/if}
 	{/await}

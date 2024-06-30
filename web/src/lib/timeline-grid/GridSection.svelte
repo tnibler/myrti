@@ -1,9 +1,12 @@
 <script lang="ts">
-	import type { TimelineSegment } from '$lib/apitypes';
-	import type { DisplaySection, TimelineGridStore } from '$lib/store/timeline.svelte';
-	import GridSegment from './GridSegment.svelte';
-	import type { SegmentLayout } from './GridSegment.svelte';
-	import createJustifiedLayout from 'justified-layout';
+	import type { TimelineSegment } from "@lib/apitypes";
+	import type {
+		DisplaySection,
+		TimelineGridStore,
+	} from "@lib/store/timeline.svelte";
+	import GridSegment from "./GridSegment.svelte";
+	import type { SegmentLayout } from "./GridSegment.svelte";
+	import createJustifiedLayout from "justified-layout";
 
 	type GridSectionProps = {
 		timeline: TimelineGridStore;
@@ -22,7 +25,7 @@
 		containerWidth,
 		registerElementWithIntersectObserver,
 		isIntersecting,
-		onAssetClick
+		onAssetClick,
 	}: GridSectionProps = $props();
 	let sectionDivEl: HTMLElement;
 	const section: DisplaySection = $derived(timeline.sections[sectionIndex]);
@@ -31,19 +34,22 @@
 		timeline.sections[sectionIndex].segments
 			? computeSegmentStartIndices(
 					section.assetStartIndex,
-					timeline.sections[sectionIndex].segments
+					timeline.sections[sectionIndex].segments,
 				)
-			: undefined
+			: undefined,
 	);
 	let gridSegments: GridSegment[] = $state([]);
 
-	let justifiedLayouts = $derived(section.segments ? computeSegmentLayouts(section.segments) : []);
+	let justifiedLayouts = $derived(
+		section.segments ? computeSegmentLayouts(section.segments) : [],
+	);
 	/** height of the actual DOM element, which we propagate up to the layout logic to shift the other sections 
 	around as the content is loaded lazily **/
 	let sectionHeight = $state(0);
 
 	$effect(() => {
-		const unregisterIntersectObserver = registerElementWithIntersectObserver(sectionDivEl);
+		const unregisterIntersectObserver =
+			registerElementWithIntersectObserver(sectionDivEl);
 		return unregisterIntersectObserver;
 	});
 
@@ -55,16 +61,18 @@
 
 	export function getThumbImgForAsset(assetIndex: number): HTMLImageElement {
 		const segmentIndex = segmentStartIndices.findLastIndex(
-			(startIndex) => startIndex <= assetIndex
+			(startIndex) => startIndex <= assetIndex,
 		);
 		if (segmentIndex < 0) {
 			console.error(
-				`section ${sectionIndex} was asked for thumbnail element for asset at index ${assetIndex} but no matching segment was found.`
+				`section ${sectionIndex} was asked for thumbnail element for asset at index ${assetIndex} but no matching segment was found.`,
 			);
 			return undefined;
 		}
 		const gridSegment = gridSegments[segmentIndex];
-		return gridSegment.getThumbImgForAsset(assetIndex - segmentStartIndices[segmentIndex]);
+		return gridSegment.getThumbImgForAsset(
+			assetIndex - segmentStartIndices[segmentIndex],
+		);
 	}
 
 	function computeSegmentLayouts(segments: TimelineSegment[]): SegmentLayout[] {
@@ -80,19 +88,19 @@
 				if (asset.rotationCorrection && asset.rotationCorrection % 180 != 0) {
 					return {
 						width: asset.height,
-						height: asset.width
+						height: asset.width,
 					};
 				} else {
 					return {
 						width: asset.width,
-						height: asset.height
+						height: asset.height,
 					};
 				}
 			});
 			const geometry = createJustifiedLayout(assetSizes, {
 				targetRowHeight,
 				containerWidth,
-				boxSpacing: timeline.layoutConfig.boxSpacing
+				boxSpacing: timeline.layoutConfig.boxSpacing,
 			});
 			const height = geometry.containerHeight;
 			layouts.push({
@@ -101,7 +109,7 @@
 				width: containerWidth,
 				height,
 				tiles: geometry.boxes,
-				headerTop: -headerHeight
+				headerTop: -headerHeight,
 			});
 			nextSegmentYMin += height + segmentMargin + headerHeight;
 		}
@@ -110,7 +118,7 @@
 
 	function computeSegmentStartIndices(
 		sectionBaseIndex: number,
-		segments: TimelineSegment[]
+		segments: TimelineSegment[],
 	): number[] {
 		if (segments.length == 0) {
 			return [];
@@ -128,7 +136,9 @@
 	// fit the content.
 	// This makes it easier to handle e.g., font size/text zoom in the header without breaking the layout
 	// or recalculating stuff in js.
-	const explicitSectionHeight = $derived(isIntersecting ? '' : `height: ${section.height}px;`);
+	const explicitSectionHeight = $derived(
+		isIntersecting ? "" : `height: ${section.height}px;`,
+	);
 </script>
 
 <div

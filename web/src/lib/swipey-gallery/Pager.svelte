@@ -25,29 +25,30 @@
 	};
 
 	export type PagerControls = PagerState & {
-		moveSlideAnimate: (to: 'left' | 'right' | 'backToCenter') => void;
+		moveSlideAnimate: (to: "left" | "right" | "backToCenter") => void;
 		moveXBy: (delta: number) => void;
 		close: () => void;
 	};
 </script>
 
 <script lang="ts">
-	import SlideHolder from './SlideHolder.svelte';
-	import { onMount, setContext, untrack } from 'svelte';
-	import { newGestureController } from './gestures';
-	import type { SlideData } from './slide-data';
-	import { newAnimationControls, type AnimationControls } from './animations';
-	import type { ThumbnailBounds } from './thumbnail-bounds';
-	import type { OpenTransitionParams, SlideControls } from './Slide.svelte';
-	import { fade } from 'svelte/transition';
+	import Slide from "./Slide.svelte";
+	import SlideHolder from "./SlideHolder.svelte";
+	import { onMount, setContext, untrack } from "svelte";
+	import { newGestureController } from "./gestures";
+	import type { SlideData } from "./slide-data";
+	import { newAnimationControls, type AnimationControls } from "./animations";
+	import type { ThumbnailBounds } from "./thumbnail-bounds";
+	import type { OpenTransitionParams, SlideControls } from "./Slide.svelte";
+	import { fade } from "svelte/transition";
 	import {
 		EyeOffIcon,
 		InfoIcon,
 		RotateCwIcon,
 		XIcon,
 		ZoomInIcon,
-		ZoomOutIcon
-	} from 'lucide-svelte';
+		ZoomOutIcon,
+	} from "lucide-svelte";
 
 	let {
 		numSlides,
@@ -56,7 +57,7 @@
 		getThumbnailBounds,
 		closeGallery,
 		onOpenTransitionFinished,
-		topOffset
+		topOffset,
 	}: PagerProps = $props();
 
 	let viewport = $state({ width: 0, height: 0 });
@@ -82,9 +83,11 @@
 	// [1] the currently visible one and [2] the one off to the right
 	let holderOrder = $state([0, 1, 2]);
 	let holderStates: SlideHolderState[] = $state([]);
-	let slideControls: SlideControls[] = $state([]);
+	let slideComponents: Slide[] = $state([]);
 	let xTransform = $state(0);
-	const transformString = $derived(`translate3d(${Math.round(xTransform)}px, 0px, 0px)`);
+	const transformString = $derived(
+		`translate3d(${Math.round(xTransform)}px, 0px, 0px)`,
+	);
 	let backgroundOpacity = $state(0);
 	/** enable CSS transition when assigning backgroundOpacity. Only set on open and close. */
 	let backgroundOpacityTransition = $state(true);
@@ -93,12 +96,14 @@
 
 	const animations: AnimationControls = newAnimationControls();
 	const slide: SlideControls | null = $derived(
-		holderOrder[1] < slideControls.length ? slideControls[holderOrder[1]] : null
+		holderOrder[1] < slideComponents.length
+			? slideComponents[holderOrder[1]].controls
+			: null,
 	);
 	const hideUiTimeoutDuration = 3000;
 	let hideUiTimeout: ReturnType<typeof setTimeout> | null = setTimeout(
 		onHideUiTimeout,
-		hideUiTimeoutDuration
+		hideUiTimeoutDuration,
 	);
 	const pagerControls: PagerControls = {
 		get viewportSize() {
@@ -115,14 +120,17 @@
 		},
 		moveXBy: (delta) => {
 			const SWIPE_END_FRICTION = 0.3;
-			if ((slideIndex == 0 && 0 < delta) || (slideIndex == numSlides - 1 && delta < 0)) {
+			if (
+				(slideIndex == 0 && 0 < delta) ||
+				(slideIndex == numSlides - 1 && delta < 0)
+			) {
 				xTransform += delta * SWIPE_END_FRICTION;
 			} else {
 				xTransform += delta;
 			}
 		},
 		moveSlideAnimate,
-		close
+		close,
 	};
 	const gallery: GalleryControls = {
 		get currentSlide() {
@@ -139,9 +147,9 @@
 		},
 		onVerticalDrag: (ratio) => {
 			backgroundOpacity = 1 - ratio;
-		}
+		},
 	};
-	setContext('gallery', gallery);
+	setContext("gallery", gallery);
 
 	let pagerWrapper: HTMLElement;
 
@@ -149,12 +157,12 @@
 		const idxs = [
 			slideIndex === 0 ? null : slideIndex - 1,
 			slideIndex,
-			slideIndex === numSlides - 1 ? null : slideIndex + 1
+			slideIndex === numSlides - 1 ? null : slideIndex + 1,
 		];
 		slideIndexInitOffset = slideIndex;
 		const openTransition = {
 			onTransitionEnd: afterOpenTransition,
-			fromBounds: getThumbnailBounds(slideIndex)
+			fromBounds: getThumbnailBounds(slideIndex),
 		};
 		// holderOrder is the identity mapping at the beginning, so id == index initially for the SlideHolders
 		holderStates = [0, 1, 2].map((id) => {
@@ -166,7 +174,7 @@
 				openTransition: id === 1 ? openTransition : null,
 				isActive: id === 1,
 				showContent: id === 1,
-				isContentReady: false
+				isContentReady: false,
 			};
 		});
 		backgroundOpacity = 1;
@@ -237,11 +245,11 @@
 		hideUiTimeout = setTimeout(onHideUiTimeout, hideUiTimeoutDuration);
 	}
 
-	function moveSlideAnimate(direction: 'left' | 'right' | 'backToCenter') {
+	function moveSlideAnimate(direction: "left" | "right" | "backToCenter") {
 		let diff = 0;
-		if (direction === 'left') {
+		if (direction === "left") {
 			diff = -1;
-		} else if (direction === 'right') {
+		} else if (direction === "right") {
 			diff = 1;
 		}
 		const index = Math.min(Math.max(slideIndex + diff, 0), numSlides - 1);
@@ -249,7 +257,7 @@
 			holderStates[holderOrder[1]].isActive = false;
 		}
 		const destX = -(index - slideIndexInitOffset) * slideWidth;
-		animations.stopAnimationsFor('pager');
+		animations.stopAnimationsFor("pager");
 		animations.startSpringAnimation(
 			{
 				start: xTransform,
@@ -261,23 +269,23 @@
 					xTransform = x;
 				},
 				onFinish: () => {
-					if (direction !== 'backToCenter') {
+					if (direction !== "backToCenter") {
 						previousIndex = slideIndex;
 						slideIndex = index;
 						reorderSlideHoldersAfterAnim();
 					}
-				}
+				},
 			},
-			'pager'
+			"pager",
 		);
 	}
 
-	function moveSlide(direction: 'left' | 'right') {
+	function moveSlide(direction: "left" | "right") {
 		animations.stopAllAnimations();
 		let diff = 0;
-		if (direction === 'left') {
+		if (direction === "left") {
 			diff = -1;
-		} else if (direction === 'right') {
+		} else if (direction === "right") {
 			diff = 1;
 		}
 		const newIndex = Math.min(Math.max(slideIndex + diff, 0), numSlides - 1);
@@ -292,7 +300,7 @@
 	}
 
 	function reorderSlideHoldersAfterAnim() {
-		animations.stopAnimationsFor('pan');
+		animations.stopAnimationsFor("pan");
 		const diffMod3 = (slideIndex - previousIndex) % 3;
 		const previousActiveHolder: SlideHolderState = holderStates[holderOrder[1]];
 		let movedHolder: SlideHolderState;
@@ -313,7 +321,7 @@
 			// nothing to do
 			return;
 		} else {
-			console.assert(false, 'unreachable!');
+			console.assert(false, "unreachable!");
 			return;
 		}
 		const newActiveHolder = holderStates[holderOrder[1]];
@@ -326,13 +334,15 @@
 		const currentSlideIndex = newActiveHolder.slideIndex;
 		console.assert(
 			currentSlideIndex !== null,
-			'currentSlideIndex is null after shuffling SlideHolders'
+			"currentSlideIndex is null after shuffling SlideHolders",
 		);
 		if (currentSlideIndex !== null && shiftedRight) {
-			const nextSlideIndex = currentSlideIndex == numSlides - 1 ? null : currentSlideIndex + 1;
+			const nextSlideIndex =
+				currentSlideIndex == numSlides - 1 ? null : currentSlideIndex + 1;
 			movedHolder.slideIndex = nextSlideIndex;
 		} else if (currentSlideIndex !== null && shiftedLeft) {
-			const nextSlideIndex = currentSlideIndex === 0 ? null : currentSlideIndex - 1;
+			const nextSlideIndex =
+				currentSlideIndex === 0 ? null : currentSlideIndex - 1;
 			movedHolder.slideIndex = nextSlideIndex;
 		}
 		movedHolder.openTransition = null;
@@ -384,7 +394,10 @@
 </script>
 
 <!--Taken from photoswipe util/viewport-size.js getViewportSize -->
-<svelte:window bind:innerHeight={viewport.height} bind:innerWidth={viewport.width} />
+<svelte:window
+	bind:innerHeight={viewport.height}
+	bind:innerWidth={viewport.width}
+/>
 <!-- VV errors out, idk svelte 5 bug? -->
 <!-- <svelte:document bind:clientWidth={viewport.width} /> -->
 
@@ -408,8 +421,10 @@
 				openTransition={slideHolder.openTransition}
 				showContent={slideHolder.showContent}
 				onContentReady={() => onSlideContentReady(slideHolder.id)}
-				slide={slideHolder.slideIndex !== null ? getSlide(slideHolder.slideIndex) : null}
-				bind:slideControls={slideControls[slideHolder.id]}
+				slide={slideHolder.slideIndex !== null
+					? getSlide(slideHolder.slideIndex)
+					: null}
+				bind:this={slideComponents[slideHolder.id]}
 			/>
 		{/each}
 	</div>
@@ -439,7 +454,7 @@
 					onclick={() => onZoomOutClicked()}
 					disabled={isZoomOutDisabled}
 				>
-					<ZoomOutIcon color={isZoomOutDisabled ? '#aaa' : 'white'} />
+					<ZoomOutIcon color={isZoomOutDisabled ? "#aaa" : "white"} />
 				</button>
 				<button
 					class="p-2"
@@ -447,7 +462,7 @@
 					onclick={() => onZoomInClicked()}
 					disabled={isZoomInDisabled}
 				>
-					<ZoomInIcon color={isZoomInDisabled ? '#aaa' : 'white'} />
+					<ZoomInIcon color={isZoomInDisabled ? "#aaa" : "white"} />
 				</button>
 				<button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
 					<EyeOffIcon color="white" />
@@ -455,19 +470,41 @@
 				<button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
 					<InfoIcon color="white" />
 				</button>
-				<button class="p-4" class:button-visible={hasMouse} onclick={() => closeGallery()}>
+				<button
+					class="p-4"
+					class:button-visible={hasMouse}
+					onclick={() => closeGallery()}
+				>
 					<XIcon color="white" />
 				</button>
 			</div>
-			<div class="flex flex-row flex-grow justify-between {hasMouse ? '' : 'hidden'} ">
-				<button class="pl-5 pointer-events-auto" onclick={() => moveSlide('left')}>
-					<svg class="fill-white" id="arrow" viewBox="0 0 60 60" width="60" height="60"
+			<div
+				class="flex flex-row flex-grow justify-between {hasMouse
+					? ''
+					: 'hidden'} "
+			>
+				<button
+					class="pl-5 pointer-events-auto"
+					onclick={() => moveSlide("left")}
+				>
+					<svg
+						class="fill-white"
+						id="arrow"
+						viewBox="0 0 60 60"
+						width="60"
+						height="60"
 						><path d="M29 43l-3 3-16-16 16-16 3 3-13 13 13 13z"></path></svg
 					>
 				</button>
-				<button class="pr-5 pointer-events-auto" onclick={() => moveSlide('right')}>
-					<svg class="fill-white -scale-x-[1]" viewBox="0 0 60 60" width="60" height="60"
-						><use class="" xlink:href="#arrow"></use></svg
+				<button
+					class="pr-5 pointer-events-auto"
+					onclick={() => moveSlide("right")}
+				>
+					<svg
+						class="fill-white -scale-x-[1]"
+						viewBox="0 0 60 60"
+						width="60"
+						height="60"><use class="" xlink:href="#arrow"></use></svg
 					>
 				</button>
 			</div>

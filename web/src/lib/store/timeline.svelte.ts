@@ -1,4 +1,4 @@
-import type { Api, AssetWithSpe, TimelineSection, TimelineSegment } from "$lib/apitypes"
+import type { Api, AssetWithSpe, TimelineSection, TimelineSegment } from "lib/apitypes"
 
 export type Viewport = { width: number, height: number }
 
@@ -106,7 +106,6 @@ export function createTimeline(
 
   async function loadSection(sectionIndex: number) {
     if (!sections[sectionIndex].segments) {
-      console.log("loading section", sectionIndex)
       const sectionId = sections[sectionIndex].section.id;
       const segments = await requestSegments(sectionId);
       sections[sectionIndex].segments = segments;

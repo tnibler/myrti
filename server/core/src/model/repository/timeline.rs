@@ -272,32 +272,23 @@ pub fn get_segments_in_section(
     segment_max: i64,
 ) -> Result<Vec<TimelineSegment>> {
     let mut qb = SqliteQueryBuilder::new();
-    qb.push_sql(r#"
-    WITH segment_cumul_size AS (
-      SELECT *, SUM(1) OVER (ORDER BY sort_date DESC, timeline_group_id DESC, asset_id DESC) AS cumul_segment_size from `TimelineSegment`
-    ),
-    segment AS (
-      SELECT
-      asset_id,
-      sort_date,
-      timeline_group_id,
-      date_day,
-      DENSE_RANK() OVER (ORDER BY segment_idx, cumul_segment_size / 30) AS segment_idx
-      FROM segment_cumul_size
-    )
+    qb.push_sql(
+        r#"
     SELECT
-    "#);
+    "#,
+    );
     DbAsset::as_select().to_sql(&mut qb, &diesel::sqlite::Sqlite)?;
     qb.push_sql(
         r#"
     ,
-    segment.timeline_group_id as timeline_group_id,
-    segment.date_day as date_day,
-    segment.segment_idx as segment_idx
+    TimelineSegment.timeline_group_id as timeline_group_id,
+    TimelineSegment.date_day as date_day,
+    TimelineSegment.segment_idx as segment_idx
     FROM
-    segment INNER JOIN Asset ON Asset.asset_id=segment.asset_id
+    TimelineSegment INNER JOIN Asset ON Asset.asset_id=TimelineSegment.asset_id
     WHERE
-    ? <= segment_idx AND segment_idx <= ?;
+    ? <= segment_idx AND segment_idx <= ?
+    ORDER BY TimelineSegment.sort_date DESC, timeline_group_id DESC, Asset.taken_date DESC, TimelineSegment.asset_id DESC;
     "#,
     );
     let query = sql_query(qb.finish())

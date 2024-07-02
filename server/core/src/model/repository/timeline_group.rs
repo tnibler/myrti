@@ -6,7 +6,7 @@ use tracing::instrument;
 use crate::model::{
     repository::db_entity::{DbAsset, DbTimelineGroup},
     timeline_group::TimelineGroup,
-    util::datetime_to_db_repr,
+    util::{datetime_from_db_repr, datetime_to_db_repr},
     Asset, AssetId, TimelineGroupId,
 };
 
@@ -74,6 +74,20 @@ pub fn create_timeline_group(
         }
         Ok(TimelineGroupId(group_id))
     })
+}
+
+pub fn get_oldest_asset_date(
+    conn: &mut DbConn,
+    asset_ids: &[AssetId],
+) -> Result<Option<DateTime<Utc>>> {
+    use diesel::dsl::min;
+    use schema::Asset;
+    let asset_ids: Vec<i64> = asset_ids.iter().map(|id| id.0).collect();
+    let min_date: Option<i64> = Asset::table
+        .filter(Asset::asset_id.eq_any(asset_ids))
+        .select(min(Asset::taken_date))
+        .get_result(conn)?;
+    min_date.map(datetime_from_db_repr).transpose()
 }
 
 #[instrument(skip(conn))]

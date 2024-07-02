@@ -471,6 +471,36 @@
           }
         }
       }
+    },
+    "/api/timelinegroup": {
+      "post": {
+        "tags": [
+          "crate::routes::timeline_group"
+        ],
+        "operationId": "createTimelineGroup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTimelineGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateTimelineGroupResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -795,6 +825,40 @@
           "albumId": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "CreateTimelineGroupRequest": {
+        "type": "object",
+        "required": [
+          "assets",
+          "name"
+        ],
+        "properties": {
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetId"
+            }
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateTimelineGroupResponse": {
+        "type": "object",
+        "required": [
+          "timelineGroupId",
+          "displayDate"
+        ],
+        "properties": {
+          "displayDate": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timelineGroupId": {
+            "$ref": "#/components/schemas/TimelineGroupId"
           }
         }
       },

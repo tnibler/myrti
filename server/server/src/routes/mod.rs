@@ -19,6 +19,7 @@ pub mod asset;
 pub mod asset_roots;
 pub mod dash;
 pub mod timeline;
+pub mod timeline_group;
 
 #[derive(Deserialize)]
 struct QueryIndexAssetRoot {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import AddToAlbumDialog from '@lib/AddToAlbumDialog.svelte';
+  import AddToGroupDialog from '@lib/AddToGroupDialog.svelte';
   import MainLayout from '@lib/MainLayout.svelte';
   import TimelineSelectAppBar from '@lib/TimelineSelectAppBar.svelte';
   import { api } from '@lib/apiclient';
@@ -21,25 +22,39 @@
   let timelineScrollWrapper: HTMLElement | null = $state(null);
 
   let addToAlbumDialog: AddToAlbumDialog | null = $state(null);
-  let addToGroupDialog: AddToAlbumDialog | null = $state(null);
+  let addToGroupDialog: AddToGroupDialog | null = $state(null);
 
   function onAddToAlbumClicked() {
     addToAlbumDialog?.open();
   }
 
-  async function onCreateGroupSubmit(
-    submitted: { action: 'createNew'; albumName: string } | { action: 'addTo'; albumId: string },
-  ) {
-    if (submitted.action === 'addTo') {
-      console.error('wrong');
-      return;
-    }
+  function onAddToGroupClicked() {
+    addToGroupDialog?.open();
+  }
+
+  async function onCreateGroupSubmit(submitted: { groupName: string }) {
     const assetIds = Object.keys(timeline.selectedAssetIds);
-    await api.createAlbum({
-      assets: assetIds,
-      name: submitted.albumName,
-      description: null,
-    });
+    await api
+      .createTimelineGroup({
+        assets: assetIds,
+        name: submitted.groupName,
+      })
+      .catch((error) => {
+        if (error.response) {
+          console.log('error response');
+          // Request made and server responded
+          console.log(error.response.data);
+          console.log(error.response.status);
+          console.log(error.response.headers);
+        } else if (error.request) {
+          console.log('error request');
+          // The request was made but no response was received
+          console.log(error.request);
+        } else {
+          // Something happened in setting up the request that triggered an Error
+          console.log('Error', error.message);
+        }
+      });
     addToGroupDialog?.close();
     timeline.clearSelection();
   }
@@ -82,11 +97,12 @@
     numAssetsSelected={Object.keys(timeline.selectedAssetIds).length}
     onCancelSelectClicked={() => timeline.clearSelection()}
     {onAddToAlbumClicked}
+    {onAddToGroupClicked}
     onHideClicked={onHideAssetsClicked}
   />
 {/snippet}
 <AddToAlbumDialog bind:this={addToAlbumDialog} onSubmit={onCreateAlbumSubmit} />
-<AddToAlbumDialog bind:this={addToGroupDialog} onSubmit={onCreateGroupSubmit} />
+<AddToGroupDialog bind:this={addToGroupDialog} onSubmit={onCreateGroupSubmit} />
 <MainLayout
   content={timelineGrid}
   appBarOverride={timelineSelectAppBar}

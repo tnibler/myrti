@@ -39,7 +39,8 @@
     dialog?.close();
   }
 
-  async function onCreateClicked() {
+  async function onCreateClicked(e: SubmitEvent) {
+    e.preventDefault();
     createButtonVisible = false;
     const albumName = albumNameInput?.value;
     if (albumName === null || albumName === undefined || albumName.trim() === '') {
@@ -71,12 +72,11 @@
       <form onsubmit={onCreateClicked}>
         <div class="flex-1 py-4 px-6 flex flex-col justify-between">
           <input placeholder="Title" class="font-medium text-lg" bind:this={albumNameInput} />
-          <input type="submit" hidden />
           <Button
             text="Create"
             primary
             class="self-end {createButtonVisible ? '' : 'display-none'}"
-            onclick={() => onCreateClicked()}
+            onclick={(e) => onCreateClicked(e)}
           />
         </div>
       </form>

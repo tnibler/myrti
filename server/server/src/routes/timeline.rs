@@ -5,10 +5,7 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use eyre::{eyre, Context, Result};
-use futures::{
-    stream::{FuturesOrdered, FuturesUnordered},
-    StreamExt, TryStreamExt,
-};
+use futures::{stream::FuturesOrdered, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument};
 use utoipa::{IntoParams, ToSchema};
@@ -17,7 +14,7 @@ use crate::{
     app_state::SharedState,
     http_error::ApiResult,
     schema::{
-        asset::{Asset, AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
+        asset::{AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
         timeline::{TimelineChunk, TimelineGroup, TimelineGroupType},
         TimelineGroupId,
     },
@@ -28,7 +25,7 @@ use core::{
         self,
         repository::{
             self,
-            db::{DbConn, DbPool},
+            db::DbPool,
             timeline::{TimelineElement, TimelineSegmentType},
         },
     },

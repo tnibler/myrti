@@ -1,138 +1,210 @@
 <script lang="ts">
-	import GridSection from "./GridSection.svelte";
-	import Gallery from "@lib/swipey-gallery/Gallery.svelte";
-	import type { ThumbnailBounds } from "@lib/swipey-gallery/thumbnail-bounds";
-	import {
-		slideForAsset,
-		type SlideData,
-	} from "@lib/swipey-gallery/slide-data";
-	import type { AssetWithSpe } from "@lib/apitypes";
-	import type { TimelineGridStore } from "@lib/store/timeline.svelte";
+  import Gallery from '@lib/swipey-gallery/Gallery.svelte';
+  import type { ThumbnailBounds } from '@lib/swipey-gallery/thumbnail-bounds';
+  import { slideForAsset, type SlideData } from '@lib/swipey-gallery/slide-data';
+  import type { AssetId } from '@lib/apitypes';
+  import type { ITimelineGrid } from '@lib/timeline-grid/timeline.svelte';
+  import type { ActionReturn } from 'svelte/action';
+  import GridTile from '@lib/ui/GridTile.svelte';
+  import SegmentTitle from './SegmentTitle.svelte';
 
-	type TimelineGridProps = {
-		timeline: TimelineGridStore;
-		scrollWrapper: HTMLElement;
-	};
+  type TimelineGridProps = {
+    timeline: ITimelineGrid;
+    scrollWrapper: HTMLElement;
+  };
 
-	let viewport = $state({ width: 0, height: 0 });
-	let gallery: Gallery;
-	let gridSections: GridSection[] = $state([]);
+  let viewport = $state({ width: 0, height: 0 });
+  let gallery: Gallery;
 
-	let { timeline, scrollWrapper = $bindable() }: TimelineGridProps = $props();
-	const inSelectionMode = $derived(
-		Object.keys(timeline.selectedAssetIds).length > 0,
-	);
+  let { timeline, scrollWrapper = $bindable() }: TimelineGridProps = $props();
+  const inSelectMode = $derived(timeline.selectedAssets.size > 0);
+  let thumbnailImgEls: Record<AssetId, HTMLImageElement> = $state({});
+  let gridItemTransitionClass: string | undefined = $state();
+  let animationsDisabledToStart = true;
 
-	let sectionsIntersecting: boolean[] = $state([]);
-	$effect(async () => {
-		await timeline.initialize(viewport);
-		sectionsIntersecting.fill(false, 0, timeline.sections.length);
-	});
+  $effect(() => {
+    setTimeout(() => {
+      animationsDisabledToStart = false;
+    }, 1000);
+    timeline.setAnimationsEnabled = setGridItemAnimationEnable;
+  });
 
-	async function getSlide(index: number): Promise<SlideData | null> {
-		const asset: AssetWithSpe | null = await timeline.getAssetAtIndex(index);
-		if (!asset) {
-			console.log("asset is null");
-			return null;
-		}
-		return slideForAsset(asset);
-	}
+  $effect(() => {
+    (async () => {
+      await timeline.initialize(viewport);
+    })();
+  });
 
-	function getThumbnailBounds(assetIndex: number): ThumbnailBounds {
-		const sectionIndex = timeline.sections.findLastIndex((section, idx) => {
-			return section.assetStartIndex <= assetIndex;
-		});
-		if (sectionIndex < 0) {
-			console.error(
-				`did not find section containing asset at index ${assetIndex}`,
-			);
-			return { rect: { x: 100, y: 100, width: 100, height: 100 } };
-		}
-		const imgEl = gridSections[sectionIndex].getThumbImgForAsset(assetIndex);
-		if (!imgEl) {
-			return { rect: { x: 100, y: 100, width: 100, height: 100 } };
-		}
-		return {
-			rect: {
-				x: imgEl.x,
-				y: imgEl.y,
-				width: imgEl.width,
-				height: imgEl.height,
-			},
-		};
-	}
+  let resizeTimeout: number | null = null;
+  $effect(() => {
+    viewport.width;
+    viewport.height;
+    if (resizeTimeout != null) {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = null;
+    }
+    resizeTimeout = setTimeout(() => {
+      timeline.resize(viewport, scrollWrapper.scrollTop);
+      resizeTimeout = null;
+    }, 200);
+  });
 
-	function onAssetClick(index: number) {
-		gallery.open(index);
-	}
+  $effect(() => {
+    // null fields accumulate in thumbnailImgEls, so clear them periodically
+    if (Object.keys(thumbnailImgEls).length > visibleItems.length * 5) {
+      Object.keys(thumbnailImgEls)
+        .filter((k) => thumbnailImgEls[k] === null)
+        .forEach((k) => delete thumbnailImgEls[k]);
+    }
+  });
 
-	const intersectionObserver = new IntersectionObserver(
-		handleSectionIntersect,
-		{
-			rootMargin: "200px 0px",
-		},
-	);
+  const intersectionObserver = new IntersectionObserver(handleSectionIntersect, {
+    // I don't know how rootMargin works; using scrollWrapper, its child <section> or document does not work correctly, so we just make the intersection test divs larger to achieve the same effect
+    rootMargin: '0px',
+  });
 
-	function handleSectionIntersect(entries: IntersectionObserverEntry[]) {
-		entries.forEach((entry) => {
-			const sectionDiv = entry.target;
-			const sectionIndex = parseInt(sectionDiv.id.substring(8)); // section-123
-			sectionsIntersecting[sectionIndex] = entry.isIntersecting;
-			if (entry.isIntersecting) {
-				timeline?.loadSection(sectionIndex);
-			} else {
-				// nothing
-			}
-		});
-	}
+  async function setGridItemAnimationEnable(enabled: boolean) {
+    if (enabled && animationsDisabledToStart) {
+      return;
+    }
+    gridItemTransitionClass = enabled ? 'timeline-item-transition' : '';
+    scrollWrapper.offsetHeight; // hopefully trigger reflow
+  }
 
-	function registerElementWithIntersectObserver(el: HTMLElement): () => void {
-		intersectionObserver.observe(el);
-		return () => {
-			intersectionObserver.unobserve(el);
-		};
-	}
+  function handleSectionIntersect(entries: IntersectionObserverEntry[]) {
+    entries;
+    timeline.onScrollChange(scrollWrapper.scrollTop);
+  }
+
+  function registerElementWithIntersectObserver(el: HTMLDivElement): ActionReturn {
+    intersectionObserver.observe(el);
+    return {
+      destroy: () => {
+        intersectionObserver.unobserve(el);
+      },
+    };
+  }
+
+  const visibleItems = $derived.by(() => {
+    // this copies, but no way around it I think. {#each} will make/copy an array anyway even if we give it a generator
+    return timeline.items.slice(timeline.visibleItems.startIdx, timeline.visibleItems.endIdx);
+  });
+
+  function getSelectState(
+    assetId: AssetId,
+  ): { inSelectMode: false } | { inSelectMode: true; isSelected: boolean } {
+    const isSelected = timeline.selectedAssets.has(assetId);
+    return { inSelectMode, isSelected };
+  }
+
+  function toggleAssetSelected(assetId: AssetId) {
+    const isSelected = timeline.selectedAssets.has(assetId);
+    timeline.setAssetSelected(assetId, !isSelected);
+  }
+
+  function onAssetClick(assetIdx: number) {
+    gallery.open(assetIdx);
+  }
+
+  function getThumbnailBounds(assetIndex: number): ThumbnailBounds {
+    const img = thumbnailImgEls[assetIndex];
+    if (!img) {
+      return { rect: { x: 0, y: 0, width: 0, height: 0 } };
+    }
+    return {
+      rect: {
+        x: img.x,
+        y: img.y,
+        width: img.width,
+        height: img.height,
+      },
+    };
+  }
+
+  async function getSlide(assetIndex: number): Promise<SlideData | null> {
+    const asset = await timeline.getOrLoadAssetAtIndex(assetIndex);
+    if (asset === null) {
+      return null;
+    }
+    return slideForAsset(asset);
+  }
 </script>
 
-<div class="scroll-wrapper" bind:this={scrollWrapper}>
-	<section
-		id="grid"
-		bind:clientWidth={viewport.width}
-		bind:clientHeight={viewport.height}
-	>
-		{#each timeline.sections as section, idx}
-			<GridSection
-				bind:this={gridSections[idx]}
-				{timeline}
-				{inSelectionMode}
-				sectionIndex={idx}
-				containerWidth={viewport.width}
-				{registerElementWithIntersectObserver}
-				isIntersecting={sectionsIntersecting[idx]}
-				{onAssetClick}
-			/>
-		{/each}
-	</section>
+<div class="scroll-wrapper" bind:this={scrollWrapper} bind:clientHeight={viewport.height}>
+  <section
+    id="grid"
+    bind:clientWidth={viewport.width}
+    style:height={timeline.timelineHeight + 'px'}
+  >
+    {#each timeline.sections as section, idx}
+      <div
+        use:registerElementWithIntersectObserver
+        id="section-{idx}"
+        class="absolute w-full max-w-full"
+        style:top={section.top - timeline.options.loadWithinMargin + 'px'}
+        style:height={section.height + timeline.options.loadWithinMargin * 2 + 'px'}
+      ></div>
+    {/each}
+    {#each visibleItems as item, idx (item.key)}
+      {@const itemIndex = timeline.visibleItems.startIdx + idx}
+      {#if item.type === 'asset'}
+        <GridTile
+          className={gridItemTransitionClass}
+          asset={item.asset}
+          box={item}
+          onAssetClick={() => {
+            onAssetClick(item.assetIndex);
+          }}
+          onSelectToggled={() => {
+            toggleAssetSelected(item.asset.id);
+          }}
+          selectState={getSelectState(item.asset.id)}
+          bind:imgEl={thumbnailImgEls[item.assetIndex]}
+        />
+      {:else if item.type === 'segmentTitle'}
+        <SegmentTitle
+          className={gridItemTransitionClass}
+          timelineItem={item}
+          setActualHeight={(height) => {
+            setGridItemAnimationEnable(false).then(() => {
+              setTimeout(() => {
+                timeline.setActualItemHeight(itemIndex, height);
+                setGridItemAnimationEnable(true);
+              }, 0);
+            });
+          }}
+        />
+      {/if}
+    {/each}
+  </section>
 </div>
 
 <Gallery
-	bind:this={gallery}
-	numSlides={timeline.totalNumAssets}
-	{getSlide}
-	{getThumbnailBounds}
-	{scrollWrapper}
+  bind:this={gallery}
+  numSlides={timeline.totalNumAssets}
+  {getThumbnailBounds}
+  {getSlide}
+  {scrollWrapper}
 />
 
 <style>
-	#grid {
-		position: relative;
-	}
+  #grid {
+    position: relative;
+    contain: layout;
+  }
 
-	.scroll-wrapper {
-		padding: 0px;
-		height: 100%;
-		width: 100%;
-		position: relative;
-		overflow-y: scroll;
-	}
+  :global(.timeline-item-transition) {
+    transition-property: top, left;
+    transition-timing-function: ease-in-out;
+    transition-duration: 300ms;
+  }
+
+  .scroll-wrapper {
+    padding: 0px;
+    height: 100%;
+    width: 100%;
+    max-width: 100%;
+    position: relative;
+    overflow-y: scroll;
+  }
 </style>

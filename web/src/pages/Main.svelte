@@ -4,21 +4,23 @@
   import MainLayout from '@lib/MainLayout.svelte';
   import TimelineSelectAppBar from '@lib/TimelineSelectAppBar.svelte';
   import { api } from '@lib/apiclient';
-  import { type TimelineGridStore, createTimeline } from '@lib/store/timeline.svelte';
+  import {
+    type TimelineOptions,
+    type ITimelineGrid,
+    createTimeline,
+  } from '@lib/timeline-grid/timeline.svelte';
   import TimelineGrid from '@lib/timeline-grid/TimelineGrid.svelte';
 
-  const layoutConfig = {
+  const layoutConfig: TimelineOptions = {
     targetRowHeight: 120,
     headerHeight: 50,
-    sectionMargin: 20,
     segmentMargin: 20,
     boxSpacing: 4,
+    loadWithinMargin: 300,
   };
 
-  const timeline: TimelineGridStore = $state(
-    createTimeline(layoutConfig, onAjustTimelineScrollY, api),
-  );
-  const inSelectionMode = $derived(Object.keys(timeline.selectedAssetIds).length > 0);
+  const timeline: ITimelineGrid = $state(createTimeline(layoutConfig, onAjustTimelineScrollY, api));
+  const inSelectionMode = $derived(timeline.selectedAssets.size > 0);
   let timelineScrollWrapper: HTMLElement | null = $state(null);
 
   let addToAlbumDialog: AddToAlbumDialog | null = $state(null);
@@ -33,7 +35,7 @@
   }
 
   async function onCreateGroupSubmit(submitted: { groupName: string }) {
-    const assetIds = Object.keys(timeline.selectedAssetIds);
+    const assetIds = Object.keys(timeline.selectedAssets);
     await api
       .createTimelineGroup({
         assets: assetIds,
@@ -62,7 +64,7 @@
   async function onCreateAlbumSubmit(
     submitted: { action: 'createNew'; albumName: string } | { action: 'addTo'; albumId: string },
   ) {
-    const assetIds = Object.keys(timeline.selectedAssetIds);
+    const assetIds = Object.keys(timeline.selectedAssets);
     if (submitted.action === 'createNew') {
       await api.createAlbum({
         assets: assetIds,
@@ -76,8 +78,8 @@
     timeline.clearSelection();
   }
 
-  function onAjustTimelineScrollY(delta: number, minApplicableTop: number) {
-    if (timelineScrollWrapper && timelineScrollWrapper.scrollTop > minApplicableTop) {
+  function onAjustTimelineScrollY(delta: number, ifScrollTopGt: number) {
+    if (timelineScrollWrapper && timelineScrollWrapper.scrollTop > ifScrollTopGt) {
       timelineScrollWrapper?.scrollBy(0, delta);
     }
   }
@@ -94,7 +96,7 @@
 
 {#snippet timelineSelectAppBar()}
   <TimelineSelectAppBar
-    numAssetsSelected={Object.keys(timeline.selectedAssetIds).length}
+    numAssetsSelected={timeline.selectedAssets.size}
     onCancelSelectClicked={() => timeline.clearSelection()}
     {onAddToAlbumClicked}
     {onAddToGroupClicked}
@@ -103,6 +105,7 @@
 {/snippet}
 <AddToAlbumDialog bind:this={addToAlbumDialog} onSubmit={onCreateAlbumSubmit} />
 <AddToGroupDialog bind:this={addToGroupDialog} onSubmit={onCreateGroupSubmit} />
+
 <MainLayout
   content={timelineGrid}
   appBarOverride={timelineSelectAppBar}

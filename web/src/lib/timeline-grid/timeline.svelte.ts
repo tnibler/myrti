@@ -47,6 +47,7 @@ export interface ITimelineGrid {
   resize: (viewport: Viewport, scrollTop: number) => void;
   set setAnimationsEnabled(v: ((enabled: boolean) => Promise<void>) | null);
   onScrollChange: (top: number) => void;
+  moveViewToAsset: (assetIndex: number) => Promise<TimelineGridItem | null>;
   setActualItemHeight: (itemIndex: number, newHeight: number) => void;
   getOrLoadAssetAtIndex: (index: number) => Promise<AssetWithSpe | null>;
   clearSelection: () => void;
@@ -498,6 +499,46 @@ export function createTimeline(
     return { items, sectionHeight: nextSegmentTop - baseTop };
   }
 
+  async function moveViewToAsset(assetIndex: number): Promise<TimelineGridItem | null> {
+    let sectionIndex = -1;
+    // find section containing asset
+    let cumulAssets = 0;
+    for (let i = 0; i < sections.length; i += 1) {
+      cumulAssets += sections[i].data.numAssets;
+      if (assetIndex < cumulAssets) {
+        sectionIndex = i;
+        break;
+      }
+    }
+    if (sectionIndex < 0) {
+      console.error('scrollToAssetIndex: did not find section containing asset at index');
+      return null;
+    }
+    const section = sections[sectionIndex];
+    // fetch section data from api if necessary
+    await loadSection(sectionIndex);
+    // compute layouts for segments in section, populating items array
+    layoutSection(sectionIndex, 'noAdjustScroll');
+    console.assert(section.items !== null, 'loaded section but items === null');
+    if (section.items === null) {
+      return null;
+    }
+    // find item in items array
+    let itemIndex = -1;
+    for (let i = section.items.startIdx; i < section.items.endIdx; i += 1) {
+      const item = items[i];
+      if (item.type === 'asset' && item.assetIndex === assetIndex) {
+        itemIndex = i;
+        break;
+      }
+    }
+    console.assert(itemIndex >= 0, 'loaded and laid out section but did not find correct item');
+    if (itemIndex < 0) {
+      return null;
+    }
+    return items[itemIndex];
+  }
+
   return {
     get totalNumAssets() {
       return totalNumAssets;
@@ -526,6 +567,7 @@ export function createTimeline(
     initialize,
     resize,
     onScrollChange,
+    moveViewToAsset,
     setActualItemHeight,
     getOrLoadAssetAtIndex,
     setAssetSelected,

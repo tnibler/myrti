@@ -21,6 +21,8 @@
   let thumbnailImgEls: Record<AssetId, HTMLImageElement> = $state({});
   let gridItemTransitionClass: string | undefined = $state();
   let animationsDisabledToStart = true;
+  let didMoveScrollToCurrentGalleryAsset = $state(false);
+  let restoreScrollOnGalleryClose = $derived(!didMoveScrollToCurrentGalleryAsset);
 
   $effect(() => {
     setTimeout(() => {
@@ -63,6 +65,19 @@
     rootMargin: '0px',
   });
 
+  export async function scrollToAssetIndex(index: number) {
+    const marginTop = 100;
+    const item = await timeline.moveViewToAsset(index);
+    if (
+      item !== null &&
+      (item.top < scrollWrapper.scrollTop ||
+        scrollWrapper.scrollTop + scrollWrapper.clientHeight <= item.top + item.height)
+    ) {
+      scrollWrapper.scrollTop = Math.max(0, item.top - marginTop);
+      didMoveScrollToCurrentGalleryAsset = true;
+    }
+  }
+
   async function setGridItemAnimationEnable(enabled: boolean) {
     if (enabled && animationsDisabledToStart) {
       return;
@@ -103,6 +118,7 @@
   }
 
   function onAssetClick(assetIdx: number) {
+    didMoveScrollToCurrentGalleryAsset = false;
     gallery.open(assetIdx);
   }
 
@@ -126,6 +142,7 @@
     if (asset === null) {
       return null;
     }
+    await scrollToAssetIndex(assetIndex);
     return slideForAsset(asset);
   }
 </script>
@@ -185,6 +202,7 @@
   {getThumbnailBounds}
   {getSlide}
   {scrollWrapper}
+  {restoreScrollOnGalleryClose}
 />
 
 <style>

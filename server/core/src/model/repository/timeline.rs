@@ -184,39 +184,20 @@ pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
     // Right now a section always contains entire segments,
     // even if
     let rows: Vec<RowTimelineSection> = sql_query(r#"
-    WITH segment_cumul_size AS (
-      SELECT *, SUM(1) OVER (ORDER BY sort_date DESC, timeline_group_id DESC, asset_id DESC) AS cumul_segment_size from `TimelineSegment`
+    WITH segment_size AS
+    (
+        SELECT *, COUNT(asset_id) AS segment_size FROM TimelineSegment GROUP BY segment_idx
     ),
-    segment AS (
-      SELECT
-      asset_id,
-      sort_date,
-      timeline_group_id,
-      date_day,
-      DENSE_RANK() OVER (ORDER BY segment_idx, cumul_segment_size / 30) AS segment_idx
-      FROM segment_cumul_size
-    ),
-    final_segment_size AS (
-      SELECT
-      segment_idx,
-      COUNT(asset_id) AS asset_count
-      FROM segment GROUP BY segment_idx
-    ),
-    segment_sections AS (
-    SELECT
-    segment_idx,
-    asset_count,
-    SUM(asset_count) OVER (PARTITION BY 1 ORDER BY segment_idx ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS c,
-    SUM(asset_count) OVER (PARTITION BY 1 ORDER BY segment_idx ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) / 100 AS section_idx
-    FROM final_segment_size
+    cumsum_segment_size AS (
+        SELECT *, SUM(segment_size) OVER (PARTITION BY 1 ORDER BY segment_idx ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cum_segment_size FROM segment_size
     )
-    SELECT
-    section_idx,
-    MIN(segment_idx) AS min_segment,
-    MAX(segment_idx) AS max_segment,
-    SUM(asset_count) as asset_count
-    FROM segment_sections
-    GROUP BY section_idx;
+    SELECT 
+    cum_segment_size / 100 as section_idx,
+    MIN(segment_idx) as min_segment,
+    MAX(segment_idx) as max_segment,
+    SUM(segment_size) as asset_count
+    FROM cumsum_segment_size
+    GROUP BY section_idx; 
     "#).load(conn)?;
     let sections = rows
         .into_iter()

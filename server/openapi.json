@@ -1157,6 +1157,7 @@
           {
             "type": "object",
             "required": [
+              "sortDate",
               "assets"
             ],
             "properties": {
@@ -1165,6 +1166,10 @@
                 "items": {
                   "$ref": "#/components/schemas/AssetWithSpe"
                 }
+              },
+              "sortDate": {
+                "type": "string",
+                "format": "date-time"
               }
             }
           }

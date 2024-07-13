@@ -9,7 +9,7 @@ use diesel::{
 use eyre::{Context, Result};
 use tracing::instrument;
 
-use crate::model::{Asset, AssetId, TimelineGroup, TimelineGroupId};
+use crate::model::{util::datetime_from_db_repr, Asset, AssetId, TimelineGroup, TimelineGroupId};
 
 use super::{db::DbConn, db_entity::DbAsset, timeline_group::get_timeline_group};
 
@@ -229,6 +229,7 @@ pub enum TimelineSegmentType {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TimelineSegment {
     pub ty: TimelineSegmentType,
+    pub sort_date: DateTime<Utc>,
     pub assets: Vec<Asset>,
     pub id: i64,
 }
@@ -242,6 +243,8 @@ struct RowTimelineSegmentInSection {
     pub timeline_group_id: Option<i64>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
     pub date_day: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub sort_date: i64,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub segment_idx: i64,
 }
@@ -264,6 +267,7 @@ pub fn get_segments_in_section(
     ,
     TimelineSegment.timeline_group_id as timeline_group_id,
     TimelineSegment.date_day as date_day,
+    TimelineSegment.sort_date as sort_date,
     TimelineSegment.segment_idx as segment_idx
     FROM
     TimelineSegment INNER JOIN Asset ON Asset.asset_id=TimelineSegment.asset_id
@@ -301,6 +305,7 @@ pub fn get_segments_in_section(
                 let segment = TimelineSegment {
                     ty,
                     assets: vec![asset],
+                    sort_date: datetime_from_db_repr(row.sort_date)?,
                     id: row.segment_idx,
                 };
                 segments.push(segment);
@@ -346,6 +351,7 @@ pub fn get_segments_in_section(
                 let segment = TimelineSegment {
                     ty,
                     assets: vec![asset],
+                    sort_date: datetime_from_db_repr(row.sort_date)?,
                     id: row.segment_idx,
                 };
                 segments.push(segment);

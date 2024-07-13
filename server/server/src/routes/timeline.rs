@@ -177,6 +177,7 @@ pub struct TimelineSegment {
     #[serde(rename = "segment")]
     #[serde(flatten)]
     pub segment: SegmentType,
+    pub sort_date: DateTime<Utc>,
     pub assets: Vec<AssetWithSpe>,
 }
 
@@ -209,13 +210,13 @@ pub async fn get_timeline_segments(
     let segment_min: i64 = segment_min.parse().wrap_err("invalid sectionId")?;
     let segment_max: i64 = segment_max.parse().wrap_err("invalid sectionId")?;
     let conn = app_state.pool.get().await?;
-    let pool = app_state.pool.clone();
+    let pool = &app_state.pool;
     let segments_result: Result<Vec<TimelineSegment>> = interact!(conn, move |conn| {
         repository::timeline::get_segments_in_section(conn, segment_min, segment_max)
     })
     .await??
     .into_iter()
-    .map(|segment| async {
+    .map(|segment| async move {
         // convert model::Asset to schema::AssetWithSpe, populating the representations field
         // with the list of available image representions if the original format is not in a
         // (hardcoded) list of acceptable formats.
@@ -225,6 +226,7 @@ pub async fn get_timeline_segments(
             assets_with_alt_reprs_if_required(pool.clone(), segment.assets).await?;
         Ok(TimelineSegment {
             assets: assets_with_reprs,
+            sort_date: segment.sort_date,
             segment: match segment.ty {
                 TimelineSegmentType::Group(
                     repository::timeline::TimelineGroupType::UserCreated(group),

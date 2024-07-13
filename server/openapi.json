@@ -1150,22 +1150,25 @@
         }
       },
       "TimelineSegment": {
-        "type": "object",
-        "required": [
-          "segment",
-          "assets"
-        ],
-        "properties": {
-          "assets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AssetWithSpe"
-            }
-          },
-          "segment": {
+        "allOf": [
+          {
             "$ref": "#/components/schemas/SegmentType"
+          },
+          {
+            "type": "object",
+            "required": [
+              "assets"
+            ],
+            "properties": {
+              "assets": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AssetWithSpe"
+                }
+              }
+            }
           }
-        }
+        ]
       },
       "TimelineSegmentsResponse": {
         "type": "object",

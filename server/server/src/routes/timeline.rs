@@ -175,6 +175,7 @@ pub enum SegmentType {
 #[serde(rename_all = "camelCase")]
 pub struct TimelineSegment {
     #[serde(rename = "segment")]
+    #[serde(flatten)]
     pub segment: SegmentType,
     pub assets: Vec<AssetWithSpe>,
 }

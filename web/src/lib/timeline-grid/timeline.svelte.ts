@@ -446,9 +446,8 @@ export function createTimeline(
     let assetIndex = baseAssetIndex;
     for (const segment of segments) {
       nextSegmentTop += segmentMargin;
-      const segData = segment.segment;
       const segmentTitleKey =
-        segData.type === 'dateRange' ? `${segData.start}-${segData.end}` : `group-${segData.id}`;
+        segment.type === 'dateRange' ? `${segment.start}-${segment.end}` : `group-${segment.id}`;
       const headerHeight =
         initialHeightGuess.segmentTitle !== null
           ? initialHeightGuess.segmentTitle

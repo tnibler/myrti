@@ -125,9 +125,7 @@ const SegmentType = z.discriminatedUnion('type', [
     .object({ id: TimelineGroupId, name: z.string().nullish(), type: z.literal('userGroup') })
     .passthrough(),
 ]);
-const TimelineSegment = z
-  .object({ assets: z.array(AssetWithSpe), segment: SegmentType })
-  .passthrough();
+const TimelineSegment = SegmentType.and(z.object({ assets: z.array(AssetWithSpe) }).passthrough());
 const TimelineSegmentsResponse = z.object({ segments: z.array(TimelineSegment) }).passthrough();
 const CreateTimelineGroupRequest = z
   .object({ assets: z.array(AssetId), name: z.string() })

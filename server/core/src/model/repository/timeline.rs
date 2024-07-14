@@ -7,6 +7,7 @@ use diesel::{
     RunQueryDsl, SelectableHelper,
 };
 use eyre::{Context, Result};
+use is_sorted::IsSorted;
 use tracing::instrument;
 
 use crate::model::{util::datetime_from_db_repr, Asset, AssetId, TimelineGroup, TimelineGroupId};
@@ -358,5 +359,29 @@ pub fn get_segments_in_section(
             }
         }
     }
+    debug_assert!(
+        segments
+            .iter()
+            .map(|segment| segment
+                .assets
+                .iter()
+                .rev()
+                .is_sorted_by_key(|asset| asset.base.taken_date))
+            .all(|b| b),
+        "assets within TimelineSegment are not sorted by taken_date descending"
+    );
+    debug_assert!(
+        segments
+            .iter()
+            .map(|segment| segment
+                .assets
+                .first()
+                .expect("segment assets must not be empty")
+                .base
+                .taken_date
+                == segment.sort_date)
+            .all(|b| b),
+        "TimelineSegment sort_date is not taken_date of first (most recent) asset"
+    );
     Ok(segments)
 }

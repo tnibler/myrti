@@ -1,5 +1,12 @@
-import type { Api, AssetId, AssetWithSpe, TimelineSection, TimelineSegment } from '@lib/apitypes';
+import type {
+  Api,
+  AssetId,
+  AssetWithSpe,
+  TimelineSection as ApiTimelineSection,
+  TimelineSegment as ApiTimelineSegment,
+} from '@lib/apitypes';
 import createJustifiedLayout from 'justified-layout';
+import { klona } from 'klona';
 import { SvelteMap } from 'svelte/reactivity';
 
 export type TimelineGridItem = { key: string; top: number; height: number } & (
@@ -28,11 +35,40 @@ export type Viewport = { width: number; height: number };
 
 export type ItemRange = { startIdx: number; endIdx: number };
 
+// TODO: split segments if group created in between its assets
+
+// create timeline group
+// for all segments we steal assets from, save original state in originalSegment field, keeping even the segments with now no more assets
+// on cancel: delete createGroup preview segments and restore all segments with originalSegment left
+
+type TimelineSegment = {
+  restoreOriginal: {
+    segment: TimelineSegment;
+    items: TimelineGridItem[];
+  } | null;
+  itemRange: ItemRange | null;
+} & (
+  | {
+      type: 'dateRange';
+      data: ApiTimelineSegment & { type: 'dateRange' };
+    }
+  | {
+      type: 'userGroup';
+      data: ApiTimelineSegment & { type: 'userGroup' };
+    }
+  | {
+      type: 'creatingGroup';
+      title: string;
+      assets: AssetWithSpe[];
+      sortDate: string;
+    }
+);
+
 export interface ITimelineGrid {
   readonly totalNumAssets: number;
   /** All items, in same order as sections with non-decreasing `top` */
   readonly items: TimelineGridItem[];
-  readonly sections: Section[];
+  readonly sections: TimelineSection[];
   readonly timelineHeight: number;
   /** Range of indices into items corresponding to currently visible section*/
   readonly visibleItems: ItemRange;
@@ -67,11 +103,11 @@ export type TimelineOptions = {
   loadWithinMargin: number;
 };
 
-export type Section = {
+export type TimelineSection = {
   top: number;
   height: number;
-  data: TimelineSection;
-  segments: TimelineSegment[] | null;
+  data: ApiTimelineSection;
+  segments: ApiTimelineSegment[] | null;
   items: ItemRange | null;
 };
 
@@ -82,9 +118,9 @@ export function createTimeline(
 ): ITimelineGrid {
   let isInitialized = false;
   let viewport: Viewport = { width: 0, height: 0 };
-  const items: TimelineGridItem[] = $state([]);
+  let items: TimelineGridItem[] = $state([]);
   let timelineHeight: number = $state(0);
-  let sections: Section[] = $state([]);
+  let sections: TimelineSection[] = $state([]);
   let visibleItems: ItemRange = $state({ startIdx: 0, endIdx: 0 });
   let setAnimationsEnabled: ((enabled: boolean) => Promise<void>) | null = null;
   const selectedAssets: Map<AssetId, number> = $state(new SvelteMap());
@@ -100,8 +136,8 @@ export function createTimeline(
     segmentTitle: null,
   };
 
-  const inflightSegmentRequests: Map<string, Promise<TimelineSegment[]>> = new Map();
-  function requestSegments(sectionId: string): Promise<TimelineSegment[]> {
+  const inflightSegmentRequests: Map<string, Promise<ApiTimelineSegment[]>> = new Map();
+  function requestSegments(sectionId: string): Promise<ApiTimelineSegment[]> {
     const inflight = inflightSegmentRequests.get(sectionId);
     if (inflight) {
       return inflight;
@@ -129,9 +165,9 @@ export function createTimeline(
 
   async function loadSectionPlaceholders() {
     const sectionsResponse = await api.getTimelineSections();
-    const sectionData: TimelineSection[] = sectionsResponse.sections;
+    const sectionData: ApiTimelineSection[] = sectionsResponse.sections;
 
-    const _sections: Section[] = [];
+    const _sections: TimelineSection[] = [];
     let nextSectionTop = 0;
     let totalHeight = 0;
     for (const section of sectionData) {
@@ -435,7 +471,7 @@ export function createTimeline(
   }
 
   function populateSection(
-    segments: TimelineSegment[],
+    segments: ApiTimelineSegment[],
     baseTop: number,
     baseAssetIndex: number,
     containerWidth: number,
@@ -539,11 +575,32 @@ export function createTimeline(
     return items[itemIndex];
   }
 
+  let savedItems: TimelineGridItem[] | null = null;
+  let savedSections: TimelineSection[] | null = null;
+  // FIXME: creating group in not section 0 does weird things
   async function createGroupClicked() {
+    if (savedItems && savedSections) {
+      if (setAnimationsEnabled) {
+        await setAnimationsEnabled(true);
+      }
+      items = savedItems;
+      sections = savedSections;
+      savedItems = null;
+      savedSections = null;
+      setTimeout(() => {
+        if (setAnimationsEnabled) {
+          setAnimationsEnabled(true);
+        }
+      }, 500);
+      return;
+    }
+    savedSections = klona(sections);
+    savedItems = klona(items);
     const selected = new Set(selectedAssets.keys());
     if (selected.size === 0) {
       return;
     }
+    clearSelection();
     const assetsInGroup: { asset: AssetWithSpe; index: number }[] = [];
     let currentAssetInGroupIdx = 0; // TODO: dirty way of getting order, we probably want sortDate
     const affectedSections: number[] = [];
@@ -552,7 +609,7 @@ export function createTimeline(
         continue;
       }
       let thisSectionAffected = false;
-      const newSegments: TimelineSegment[] = [];
+      const newSegments: ApiTimelineSegment[] = [];
       for (const segment of section.segments) {
         const remainingAssets: AssetWithSpe[] = [];
         for (const asset of segment.assets) {
@@ -575,7 +632,6 @@ export function createTimeline(
         affectedSections.push(sectionIdx);
       }
     }
-    // TODO: reassign segment sortDates, figure out and fix if it's the least/most recent asset's date
     assetsInGroup.sort((a, b) => a.index - b.index);
     const groupSortDate = assetsInGroup.at(-1).asset.takenDate;
     const insertInSectionIndex = sections.findLastIndex(
@@ -586,7 +642,10 @@ export function createTimeline(
     const insertBeforeSegmentIndex = section.segments!.findIndex(
       (s) => s.assets.at(0)!.takenDate < groupSortDate,
     );
-    const newSegment: TimelineSegment & { type: 'userGroup' } = $state({
+    // console.log(
+    //   `${groupSortDate}: section ${insertInSectionIndex}, segment ${section.segments[insertBeforeSegmentIndex].sortDate}`,
+    // );
+    const newSegment: ApiTimelineSegment & { type: 'userGroup' } = $state({
       type: 'userGroup',
       assets: assetsInGroup.map((a) => a.asset),
       sortDate: groupSortDate,
@@ -646,7 +705,7 @@ export function createTimeline(
 }
 
 function estimateHeight(
-  section: TimelineSection,
+  section: ApiTimelineSection,
   lineWidth: number,
   targetRowHeight: number,
 ): number {
@@ -660,7 +719,7 @@ function estimateHeight(
   return height;
 }
 
-function computeSectionStartIndices(sections: Section[]): number[] {
+function computeSectionStartIndices(sections: TimelineSection[]): number[] {
   if (sections.length == 1) {
     return [0];
   } else if (sections.length == 0) {

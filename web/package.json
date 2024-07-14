@@ -18,6 +18,7 @@
     "dayjs": "^1.11.11",
     "elegua": "^2.2.3",
     "justified-layout": "^4.1.0",
+    "klona": "^2.0.6",
     "lucide-svelte": "^0.363.0",
     "zod": "^3.23.8"
   },

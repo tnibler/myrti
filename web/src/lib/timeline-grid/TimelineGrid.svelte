@@ -7,6 +7,8 @@
   import type { ActionReturn } from 'svelte/action';
   import GridTile from '@lib/ui/GridTile.svelte';
   import SegmentTitle from './SegmentTitle.svelte';
+  import type { SelectState } from '@lib/ui/GridTile.svelte';
+  import CreateGroupInput from './CreateGroupInput.svelte';
 
   type TimelineGridProps = {
     timeline: ITimelineGrid;
@@ -17,7 +19,6 @@
   let gallery: Gallery;
 
   let { timeline, scrollWrapper = $bindable() }: TimelineGridProps = $props();
-  const inSelectMode = $derived(timeline.selectedAssets.size > 0);
   let thumbnailImgEls: Record<AssetId, HTMLImageElement> = $state({});
   let gridItemTransitionClass: string | undefined = $state();
   let animationsDisabledToStart = true;
@@ -28,15 +29,14 @@
     setTimeout(() => {
       animationsDisabledToStart = false;
     }, 1000);
-    timeline.setAnimationsEnabled = setGridItemAnimationEnable;
+    timeline.setAnimationsEnabled = setGridItemAnimationEnabled;
   });
 
   $effect(() => {
-    (async () => {
-      await timeline.initialize(viewport);
-    })();
+    timeline.initialize(viewport);
   });
 
+  // handle window resize (debounced)
   let resizeTimeout: number | null = null;
   $effect(() => {
     viewport.width;
@@ -78,12 +78,28 @@
     }
   }
 
-  async function setGridItemAnimationEnable(enabled: boolean) {
-    if (enabled && animationsDisabledToStart) {
+  const disableGridItemAnimationDelayMs = 180 + 20;
+  let disableGridItemAnimationTimeout: number | null = null;
+  async function setGridItemAnimationEnabled(enabled: boolean) {
+    if (animationsDisabledToStart) {
       return;
     }
-    gridItemTransitionClass = enabled ? 'timeline-item-transition' : '';
-    scrollWrapper.offsetHeight; // hopefully trigger reflow
+    if (!enabled) {
+      disableGridItemAnimationTimeout = setTimeout(() => {
+        // gridItemTransitionClass = '';
+      }, disableGridItemAnimationDelayMs);
+    } else {
+      if (disableGridItemAnimationTimeout) {
+        clearTimeout(disableGridItemAnimationTimeout);
+        disableGridItemAnimationTimeout = null;
+      }
+      await new Promise<void>((resolve) => {
+        setTimeout(() => {
+          gridItemTransitionClass = 'timeline-item-transition';
+          resolve();
+        }, 0);
+      });
+    }
   }
 
   function handleSectionIntersect(entries: IntersectionObserverEntry[]) {
@@ -101,15 +117,29 @@
   }
 
   const visibleItems = $derived.by(() => {
-    // this copies, but no way around it I think. {#each} will make/copy an array anyway even if we give it a generator
-    return timeline.items.slice(timeline.visibleItems.startIdx, timeline.visibleItems.endIdx);
+    const items = timeline.items
+      .slice(timeline.visibleItems.startIdx, timeline.visibleItems.endIdx)
+      .map((item, index) => {
+        return {
+          ...item,
+          /** index of Item in timeline before sorting */
+          originalItemIndex: index,
+        };
+      });
+    // sorted because keyed {#each} does not handle reordering items apparently
+    items.sort((a, b) => a.key.localeCompare(b.key));
+    return items;
   });
 
-  function getSelectState(
-    assetId: AssetId,
-  ): { inSelectMode: false } | { inSelectMode: true; isSelected: boolean } {
-    const isSelected = timeline.selectedAssets.has(assetId);
-    return { inSelectMode, isSelected };
+  function getSelectState(assetId: AssetId): SelectState {
+    if (timeline.state === 'justLooking' && timeline.selectedAssets.size > 0) {
+      const isSelected = timeline.selectedAssets.has(assetId);
+      return { state: 'select', isSelected };
+    } else if (timeline.state === 'justLooking') {
+      return { state: 'default' };
+    } else {
+      return { state: 'unclickable' };
+    }
   }
 
   function toggleAssetSelected(assetId: AssetId) {
@@ -162,8 +192,8 @@
         style:height={section.height + timeline.options.loadWithinMargin * 2 + 'px'}
       ></div>
     {/each}
-    {#each visibleItems as item, idx (item.key)}
-      {@const itemIndex = timeline.visibleItems.startIdx + idx}
+    {#each visibleItems as item (item.key)}
+      {@const itemIndex = timeline.visibleItems.startIdx + item.originalItemIndex}
       {#if item.type === 'asset'}
         <GridTile
           className={gridItemTransitionClass}
@@ -183,15 +213,35 @@
           className={gridItemTransitionClass}
           timelineItem={item}
           setActualHeight={(height) => {
-            setGridItemAnimationEnable(false).then(() => {
+            setGridItemAnimationEnabled(false).then(() => {
               setTimeout(() => {
                 timeline.setActualItemHeight(itemIndex, height);
-                setGridItemAnimationEnable(true);
+                setGridItemAnimationEnabled(true);
               }, 0);
             });
           }}
         />
+      {:else if item.type === 'createGroupTitleInput'}
+        <CreateGroupInput
+          {item}
+          onSubmit={(title) => {
+            timeline.confirmCreateGroup(title);
+          }}
+          onCancel={() => {
+            timeline.cancelCreateGroup();
+          }}
+        />
       {/if}
+    {/each}
+    {#each timeline.addToGroupClickAreas as area}
+      <div
+        role="button"
+        class="absolute cursor-pointer hover:bg-black/10 border-black/20 hover:border-black/40 border-2 rounded-lg"
+        style="top: {area.top}px;  height: {area.height}px; left: 0px; width: 100%;"
+        onclick={() => {
+          timeline.addSelectedToExistingGroup(area.groupId);
+        }}
+      ></div>
     {/each}
   </section>
 </div>
@@ -214,7 +264,7 @@
   :global(.timeline-item-transition) {
     transition-property: top, left;
     transition-timing-function: ease-in-out;
-    transition-duration: 300ms;
+    transition-duration: 180ms;
   }
 
   .scroll-wrapper {

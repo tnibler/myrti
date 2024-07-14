@@ -5,6 +5,13 @@
     top: number;
     left: number;
   };
+
+  export type SelectState =
+    | {
+        state: 'unclickable';
+      }
+    | { state: 'default' }
+    | { state: 'select'; isSelected: boolean };
 </script>
 
 <script lang="ts">
@@ -22,7 +29,7 @@
   type GridTileProps = {
     asset: Asset;
     box: TileBox;
-    selectState: { inSelectMode: false } | { inSelectMode: true; isSelected: boolean };
+    selectState: SelectState;
     onSelectToggled: () => void;
     onAssetClick: () => void;
     imgEl: HTMLImageElement;
@@ -38,17 +45,19 @@
     className,
   }: GridTileProps = $props();
   let isMouseOver = $state(false);
-  const isSelected = $derived(selectState.inSelectMode && selectState.isSelected);
+  const isSelected = $derived(selectState.state === 'select' && selectState.isSelected);
 
   function onSelectButtonClick() {
     onSelectToggled();
   }
 
   function onTileClick() {
-    if (selectState.inSelectMode) {
+    if (selectState.state === 'select') {
       onSelectToggled();
-    } else {
+    } else if (selectState.state === 'default') {
       onAssetClick();
+    } else {
+      // 'unclickable'
     }
   }
 
@@ -58,18 +67,21 @@
   const imgTransformOrigin = $derived(rotateImgMod180 != 0 ? 'top left' : 'center');
   const imgHeight = $derived(rotateImgMod180 != 0 ? box.width : box.height);
   const imgWidth = $derived(rotateImgMod180 != 0 ? box.height : box.width);
+  const isHoverable = $derived(selectState.state !== 'unclickable');
 </script>
 
 <a
   href=""
-  class="absolute group select-none {className}"
+  class={'absolute group select-none ' + className + ' ' + (isHoverable ? '' : 'cursor-default')}
   style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
   onclick={(e) => {
     e.preventDefault();
     onTileClick();
   }}
   onmouseenter={() => {
-    isMouseOver = true;
+    if (selectState.state !== 'unclickable') {
+      isMouseOver = true;
+    }
   }}
   onmouseleave={() => {
     isMouseOver = false;
@@ -92,7 +104,8 @@
       style:rotate={asset.rotationCorrection ? asset.rotationCorrection + 'deg' : null}
     />
     <div
-      class="absolute z-10 h-full w-full bg-gradient-to-b from-black/25 via-[transparent_25%] opacity-0 transition-opacity group-hover:opacity-100"
+      class={'absolute z-10 h-full w-full bg-gradient-to-b from-black/25 via-[transparent_25%] opacity-0 transition-opacity ' +
+        (isHoverable ? 'group-hover:opacity-100' : '')}
       class:rounded-xl={isSelected}
       class:scale-[0.85]={isSelected}
     ></div>
@@ -109,10 +122,10 @@
       </svg>
     {/if}
     <div class="absolute z-20 h-full w-full">
-      {#if selectState.inSelectMode || isMouseOver}
+      {#if selectState.state === 'select' || (selectState.state === 'default' && isMouseOver)}
         {@const icon = isSelected
           ? mdiCheckboxMarkedCircle
-          : selectState.inSelectMode
+          : selectState.state === 'select'
             ? mdiCircleOutline
             : mdiCheckCircleOutline}
         <button

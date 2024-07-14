@@ -21,5 +21,5 @@
   style:top={timelineItem.top + 'px'}
 >
   <!-- style:height={timelineItem.height + 'px'} -->
-  {timelineItem.key}
+  {timelineItem.title}
 </div>

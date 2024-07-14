@@ -539,7 +539,76 @@ export function createTimeline(
     return items[itemIndex];
   }
 
+  async function createGroupClicked() {
+    const selected = new Set(selectedAssets.keys());
+    if (selected.size === 0) {
+      return;
+    }
+    const assetsInGroup: { asset: AssetWithSpe; index: number }[] = [];
+    let currentAssetInGroupIdx = 0; // TODO: dirty way of getting order, we probably want sortDate
+    const affectedSections: number[] = [];
+    for (const [sectionIdx, section] of sections.entries()) {
+      if (section.segments === null) {
+        continue;
+      }
+      let thisSectionAffected = false;
+      const newSegments: TimelineSegment[] = [];
+      for (const segment of section.segments) {
+        const remainingAssets: AssetWithSpe[] = [];
+        for (const asset of segment.assets) {
+          if (selected.has(asset.id)) {
+            thisSectionAffected = true;
+            assetsInGroup.push({ asset, index: currentAssetInGroupIdx });
+            currentAssetInGroupIdx += 1;
+          } else {
+            remainingAssets.push(asset);
+          }
+        }
+        if (remainingAssets.length > 0) {
+          segment.assets = remainingAssets;
+          // segment.sortDate = remainingAssets[0].takenDate
+          newSegments.push(segment);
+        }
+      }
+      section.segments = newSegments;
+      if (thisSectionAffected) {
+        affectedSections.push(sectionIdx);
+      }
+    }
+    // TODO: reassign segment sortDates, figure out and fix if it's the least/most recent asset's date
+    assetsInGroup.sort((a, b) => a.index - b.index);
+    const groupSortDate = assetsInGroup.at(-1).asset.takenDate;
+    const insertInSectionIndex = sections.findLastIndex(
+      (s) => s.segments && s.segments.at(-1).sortDate <= groupSortDate,
+    );
+    console.assert(insertInSectionIndex >= 0);
+    const section = sections[insertInSectionIndex];
+    const insertBeforeSegmentIndex = section.segments!.findIndex(
+      (s) => s.assets.at(0)!.takenDate < groupSortDate,
+    );
+    const newSegment: TimelineSegment & { type: 'userGroup' } = $state({
+      type: 'userGroup',
+      assets: assetsInGroup.map((a) => a.asset),
+      sortDate: groupSortDate,
+      name: 'creating group here',
+      id: 'none',
+    });
+    section.segments!.splice(insertBeforeSegmentIndex, 0, newSegment);
+    if (setAnimationsEnabled) {
+      await setAnimationsEnabled(true);
+    }
+    for (const i of affectedSections) {
+      layoutSection(i, 'noAdjustScroll');
+    }
+    setTimeout(() => {
+      if (setAnimationsEnabled) {
+        setAnimationsEnabled(true);
+      }
+    }, 500);
+  }
+
   return {
+    createGroupClicked,
     get totalNumAssets() {
       return totalNumAssets;
     },

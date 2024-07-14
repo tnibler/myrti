@@ -31,7 +31,9 @@
   }
 
   function onAddToGroupClicked() {
-    addToGroupDialog?.open();
+    timeline.createGroupClicked();
+    return;
+    // addToGroupDialog?.open();
   }
 
   async function onCreateGroupSubmit(submitted: { groupName: string }) {

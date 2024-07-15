@@ -577,23 +577,24 @@ export function createTimeline(
 
   let savedItems: TimelineGridItem[] | null = null;
   let savedSections: TimelineSection[] | null = null;
+  let groupNumber = 0;
   // FIXME: creating group in not section 0 does weird things
   async function createGroupClicked() {
-    if (savedItems && savedSections) {
-      if (setAnimationsEnabled) {
-        await setAnimationsEnabled(true);
-      }
-      items = savedItems;
-      sections = savedSections;
-      savedItems = null;
-      savedSections = null;
-      setTimeout(() => {
-        if (setAnimationsEnabled) {
-          setAnimationsEnabled(true);
-        }
-      }, 500);
-      return;
-    }
+    // if (savedItems && savedSections) {
+    //   if (setAnimationsEnabled) {
+    //     await setAnimationsEnabled(true);
+    //   }
+    //   items = savedItems;
+    //   sections = savedSections;
+    //   savedItems = null;
+    //   savedSections = null;
+    //   setTimeout(() => {
+    //     if (setAnimationsEnabled) {
+    //       setAnimationsEnabled(true);
+    //     }
+    //   }, 500);
+    //   return;
+    // }
     savedSections = klona(sections);
     savedItems = klona(items);
     const selected = new Set(selectedAssets.keys());
@@ -621,11 +622,11 @@ export function createTimeline(
             remainingAssets.push(asset);
           }
         }
-        if (remainingAssets.length > 0) {
-          segment.assets = remainingAssets;
-          // segment.sortDate = remainingAssets[0].takenDate
-          newSegments.push(segment);
-        }
+        // if (remainingAssets.length > 0) {
+        segment.assets = remainingAssets;
+        // segment.sortDate = remainingAssets[0].takenDate
+        newSegments.push(segment);
+        // }
       }
       section.segments = newSegments;
       if (thisSectionAffected) {
@@ -634,24 +635,23 @@ export function createTimeline(
     }
     assetsInGroup.sort((a, b) => a.index - b.index);
     const groupSortDate = assetsInGroup.at(-1).asset.takenDate;
-    const insertInSectionIndex = sections.findLastIndex(
-      (s) => s.segments && s.segments.at(-1).sortDate <= groupSortDate,
+    const insertInSectionIndex = affectedSections.findLast(
+      (i) => sections[i].segments && sections[i].segments.at(-1).sortDate <= groupSortDate,
     );
     console.assert(insertInSectionIndex >= 0);
+    console.assert(affectedSections.indexOf(insertInSectionIndex) >= 0);
     const section = sections[insertInSectionIndex];
     const insertBeforeSegmentIndex = section.segments!.findIndex(
       (s) => s.assets.at(0)!.takenDate < groupSortDate,
     );
-    // console.log(
-    //   `${groupSortDate}: section ${insertInSectionIndex}, segment ${section.segments[insertBeforeSegmentIndex].sortDate}`,
-    // );
     const newSegment: ApiTimelineSegment & { type: 'userGroup' } = $state({
       type: 'userGroup',
       assets: assetsInGroup.map((a) => a.asset),
       sortDate: groupSortDate,
       name: 'creating group here',
-      id: 'none',
+      id: 'none' + groupNumber,
     });
+    groupNumber += 1;
     section.segments!.splice(insertBeforeSegmentIndex, 0, newSegment);
     if (setAnimationsEnabled) {
       await setAnimationsEnabled(true);

@@ -19,6 +19,14 @@
   } from '@mdi/js';
   import { fade } from 'svelte/transition';
 
+  // TODO: use this logic to make items unclickable in add to group state
+  type SelectState =
+    | {
+        state: 'unclickable';
+      }
+    | { state: 'default' }
+    | { state: 'select'; isSelected: boolean };
+
   type GridTileProps = {
     asset: Asset;
     box: TileBox;

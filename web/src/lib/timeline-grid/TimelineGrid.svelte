@@ -7,6 +7,7 @@
   import type { ActionReturn } from 'svelte/action';
   import GridTile from '@lib/ui/GridTile.svelte';
   import SegmentTitle from './SegmentTitle.svelte';
+  import Button from '@lib/ui/Button.svelte';
 
   type TimelineGridProps = {
     timeline: ITimelineGrid;
@@ -191,6 +192,22 @@
             });
           }}
         />
+      {:else if item.type === 'createGroupTitleInput'}
+        <div class="absolute flex-row" style="top: {item.top}px; left: {item.left}px;">
+          <input placeholder="Enter group title" />
+          <Button
+            text="Ok"
+            onclick={() => {
+              timeline.confirmCreateGroup('group title!!');
+            }}
+          />
+          <Button
+            text="Cancel"
+            onclick={() => {
+              timeline.cancelCreateGroup();
+            }}
+          />
+        </div>
       {/if}
     {/each}
   </section>

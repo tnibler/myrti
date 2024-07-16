@@ -210,6 +210,16 @@
         </div>
       {/if}
     {/each}
+    {#each timeline.addToGroupClickAreas as area}
+      <div
+        role="button"
+        class="absolute cursor-pointer hover:bg-black/10 border-black/20 hover:border-black/40 border-2 rounded-lg"
+        style="top: {area.top}px;  height: {area.height}px; left: 0px; width: 100%;"
+        onclick={() => {
+          timeline.addSelectedToExistingGroup(area.groupId);
+        }}
+      ></div>
+    {/each}
   </section>
 </div>
 

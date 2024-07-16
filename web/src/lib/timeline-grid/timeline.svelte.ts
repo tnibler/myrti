@@ -111,6 +111,16 @@ export type TimelineSection = {
   items: ItemRange | null;
 };
 
+type TimelineState =
+  | { state: 'justLooking' }
+  | {
+      state: 'creatingTimelineGroup';
+      assetsInGroup: AssetId[];
+      groupSortDate: string;
+      previousItems: TimelineGridItem[];
+      previousSections: TimelineSection[];
+    };
+
 export function createTimeline(
   opts: TimelineOptions,
   adjustScrollTop: (scrollDelta: number, ifScrollTopGt: number) => void,
@@ -578,7 +588,6 @@ export function createTimeline(
   let savedItems: TimelineGridItem[] | null = null;
   let savedSections: TimelineSection[] | null = null;
   let groupNumber = 0;
-  // FIXME: creating group in not section 0 does weird things
   async function createGroupClicked() {
     // if (savedItems && savedSections) {
     //   if (setAnimationsEnabled) {
@@ -612,21 +621,50 @@ export function createTimeline(
       let thisSectionAffected = false;
       const newSegments: ApiTimelineSegment[] = [];
       for (const segment of section.segments) {
-        const remainingAssets: AssetWithSpe[] = [];
+        // arrays of contiguous assets, which may be separated by assets in group
+        const remainingAssets: AssetWithSpe[][] = [];
+        let currentlyInGroup = false;
         for (const asset of segment.assets) {
           if (selected.has(asset.id)) {
+            currentlyInGroup = true;
             thisSectionAffected = true;
             assetsInGroup.push({ asset, index: currentAssetInGroupIdx });
             currentAssetInGroupIdx += 1;
           } else {
-            remainingAssets.push(asset);
+            if (currentlyInGroup || remainingAssets.length === 0) {
+              currentlyInGroup = false;
+              remainingAssets.push([asset]);
+            } else {
+              remainingAssets.at(-1)!.push(asset);
+            }
           }
         }
-        // if (remainingAssets.length > 0) {
-        segment.assets = remainingAssets;
-        // segment.sortDate = remainingAssets[0].takenDate
-        newSegments.push(segment);
-        // }
+        if (remainingAssets.length === 1 && remainingAssets[0].length > 0) {
+          console.log('all remaining assets contiguous');
+          const newSegment: ApiTimelineSegment = {
+            type: 'dateRange',
+            id: segment.id,
+            assets: remainingAssets[0],
+            sortDate: remainingAssets[0][0].takenDate,
+            end: remainingAssets[0][0].takenDate,
+            start: remainingAssets[0].at(-1)!.takenDate,
+          };
+          newSegments.push(newSegment);
+        } else {
+          console.log('not contiguous');
+          for (const [i, assets] of remainingAssets.entries()) {
+            console.assert(assets.length > 0);
+            const newSegment: ApiTimelineSegment = {
+              type: 'dateRange',
+              id: segment.id + '_' + i,
+              assets: assets,
+              sortDate: assets[0].takenDate,
+              start: assets.at(-1)!.takenDate,
+              end: assets[0].takenDate,
+            };
+            newSegments.push(newSegment);
+          }
+        }
       }
       section.segments = newSegments;
       if (thisSectionAffected) {

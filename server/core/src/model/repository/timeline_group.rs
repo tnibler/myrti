@@ -76,18 +76,18 @@ pub fn create_timeline_group(
     })
 }
 
-pub fn get_oldest_asset_date(
+pub fn get_newest_asset_date(
     conn: &mut DbConn,
     asset_ids: &[AssetId],
 ) -> Result<Option<DateTime<Utc>>> {
-    use diesel::dsl::min;
+    use diesel::dsl::max;
     use schema::Asset;
     let asset_ids: Vec<i64> = asset_ids.iter().map(|id| id.0).collect();
-    let min_date: Option<i64> = Asset::table
+    let max_date: Option<i64> = Asset::table
         .filter(Asset::asset_id.eq_any(asset_ids))
-        .select(min(Asset::taken_date))
+        .select(max(Asset::taken_date))
         .get_result(conn)?;
-    min_date.map(datetime_from_db_repr).transpose()
+    max_date.map(datetime_from_db_repr).transpose()
 }
 
 #[instrument(skip(conn))]

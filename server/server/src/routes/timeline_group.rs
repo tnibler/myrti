@@ -58,7 +58,7 @@ pub async fn create_timeline_group(
     let conn = app_state.pool.get().await?;
     let asset_ids_copy = asset_ids.clone();
     let display_date = interact!(conn, move |conn| {
-        repository::timeline_group::get_oldest_asset_date(conn, &asset_ids_copy)
+        repository::timeline_group::get_newest_asset_date(conn, &asset_ids_copy)
     })
     .await?
     .wrap_err("could not get display date to create TimelineGroup")?

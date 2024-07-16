@@ -373,6 +373,13 @@ pub fn get_segments_in_section(
     debug_assert!(
         segments
             .iter()
+            .map(|segment| !segment.assets.is_empty())
+            .all(|b| b),
+        "TimelineSegment assets must not be empty"
+    );
+    debug_assert!(
+        segments
+            .iter()
             .map(|segment| segment
                 .assets
                 .first()

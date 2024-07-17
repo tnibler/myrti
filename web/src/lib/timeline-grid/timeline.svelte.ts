@@ -35,10 +35,6 @@ export type Viewport = { width: number; height: number };
 
 export type ItemRange = { startIdx: number; endIdx: number };
 
-// TODO: populate segment ItemRange field to populate addToGroupClickAreas in create group
-//
-// TODO: layoutItems makes items array grow but old items for section are never removed
-
 // maybe make data field optional and only set when segment corresponds 1:1 to segment from api?
 type TimelineSegment = {
   type: string;
@@ -54,6 +50,7 @@ type TimelineSegment = {
   | {
       type: 'userGroup';
       data: ApiTimelineSegment & { type: 'userGroup' };
+      clickArea: AddToGroupClickArea | null;
     }
   | {
       type: 'creatingGroup';
@@ -125,7 +122,6 @@ type TimelineState =
   | {
       state: 'creatingTimelineGroup';
       assetsInGroup: AssetId[];
-      addToGroupClickAreas: AddToGroupClickArea[];
       groupSortDate: string;
       previousItems: TimelineGridItem[];
       previousSections: TimelineSection[];
@@ -140,11 +136,21 @@ export function createTimeline(
   let viewport: Viewport = { width: 0, height: 0 };
   let state: TimelineState = $state({ state: 'justLooking' });
   let items: TimelineGridItem[] = $state([]);
-  let addToGroupClickAreas: AddToGroupClickArea[] = $derived(
-    state.state === 'creatingTimelineGroup' ? state.addToGroupClickAreas : [],
-  );
   let timelineHeight: number = $state(0);
   let sections: TimelineSection[] = $state([]);
+  let addToGroupClickAreas: AddToGroupClickArea[] = $derived(
+    state.state === 'creatingTimelineGroup'
+      ? sections
+          .filter((s) => s.segments !== null && s.items != null)
+          .map((s) =>
+            s
+              .segments!.filter((seg) => seg.type === 'userGroup')
+              .map((seg) => seg.clickArea)
+              .filter((area) => area !== null),
+          )
+          .flat()
+      : [],
+  );
   let visibleItems: ItemRange = $state({ startIdx: 0, endIdx: 0 });
   let setAnimationsEnabled: ((enabled: boolean) => Promise<void>) | null = null;
   const selectedAssets: Map<AssetId, number> = $state(new SvelteMap());
@@ -314,7 +320,24 @@ export function createTimeline(
     const oldSectionHeight = sections[sectionIndex].height;
     section.height = sectionHeight;
     for (let i = 0; i < segments.length; i += 1) {
-      segments[i].itemRange = segmentItemRanges[i];
+      const segment = segments[i];
+      // item indices relative to this section's startIdx
+      segment.itemRange = segmentItemRanges[i];
+      // set group's click area
+      if (segment.type === 'userGroup') {
+        let currentTop = Infinity;
+        let currentBottom = -Infinity;
+        for (let i = segment.itemRange.startIdx; i < segment.itemRange.endIdx; i += 1) {
+          const item = sectionItems[i];
+          currentTop = Math.min(item.top, currentTop);
+          currentBottom = Math.max(item.top + item.height, currentBottom);
+        }
+        segment.clickArea = {
+          top: currentTop,
+          height: currentBottom - currentTop,
+          groupId: segment.data.id,
+        };
+      }
     }
 
     // last loaded section before sectionIndex, to insert new items after its ItemRange
@@ -369,6 +392,7 @@ export function createTimeline(
         assets: segment.assets,
         sortDate: segment.sortDate,
         itemRange: null,
+        clickArea: null,
       };
     });
   }
@@ -780,46 +804,12 @@ export function createTimeline(
         setAnimationsEnabled(true);
       }
     }, 500);
-    // FIXME: click areas have to be populated whenever a section is loaded, since
-    // we could scroll down and load other sections in create group state
-    const addToGroupClickAreas: AddToGroupClickArea[] = (() => {
-      const clickAreas: AddToGroupClickArea[] = [];
-      for (const section of sections) {
-        const segments = section.segments;
-        if (segments === null || section.items === null) {
-          continue;
-        }
-        const baseItemIdx = section.items!.startIdx;
-        for (const segment of segments) {
-          if (segment.type === 'userGroup') {
-            let currentTop = Infinity;
-            let currentBottom = -Infinity;
-            for (
-              let i = baseItemIdx + segment.itemRange!.startIdx;
-              i < baseItemIdx + segment.itemRange!.endIdx;
-              i += 1
-            ) {
-              const item = items[i];
-              currentTop = Math.min(item.top, currentTop);
-              currentBottom = Math.max(item.top + item.height, currentBottom);
-            }
-            clickAreas.push({
-              top: currentTop,
-              height: currentBottom - currentTop,
-              groupId: segment.data.id,
-            });
-          }
-        }
-      }
-      return clickAreas;
-    })();
     state = {
       state: 'creatingTimelineGroup',
       assetsInGroup: assetsInGroup.map((a) => a.id),
       groupSortDate,
       previousItems,
       previousSections,
-      addToGroupClickAreas,
     };
   }
 
@@ -883,7 +873,11 @@ export function createTimeline(
     state = { state: 'justLooking' };
   }
 
-  async function addSelectedToExistingGroup(groupId: string): Promise<void> {}
+  async function addSelectedToExistingGroup(groupId: string): Promise<void> {
+    // make it so we don't have to loop over everything to know what sections etc
+    // are affected and what to relayout.
+    // same thing for createGroupClicked
+  }
 
   return {
     createGroupClicked,

@@ -35,6 +35,9 @@ export type Viewport = { width: number; height: number };
 
 export type ItemRange = { startIdx: number; endIdx: number };
 
+// TODO: move animation disable delay out of here
+// TODO: keep backlinks so we don't have to iterate over all sections/segments all the time
+
 // maybe make data field optional and only set when segment corresponds 1:1 to segment from api?
 type TimelineSegment = {
   type: string;
@@ -129,7 +132,12 @@ type TimelineState =
 
 export function createTimeline(
   opts: TimelineOptions,
-  adjustScrollTop: (scrollDelta: number, ifScrollTopGt: number) => void,
+  adjustScrollTop: (params: {
+    what: 'scrollBy' | 'scrollTo';
+    scroll: number;
+    ifScrollTopGt: number;
+    behavior: 'smooth' | 'instant';
+  }) => void,
   api: Api,
 ): ITimelineGrid {
   let isInitialized = false;
@@ -363,8 +371,12 @@ export function createTimeline(
       }
     }
     if (adjustScroll === 'adjustScroll') {
-      const mustAdjustScrollIfScrollTopGt = sections[sectionIndex].top;
-      adjustScrollTop(heightDelta, mustAdjustScrollIfScrollTopGt);
+      adjustScrollTop({
+        what: 'scrollBy',
+        scroll: heightDelta,
+        ifScrollTopGt: sections[sectionIndex].top,
+        behavior: 'instant',
+      });
     }
   }
 
@@ -547,7 +559,12 @@ export function createTimeline(
     for (let i = itemIndex + 1; i < sections[sectionIndex].items.endIdx; i += 1) {
       items[i].top += heightDelta;
     }
-    adjustScrollTop(heightDelta, item.top);
+    adjustScrollTop({
+      what: 'scrollBy',
+      scroll: heightDelta,
+      ifScrollTopGt: item.top,
+      behavior: 'instant',
+    });
     for (let i = sectionIndex + 1; i < sections.length; i += 1) {
       const s = sections[i];
       s.top += heightDelta;
@@ -798,6 +815,16 @@ export function createTimeline(
     }
     for (const i of affectedSections) {
       layoutSection(i, 'noAdjustScroll');
+    }
+    console.assert(newSegment.itemRange !== null);
+    if (newSegment.itemRange !== null) {
+      const scrollToItem = items[newSegment.itemRange.startIdx];
+      adjustScrollTop({
+        what: 'scrollTo',
+        scroll: Math.max(0, scrollToItem.top - viewport.height / 2),
+        ifScrollTopGt: 0,
+        behavior: 'smooth',
+      });
     }
     setTimeout(() => {
       if (setAnimationsEnabled) {

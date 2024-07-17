@@ -80,9 +80,18 @@
     timeline.clearSelection();
   }
 
-  function onAjustTimelineScrollY(delta: number, ifScrollTopGt: number) {
-    if (timelineScrollWrapper && timelineScrollWrapper.scrollTop > ifScrollTopGt) {
-      timelineScrollWrapper?.scrollBy(0, delta);
+  function onAjustTimelineScrollY(params: {
+    what: 'scrollTo' | 'scrollBy';
+    scroll: number;
+    ifScrollTopGt: number;
+    behavior: 'smooth' | 'instant';
+  }) {
+    if (timelineScrollWrapper && timelineScrollWrapper.scrollTop > params.ifScrollTopGt) {
+      if (params.what === 'scrollBy') {
+        timelineScrollWrapper?.scrollBy({ top: params.scroll, behavior: params.behavior });
+      } else if (params.what === 'scrollTo') {
+        timelineScrollWrapper?.scrollTo({ top: params.scroll, behavior: params.behavior });
+      }
     }
   }
 

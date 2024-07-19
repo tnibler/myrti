@@ -36,7 +36,6 @@ export type Viewport = { width: number; height: number };
 export type ItemRange = { startIdx: number; endIdx: number };
 
 // TODO: move animation disable delay out of here
-// TODO: keep backlinks so we don't have to iterate over all sections/segments all the time
 
 // maybe make data field optional and only set when segment corresponds 1:1 to segment from api?
 type TimelineSegment = {
@@ -430,6 +429,7 @@ export function createTimeline(
       await setAnimationsEnabled(true);
     }
     await api.setAssetsHidden({ what: 'hide', assetIds: Array.from(selectedAssets.keys()) });
+    const untreatedAssets: Set<AssetId> = new Set(selectedAssets.keys());
     const affectedSectionIdxs: number[] = [];
     for (let sectionIdx = 0; sectionIdx < sections.length; sectionIdx += 1) {
       const section = sections[sectionIdx];
@@ -440,8 +440,18 @@ export function createTimeline(
       const segmentsToRemove: Set<number> = new Set();
       let newNumAssets = 0;
       for (let segmentIdx = 0; segmentIdx < segments.length; segmentIdx += 1) {
+        if (untreatedAssets.size === 0) {
+          break;
+        }
         const segment = segments[segmentIdx];
-        const remainingAssets = segment.assets.filter((asset) => !selectedAssets.has(asset.id));
+        const remainingAssets: AssetWithSpe[] = [];
+        for (const asset of segment.assets) {
+          if (selectedAssets.has(asset.id)) {
+            untreatedAssets.delete(asset.id);
+          } else {
+            remainingAssets.push(asset);
+          }
+        }
         if (
           remainingAssets.length != segment.assets.length &&
           ((affectedSectionIdxs.length > 0 && affectedSectionIdxs.at(-1) != sectionIdx) ||
@@ -487,11 +497,9 @@ export function createTimeline(
     for (const sectionIdx of affectedSectionIdxs) {
       layoutSection(sectionIdx, 'noAdjustScroll');
     }
-    setTimeout(() => {
-      if (setAnimationsEnabled) {
-        setAnimationsEnabled(false);
-      }
-    }, 500);
+    if (setAnimationsEnabled) {
+      setAnimationsEnabled(false);
+    }
   }
 
   async function getOrLoadAssetAtIndex(index: number): Promise<AssetWithSpe | null> {
@@ -826,11 +834,9 @@ export function createTimeline(
         behavior: 'smooth',
       });
     }
-    setTimeout(() => {
-      if (setAnimationsEnabled) {
-        setAnimationsEnabled(true);
-      }
-    }, 500);
+    if (setAnimationsEnabled) {
+      setAnimationsEnabled(false);
+    }
     state = {
       state: 'creatingTimelineGroup',
       assetsInGroup: assetsInGroup.map((a) => a.id),
@@ -850,11 +856,9 @@ export function createTimeline(
     sections = state.previousSections;
     items = state.previousItems;
     state = { state: 'justLooking' };
-    setTimeout(() => {
-      if (setAnimationsEnabled) {
-        setAnimationsEnabled(true);
-      }
-    }, 500);
+    if (setAnimationsEnabled) {
+      setAnimationsEnabled(false);
+    }
   }
 
   async function confirmCreateGroup(title: string): Promise<void> {
@@ -887,6 +891,7 @@ export function createTimeline(
       assets: oldSegment.assets,
       sortDate: response.displayDate,
       itemRange: null,
+      clickArea: null,
       data: {
         id: response.timelineGroupId,
         sortDate: response.displayDate,
@@ -895,15 +900,75 @@ export function createTimeline(
         name: title,
       },
     };
-    // TODO: track scroll (also in createGroupClicked), enable animations
     layoutSection(sectionIndex, 'adjustScroll');
     state = { state: 'justLooking' };
   }
 
   async function addSelectedToExistingGroup(groupId: string): Promise<void> {
-    // make it so we don't have to loop over everything to know what sections etc
-    // are affected and what to relayout.
-    // same thing for createGroupClicked
+    if (state.state !== 'creatingTimelineGroup') {
+      return;
+    }
+    // TODO call api
+    if (setAnimationsEnabled !== null) {
+      await setAnimationsEnabled(true);
+    }
+    const affectedSections: number[] = [];
+    let groupToAbsorb: (TimelineSegment & { type: 'creatingGroup' }) | null = null;
+    const newSections = klona(sections);
+    for (const [sectionIdx, section] of newSections.entries()) {
+      if (section.segments === null) {
+        continue;
+      }
+      const remainingSegments: TimelineSegment[] = [];
+      for (const segment of section.segments) {
+        if (segment.type === 'creatingGroup') {
+          groupToAbsorb = segment;
+          affectedSections.push(sectionIdx);
+        } else {
+          remainingSegments.push(segment);
+        }
+      }
+      section.segments = remainingSegments;
+      if (groupToAbsorb !== null) {
+        // found it
+        section.data.numAssets -= groupToAbsorb.assets.length;
+        break;
+      }
+    }
+    console.assert(groupToAbsorb !== null);
+    if (groupToAbsorb === null) {
+      return;
+    }
+
+    let mergeInto: (TimelineSegment & { type: 'userGroup' }) | null = null;
+    outer: for (const [sectionIdx, section] of newSections.entries()) {
+      if (section.segments === null) {
+        continue;
+      }
+      for (const segment of section.segments) {
+        if (segment.type === 'userGroup' && segment.data.id === groupId) {
+          affectedSections.push(sectionIdx);
+          section.data.numAssets += groupToAbsorb!.assets.length;
+          mergeInto = segment;
+          break outer;
+        }
+      }
+    }
+    console.assert(mergeInto !== null);
+    if (mergeInto === null) {
+      return;
+    }
+    mergeInto.assets.push(...groupToAbsorb.assets);
+    mergeInto.assets.sort((a, b) => b.takenDate.localeCompare(a.takenDate));
+    sections = newSections;
+    layoutSection(affectedSections[0], 'noAdjustScroll');
+    if (affectedSections[0] !== affectedSections[1]) {
+      layoutSection(affectedSections[1], 'noAdjustScroll');
+    }
+    if (setAnimationsEnabled) {
+      setAnimationsEnabled(false);
+    }
+    state = { state: 'justLooking' };
   }
 
   return {

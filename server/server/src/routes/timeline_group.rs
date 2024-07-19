@@ -3,7 +3,11 @@ use core::{
     model::{self, repository},
 };
 
-use axum::{extract::State, routing::post, Json, Router};
+use axum::{
+    extract::State,
+    routing::{post, put},
+    Json, Router,
+};
 use chrono::{DateTime, Utc};
 use eyre::{eyre, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -16,7 +20,9 @@ use crate::{
 };
 
 pub fn router() -> Router<SharedState> {
-    Router::new().route("/", post(create_timeline_group))
+    Router::new()
+        .route("/", post(create_timeline_group))
+        .route("/", put(add_to_timeline_group))
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema, PartialEq, Eq)]
@@ -77,4 +83,38 @@ pub async fn create_timeline_group(
         timeline_group_id: timeline_group_id.into(),
         display_date,
     }))
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AddToTimelineGroupRequest {
+    pub assets: Vec<AssetId>,
+    pub group_id: TimelineGroupId,
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/timelinegroup",
+    request_body = AddToTimelineGroupRequest,
+    responses((status = 200)),
+)]
+pub async fn add_to_timeline_group(
+    State(app_state): State<SharedState>,
+    Json(request): Json<AddToTimelineGroupRequest>,
+) -> ApiResult<()> {
+    if request.assets.is_empty() {
+        return Err(eyre!("assetIds can not be empty").into());
+    }
+    let asset_ids: Vec<model::AssetId> = request
+        .assets
+        .into_iter()
+        .map(|id| id.try_into())
+        .collect::<Result<Vec<_>>>()?;
+    let group_id: model::TimelineGroupId = request.group_id.try_into()?;
+    let conn = app_state.pool.get().await?;
+    interact!(conn, move |conn| {
+        repository::timeline_group::add_assets_to_group(conn, group_id, &asset_ids)
+    })
+    .await??;
+    Ok(())
 }

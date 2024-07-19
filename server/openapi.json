@@ -500,11 +500,50 @@
             }
           }
         }
+      },
+      "put": {
+        "tags": [
+          "crate::routes::timeline_group"
+        ],
+        "operationId": "addToTimelineGroup",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddToTimelineGroupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        }
       }
     }
   },
   "components": {
     "schemas": {
+      "AddToTimelineGroupRequest": {
+        "type": "object",
+        "required": [
+          "assets",
+          "groupId"
+        ],
+        "properties": {
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetId"
+            }
+          },
+          "groupId": {
+            "$ref": "#/components/schemas/TimelineGroupId"
+          }
+        }
+      },
       "Album": {
         "type": "object",
         "required": [

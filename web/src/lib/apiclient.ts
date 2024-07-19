@@ -137,6 +137,9 @@ const CreateTimelineGroupRequest = z
 const CreateTimelineGroupResponse = z
   .object({ displayDate: z.string().datetime({ offset: true }), timelineGroupId: TimelineGroupId })
   .passthrough();
+const AddToTimelineGroupRequest = z
+  .object({ assets: z.array(AssetId), groupId: TimelineGroupId })
+  .passthrough();
 const ThumbnailFormat = z.enum(['avif', 'webp']);
 const ThumbnailSize = z.enum(['small', 'large']);
 
@@ -174,6 +177,7 @@ export const schemas = {
   TimelineSegmentsResponse,
   CreateTimelineGroupRequest,
   CreateTimelineGroupResponse,
+  AddToTimelineGroupRequest,
   ThumbnailFormat,
   ThumbnailSize,
 };
@@ -418,6 +422,20 @@ const endpoints = makeApi([
       },
     ],
     response: CreateTimelineGroupResponse,
+  },
+  {
+    method: 'put',
+    path: '/api/timelinegroup',
+    alias: 'addToTimelineGroup',
+    requestFormat: 'json',
+    parameters: [
+      {
+        name: 'body',
+        type: 'Body',
+        schema: AddToTimelineGroupRequest,
+      },
+    ],
+    response: z.void(),
   },
 ]);
 

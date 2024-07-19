@@ -109,6 +109,22 @@ pub fn add_assets_to_group(
                 ))
                 .execute(conn)?;
         }
+        // Update TimelineGroup.display_date to most recent asset in case it changed
+        // no query builder sorry idk how subqueries work
+        diesel::sql_query(
+            r#"
+        UPDATE TimelineGroup
+        SET display_date = (
+            SELECT MAX(Asset.taken_date)
+            FROM Asset INNER JOIN TimelineGroupItem ON TimelineGroupItem.asset_id = Asset.asset_id
+            WHERE TimelineGroupItem.group_id = ?
+        )
+        WHERE TimelineGroup.timeline_group_id = ?;
+        "#,
+        )
+        .bind::<diesel::sql_types::BigInt, _>(group_id.0)
+        .bind::<diesel::sql_types::BigInt, _>(group_id.0)
+        .execute(conn)?;
         Ok(())
     })
 }

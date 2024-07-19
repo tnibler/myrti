@@ -791,7 +791,7 @@ export function createTimeline(
         affectedSections.push(sectionIdx);
       }
     }
-    const groupSortDate = assetsInGroup.at(-1)?.takenDate;
+    const groupSortDate = assetsInGroup[0].takenDate;
     if (!groupSortDate || affectedSections.length === 0) {
       return;
     }
@@ -908,7 +908,6 @@ export function createTimeline(
     if (state.state !== 'creatingTimelineGroup') {
       return;
     }
-    // TODO call api
     if (setAnimationsEnabled !== null) {
       await setAnimationsEnabled(true);
     }
@@ -939,6 +938,9 @@ export function createTimeline(
     if (groupToAbsorb === null) {
       return;
     }
+
+    const assetIds = groupToAbsorb!.assets.map((asset) => asset.id);
+    await api.addToTimelineGroup({ assets: assetIds, groupId });
 
     let mergeInto: (TimelineSegment & { type: 'userGroup' }) | null = null;
     outer: for (const [sectionIdx, section] of newSections.entries()) {

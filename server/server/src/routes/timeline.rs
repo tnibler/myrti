@@ -231,7 +231,7 @@ pub async fn get_timeline_segments(
                 TimelineSegmentType::Group(
                     repository::timeline::TimelineGroupType::UserCreated(group),
                 ) => SegmentType::UserGroup {
-                    id: TimelineGroupId(group.id.to_string()),
+                    id: TimelineGroupId(group.id.0.to_string()),
                     name: group.name,
                 },
                 TimelineSegmentType::DateRange { start, end } => {

@@ -8,6 +8,7 @@
   import GridTile from '@lib/ui/GridTile.svelte';
   import SegmentTitle from './SegmentTitle.svelte';
   import Button from '@lib/ui/Button.svelte';
+  import type { SelectState } from '@lib/ui/GridTile.svelte';
 
   type TimelineGridProps = {
     timeline: ITimelineGrid;
@@ -18,7 +19,6 @@
   let gallery: Gallery;
 
   let { timeline, scrollWrapper = $bindable() }: TimelineGridProps = $props();
-  const inSelectMode = $derived(timeline.selectedAssets.size > 0);
   let thumbnailImgEls: Record<AssetId, HTMLImageElement> = $state({});
   let gridItemTransitionClass: string | undefined = $state();
   let animationsDisabledToStart = true;
@@ -126,11 +126,15 @@
     return items;
   });
 
-  function getSelectState(
-    assetId: AssetId,
-  ): { inSelectMode: false } | { inSelectMode: true; isSelected: boolean } {
-    const isSelected = timeline.selectedAssets.has(assetId);
-    return { inSelectMode, isSelected };
+  function getSelectState(assetId: AssetId): SelectState {
+    if (timeline.state === 'justLooking' && timeline.selectedAssets.size > 0) {
+      const isSelected = timeline.selectedAssets.has(assetId);
+      return { state: 'select', isSelected };
+    } else if (timeline.state === 'justLooking') {
+      return { state: 'default' };
+    } else {
+      return { state: 'unclickable' };
+    }
   }
 
   function toggleAssetSelected(assetId: AssetId) {

@@ -112,10 +112,15 @@
   }
 
   const visibleItems = $derived.by(() => {
-    const items = timeline.items.slice(
-      timeline.visibleItems.startIdx,
-      timeline.visibleItems.endIdx,
-    );
+    const items = timeline.items
+      .slice(timeline.visibleItems.startIdx, timeline.visibleItems.endIdx)
+      .map((item, index) => {
+        return {
+          ...item,
+          /** index of Item in timeline before sorting */
+          originalItemIndex: index,
+        };
+      });
     // sorted because keyed {#each} does not handle reordering items apparently
     items.sort((a, b) => a.key.localeCompare(b.key));
     return items;
@@ -178,8 +183,8 @@
         style:height={section.height + timeline.options.loadWithinMargin * 2 + 'px'}
       ></div>
     {/each}
-    {#each visibleItems as item, idx (item.key)}
-      {@const itemIndex = timeline.visibleItems.startIdx + idx}
+    {#each visibleItems as item (item.key)}
+      {@const itemIndex = timeline.visibleItems.startIdx + item.originalItemIndex}
       {#if item.type === 'asset'}
         <GridTile
           className={gridItemTransitionClass}

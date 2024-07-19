@@ -78,7 +78,7 @@
     }
   }
 
-  const disableGridItemAnimationDelayMs = 200 + 20;
+  const disableGridItemAnimationDelayMs = 180 + 20;
   let disableGridItemAnimationTimeout: number | null = null;
   async function setGridItemAnimationEnabled(enabled: boolean) {
     if (animationsDisabledToStart) {
@@ -256,7 +256,7 @@
   :global(.timeline-item-transition) {
     transition-property: top, left;
     transition-timing-function: ease-in-out;
-    transition-duration: 300ms;
+    transition-duration: 180ms;
   }
 
   .scroll-wrapper {

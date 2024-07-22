@@ -1,13 +1,18 @@
 use std::borrow::Cow;
 
 use chrono::Utc;
-use diesel::prelude::*;
+use diesel::{
+    prelude::*,
+    query_builder::{QueryBuilder, QueryFragment},
+    query_dsl::methods::GroupByDsl,
+    sqlite::SqliteQueryBuilder,
+};
 use eyre::{eyre, Context, Result};
 use tracing::instrument;
 
 use crate::model::{
     self,
-    repository::db_entity::{DbAlbum, DbAlbumWithAssetCount, DbAsset, DbInsertAlbum},
+    repository::db_entity::{DbAlbum, DbAlbumWithItemCount, DbAsset, DbInsertAlbum},
     util::datetime_to_db_repr,
     Album, AlbumId, AlbumItem, AlbumItemId, AlbumItemType, Asset, AssetId,
 };
@@ -23,16 +28,27 @@ pub struct CreateAlbum {
 /// Get all albums ordered by changed_at (descending)
 #[instrument(skip(conn), level = "trace")]
 pub fn get_all_albums_with_asset_count(conn: &mut DbConn) -> Result<Vec<(Album, i64)>> {
-    use diesel::dsl::count;
-    use schema::{Album, AlbumItem};
-    let db_albums: Vec<DbAlbumWithAssetCount> = Album::table
-        .inner_join(AlbumItem::table)
-        .group_by(Album::album_id)
-        .select((DbAlbum::as_select(), count(AlbumItem::album_item_id)))
-        .load(conn)?;
+    let mut qb = SqliteQueryBuilder::new();
+    qb.push_sql("SELECT ");
+    DbAlbum::as_select().to_sql(&mut qb, &diesel::sqlite::Sqlite)?;
+    qb.push_sql(
+        r#"
+    , IFNULL(item_count, 0) as item_count 
+    FROM Album
+    LEFT JOIN 
+        (
+        SELECT album_id, COUNT(AlbumItem.album_item_id) as item_count
+        FROM AlbumItem
+        GROUP BY album_id
+        ) g
+    ON Album.album_id = g.album_id
+    ORDER BY Album.changed_at DESC;
+    "#,
+    );
+    let db_albums: Vec<DbAlbumWithItemCount> = diesel::sql_query(qb.finish()).load(conn)?;
     db_albums
         .into_iter()
-        .map(|a| a.album.try_into().map(|album| (album, a.asset_count)))
+        .map(|a| a.album.try_into().map(|album| (album, a.item_count)))
         .collect::<Result<Vec<(model::Album, i64)>>>()
 }
 

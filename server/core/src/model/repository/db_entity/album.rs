@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 
-use diesel::{prelude::Insertable, Queryable, Selectable};
+use diesel::{prelude::Insertable, Queryable, QueryableByName, Selectable};
 
 use crate::model::{util::datetime_from_db_repr, Album, AlbumId};
 
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, QueryableByName, Selectable)]
 #[diesel(table_name = super::super::schema::Album)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct DbAlbum {
@@ -31,13 +31,13 @@ impl TryFrom<DbAlbum> for Album {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Queryable)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, QueryableByName)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct DbAlbumWithAssetCount {
+pub struct DbAlbumWithItemCount {
     #[diesel(embed)]
     pub album: DbAlbum,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub asset_count: i64,
+    pub item_count: i64,
 }
 
 #[derive(Debug, Insertable)]

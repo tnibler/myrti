@@ -5,11 +5,14 @@ import type {
   TimelineSection as ApiTimelineSection,
   TimelineSegment as ApiTimelineSegment,
 } from '@lib/apitypes';
-import dayjs from 'dayjs';
+import dayjs, { Dayjs } from 'dayjs';
 import localizedFormat from 'dayjs/plugin/localizedFormat';
-import createJustifiedLayout from 'justified-layout';
-import { klona } from 'klona';
+import advancedFormat from 'dayjs/plugin/advancedFormat';
+import utc from 'dayjs/plugin/utc';
+import { klona } from 'klona/json';
 import { SvelteMap } from 'svelte/reactivity';
+import { layoutSegments } from './layout';
+import * as R from 'remeda';
 
 export type TimelineGridItem = { key: string; top: number; height: number } & (
   | {
@@ -27,8 +30,16 @@ export type TimelineGridItem = { key: string; top: number; height: number } & (
     }
   | {
       type: 'segmentTitle';
-      titleType: 'major' | 'day';
+      titleType: 'major';
       title: string;
+    }
+  | {
+      type: 'segmentTitle';
+      titleType: 'day';
+      title: string;
+      left: number;
+      width: number;
+      titleRowIndex: number;
     }
   | {
       type: 'createGroupTitleInput';
@@ -39,28 +50,24 @@ export type Viewport = { width: number; height: number };
 
 export type ItemRange = { startIdx: number; endIdx: number };
 
-// TODO: move animation disable delay out of here
-
-// maybe make data field optional and only set when segment corresponds 1:1 to segment from api?
-type TimelineSegment = {
+export type Segment = {
   type: string;
   assets: AssetWithSpe[];
   sortDate: string;
-  /** Item indices with TimelineSection.items.startIdx as base */
+  start: Dayjs;
+  end: Dayjs;
   itemRange: ItemRange | null;
 } & (
   | {
       type: 'dateRange';
-      data: ApiTimelineSegment & { type: 'dateRange' };
     }
   | {
-      type: 'userGroup';
-      data: ApiTimelineSegment & { type: 'userGroup' };
+      type: 'group';
+      title: string;
+      groupId: string;
       clickArea: AddToGroupClickArea | null;
     }
-  | {
-      type: 'creatingGroup';
-    }
+  | { type: 'creatingGroup' }
 );
 
 type AddToGroupClickArea = {
@@ -119,8 +126,12 @@ export type TimelineSection = {
   top: number;
   height: number;
   data: ApiTimelineSection;
-  segments: TimelineSegment[] | null;
+  segments: Segment[] | null;
   items: ItemRange | null;
+  /** Date of most recent asset in section */
+  startDate: Dayjs;
+  /** Date of oldest asset in section */
+  endDate: Dayjs;
 };
 
 type TimelineState =
@@ -143,13 +154,18 @@ export function createTimeline(
   }) => void,
   api: Api,
 ): ITimelineGrid {
+  dayjs.extend(localizedFormat);
+  dayjs.extend(advancedFormat);
+  dayjs.extend(utc);
   let isInitialized = false;
   let viewport: Viewport = { width: 0, height: 0 };
   let state: TimelineState = $state({ state: 'justLooking' });
   let items: TimelineGridItem[] = $state([]);
-  let timelineHeight: number = $state(0);
   let sections: TimelineSection[] = $state([]);
-  let addToGroupClickAreas: AddToGroupClickArea[] = $derived(
+  const timelineHeight: number = $derived(
+    sections.map((s) => s.height).reduce((acc, n) => acc + n, 0),
+  );
+  const addToGroupClickAreas: AddToGroupClickArea[] = $derived(
     state.state === 'creatingTimelineGroup'
       ? sections
           .filter((s) => s.segments !== null && s.items != null)
@@ -220,11 +236,12 @@ export function createTimeline(
         top: nextSectionTop,
         segments: null,
         items: null,
+        startDate: dayjs.utc(section.startDate),
+        endDate: dayjs.utc(section.endDate),
       });
       nextSectionTop += height;
     }
     sections = _sections;
-    timelineHeight = totalHeight;
   }
 
   function resize(newViewport: Viewport, scrollTop: number) {
@@ -323,11 +340,19 @@ export function createTimeline(
     for (let i = 0; i < sectionIndex; i += 1) {
       baseAssetIndex += sections[i].data.numAssets;
     }
+    const lastSectionEndDate = sectionIndex === 0 ? null : sections[sectionIndex - 1].endDate;
     const {
       items: sectionItems,
-      sectionHeight,
+      totalHeight: sectionHeight,
       segmentItemRanges,
-    } = populateSection(segments, section.top, baseAssetIndex, viewport.width);
+    } = layoutSegments(
+      segments,
+      lastSectionEndDate,
+      section.top,
+      baseAssetIndex,
+      viewport.width,
+      opts,
+    );
     const oldSectionHeight = sections[sectionIndex].height;
     section.height = sectionHeight;
     for (let i = 0; i < segments.length; i += 1) {
@@ -390,52 +415,40 @@ export function createTimeline(
     }
     const sectionId = section.data.id;
     const segments = await requestSegments(sectionId);
-    // crudely merge very short segments
-    // this should really be done server side and maybe not in a greedy fashion like this
-    const minSegmentLength = 4;
-    const mergedSegments: ApiTimelineSegment[] = [];
-    for (const segment of segments) {
-      if (mergedSegments.length === 0) {
-        mergedSegments.push(segment);
-        continue;
-      }
-      const prev = mergedSegments.at(-1)!;
-      const mergeable =
-        prev.assets.length < minSegmentLength && segment.assets.length < minSegmentLength;
-      if (mergeable && prev.type === 'dateRange' && segment.type === 'dateRange') {
-        mergedSegments.pop();
-        mergedSegments.push({
-          assets: prev.assets.concat(segment.assets),
-          type: 'dateRange',
-          start: segment.start,
-          end: prev.end,
-          id: `${prev.id},${segment.id}`,
-          sortDate: prev.sortDate,
-        });
-      } else {
-        mergedSegments.push(segment);
-      }
-    }
-    sections[sectionIndex].data.segments = mergedSegments;
-    sections[sectionIndex].segments = mergedSegments.map((segment) => {
-      if (segment.type === 'dateRange') {
-        return {
-          type: segment.type,
-          data: segment,
-          assets: segment.assets,
-          sortDate: segment.sortDate,
-          itemRange: null,
-        };
-      }
-      return {
-        type: segment.type,
-        data: segment,
-        assets: segment.assets,
-        sortDate: segment.sortDate,
-        itemRange: null,
-        clickArea: null,
-      };
-    });
+    sections[sectionIndex].data.segments = segments;
+    sections[sectionIndex].segments = R.pipe(
+      segments,
+      R.map((segment) => {
+        if (segment.type === 'dateRange') {
+          return {
+            type: 'dateRange' as const,
+            assets: segment.assets,
+            sortDate: segment.sortDate,
+            itemRange: null,
+            start: dayjs.utc(segment.start),
+            end: dayjs.utc(segment.end),
+          };
+        } else if (segment.type === 'userGroup') {
+          console.assert(segment.assets.length > 0);
+          if (segment.assets.length === 0) {
+            return null;
+          }
+          return {
+            type: 'group' as const,
+            title: segment.name ?? 'Unnamed group',
+            groupId: segment.id,
+            assets: segment.assets,
+            sortDate: segment.sortDate,
+            itemRange: null,
+            clickArea: null,
+            start: dayjs.utc(segment.assets.at(0)!.takenDate),
+            end: dayjs.utc(segment.assets.at(-1)!.takenDate),
+          };
+        }
+        return null;
+      }),
+      R.filter(R.isNonNull),
+    );
   }
 
   /** Increasing number to track order in which assets are selected. Used for values of selectedAssets */
@@ -590,132 +603,97 @@ export function createTimeline(
       console.error('setActualItemHeight: sections[sectionIndex].items === null');
       return;
     }
-    const heightDelta = newHeight - item.height;
-    sections[sectionIndex].height += heightDelta;
-    items[itemIndex].height += heightDelta;
-    // items[i].top <= items[i+1].top, so shift starting from itemIndex onwards
-    for (let i = itemIndex + 1; i < sections[sectionIndex].items.endIdx; i += 1) {
-      items[i].top += heightDelta;
-    }
-    adjustScrollTop({
-      what: 'scrollBy',
-      scroll: heightDelta,
-      ifScrollTopGt: item.top,
-      behavior: 'instant',
-    });
-    for (let i = sectionIndex + 1; i < sections.length; i += 1) {
-      const s = sections[i];
-      s.top += heightDelta;
-      if (s.items) {
-        for (let j = s.items.startIdx; j < s.items.endIdx; j += 1) {
-          items[j].top += heightDelta;
-        }
+    if (
+      (item.type === 'segmentTitle' && item.titleType === 'major') ||
+      item.type === 'createGroupTitleInput'
+    ) {
+      // find all minor titles with same row index, and set their height to this new height, shifting all items below
+      const heightDelta = newHeight - item.height;
+      if (heightDelta === 0) {
+        return;
       }
-    }
-  }
-
-  /** Creates layout and items representing segments of a section.
-   * return value segmentItemRanges contains index ranges into this section's items.
-   * arguments are not mutated */
-  function populateSection(
-    segments: TimelineSegment[],
-    baseTop: number,
-    baseAssetIndex: number,
-    containerWidth: number,
-  ): { items: TimelineGridItem[]; sectionHeight: number; segmentItemRanges: ItemRange[] } {
-    const targetRowHeight = opts.targetRowHeight;
-    const segmentMargin = opts.segmentMargin;
-    const items: TimelineGridItem[] = [];
-    let nextSegmentTop = baseTop;
-    let assetIndex = baseAssetIndex;
-    const segmentItemRanges: ItemRange[] = [];
-    for (const segment of segments) {
-      const itemStartIdx = items.length;
-      nextSegmentTop += segmentMargin;
-      const headerHeight =
-        initialHeightGuess.segmentTitle !== null
-          ? initialHeightGuess.segmentTitle
-          : opts.headerHeight;
-      const title: TimelineGridItem = (() => {
-        if (segment.type === 'userGroup') {
-          return {
-            type: 'segmentTitle',
-            titleType: 'major',
-            top: nextSegmentTop,
-            height: headerHeight,
-            key: `group-${segment.data.id}`,
-            title: segment.data.name ?? 'Unnamed group',
-          };
-        }
-        if (segment.type === 'dateRange') {
-          const start = dayjs(segment.data.start);
-          const end = dayjs(segment.data.end);
-          let title = '';
-          dayjs.extend(localizedFormat);
-          if (start.isSame(end, 'day')) {
-            title = start.format('MMMM D');
-          } else if (start.isSame(end, 'month')) {
-            title = start.format('MMMM D') + ' - ' + end.format('D');
-          } else {
-            title = start.format('MMMM D') + ' - ' + end.format('MMMM D');
+      sections[sectionIndex].height += heightDelta;
+      items[itemIndex].height += heightDelta;
+      // items[i].top <= items[i+1].top, so shift starting from itemIndex onwards
+      for (let i = itemIndex + 1; i < sections[sectionIndex].items.endIdx; i += 1) {
+        items[i].top += heightDelta;
+      }
+      adjustScrollTop({
+        what: 'scrollBy',
+        scroll: heightDelta,
+        ifScrollTopGt: item.top,
+        behavior: 'instant',
+      });
+      for (let i = sectionIndex + 1; i < sections.length; i += 1) {
+        const s = sections[i];
+        s.top += heightDelta;
+        if (s.items) {
+          for (let j = s.items.startIdx; j < s.items.endIdx; j += 1) {
+            items[j].top += heightDelta;
           }
-          return {
-            type: 'segmentTitle',
-            titleType: 'major',
-            top: nextSegmentTop,
-            height: headerHeight,
-            key: `${segment.data.start}-${segment.data.end}`,
-            title,
-          };
         }
-        return {
-          type: 'createGroupTitleInput',
-          top: nextSegmentTop,
-          height: headerHeight,
-          key: `createGroupTitle${groupNumber}`,
-        };
-      })();
-      items.push(title);
-      const assetSizes = segment.assets.map((asset) => {
-        if (asset.rotationCorrection && asset.rotationCorrection % 180 != 0) {
-          return {
-            width: asset.height,
-            height: asset.width,
-          };
-        } else {
-          return {
-            width: asset.width,
-            height: asset.height,
-          };
-        }
-      });
-      const geometry = createJustifiedLayout(assetSizes, {
-        targetRowHeight,
-        containerWidth,
-        containerPadding: 0,
-        boxSpacing: opts.boxSpacing,
-      });
-      const assetsYMin = nextSegmentTop + title.height + segmentMargin;
-      for (let i = 0; i < geometry.boxes.length; i += 1) {
-        const box = geometry.boxes[i];
-        items.push({
-          type: 'asset',
-          left: box.left,
-          width: box.width,
-          top: assetsYMin + box.top,
-          height: box.height,
-          assetIndex,
-          asset: segment.assets[i],
-          key: segment.assets[i].id,
-        });
-        assetIndex += 1;
       }
-      nextSegmentTop += geometry.containerHeight + title.height + segmentMargin;
-      segmentItemRanges.push({ startIdx: itemStartIdx, endIdx: items.length });
+    } else if (item.type === 'segmentTitle' && item.titleType === 'day') {
+      const heightDelta = newHeight - item.height;
+      // console.log(
+      //   'title',
+      //   itemIndex,
+      //   'height',
+      //   newHeight,
+      //   'delta',
+      //   heightDelta,
+      //   'row',
+      //   item.titleRowIndex,
+      // );
+      if (heightDelta === 0) {
+        return;
+      }
+      sections[sectionIndex].height += heightDelta;
+      let firstTitleInRow: number = -1;
+      for (let i = itemIndex; i >= 0; i -= 1) {
+        const it = items[i];
+        if (
+          it.type === 'segmentTitle' &&
+          (it.titleType === 'major' ||
+            (it.titleType === 'day' && it.titleRowIndex !== item.titleRowIndex))
+        ) {
+          break;
+        } else if (it.type === 'segmentTitle' && it.titleType === 'day') {
+          firstTitleInRow = i;
+        }
+      }
+      items[firstTitleInRow].height += heightDelta;
+      // items[i].top <= items[i+1].top, so shift starting from itemIndex onwards
+      for (let i = firstTitleInRow + 1; i < sections[sectionIndex].items.endIdx; i += 1) {
+        const it = items[i];
+        if (
+          it.type === 'segmentTitle' &&
+          it.titleType === 'day' &&
+          it.titleRowIndex === item.titleRowIndex
+        ) {
+          // title in same row, adjust height
+          it.height += heightDelta;
+        } else {
+          // other type of item, shift down
+          items[i].top += heightDelta;
+        }
+      }
+      adjustScrollTop({
+        what: 'scrollBy',
+        scroll: heightDelta,
+        ifScrollTopGt: item.top,
+        behavior: 'instant',
+      });
+      for (let i = sectionIndex + 1; i < sections.length; i += 1) {
+        const s = sections[i];
+        s.top += heightDelta;
+        if (s.items) {
+          for (let j = s.items.startIdx; j < s.items.endIdx; j += 1) {
+            items[j].top += heightDelta;
+          }
+        }
+      }
     }
-
-    console.assert(segmentItemRanges.length === segments.length);
-    return { items, sectionHeight: nextSegmentTop - baseTop, segmentItemRanges };
   }
 
   async function moveViewToAsset(assetIndex: number): Promise<TimelineGridItem | null> {
@@ -758,10 +736,11 @@ export function createTimeline(
     return items[itemIndex];
   }
 
-  let groupNumber = 0;
   async function createGroupClicked() {
     const previousSections = klona(sections);
     const previousItems = klona(items);
+    // const previousSections = [];
+    // const previousItems = [];
     const selected = new Set(selectedAssets.keys());
     if (selected.size === 0) {
       return;
@@ -774,7 +753,7 @@ export function createTimeline(
         continue;
       }
       let thisSectionAffected = false;
-      const newSegments: TimelineSegment[] = [];
+      const newSegments: Segment[] = [];
       for (const segment of section.segments) {
         if (segment.type !== 'dateRange') {
           // TODO: add assets/move assets that are alread in group to other group
@@ -799,37 +778,25 @@ export function createTimeline(
           }
         }
         if (remainingAssets.length === 1 && remainingAssets[0].length > 0) {
-          const newSegment: TimelineSegment = {
+          const newSegment: Segment = {
             type: 'dateRange',
             assets: remainingAssets[0],
             sortDate: remainingAssets[0][0].takenDate,
             itemRange: null,
-            data: {
-              type: 'dateRange',
-              id: segment.data.id,
-              assets: remainingAssets[0],
-              sortDate: remainingAssets[0][0].takenDate,
-              end: remainingAssets[0][0].takenDate,
-              start: remainingAssets[0].at(-1)!.takenDate,
-            },
+            start: dayjs.utc(remainingAssets[0][0].takenDate),
+            end: dayjs.utc(remainingAssets[0].at(-1)!.takenDate),
           };
           newSegments.push(newSegment);
         } else {
-          for (const [i, assets] of remainingAssets.entries()) {
+          for (const assets of remainingAssets) {
             console.assert(assets.length > 0);
-            const newSegment: TimelineSegment = {
+            const newSegment: Segment = {
               type: 'dateRange',
               assets,
               sortDate: assets[0].takenDate,
               itemRange: null,
-              data: {
-                type: 'dateRange',
-                id: segment.data.id + '_' + i,
-                assets: assets,
-                sortDate: assets[0].takenDate,
-                start: assets.at(-1)!.takenDate,
-                end: assets[0].takenDate,
-              },
+              start: dayjs.utc(assets[0].takenDate),
+              end: dayjs.utc(assets.at(-1)!.takenDate),
             };
             newSegments.push(newSegment);
           }
@@ -859,13 +826,14 @@ export function createTimeline(
     const insertBeforeSegmentIndex = section.segments!.findIndex(
       (s) => s.assets.at(0)!.takenDate < groupSortDate,
     );
-    const newSegment: TimelineSegment & { type: 'creatingGroup' } = $state({
+    const newSegment: Segment & { type: 'creatingGroup' } = $state({
       type: 'creatingGroup',
       assets: assetsInGroup,
       sortDate: groupSortDate,
       itemRange: null,
+      start: dayjs.utc(assetsInGroup[0].takenDate),
+      end: dayjs.utc(assetsInGroup.at(-1).takenDate),
     });
-    groupNumber += 1;
     section.segments!.splice(insertBeforeSegmentIndex, 0, newSegment);
     if (setAnimationsEnabled) {
       await setAnimationsEnabled(true);
@@ -936,18 +904,15 @@ export function createTimeline(
     }
     const oldSegment = sections[sectionIndex].segments![segmentIndex];
     sections[sectionIndex].segments![segmentIndex] = {
-      type: 'userGroup',
+      type: 'group' as const,
       assets: oldSegment.assets,
       sortDate: response.displayDate,
       itemRange: null,
       clickArea: null,
-      data: {
-        id: response.timelineGroupId,
-        sortDate: response.displayDate,
-        assets: oldSegment.assets,
-        type: 'userGroup',
-        name: title,
-      },
+      groupId: response.timelineGroupId,
+      title,
+      start: oldSegment.start,
+      end: oldSegment.end,
     };
     layoutSection(sectionIndex, 'adjustScroll');
     state = { state: 'justLooking' };
@@ -961,13 +926,13 @@ export function createTimeline(
       await setAnimationsEnabled(true);
     }
     const affectedSections: number[] = [];
-    let groupToAbsorb: (TimelineSegment & { type: 'creatingGroup' }) | null = null;
+    let groupToAbsorb: (Segment & { type: 'creatingGroup' }) | null = null;
     const newSections = klona(sections);
     for (const [sectionIdx, section] of newSections.entries()) {
       if (section.segments === null) {
         continue;
       }
-      const remainingSegments: TimelineSegment[] = [];
+      const remainingSegments: Segment[] = [];
       for (const segment of section.segments) {
         if (segment.type === 'creatingGroup') {
           groupToAbsorb = segment;
@@ -991,13 +956,13 @@ export function createTimeline(
     const assetIds = groupToAbsorb!.assets.map((asset) => asset.id);
     await api.addToTimelineGroup({ assets: assetIds, groupId });
 
-    let mergeInto: (TimelineSegment & { type: 'userGroup' }) | null = null;
+    let mergeInto: (Segment & { type: 'group' }) | null = null;
     outer: for (const [sectionIdx, section] of newSections.entries()) {
       if (section.segments === null) {
         continue;
       }
       for (const segment of section.segments) {
-        if (segment.type === 'userGroup' && segment.data.id === groupId) {
+        if (segment.type === 'group' && segment.groupId === groupId) {
           affectedSections.push(sectionIdx);
           section.data.numAssets += groupToAbsorb!.assets.length;
           mergeInto = segment;

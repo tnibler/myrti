@@ -19,6 +19,9 @@
   bind:clientHeight={height}
   class="absolute text-2xl {className}"
   style:top={timelineItem.top + 'px'}
+  style:height={timelineItem.height + 'px'}
+  style:left={timelineItem.titleType === 'day' ? timelineItem.left + 'px' : undefined}
+  style:width={timelineItem.titleType === 'day' ? timelineItem.width + 'px' : undefined}
 >
   <!-- style:height={timelineItem.height + 'px'} -->
   {timelineItem.title}

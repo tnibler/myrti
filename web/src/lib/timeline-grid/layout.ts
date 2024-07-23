@@ -1,25 +1,24 @@
 import type { AssetWithSpe } from '@lib/apitypes';
 import type { Dayjs } from 'dayjs';
 import type { ItemRange, TimelineGridItem, TimelineOptions } from './timeline.svelte';
-import { headerPlugin } from '@zodios/core';
 import createJustifiedLayout from 'justified-layout';
 
-type Segment = {
+export type Segment = {
   type: string;
   assets: AssetWithSpe[];
   sortDate: string;
+  start: Dayjs;
+  end: Dayjs;
 } & (
   | {
       type: 'dateRange';
-      start: Dayjs;
-      end: Dayjs;
     }
   | { type: 'group'; title: string; groupId: string }
 );
 
 type Box = { top: number; left: number; width: number; height: number };
 
-function layoutSegments(
+export function layoutSegments(
   segments: Segment[],
   baseTop: number,
   baseAssetIndex: number,
@@ -47,10 +46,42 @@ function layoutSegments(
     height: number;
   }[] = [];
   let candidateToMergeWith: {
-    segments: (Segment & { type: 'dateRange' })[];
+    segments: Segment[];
     width: number;
   } | null = null;
   const interMergedSegmentMargin = 20;
+
+  const layoutAndPushMergeCandidate = () => {
+    const mergedRow = [];
+    let startLeft = 0;
+    for (const segment of candidateToMergeWith.segments) {
+      const boxes: Box[] = [];
+      for (const asset of segment.assets) {
+        const assetSize =
+          (asset.rotationCorrection ?? 0) % 180 === 0
+            ? { width: asset.width, height: asset.height }
+            : { width: asset.height, height: asset.width };
+        const boxWidth = assetSize.width * (opts.targetRowHeight / assetSize.height);
+        boxes.push({
+          top: 0,
+          left: startLeft,
+          width: boxWidth,
+          height: opts.targetRowHeight,
+        });
+        startLeft += opts.boxSpacing + boxWidth;
+      }
+      startLeft -= opts.boxSpacing; // n boxes, n-1 gaps
+      mergedRow.push({ segment, boxes });
+      startLeft += interMergedSegmentMargin;
+    }
+    startLeft -= interMergedSegmentMargin; // n boxes, n-1 gaps
+    console.assert(
+      startLeft <= containerWidth,
+      `after laying out row, startLeft should be <= ${containerWidth} but is ${startLeft}`,
+    );
+    mergedSegments.push({ segments: mergedRow, height: opts.targetRowHeight });
+  };
+
   for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
     const segment = segments[segmentIndex];
     const assetSizes = segment.assets.map((asset) => {
@@ -76,7 +107,13 @@ function layoutSegments(
         .reduce((acc, n) => acc + n, 0) +
       (assetSizes.length - 1) * opts.boxSpacing;
     const canMergeWithPrevious: boolean = (() => {
-      if (segmentIndex === 0 || candidateToMergeWith === null || segment.type !== 'dateRange') {
+      if (segmentIndex === 0 || candidateToMergeWith === null) {
+        return false;
+      }
+      if (
+        segment.type === 'group' &&
+        segment.start.startOf('month') !== segment.end.startOf('month')
+      ) {
         return false;
       }
       console.assert(candidateToMergeWith.segments.length > 0);
@@ -91,38 +128,14 @@ function layoutSegments(
     if (canMergeWithPrevious) {
       console.assert(candidateToMergeWith !== null && candidateToMergeWith.segments.length > 0);
       console.assert(segment.type === 'dateRange');
-      candidateToMergeWith!.segments.push(segment as Segment & { type: 'daterange' });
+      candidateToMergeWith!.segments.push(segment);
       candidateToMergeWith!.width += segmentWidth + interMergedSegmentMargin;
     } else {
       // can not merge with previous segments
       if (candidateToMergeWith !== null) {
         // push candidateToMergeWith items
         console.assert(candidateToMergeWith.width <= containerWidth);
-        const mergedRow = [];
-        let startLeft = 0;
-        for (const segment of candidateToMergeWith.segments) {
-          const boxes: Box[] = [];
-          for (const asset of segment.assets) {
-            const assetSize =
-              (asset.rotationCorrection ?? 0) % 180 === 0
-                ? { width: asset.width, height: asset.height }
-                : { width: asset.height, height: asset.width };
-            const boxWidth = assetSize.width * (assetSize.height / opts.targetRowHeight);
-            boxes.push({
-              top: 0,
-              left: startLeft,
-              width: boxWidth,
-              height: opts.targetRowHeight,
-            });
-            startLeft += opts.boxSpacing + assetSize.width;
-          }
-          startLeft -= opts.boxSpacing; // n boxes, n-1 gaps
-          mergedRow.push({ segment, boxes });
-          startLeft += interMergedSegmentMargin;
-        }
-        startLeft -= interMergedSegmentMargin; // n boxes, n-1 gaps
-        console.assert(startLeft <= containerWidth);
-        mergedSegments.push({ segments: mergedRow, height: opts.targetRowHeight });
+        layoutAndPushMergeCandidate();
         candidateToMergeWith = null;
       }
       const isMultiline = segmentWidth > containerWidth;
@@ -138,142 +151,76 @@ function layoutSegments(
           segments: [{ segment, boxes: geometry.boxes }],
           height: geometry.containerHeight,
         });
-      } else if (segment.type === 'dateRange') {
+      } else {
         // not multiline, might be able to merge with next segment
         candidateToMergeWith = { segments: [segment], width: segmentWidth };
-      } else {
-        const boxes: Box[] = [];
-        let startLeft = 0;
-        for (const asset of segment.assets) {
-          const assetSize =
-            (asset.rotationCorrection ?? 0) % 180 === 0
-              ? { width: asset.width, height: asset.height }
-              : { width: asset.height, height: asset.width };
-          const boxWidth = assetSize.width * (assetSize.height / opts.targetRowHeight);
-          boxes.push({
-            top: 0,
-            left: startLeft,
-            width: boxWidth,
-            height: opts.targetRowHeight,
-          });
-          startLeft += opts.boxSpacing + assetSize.width;
-        }
-        startLeft -= opts.boxSpacing; // n boxes, n-1 gaps
-        mergedSegments.push({ segments: [{ segment, boxes }], height: opts.targetRowHeight });
       }
     }
   }
+  if (candidateToMergeWith !== null) {
+    layoutAndPushMergeCandidate();
+    candidateToMergeWith = null;
+  }
+  console.assert(
+    segments.length === mergedSegments.reduce((acc, s) => (acc += s.segments.length), 0),
+  );
   const items: TimelineGridItem[] = [];
   const segmentItemRanges: ItemRange[] = [];
+  let startTop = baseTop;
+  const minorTitleHeight = 50;
+  for (const { segments, height } of mergedSegments) {
+    const majorTitle: TimelineGridItem = {
+      type: 'segmentTitle',
+      titleType: 'major',
+      top: startTop,
+      height: minorTitleHeight,
+      title: segments[0].segment.start.format('MMMM YYYY'),
+      key: 'titleMajor' + segments[0].segment.start.toDate().toString(),
+    };
+    items.push(majorTitle);
+    startTop += majorTitle.height;
+    let startAssetIndex = baseAssetIndex;
+    for (const { segment, boxes } of segments) {
+      const startItemIndex = items.length;
+      const minorTitle: TimelineGridItem = {
+        type: 'segmentTitle',
+        titleType: 'day',
+        title: segment.start.format('DD MMMM'),
+        top: startTop,
+        height: minorTitleHeight,
+        left: boxes[0].left,
+        width: 100, // TODO: set width/maxWidth
+        key: 'titleMinor' + segment.start.toDate().toString(),
+      };
+      items.push(minorTitle);
+      items.push(
+        ...boxes.map((box, idxInSegment) => {
+          const asset = segment.assets[idxInSegment];
+          const item: TimelineGridItem & { type: 'asset' } = {
+            type: 'asset',
+            top: box.top + startTop + minorTitleHeight,
+            left: box.left,
+            width: box.width,
+            height: box.height,
+            key: 'asset' + asset.id,
+            asset,
+            assetIndex: startAssetIndex + idxInSegment,
+          };
+          return item;
+        }),
+      );
+      startAssetIndex += segment.assets.length;
+      const endItemIndex = items.length;
+      segmentItemRanges.push({ startIdx: startItemIndex, endIdx: endItemIndex });
+    }
+    startTop += minorTitleHeight + height;
+  }
+  console.log(new Set(items.map((i) => i.key)).size, items.length);
   console.assert(segmentItemRanges.length === segments.length);
   console.assert(segmentItemRanges.at(-1)!.endIdx === items.length);
   return {
-    items: [],
-    totalHeight: 0,
-    segmentItemRanges: [],
+    items,
+    segmentItemRanges,
+    totalHeight: startTop,
   };
-}
-
-/** Creates layout and items representing segments of a section.
- * return value segmentItemRanges contains index ranges into this section's items.
- * arguments are not mutated */
-function populateSection(
-  segments: TimelineSegment[],
-  baseTop: number,
-  baseAssetIndex: number,
-  containerWidth: number,
-): { items: TimelineGridItem[]; sectionHeight: number; segmentItemRanges: ItemRange[] } {
-  const targetRowHeight = opts.targetRowHeight;
-  const segmentMargin = opts.segmentMargin;
-  const items: TimelineGridItem[] = [];
-  let nextSegmentTop = baseTop;
-  let assetIndex = baseAssetIndex;
-  const segmentItemRanges: ItemRange[] = [];
-  for (const segment of segments) {
-    const itemStartIdx = items.length;
-    nextSegmentTop += segmentMargin;
-    const headerHeight =
-      initialHeightGuess.segmentTitle !== null
-        ? initialHeightGuess.segmentTitle
-        : opts.headerHeight;
-    const title: TimelineGridItem = (() => {
-      if (segment.type === 'userGroup') {
-        return {
-          type: 'segmentTitle',
-          titleType: 'major',
-          top: nextSegmentTop,
-          height: headerHeight,
-          key: `group-${segment.data.id}`,
-          title: segment.data.name ?? 'Unnamed group',
-        };
-      }
-      if (segment.type === 'dateRange') {
-        const start = dayjs(segment.data.start);
-        const end = dayjs(segment.data.end);
-        let title = '';
-        dayjs.extend(localizedFormat);
-        if (start.isSame(end, 'day')) {
-          title = start.format('MMMM D');
-        } else if (start.isSame(end, 'month')) {
-          title = start.format('MMMM D') + ' - ' + end.format('D');
-        } else {
-          title = start.format('MMMM D') + ' - ' + end.format('MMMM D');
-        }
-        return {
-          type: 'segmentTitle',
-          titleType: 'major',
-          top: nextSegmentTop,
-          height: headerHeight,
-          key: `${segment.data.start}-${segment.data.end}`,
-          title,
-        };
-      }
-      return {
-        type: 'createGroupTitleInput',
-        top: nextSegmentTop,
-        height: headerHeight,
-        key: `createGroupTitle${groupNumber}`,
-      };
-    })();
-    items.push(title);
-    const assetSizes = segment.assets.map((asset) => {
-      if (asset.rotationCorrection && asset.rotationCorrection % 180 != 0) {
-        return {
-          width: asset.height,
-          height: asset.width,
-        };
-      } else {
-        return {
-          width: asset.width,
-          height: asset.height,
-        };
-      }
-    });
-    const geometry = createJustifiedLayout(assetSizes, {
-      targetRowHeight,
-      containerWidth,
-      containerPadding: 0,
-      boxSpacing: opts.boxSpacing,
-    });
-    const assetsYMin = nextSegmentTop + title.height + segmentMargin;
-    for (let i = 0; i < geometry.boxes.length; i += 1) {
-      const box = geometry.boxes[i];
-      items.push({
-        type: 'asset',
-        left: box.left,
-        width: box.width,
-        top: assetsYMin + box.top,
-        height: box.height,
-        assetIndex,
-        asset: segment.assets[i],
-        key: segment.assets[i].id,
-      });
-      assetIndex += 1;
-    }
-    nextSegmentTop += geometry.containerHeight + title.height + segmentMargin;
-    segmentItemRanges.push({ startIdx: itemStartIdx, endIdx: items.length });
-  }
-
-  console.assert(segmentItemRanges.length === segments.length);
-  return { items, sectionHeight: nextSegmentTop - baseTop, segmentItemRanges };
 }

@@ -10,6 +10,7 @@ import localizedFormat from 'dayjs/plugin/localizedFormat';
 import createJustifiedLayout from 'justified-layout';
 import { klona } from 'klona';
 import { SvelteMap } from 'svelte/reactivity';
+import { layoutSegments, type Segment } from './layout';
 
 export type TimelineGridItem = { key: string; top: number; height: number } & (
   | {
@@ -27,8 +28,15 @@ export type TimelineGridItem = { key: string; top: number; height: number } & (
     }
   | {
       type: 'segmentTitle';
-      titleType: 'major' | 'day';
+      titleType: 'major';
       title: string;
+    }
+  | {
+      type: 'segmentTitle';
+      titleType: 'day';
+      title: string;
+      left: number;
+      width: number;
     }
   | {
       type: 'createGroupTitleInput';
@@ -48,6 +56,8 @@ type TimelineSegment = {
   sortDate: string;
   /** Item indices with TimelineSection.items.startIdx as base */
   itemRange: ItemRange | null;
+  start: string;
+  end: string;
 } & (
   | {
       type: 'dateRange';
@@ -323,11 +333,18 @@ export function createTimeline(
     for (let i = 0; i < sectionIndex; i += 1) {
       baseAssetIndex += sections[i].data.numAssets;
     }
+    const aSegments: Segment[] = segments.map((s) => {
+      return {
+        ...s,
+        start: s.type === 'dateRange' ? dayjs(s.start) : dayjs(s.assets.at(-1)!.takenDate),
+        end: s.type === 'dateRange' ? dayjs(s.end) : dayjs(s.assets.at(0)!.takenDate),
+      };
+    });
     const {
       items: sectionItems,
-      sectionHeight,
+      totalHeight: sectionHeight,
       segmentItemRanges,
-    } = populateSection(segments, section.top, baseAssetIndex, viewport.width);
+    } = layoutSegments(aSegments, section.top, baseAssetIndex, viewport.width, opts);
     const oldSectionHeight = sections[sectionIndex].height;
     section.height = sectionHeight;
     for (let i = 0; i < segments.length; i += 1) {
@@ -390,34 +407,8 @@ export function createTimeline(
     }
     const sectionId = section.data.id;
     const segments = await requestSegments(sectionId);
-    // crudely merge very short segments
-    // this should really be done server side and maybe not in a greedy fashion like this
-    const minSegmentLength = 4;
-    const mergedSegments: ApiTimelineSegment[] = [];
-    for (const segment of segments) {
-      if (mergedSegments.length === 0) {
-        mergedSegments.push(segment);
-        continue;
-      }
-      const prev = mergedSegments.at(-1)!;
-      const mergeable =
-        prev.assets.length < minSegmentLength && segment.assets.length < minSegmentLength;
-      if (mergeable && prev.type === 'dateRange' && segment.type === 'dateRange') {
-        mergedSegments.pop();
-        mergedSegments.push({
-          assets: prev.assets.concat(segment.assets),
-          type: 'dateRange',
-          start: segment.start,
-          end: prev.end,
-          id: `${prev.id},${segment.id}`,
-          sortDate: prev.sortDate,
-        });
-      } else {
-        mergedSegments.push(segment);
-      }
-    }
-    sections[sectionIndex].data.segments = mergedSegments;
-    sections[sectionIndex].segments = mergedSegments.map((segment) => {
+    sections[sectionIndex].data.segments = segments;
+    sections[sectionIndex].segments = segments.map((segment) => {
       if (segment.type === 'dateRange') {
         return {
           type: segment.type,
@@ -425,6 +416,8 @@ export function createTimeline(
           assets: segment.assets,
           sortDate: segment.sortDate,
           itemRange: null,
+          start: segment.start,
+          end: segment.end,
         };
       }
       return {
@@ -434,6 +427,9 @@ export function createTimeline(
         sortDate: segment.sortDate,
         itemRange: null,
         clickArea: null,
+        // TODO: clean up
+        start: segment.assets.at(-1)?.takenDate,
+        end: segment.assets.at(0)?.takenDate,
       };
     });
   }
@@ -612,110 +608,6 @@ export function createTimeline(
         }
       }
     }
-  }
-
-  /** Creates layout and items representing segments of a section.
-   * return value segmentItemRanges contains index ranges into this section's items.
-   * arguments are not mutated */
-  function populateSection(
-    segments: TimelineSegment[],
-    baseTop: number,
-    baseAssetIndex: number,
-    containerWidth: number,
-  ): { items: TimelineGridItem[]; sectionHeight: number; segmentItemRanges: ItemRange[] } {
-    const targetRowHeight = opts.targetRowHeight;
-    const segmentMargin = opts.segmentMargin;
-    const items: TimelineGridItem[] = [];
-    let nextSegmentTop = baseTop;
-    let assetIndex = baseAssetIndex;
-    const segmentItemRanges: ItemRange[] = [];
-    for (const segment of segments) {
-      const itemStartIdx = items.length;
-      nextSegmentTop += segmentMargin;
-      const headerHeight =
-        initialHeightGuess.segmentTitle !== null
-          ? initialHeightGuess.segmentTitle
-          : opts.headerHeight;
-      const title: TimelineGridItem = (() => {
-        if (segment.type === 'userGroup') {
-          return {
-            type: 'segmentTitle',
-            titleType: 'major',
-            top: nextSegmentTop,
-            height: headerHeight,
-            key: `group-${segment.data.id}`,
-            title: segment.data.name ?? 'Unnamed group',
-          };
-        }
-        if (segment.type === 'dateRange') {
-          const start = dayjs(segment.data.start);
-          const end = dayjs(segment.data.end);
-          let title = '';
-          dayjs.extend(localizedFormat);
-          if (start.isSame(end, 'day')) {
-            title = start.format('MMMM D');
-          } else if (start.isSame(end, 'month')) {
-            title = start.format('MMMM D') + ' - ' + end.format('D');
-          } else {
-            title = start.format('MMMM D') + ' - ' + end.format('MMMM D');
-          }
-          return {
-            type: 'segmentTitle',
-            titleType: 'major',
-            top: nextSegmentTop,
-            height: headerHeight,
-            key: `${segment.data.start}-${segment.data.end}`,
-            title,
-          };
-        }
-        return {
-          type: 'createGroupTitleInput',
-          top: nextSegmentTop,
-          height: headerHeight,
-          key: `createGroupTitle${groupNumber}`,
-        };
-      })();
-      items.push(title);
-      const assetSizes = segment.assets.map((asset) => {
-        if (asset.rotationCorrection && asset.rotationCorrection % 180 != 0) {
-          return {
-            width: asset.height,
-            height: asset.width,
-          };
-        } else {
-          return {
-            width: asset.width,
-            height: asset.height,
-          };
-        }
-      });
-      const geometry = createJustifiedLayout(assetSizes, {
-        targetRowHeight,
-        containerWidth,
-        containerPadding: 0,
-        boxSpacing: opts.boxSpacing,
-      });
-      const assetsYMin = nextSegmentTop + title.height + segmentMargin;
-      for (let i = 0; i < geometry.boxes.length; i += 1) {
-        const box = geometry.boxes[i];
-        items.push({
-          type: 'asset',
-          left: box.left,
-          width: box.width,
-          top: assetsYMin + box.top,
-          height: box.height,
-          assetIndex,
-          asset: segment.assets[i],
-          key: segment.assets[i].id,
-        });
-        assetIndex += 1;
-      }
-      nextSegmentTop += geometry.containerHeight + title.height + segmentMargin;
-      segmentItemRanges.push({ startIdx: itemStartIdx, endIdx: items.length });
-    }
-
-    console.assert(segmentItemRanges.length === segments.length);
-    return { items, sectionHeight: nextSegmentTop - baseTop, segmentItemRanges };
   }
 
   async function moveViewToAsset(assetIndex: number): Promise<TimelineGridItem | null> {

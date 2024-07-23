@@ -7,6 +7,7 @@ import type {
 } from '@lib/apitypes';
 import dayjs from 'dayjs';
 import localizedFormat from 'dayjs/plugin/localizedFormat';
+import advancedFormat from 'dayjs/plugin/advancedFormat';
 import createJustifiedLayout from 'justified-layout';
 import { klona } from 'klona';
 import { SvelteMap } from 'svelte/reactivity';
@@ -153,6 +154,8 @@ export function createTimeline(
   }) => void,
   api: Api,
 ): ITimelineGrid {
+  dayjs.extend(localizedFormat);
+  dayjs.extend(advancedFormat);
   let isInitialized = false;
   let viewport: Viewport = { width: 0, height: 0 };
   let state: TimelineState = $state({ state: 'justLooking' });
@@ -334,10 +337,23 @@ export function createTimeline(
       baseAssetIndex += sections[i].data.numAssets;
     }
     const aSegments: Segment[] = segments.map((s) => {
+      if (s.type === 'userGroup') {
+        return {
+          type: 'group',
+          title: s.data.name!,
+          start: dayjs(s.assets.at(-1)!.takenDate),
+          end: dayjs(s.assets.at(0)!.takenDate),
+          assets: s.assets,
+          sortDate: s.sortDate,
+          groupId: s.data.id,
+        };
+      }
       return {
-        ...s,
-        start: s.type === 'dateRange' ? dayjs(s.start) : dayjs(s.assets.at(-1)!.takenDate),
-        end: s.type === 'dateRange' ? dayjs(s.end) : dayjs(s.assets.at(0)!.takenDate),
+        type: s.type,
+        start: dayjs(s.start),
+        end: dayjs(s.end),
+        assets: s.assets,
+        sortDate: s.sortDate,
       };
     });
     const {

@@ -17,12 +17,15 @@
 
 <div
   bind:clientHeight={height}
-  class="absolute text-2xl {className}"
+  class={'absolute {className} ' + (timelineItem.titleType === 'major' ? 'text-2xl' : 'text-lg')}
+  style:white-space="nowrap"
+  style:overflow="hidden"
+  style:text-overflow="ellipsis"
   style:top={timelineItem.top + 'px'}
   style:height={timelineItem.height + 'px'}
   style:left={timelineItem.titleType === 'day' ? timelineItem.left + 'px' : undefined}
   style:width={timelineItem.titleType === 'day' ? timelineItem.width + 'px' : undefined}
 >
-  <!-- style:height={timelineItem.height + 'px'} -->
+  <!-- TODO:  fix the stuff above -->
   {timelineItem.title}
 </div>

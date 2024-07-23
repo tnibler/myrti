@@ -110,12 +110,12 @@ export function layoutSegments(
       if (segmentIndex === 0 || candidateToMergeWith === null) {
         return false;
       }
-      if (
-        segment.type === 'group' &&
-        segment.start.startOf('month') !== segment.end.startOf('month')
-      ) {
-        return false;
-      }
+      // if (
+      //   segment.type === 'group' &&
+      //   segment.start.startOf('month') !== segment.end.startOf('month')
+      // ) {
+      //   return false;
+      // }
       console.assert(candidateToMergeWith.segments.length > 0);
       const prevSegment = candidateToMergeWith.segments.at(-1)!;
       const sameMonthAndYear =
@@ -127,7 +127,6 @@ export function layoutSegments(
     })();
     if (canMergeWithPrevious) {
       console.assert(candidateToMergeWith !== null && candidateToMergeWith.segments.length > 0);
-      console.assert(segment.type === 'dateRange');
       candidateToMergeWith!.segments.push(segment);
       candidateToMergeWith!.width += segmentWidth + interMergedSegmentMargin;
     } else {
@@ -168,29 +167,37 @@ export function layoutSegments(
   const segmentItemRanges: ItemRange[] = [];
   let startTop = baseTop;
   const minorTitleHeight = 50;
+  let lastMajorTitleDate: Dayjs | null = null;
   for (const { segments, height } of mergedSegments) {
-    const majorTitle: TimelineGridItem = {
-      type: 'segmentTitle',
-      titleType: 'major',
-      top: startTop,
-      height: minorTitleHeight,
-      title: segments[0].segment.start.format('MMMM YYYY'),
-      key: 'titleMajor' + segments[0].segment.start.toDate().toString(),
-    };
-    items.push(majorTitle);
-    startTop += majorTitle.height;
+    const firstSegment = segments[0].segment;
+    const firstSegmentMonth = firstSegment.start.startOf('month');
+    if (lastMajorTitleDate === null || !lastMajorTitleDate.isSame(firstSegmentMonth)) {
+      lastMajorTitleDate = firstSegmentMonth;
+      const majorTitle: TimelineGridItem = {
+        type: 'segmentTitle',
+        titleType: 'major',
+        top: startTop,
+        height: minorTitleHeight,
+        title: segments[0].segment.start.format('MMMM YYYY'),
+        key: 'titleMajor' + firstSegmentMonth.format('YYYY-MM'),
+      };
+      items.push(majorTitle);
+      startTop += majorTitle.height;
+    }
     let startAssetIndex = baseAssetIndex;
     for (const { segment, boxes } of segments) {
       const startItemIndex = items.length;
       const minorTitle: TimelineGridItem = {
         type: 'segmentTitle',
         titleType: 'day',
-        title: segment.start.format('DD MMMM'),
+        title: segment.type === 'group' ? segment.title : segment.start.format('MMMM Do'),
         top: startTop,
         height: minorTitleHeight,
         left: boxes[0].left,
-        width: 100, // TODO: set width/maxWidth
-        key: 'titleMinor' + segment.start.toDate().toString(),
+        width: boxes.at(-1)!.left + boxes.at(-1)!.width - boxes[0].left,
+        key:
+          'titleMinor' +
+          (segment.type === 'group' ? 'group' + segment.groupId : segment.start.format()),
       };
       items.push(minorTitle);
       items.push(
@@ -215,7 +222,6 @@ export function layoutSegments(
     }
     startTop += minorTitleHeight + height;
   }
-  console.log(new Set(items.map((i) => i.key)).size, items.length);
   console.assert(segmentItemRanges.length === segments.length);
   console.assert(segmentItemRanges.at(-1)!.endIdx === items.length);
   return {

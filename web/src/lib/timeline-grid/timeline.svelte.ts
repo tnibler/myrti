@@ -8,7 +8,6 @@ import type {
 import dayjs from 'dayjs';
 import localizedFormat from 'dayjs/plugin/localizedFormat';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
-import createJustifiedLayout from 'justified-layout';
 import { klona } from 'klona';
 import { SvelteMap } from 'svelte/reactivity';
 import { layoutSegments, type Segment } from './layout';
@@ -38,6 +37,7 @@ export type TimelineGridItem = { key: string; top: number; height: number } & (
       title: string;
       left: number;
       width: number;
+      titleRowIndex: number;
     }
   | {
       type: 'createGroupTitleInput';
@@ -602,25 +602,95 @@ export function createTimeline(
       console.error('setActualItemHeight: sections[sectionIndex].items === null');
       return;
     }
-    const heightDelta = newHeight - item.height;
-    sections[sectionIndex].height += heightDelta;
-    items[itemIndex].height += heightDelta;
-    // items[i].top <= items[i+1].top, so shift starting from itemIndex onwards
-    for (let i = itemIndex + 1; i < sections[sectionIndex].items.endIdx; i += 1) {
-      items[i].top += heightDelta;
-    }
-    adjustScrollTop({
-      what: 'scrollBy',
-      scroll: heightDelta,
-      ifScrollTopGt: item.top,
-      behavior: 'instant',
-    });
-    for (let i = sectionIndex + 1; i < sections.length; i += 1) {
-      const s = sections[i];
-      s.top += heightDelta;
-      if (s.items) {
-        for (let j = s.items.startIdx; j < s.items.endIdx; j += 1) {
-          items[j].top += heightDelta;
+    if (
+      (item.type === 'segmentTitle' && item.titleType === 'major') ||
+      item.type === 'createGroupTitleInput'
+    ) {
+      // find all minor titles with same row index, and set their height to this new height, shifting all items below
+      const heightDelta = newHeight - item.height;
+      if (heightDelta === 0) {
+        return;
+      }
+      sections[sectionIndex].height += heightDelta;
+      items[itemIndex].height += heightDelta;
+      // items[i].top <= items[i+1].top, so shift starting from itemIndex onwards
+      for (let i = itemIndex + 1; i < sections[sectionIndex].items.endIdx; i += 1) {
+        items[i].top += heightDelta;
+      }
+      adjustScrollTop({
+        what: 'scrollBy',
+        scroll: heightDelta,
+        ifScrollTopGt: item.top,
+        behavior: 'instant',
+      });
+      for (let i = sectionIndex + 1; i < sections.length; i += 1) {
+        const s = sections[i];
+        s.top += heightDelta;
+        if (s.items) {
+          for (let j = s.items.startIdx; j < s.items.endIdx; j += 1) {
+            items[j].top += heightDelta;
+          }
+        }
+      }
+    } else if (item.type === 'segmentTitle' && item.titleType === 'day') {
+      // FIXME: scrolling down breaks, each reconciliation error
+      const heightDelta = newHeight - item.height;
+      console.log(
+        'title',
+        itemIndex,
+        'height',
+        newHeight,
+        'delta',
+        heightDelta,
+        'row',
+        item.titleRowIndex,
+      );
+      if (heightDelta === 0) {
+        return;
+      }
+      sections[sectionIndex].height += heightDelta;
+      let firstTitleInRow: number = -1;
+      for (let i = itemIndex; i >= 0; i -= 1) {
+        const it = items[i];
+        if (
+          it.type === 'segmentTitle' &&
+          (it.titleType === 'major' ||
+            (it.titleType === 'day' && it.titleRowIndex !== item.titleRowIndex))
+        ) {
+          break;
+        } else if (it.type === 'segmentTitle' && it.titleType === 'day') {
+          firstTitleInRow = i;
+        }
+      }
+      items[firstTitleInRow].height += heightDelta;
+      // items[i].top <= items[i+1].top, so shift starting from itemIndex onwards
+      for (let i = firstTitleInRow + 1; i < sections[sectionIndex].items.endIdx; i += 1) {
+        const it = items[i];
+        if (
+          it.type === 'segmentTitle' &&
+          it.titleType === 'day' &&
+          it.titleRowIndex === item.titleRowIndex
+        ) {
+          // title in same row, adjust height
+          it.height += heightDelta;
+        } else {
+          // other type of item, shift down
+          items[i].top += heightDelta;
+        }
+      }
+      adjustScrollTop({
+        what: 'scrollBy',
+        scroll: heightDelta,
+        ifScrollTopGt: item.top,
+        behavior: 'instant',
+      });
+      for (let i = sectionIndex + 1; i < sections.length; i += 1) {
+        const s = sections[i];
+        s.top += heightDelta;
+        if (s.items) {
+          for (let j = s.items.startIdx; j < s.items.endIdx; j += 1) {
+            items[j].top += heightDelta;
+          }
         }
       }
     }

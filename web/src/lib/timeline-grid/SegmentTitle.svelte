@@ -4,25 +4,26 @@
   type Props = {
     className: string | undefined;
     timelineItem: TimelineGridItem & { type: 'segmentTitle' };
-    setActualHeight: (height: number) => void;
+    onHeightTooSmall: (height: number) => void;
   };
-  const { className, timelineItem, setActualHeight }: Props = $props();
-  let height = $state(timelineItem.height);
+  const { className, timelineItem, onHeightTooSmall }: Props = $props();
+  let wantMinHeight = $derived(timelineItem.height);
+  let actualHeight = $state(0);
   $effect(() => {
-    if (height != timelineItem.height) {
-      setActualHeight(height);
+    if (actualHeight >= wantMinHeight) {
+      onHeightTooSmall(actualHeight);
     }
   });
 </script>
 
 <div
-  bind:clientHeight={height}
-  class={'absolute {className} ' + (timelineItem.titleType === 'major' ? 'text-2xl' : 'text-lg')}
-  style:white-space="nowrap"
-  style:overflow="hidden"
-  style:text-overflow="ellipsis"
+  bind:clientHeight={actualHeight}
+  class={'absolute overflow-hidden whitespace-nowrap overflow-ellipsis' +
+    ' ' +
+    className +
+    ' ' +
+    (timelineItem.titleType === 'major' ? 'text-2xl' : 'text-lg')}
   style:top={timelineItem.top + 'px'}
-  style:height={timelineItem.height + 'px'}
   style:left={timelineItem.titleType === 'day' ? timelineItem.left + 'px' : undefined}
   style:width={timelineItem.titleType === 'day' ? timelineItem.width + 'px' : undefined}
 >

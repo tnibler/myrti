@@ -212,13 +212,8 @@
         <SegmentTitle
           className={gridItemTransitionClass}
           timelineItem={item}
-          setActualHeight={(height) => {
-            setGridItemAnimationEnabled(false).then(() => {
-              setTimeout(() => {
-                timeline.setActualItemHeight(itemIndex, height);
-                setGridItemAnimationEnabled(true);
-              }, 0);
-            });
+          onHeightTooSmall={(height) => {
+            timeline.setActualItemHeight(itemIndex, height);
           }}
         />
       {:else if item.type === 'createGroupTitleInput'}

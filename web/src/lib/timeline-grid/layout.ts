@@ -166,8 +166,9 @@ export function layoutSegments(
   const items: TimelineGridItem[] = [];
   const segmentItemRanges: ItemRange[] = [];
   let startTop = baseTop;
-  const minorTitleHeight = 50;
+  const minorTitleHeight = 10;
   let lastMajorTitleDate: Dayjs | null = null;
+  let minorTitleRowIdx = 0;
   for (const { segments, height } of mergedSegments) {
     const firstSegment = segments[0].segment;
     const firstSegmentMonth = firstSegment.start.startOf('month');
@@ -177,7 +178,7 @@ export function layoutSegments(
         type: 'segmentTitle',
         titleType: 'major',
         top: startTop,
-        height: minorTitleHeight,
+        height: opts.headerHeight,
         title: segments[0].segment.start.format('MMMM YYYY'),
         key: 'titleMajor' + firstSegmentMonth.format('YYYY-MM'),
       };
@@ -195,6 +196,7 @@ export function layoutSegments(
         height: minorTitleHeight,
         left: boxes[0].left,
         width: boxes.at(-1)!.left + boxes.at(-1)!.width - boxes[0].left,
+        titleRowIndex: minorTitleRowIdx,
         key:
           'titleMinor' +
           (segment.type === 'group' ? 'group' + segment.groupId : segment.start.format()),
@@ -205,7 +207,7 @@ export function layoutSegments(
           const asset = segment.assets[idxInSegment];
           const item: TimelineGridItem & { type: 'asset' } = {
             type: 'asset',
-            top: box.top + startTop + minorTitleHeight,
+            top: box.top + startTop + minorTitle.height,
             left: box.left,
             width: box.width,
             height: box.height,
@@ -220,8 +222,14 @@ export function layoutSegments(
       const endItemIndex = items.length;
       segmentItemRanges.push({ startIdx: startItemIndex, endIdx: endItemIndex });
     }
+    minorTitleRowIdx += 1;
     startTop += minorTitleHeight + height;
   }
+  const uniqueKeys = new Set(items.map((i) => i.key)).size;
+  console.assert(
+    uniqueKeys === items.length,
+    `Non-unique item keys: ${items.length} but ${uniqueKeys} keys`,
+  );
   console.assert(segmentItemRanges.length === segments.length);
   console.assert(segmentItemRanges.at(-1)!.endIdx === items.length);
   return {

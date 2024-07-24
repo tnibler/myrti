@@ -305,6 +305,7 @@ export function createTimeline(
   }
 
   function layoutSection(sectionIndex: number, adjustScroll: 'adjustScroll' | 'noAdjustScroll') {
+    console.log('layoutSection', sectionIndex);
     const section = sections[sectionIndex];
     const segments = section.segments;
     if (segments === null) {
@@ -444,8 +445,8 @@ export function createTimeline(
         itemRange: null,
         clickArea: null,
         // TODO: clean up
-        start: segment.assets.at(-1)?.takenDate,
-        end: segment.assets.at(0)?.takenDate,
+        start: segment.assets.at(-1)!.takenDate,
+        end: segment.assets.at(0)!.takenDate,
       };
     });
   }
@@ -633,18 +634,17 @@ export function createTimeline(
         }
       }
     } else if (item.type === 'segmentTitle' && item.titleType === 'day') {
-      // FIXME: scrolling down breaks, each reconciliation error
       const heightDelta = newHeight - item.height;
-      console.log(
-        'title',
-        itemIndex,
-        'height',
-        newHeight,
-        'delta',
-        heightDelta,
-        'row',
-        item.titleRowIndex,
-      );
+      // console.log(
+      //   'title',
+      //   itemIndex,
+      //   'height',
+      //   newHeight,
+      //   'delta',
+      //   heightDelta,
+      //   'row',
+      //   item.titleRowIndex,
+      // );
       if (heightDelta === 0) {
         return;
       }

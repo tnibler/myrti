@@ -14,6 +14,7 @@ export type Segment = {
       type: 'dateRange';
     }
   | { type: 'group'; title: string; groupId: string }
+  | { type: 'creatingGroup' }
 );
 
 type Box = { top: number; left: number; width: number; height: number };
@@ -170,20 +171,24 @@ export function layoutSegments(
   let lastMajorTitleDate: Dayjs | null = null;
   let minorTitleRowIdx = 0;
   for (const { segments, height } of mergedSegments) {
+    // FIXME: the bug is that previous section may already have a major title for this month, so
+    // lastMajorTitleDate should not be inited to null but the last title of previous section!
     const firstSegment = segments[0].segment;
     const firstSegmentMonth = firstSegment.start.startOf('month');
     if (lastMajorTitleDate === null || !lastMajorTitleDate.isSame(firstSegmentMonth)) {
-      lastMajorTitleDate = firstSegmentMonth;
       const majorTitle: TimelineGridItem = {
         type: 'segmentTitle',
         titleType: 'major',
         top: startTop,
         height: opts.headerHeight,
-        title: segments[0].segment.start.format('MMMM YYYY'),
-        key: 'titleMajor' + firstSegmentMonth.format('YYYY-MM'),
+        // title: segments[0].segment.start.format('MMMM YYYY'),
+        // key: 'titleMajor' + firstSegmentMonth.format('YYYY-MM'), // broken because of duplicate months
+        title: firstSegment.start.format() + ', ' + lastMajorTitleDate?.format(),
+        key: firstSegment.start.format() + ', ' + lastMajorTitleDate?.format(),
       };
       items.push(majorTitle);
       startTop += majorTitle.height;
+      lastMajorTitleDate = firstSegmentMonth;
     }
     let startAssetIndex = baseAssetIndex;
     for (const { segment, boxes } of segments) {
@@ -235,6 +240,6 @@ export function layoutSegments(
   return {
     items,
     segmentItemRanges,
-    totalHeight: startTop,
+    totalHeight: startTop - baseTop,
   };
 }

@@ -130,6 +130,18 @@ CREATE TABLE ImageRepresentation (
   FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 
+CREATE TABLE AlbumThumbnail (
+  thumbnail_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  album_id INTEGER NOT NULL,
+  format_name TEXT NOT NULL,
+  width INTEGER NOT NULL,
+  height INTEGER NOT NULL,
+  file_key TEXT NOT NULL,
+  FOREIGN KEY (album_id) REFERENCES Album(album_id),
+  UNIQUE (album_id, format_name, width, height),
+  UNIQUE (file_key)
+) STRICT;
+
 CREATE TABLE Album (
   album_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   name TEXT,
@@ -184,6 +196,7 @@ CREATE TABLE TimelineGroupItem (
 ) STRICT;
 
 CREATE VIEW TimelineSegment (
+timeline_id,
   asset_id,
   asset_taken_date,
   timeline_group_id,
@@ -205,6 +218,7 @@ WITH timeline AS (
 )
 -- assign segment numbers ignoring maximum segment size
 SELECT 
+0 as timeline_id,
 asset_id,
 asset_taken_date,
 group_id AS timeline_group_id,

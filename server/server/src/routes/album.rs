@@ -1,25 +1,32 @@
 use axum::{
     extract::{Path, State},
+    http::{header::CONTENT_TYPE, StatusCode},
+    response::{IntoResponse, Response},
     routing::{get, post, put},
     Json, Router,
 };
+use axum_extra::body::AsyncReadBody;
 use eyre::{eyre, Context, Result};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use core::{
+    catalog::storage_key,
+    core::storage::{StorageProvider, StorageReadError},
     deadpool_diesel, interact,
     model::{self, repository, AlbumId},
 };
 
 use crate::{
     app_state::SharedState,
-    http_error::ApiResult,
+    http_error::{ApiResult, HttpError},
     schema::{
         asset::{Asset, AssetSpe, AssetWithSpe, Image, Video},
         Album, AssetId,
     },
 };
+
+use super::asset::ThumbnailFormat;
 
 pub fn router() -> Router<SharedState> {
     Router::new()
@@ -27,6 +34,7 @@ pub fn router() -> Router<SharedState> {
         .route("/", post(create_album))
         .route("/:id/assets", put(append_assets_to_album))
         .route("/:id", get(get_album_details))
+        .route("/:id/thumbnail/:size/:format", get(get_thumbnail))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, ToSchema, IntoParams)]
@@ -205,4 +213,47 @@ pub async fn append_assets_to_album(
     } else {
         Ok(Json(AppendAssetsResponse { success: true }))
     }
+}
+
+#[utoipa::path(get, path = "/api/albums/{id}/thumbnail/{size}/{format}",
+responses(
+    (status = 200, body=String, content_type = "application/octet")
+        ),
+    params(
+        ("id" = String, Path, description = "AlbumId to get thumbnail for"),
+        ("size" = ThumbnailSize, Path, description = "Thumbnail size"),
+        ("format" = ThumbnailFormat, Path, description = "Image format for thumbnail")
+    )
+)]
+pub async fn get_thumbnail(
+    Path((id, _size, format)): Path<(String, String, ThumbnailFormat)>,
+    State(app_state): State<SharedState>,
+) -> ApiResult<Response> {
+    let album_id = AlbumId(id.parse().wrap_err("bad album id")?);
+    // TODO dedupe this, same thing is required for asset thumbnails and image reprs
+    let (format, content_type) = match format {
+        ThumbnailFormat::Avif => (model::ThumbnailFormat::Avif, "image/avif"),
+        ThumbnailFormat::Webp => (model::ThumbnailFormat::Webp, "image/webp"),
+    };
+    let file_key = storage_key::album_thumbnail(album_id, format);
+    let read = app_state.storage.open_read_stream(&file_key).await;
+    let read = match read {
+        Err(err) => match err {
+            StorageReadError::FileNotFound(_) => {
+                return Ok((
+                    StatusCode::NOT_FOUND,
+                    HttpError::from(eyre!("no such object")),
+                )
+                    .into_response());
+            }
+            _ => {
+                return Err(eyre!("could not open object for reading").into());
+            }
+        },
+        Ok(r) => r,
+    };
+    let headers = [(CONTENT_TYPE, content_type)];
+    let body = AsyncReadBody::new(read);
+    // TODO add size hint for files https://github.com/tokio-rs/axum/discussions/2074
+    Ok((headers, body).into_response())
 }

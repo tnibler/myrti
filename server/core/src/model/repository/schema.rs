@@ -128,6 +128,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    AlbumThumbnail (thumbnail_id) {
+        thumbnail_id -> BigInt,
+        album_id -> BigInt,
+        format_name -> Text,
+        width -> Integer,
+        height -> Integer,
+        file_key -> Text,
+    }
+}
+
+diesel::table! {
     TimelineGroup (timeline_group_id) {
         timeline_group_id -> BigInt,
         name -> Nullable<Text>,
@@ -172,6 +183,7 @@ diesel::table! {
 
 diesel::joinable!(AlbumItem -> Album (album_id));
 diesel::joinable!(AlbumItem -> Asset (asset_id));
+diesel::joinable!(AlbumThumbnail -> Album (album_id));
 diesel::joinable!(Asset -> AssetRootDir (root_dir_id));
 diesel::joinable!(AssetThumbnail -> Asset (asset_id));
 diesel::joinable!(AudioRepresentation -> Asset (asset_id));
@@ -185,6 +197,7 @@ diesel::joinable!(VideoRepresentation -> Asset (asset_id));
 diesel::allow_tables_to_appear_in_same_query!(
     Album,
     AlbumItem,
+    AlbumThumbnail,
     Asset,
     AssetRootDir,
     AudioRepresentation,

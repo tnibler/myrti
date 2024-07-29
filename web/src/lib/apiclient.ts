@@ -286,6 +286,53 @@ const endpoints = makeApi([
     response: z.void(),
   },
   {
+    method: 'get',
+    path: '/api/asset/original/:id',
+    alias: 'getAssetFile',
+    requestFormat: 'json',
+    parameters: [
+      {
+        name: 'id',
+        type: 'Path',
+        schema: z.string(),
+      },
+    ],
+    response: z.void(),
+    errors: [
+      {
+        status: 404,
+        description: `Asset not found`,
+        schema: z.void(),
+      },
+    ],
+  },
+  {
+    method: 'get',
+    path: '/api/asset/repr/:assetId/:reprId',
+    alias: 'getImageAssetRepresentation',
+    requestFormat: 'json',
+    parameters: [
+      {
+        name: 'assetId',
+        type: 'Path',
+        schema: z.string(),
+      },
+      {
+        name: 'reprId',
+        type: 'Path',
+        schema: z.string(),
+      },
+    ],
+    response: z.void(),
+    errors: [
+      {
+        status: 404,
+        description: `Asset or Representation not found`,
+        schema: z.void(),
+      },
+    ],
+  },
+  {
     method: 'post',
     path: '/api/asset/rotation',
     alias: 'setAssetRotationCorrection',
@@ -295,6 +342,30 @@ const endpoints = makeApi([
         name: 'body',
         type: 'Body',
         schema: z.object({ rotation: z.number().int().nullable() }).partial().passthrough(),
+      },
+    ],
+    response: z.void(),
+  },
+  {
+    method: 'get',
+    path: '/api/asset/thumbnail/:id/:size/:format',
+    alias: 'getThumbnail',
+    requestFormat: 'json',
+    parameters: [
+      {
+        name: 'id',
+        type: 'Path',
+        schema: z.string(),
+      },
+      {
+        name: 'size',
+        type: 'Path',
+        schema: z.enum(['small', 'large']),
+      },
+      {
+        name: 'format',
+        type: 'Path',
+        schema: z.enum(['avif', 'webp']),
       },
     ],
     response: z.void(),
@@ -322,77 +393,6 @@ const endpoints = makeApi([
       },
     ],
     response: TimelineChunk,
-  },
-  {
-    method: 'get',
-    path: '/api/original/:id',
-    alias: 'getAssetFile',
-    requestFormat: 'json',
-    parameters: [
-      {
-        name: 'id',
-        type: 'Path',
-        schema: z.string(),
-      },
-    ],
-    response: z.void(),
-    errors: [
-      {
-        status: 404,
-        description: `Asset not found`,
-        schema: z.void(),
-      },
-    ],
-  },
-  {
-    method: 'get',
-    path: '/api/repr/:assetId/:reprId',
-    alias: 'getImageAssetRepresentation',
-    requestFormat: 'json',
-    parameters: [
-      {
-        name: 'assetId',
-        type: 'Path',
-        schema: z.string(),
-      },
-      {
-        name: 'reprId',
-        type: 'Path',
-        schema: z.string(),
-      },
-    ],
-    response: z.void(),
-    errors: [
-      {
-        status: 404,
-        description: `Asset or Representation not found`,
-        schema: z.void(),
-      },
-    ],
-  },
-  {
-    method: 'get',
-    path: '/api/thumbnail/:id/:size/:format',
-    alias: 'getThumbnail',
-    requestFormat: 'json',
-    parameters: [
-      {
-        name: 'id',
-        type: 'Path',
-        schema: z.string(),
-      },
-      {
-        name: 'size',
-        type: 'Path',
-        schema: z.enum(['small', 'large']),
-      },
-      {
-        name: 'format',
-        type: 'Path',
-        schema: z.enum(['avif', 'webp']),
-      },
-    ],
-    response: z.void(),
   },
   {
     method: 'get',

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use eyre::{Context, Result};
+use itertools::Itertools;
 use tracing::instrument;
 
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
     interact,
     model::{
         repository::{self, db::PooledDbConn},
-        AssetId, AssetThumbnails, ThumbnailType, VideoAsset,
+        AlbumId, AssetId, AssetThumbnails, ThumbnailType, VideoAsset,
     },
     processing,
 };
@@ -23,7 +24,8 @@ use super::{
     image_conversion_target::{heif::AvifTarget, ImageConversionTarget},
     operation::{
         convert_image::ConvertImage,
-        create_thumbnail::{CreateThumbnail, ThumbnailToCreate},
+        create_album_thumbnail::CreateAlbumThumbnail,
+        create_thumbnail::{CreateAssetThumbnail, ThumbnailToCreate},
         package_video::PackageVideo,
     },
 };
@@ -32,7 +34,7 @@ use super::{
 pub async fn required_thumbnails_for_asset(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
-) -> Result<CreateThumbnail> {
+) -> Result<CreateAssetThumbnail> {
     let existing_thumbnails = interact!(conn, move |conn| {
         repository::asset::get_thumbnails_for_asset(conn, asset_id)
     })
@@ -48,7 +50,7 @@ pub async fn required_thumbnails_for_asset(
             ty: ThumbnailType::LargeOrigAspect,
         });
     }
-    Ok(CreateThumbnail {
+    Ok(CreateAssetThumbnail {
         asset_id,
         thumbnails: create_thumbs,
     })
@@ -162,7 +164,7 @@ pub async fn required_image_conversion_for_asset(
 }
 
 #[instrument(skip(conn), level = "debug")]
-pub async fn thumbnails_to_create(conn: &mut PooledDbConn) -> Result<Vec<CreateThumbnail>> {
+pub async fn thumbnails_to_create(conn: &mut PooledDbConn) -> Result<Vec<CreateAssetThumbnail>> {
     // always create all thumbnails if any are missing for now
     let limit: Option<i64> = None;
     let assets: Vec<AssetThumbnails> = interact!(conn, move |conn| {
@@ -172,7 +174,7 @@ pub async fn thumbnails_to_create(conn: &mut PooledDbConn) -> Result<Vec<CreateT
     .await??;
     Ok(assets
         .into_iter()
-        .map(|asset| CreateThumbnail {
+        .map(|asset| CreateAssetThumbnail {
             asset_id: asset.id,
             thumbnails: vec![
                 ThumbnailToCreate {
@@ -182,6 +184,35 @@ pub async fn thumbnails_to_create(conn: &mut PooledDbConn) -> Result<Vec<CreateT
                     ty: ThumbnailType::LargeOrigAspect,
                 },
             ],
+        })
+        .collect())
+}
+
+#[tracing::instrument(skip(conn))]
+pub async fn album_thumbnails_to_create(
+    conn: &mut PooledDbConn,
+) -> Result<Vec<CreateAlbumThumbnail>> {
+    let albums_assets: Vec<(AlbumId, AssetId)> = interact!(conn, move |conn| {
+        let album_ids = repository::album_thumbnail::get_albums_with_missing_thumbnails(conn)?;
+        album_ids
+            .into_iter()
+            .map(|album_id| {
+                let first_asset_id =
+                    repository::album::get_assets_in_album(conn, album_id, Some(1))?;
+                Ok(first_asset_id
+                    .first()
+                    .map(|asset| (album_id, asset.base.id)))
+            })
+            .filter_map_ok(|r| r)
+            .collect::<Result<Vec<_>>>()
+    })
+    .await??;
+    Ok(albums_assets
+        .into_iter()
+        .map(|(album_id, asset_id)| CreateAlbumThumbnail {
+            album_id,
+            asset_id,
+            size: 400,
         })
         .collect())
 }

@@ -4,7 +4,6 @@ use chrono::Utc;
 use diesel::{
     prelude::*,
     query_builder::{QueryBuilder, QueryFragment},
-    query_dsl::methods::GroupByDsl,
     sqlite::SqliteQueryBuilder,
 };
 use eyre::{eyre, Context, Result};
@@ -155,15 +154,26 @@ pub fn get_items_in_album(conn: &mut DbConn, album_id: AlbumId) -> Result<Vec<Al
 }
 
 /// Get assets in album ordered by the index of their AlbumItem index
-#[instrument(skip(conn), level = "trace")]
-pub fn get_assets_in_album(conn: &mut DbConn, album_id: AlbumId) -> Result<Vec<Asset>> {
+#[instrument(skip(conn))]
+pub fn get_assets_in_album(
+    conn: &mut DbConn,
+    album_id: AlbumId,
+    limit: Option<i64>,
+) -> Result<Vec<Asset>> {
     use schema::{AlbumItem, Asset};
-    let db_assets: Vec<DbAsset> = AlbumItem::table
+    let query = AlbumItem::table
         .filter(AlbumItem::album_id.eq(album_id.0).and(AlbumItem::ty.eq(1)))
         .inner_join(Asset::table)
         .order_by(AlbumItem::idx)
         .select(DbAsset::as_select())
-        .load(conn)?;
+        .into_boxed();
+    let db_assets: Vec<DbAsset> = if let Some(limit) = limit {
+        query.limit(limit)
+    } else {
+        query
+    }
+    .load(conn)
+    .wrap_err("error querying for Assets in Album")?;
     db_assets
         .into_iter()
         .map(|db_asset| db_asset.try_into())

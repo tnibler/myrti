@@ -14,7 +14,7 @@ use crate::{
     config::Config,
     interact,
     model::{
-        repository::{self, db::DbPool},
+        repository::{self, album_thumbnail, db::DbPool},
         AssetId, AssetRootDirId,
     },
 };
@@ -161,10 +161,14 @@ async fn on_startup(
     let image_conversion_count = image_conversion_required.len();
     let thumbnails_required = rules::thumbnails_to_create(&mut conn).await.expect("TODO");
     let thumbnail_count = thumbnails_required.len();
+    let album_thumbnails_required = rules::album_thumbnails_to_create(&mut conn)
+        .await
+        .expect("TODO");
     tracing::info!(
         image_conversion = image_conversion_count,
         video_packaging = video_packaging_count,
         thumbnail = thumbnail_count,
+        album_thumbnail = album_thumbnails_required.len(),
         "Collected required jobs"
     );
     for vid_pack in video_packaging_required {
@@ -179,7 +183,12 @@ async fn on_startup(
     }
     if !thumbnails_required.is_empty() {
         let _ = thumbnail_send
-            .send(ThumbnailMessage::CreateThumbnails(thumbnails_required))
+            .send(ThumbnailMessage::CreateAssetThumbnails(thumbnails_required))
+            .await;
+    }
+    for album_thumb in album_thumbnails_required {
+        let _ = thumbnail_send
+            .send(ThumbnailMessage::CreateAlbumThumbnail(album_thumb))
             .await;
     }
 
@@ -225,7 +234,7 @@ async fn on_new_asset_indexed(
         .expect("TODO");
     if !thumbnails_required.thumbnails.is_empty() {
         let _ = thumbnail_send
-            .send(ThumbnailMessage::CreateThumbnails(vec![
+            .send(ThumbnailMessage::CreateAssetThumbnails(vec![
                 thumbnails_required,
             ]))
             .await;

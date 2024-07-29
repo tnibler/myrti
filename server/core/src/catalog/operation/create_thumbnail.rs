@@ -20,7 +20,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreateThumbnail {
+pub struct CreateAssetThumbnail {
     pub asset_id: AssetId,
     pub thumbnails: Vec<ThumbnailToCreate>,
 }

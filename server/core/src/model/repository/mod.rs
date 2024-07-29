@@ -1,4 +1,5 @@
 pub mod album;
+pub mod album_thumbnail;
 pub mod asset;
 pub mod asset_root_dir;
 pub mod config;

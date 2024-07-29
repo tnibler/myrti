@@ -94,7 +94,7 @@ pub enum ThumbnailFormat {
     Webp,
 }
 
-#[utoipa::path(get, path = "/api/thumbnail/{id}/{size}/{format}",
+#[utoipa::path(get, path = "/api/asset/thumbnail/{id}/{size}/{format}",
 responses(
     (status = 200, body=String, content_type = "application/octet")
         ),
@@ -166,7 +166,7 @@ async fn get_thumbnail(
     return Ok((headers, body).into_response());
 }
 
-#[utoipa::path(get, path = "/api/original/{id}",
+#[utoipa::path(get, path = "/api/asset/original/{id}",
 responses(
     (status = 200, body=String, content_type = "application/octet"),
     (status = NOT_FOUND, body=String, description = "Asset not found")
@@ -222,7 +222,7 @@ async fn get_asset_file(
     Ok((headers, body).into_response())
 }
 
-#[utoipa::path(get, path = "/api/repr/{assetId}/{reprId}",
+#[utoipa::path(get, path = "/api/asset/repr/{assetId}/{reprId}",
 responses(
     (status = 200, body=String, content_type = "application/octet"),
     (status = NOT_FOUND, body=String, description = "Asset or Representation not found")

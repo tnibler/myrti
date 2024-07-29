@@ -5,9 +5,12 @@ use tokio::sync::mpsc;
 
 use crate::{
     catalog::{
-        operation::create_thumbnail::{
-            apply_create_thumbnail, perform_side_effects_create_thumbnail, CreateThumbnail,
-            CreateThumbnailWithPaths, ThumbnailToCreateWithPaths,
+        operation::{
+            create_album_thumbnail::{self, CreateAlbumThumbnail, CreateAlbumThumbnailWithPaths},
+            create_thumbnail::{
+                self, apply_create_thumbnail, perform_side_effects_create_thumbnail,
+                CreateAssetThumbnail, CreateThumbnailWithPaths, ThumbnailToCreateWithPaths,
+            },
         },
         storage_key,
     },
@@ -19,21 +22,22 @@ use crate::{
             self,
             db::{DbPool, PooledDbConn},
         },
-        AssetId, FailedThumbnailJob, ThumbnailFormat,
+        AlbumId, AssetId, FailedThumbnailJob, ThumbnailFormat,
     },
     processing::hash::hash_file,
 };
 
 #[derive(Debug, Clone)]
 pub enum ThumbnailMessage {
-    CreateThumbnails(Vec<CreateThumbnail>),
+    CreateAssetThumbnails(Vec<CreateAssetThumbnail>),
+    CreateAlbumThumbnail(CreateAlbumThumbnail),
 }
 
 #[derive(Debug)]
 pub enum ThumbnailResult {
     OtherError(Report),
     ThumbnailError {
-        thumbnail: CreateThumbnail,
+        thumbnail: CreateAssetThumbnail,
         report: Report,
     },
 }
@@ -70,7 +74,7 @@ struct ThumbnailActor {
 async fn run_thumbnail_actor(mut actor: ThumbnailActor) {
     while let Some(msg) = actor.recv.recv().await {
         match msg {
-            ThumbnailMessage::CreateThumbnails(create_thumbnails) => {
+            ThumbnailMessage::CreateAssetThumbnails(create_thumbnails) => {
                 let res = handle_message(&mut actor, create_thumbnails).await;
                 if let Err(report) = res {
                     tracing::warn!(%report, "Aborted thumbnail job");
@@ -82,13 +86,58 @@ async fn run_thumbnail_actor(mut actor: ThumbnailActor) {
                         .await;
                 }
             }
+            ThumbnailMessage::CreateAlbumThumbnail(create_thumbnail) => {
+                let res = handle_album_thumb_message(&mut actor, create_thumbnail).await;
+                if let Err(report) = res {
+                    tracing::warn!(%report, "Failed album thumbnail");
+                    let _ = actor
+                        .send_result
+                        .send(ThumbnailResult::OtherError(
+                            report.wrap_err("error creating album thumbnail"),
+                        ))
+                        .await;
+                }
+            }
         }
     }
 }
 
+#[tracing::instrument(skip(actor))]
+async fn handle_album_thumb_message(
+    actor: &mut ThumbnailActor,
+    create_thumbnail: CreateAlbumThumbnail,
+) -> Result<()> {
+    let avif_key = storage_key::album_thumbnail(
+        create_thumbnail.album_id,
+        create_thumbnail.size,
+        ThumbnailFormat::Avif,
+    );
+    let webp_key = storage_key::album_thumbnail(
+        create_thumbnail.album_id,
+        create_thumbnail.size,
+        ThumbnailFormat::Webp,
+    );
+    let mut conn = actor.db_pool.get().await?;
+    let create_thumbnail_with_paths = CreateAlbumThumbnailWithPaths {
+        album_id: create_thumbnail.album_id,
+        size: create_thumbnail.size,
+        asset_id: create_thumbnail.asset_id,
+        avif_key,
+        webp_key,
+    };
+    create_album_thumbnail::perform_side_effects_create_thumbnail(
+        &actor.storage,
+        &mut conn,
+        create_thumbnail_with_paths.clone(),
+    )
+    .await?;
+    create_album_thumbnail::apply_create_thumbnail(&mut conn, create_thumbnail_with_paths).await?;
+    Ok(())
+}
+
 async fn handle_message(
     actor: &mut ThumbnailActor,
-    create_thumbnails: Vec<CreateThumbnail>,
+    create_thumbnails: Vec<CreateAssetThumbnail>,
 ) -> Result<()> {
     for op in create_thumbnails {
         tracing::debug!(?op, "Creating thumbnail");
@@ -97,7 +146,7 @@ async fn handle_message(
     Ok(())
 }
 
-fn resolve(op: &CreateThumbnail) -> CreateThumbnailWithPaths {
+fn resolve(op: &CreateAssetThumbnail) -> CreateThumbnailWithPaths {
     let mut thumbnails_to_create: Vec<ThumbnailToCreateWithPaths> = Vec::default();
     for thumb in &op.thumbnails {
         let avif_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Avif);
@@ -116,7 +165,7 @@ fn resolve(op: &CreateThumbnail) -> CreateThumbnailWithPaths {
 }
 
 #[tracing::instrument(skip(actor), level = "debug")]
-async fn handle_thumbnail_op(actor: &mut ThumbnailActor, op: CreateThumbnail) -> Result<()> {
+async fn handle_thumbnail_op(actor: &mut ThumbnailActor, op: CreateAssetThumbnail) -> Result<()> {
     let conn = actor.db_pool.get().await?;
     let asset_id = op.asset_id;
     let past_failed_job = interact!(conn, move |conn| {

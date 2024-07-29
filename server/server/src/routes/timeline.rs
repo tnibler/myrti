@@ -130,6 +130,10 @@ pub struct TimelineSection {
     pub id: String,
     pub num_assets: i64,
     pub avg_aspect_ratio: f32,
+    /// date of *most recent* asset in range
+    pub start_date: DateTime<Utc>,
+    /// date of *oldest* asset in range
+    pub end_date: DateTime<Utc>,
 }
 
 #[utoipa::path(
@@ -153,6 +157,8 @@ pub async fn get_timeline_sections(
         id: format!("{}_{}", section.id.segment_min, section.id.segment_max),
         num_assets: section.num_assets,
         avg_aspect_ratio: 3.0 / 2.0,
+        start_date: section.start_date,
+        end_date: section.end_date,
     })
     .collect();
     Ok(Json(TimelineSectionsResponse { sections }))

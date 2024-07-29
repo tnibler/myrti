@@ -1158,12 +1158,19 @@
         "required": [
           "id",
           "numAssets",
-          "avgAspectRatio"
+          "avgAspectRatio",
+          "startDate",
+          "endDate"
         ],
         "properties": {
           "avgAspectRatio": {
             "type": "number",
             "format": "float"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date-time",
+            "description": "date of *oldest* asset in range"
           },
           "id": {
             "type": "string"
@@ -1171,6 +1178,11 @@
           "numAssets": {
             "type": "integer",
             "format": "int64"
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date-time",
+            "description": "date of *most recent* asset in range"
           }
         }
       },

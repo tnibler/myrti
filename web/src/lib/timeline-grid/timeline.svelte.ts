@@ -166,8 +166,10 @@ export function createTimeline(
   let viewport: Viewport = { width: 0, height: 0 };
   let state: TimelineState = $state({ state: 'justLooking' });
   let items: TimelineGridItem[] = $state([]);
-  let timelineHeight: number = $state(0);
   let sections: TimelineSection[] = $state([]);
+  const timelineHeight: number = $derived(
+    sections.map((s) => s.height).reduce((acc, n) => acc + n, 0),
+  );
   let addToGroupClickAreas: AddToGroupClickArea[] = $derived(
     state.state === 'creatingTimelineGroup'
       ? sections
@@ -245,7 +247,6 @@ export function createTimeline(
       nextSectionTop += height;
     }
     sections = _sections;
-    timelineHeight = totalHeight;
   }
 
   function resize(newViewport: Viewport, scrollTop: number) {

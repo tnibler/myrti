@@ -1,21 +1,7 @@
 import type { AssetWithSpe } from '@lib/apitypes';
 import type { Dayjs } from 'dayjs';
-import type { ItemRange, TimelineGridItem, TimelineOptions } from './timeline.svelte';
+import type { ItemRange, TimelineGridItem, TimelineOptions, Segment } from './timeline.svelte';
 import createJustifiedLayout from 'justified-layout';
-
-export type Segment = {
-  type: string;
-  assets: AssetWithSpe[];
-  sortDate: string;
-  start: Dayjs;
-  end: Dayjs;
-} & (
-  | {
-      type: 'dateRange';
-    }
-  | { type: 'group'; title: string; groupId: string }
-  | { type: 'creatingGroup' }
-);
 
 type Box = { top: number; left: number; width: number; height: number };
 
@@ -47,13 +33,14 @@ export function layoutSegments(
     /** Total height of this row (which only has asset boxes, no titles) */
     height: number;
   }[] = [];
-  let candidateToMergeWith: {
+  type MergeCandidate = {
     segments: Segment[];
     width: number;
-  } | null = null;
+  };
+  let candidateToMergeWith: MergeCandidate | null = null;
   const interMergedSegmentMargin = 20;
 
-  const layoutAndPushMergeCandidate = () => {
+  const layoutAndPushMergeCandidate = (candidateToMergeWith: MergeCandidate) => {
     const mergedRow = [];
     let startLeft = 0;
     for (const segment of candidateToMergeWith.segments) {
@@ -118,6 +105,13 @@ export function layoutSegments(
       // ) {
       //   return false;
       // }
+      if (
+        segment.type === 'creatingGroup' ||
+        candidateToMergeWith?.segments.at(-1)?.type === 'creatingGroup'
+      ) {
+        // creatingGroup can not merge nor be merged into
+        return false;
+      }
       console.assert(candidateToMergeWith.segments.length > 0);
       const prevSegment = candidateToMergeWith.segments.at(-1)!;
       const sameMonthAndYear =
@@ -136,7 +130,7 @@ export function layoutSegments(
       if (candidateToMergeWith !== null) {
         // push candidateToMergeWith items
         console.assert(candidateToMergeWith.width <= containerWidth);
-        layoutAndPushMergeCandidate();
+        layoutAndPushMergeCandidate(candidateToMergeWith);
         candidateToMergeWith = null;
       }
       const isMultiline = segmentWidth > containerWidth;
@@ -159,7 +153,7 @@ export function layoutSegments(
     }
   }
   if (candidateToMergeWith !== null) {
-    layoutAndPushMergeCandidate();
+    layoutAndPushMergeCandidate(candidateToMergeWith);
     candidateToMergeWith = null;
   }
   console.assert(
@@ -173,6 +167,12 @@ export function layoutSegments(
   let minorTitleRowIdx = 0;
   let startAssetIndex = baseAssetIndex;
   for (const { segments, height } of mergedSegments) {
+    if (segments[0].segment.type === 'creatingGroup') {
+      console.assert(
+        segments.length === 1,
+        'creatingGroup segment must not be merged with other segment',
+      );
+    }
     const firstSegment = segments[0].segment;
     const firstSegmentMonth = firstSegment.start.startOf('month');
     if (lastMajorTitleDate === null || !lastMajorTitleDate.isSame(firstSegmentMonth)) {
@@ -183,8 +183,6 @@ export function layoutSegments(
         height: opts.headerHeight,
         title: segments[0].segment.start.format('MMMM YYYY'),
         key: 'titleMajor' + firstSegmentMonth.format('YYYY-MM'), // broken because of duplicate months
-        // title: firstSegment.start.format() + ', ' + lastMajorTitleDate?.format(),
-        // key: firstSegment.start.format() + ', ' + lastMajorTitleDate?.format(),
       };
       items.push(majorTitle);
       startTop += majorTitle.height;

@@ -20,6 +20,7 @@
     "justified-layout": "^4.1.0",
     "klona": "^2.0.6",
     "lucide-svelte": "^0.363.0",
+    "remeda": "^2.6.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

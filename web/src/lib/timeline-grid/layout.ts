@@ -171,6 +171,7 @@ export function layoutSegments(
   const minorTitleHeight = 10;
   let lastMajorTitleDate: Dayjs | null = previousSectionEndDate?.startOf('month') ?? null;
   let minorTitleRowIdx = 0;
+  let startAssetIndex = baseAssetIndex;
   for (const { segments, height } of mergedSegments) {
     const firstSegment = segments[0].segment;
     const firstSegmentMonth = firstSegment.start.startOf('month');
@@ -189,7 +190,6 @@ export function layoutSegments(
       startTop += majorTitle.height;
       lastMajorTitleDate = firstSegmentMonth;
     }
-    let startAssetIndex = baseAssetIndex;
     for (const { segment, boxes } of segments) {
       const startItemIndex = items.length;
       const minorTitle: TimelineGridItem = {

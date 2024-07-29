@@ -8,6 +8,7 @@ import type {
 import dayjs from 'dayjs';
 import localizedFormat from 'dayjs/plugin/localizedFormat';
 import advancedFormat from 'dayjs/plugin/advancedFormat';
+import utc from 'dayjs/plugin/utc';
 import { klona } from 'klona';
 import { SvelteMap } from 'svelte/reactivity';
 import { layoutSegments, type Segment } from './layout';
@@ -132,6 +133,10 @@ export type TimelineSection = {
   data: ApiTimelineSection;
   segments: TimelineSegment[] | null;
   items: ItemRange | null;
+  /** Date of most recent asset in section */
+  startDate: Dayjs;
+  /** Date of oldest asset in section */
+  endDate: Dayjs;
 };
 
 type TimelineState =
@@ -156,6 +161,7 @@ export function createTimeline(
 ): ITimelineGrid {
   dayjs.extend(localizedFormat);
   dayjs.extend(advancedFormat);
+  dayjs.extend(utc);
   let isInitialized = false;
   let viewport: Viewport = { width: 0, height: 0 };
   let state: TimelineState = $state({ state: 'justLooking' });
@@ -233,6 +239,8 @@ export function createTimeline(
         top: nextSectionTop,
         segments: null,
         items: null,
+        startDate: dayjs.utc(section.startDate),
+        endDate: dayjs.utc(section.endDate),
       });
       nextSectionTop += height;
     }
@@ -305,7 +313,6 @@ export function createTimeline(
   }
 
   function layoutSection(sectionIndex: number, adjustScroll: 'adjustScroll' | 'noAdjustScroll') {
-    console.log('layoutSection', sectionIndex);
     const section = sections[sectionIndex];
     const segments = section.segments;
     if (segments === null) {
@@ -342,8 +349,8 @@ export function createTimeline(
         return {
           type: 'group',
           title: s.data.name!,
-          start: dayjs(s.assets.at(-1)!.takenDate),
-          end: dayjs(s.assets.at(0)!.takenDate),
+          start: dayjs.utc(s.assets.at(-1)!.takenDate),
+          end: dayjs.utc(s.assets.at(0)!.takenDate),
           assets: s.assets,
           sortDate: s.sortDate,
           groupId: s.data.id,
@@ -351,17 +358,25 @@ export function createTimeline(
       }
       return {
         type: s.type,
-        start: dayjs(s.start),
-        end: dayjs(s.end),
+        start: dayjs.utc(s.start),
+        end: dayjs.utc(s.end),
         assets: s.assets,
         sortDate: s.sortDate,
       };
     });
+    const lastSectionEndDate = sectionIndex === 0 ? null : sections[sectionIndex - 1].endDate;
     const {
       items: sectionItems,
       totalHeight: sectionHeight,
       segmentItemRanges,
-    } = layoutSegments(aSegments, section.top, baseAssetIndex, viewport.width, opts);
+    } = layoutSegments(
+      aSegments,
+      lastSectionEndDate,
+      section.top,
+      baseAssetIndex,
+      viewport.width,
+      opts,
+    );
     const oldSectionHeight = sections[sectionIndex].height;
     section.height = sectionHeight;
     for (let i = 0; i < segments.length; i += 1) {

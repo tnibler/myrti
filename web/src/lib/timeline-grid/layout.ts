@@ -21,6 +21,7 @@ type Box = { top: number; left: number; width: number; height: number };
 
 export function layoutSegments(
   segments: Segment[],
+  previousSectionEndDate: Dayjs | null,
   baseTop: number,
   baseAssetIndex: number,
   containerWidth: number,
@@ -168,11 +169,9 @@ export function layoutSegments(
   const segmentItemRanges: ItemRange[] = [];
   let startTop = baseTop;
   const minorTitleHeight = 10;
-  let lastMajorTitleDate: Dayjs | null = null;
+  let lastMajorTitleDate: Dayjs | null = previousSectionEndDate?.startOf('month') ?? null;
   let minorTitleRowIdx = 0;
   for (const { segments, height } of mergedSegments) {
-    // FIXME: the bug is that previous section may already have a major title for this month, so
-    // lastMajorTitleDate should not be inited to null but the last title of previous section!
     const firstSegment = segments[0].segment;
     const firstSegmentMonth = firstSegment.start.startOf('month');
     if (lastMajorTitleDate === null || !lastMajorTitleDate.isSame(firstSegmentMonth)) {
@@ -181,10 +180,10 @@ export function layoutSegments(
         titleType: 'major',
         top: startTop,
         height: opts.headerHeight,
-        // title: segments[0].segment.start.format('MMMM YYYY'),
-        // key: 'titleMajor' + firstSegmentMonth.format('YYYY-MM'), // broken because of duplicate months
-        title: firstSegment.start.format() + ', ' + lastMajorTitleDate?.format(),
-        key: firstSegment.start.format() + ', ' + lastMajorTitleDate?.format(),
+        title: segments[0].segment.start.format('MMMM YYYY'),
+        key: 'titleMajor' + firstSegmentMonth.format('YYYY-MM'), // broken because of duplicate months
+        // title: firstSegment.start.format() + ', ' + lastMajorTitleDate?.format(),
+        // key: firstSegment.start.format() + ', ' + lastMajorTitleDate?.format(),
       };
       items.push(majorTitle);
       startTop += majorTitle.height;

@@ -185,6 +185,7 @@ CREATE TABLE TimelineGroupItem (
 
 CREATE VIEW TimelineSegment (
   asset_id,
+  asset_taken_date,
   timeline_group_id,
   date_day,
   sort_date,
@@ -193,7 +194,7 @@ CREATE VIEW TimelineSegment (
 WITH timeline AS (
   SELECT
   Asset.asset_id AS asset_id,
-  Asset.taken_date AS asset_date,
+  Asset.taken_date AS asset_taken_date,
   CASE WHEN TimelineGroup.timeline_group_id IS NULL THEN date(Asset.taken_date / 1000, 'unixepoch') ELSE NULL END AS asset_date_day,
   CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.timeline_group_id ELSE NULL END AS group_id,
   CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.display_date ELSE Asset.taken_date END AS sort_date
@@ -205,6 +206,7 @@ WITH timeline AS (
 -- assign segment numbers ignoring maximum segment size
 SELECT 
 asset_id,
+asset_taken_date,
 group_id AS timeline_group_id,
 asset_date_day AS date_day,
 sort_date,

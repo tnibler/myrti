@@ -165,6 +165,10 @@ pub struct TimelineSectionId {
 pub struct TimelineSection {
     pub id: TimelineSectionId,
     pub num_assets: i64,
+    /// date of *most recent* asset in section's segments
+    pub start_date: DateTime<Utc>,
+    /// date of *oldest* asset in section's segments
+    pub end_date: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, QueryableByName)]
@@ -178,6 +182,10 @@ struct RowTimelineSection {
     pub max_segment: i64,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub asset_count: i64,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub oldest_asset_taken_date: i64,
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    pub newest_asset_taken_date: i64,
 }
 
 #[tracing::instrument(skip(conn))]
@@ -191,25 +199,49 @@ pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
     ),
     cumsum_segment_size AS (
         SELECT *, SUM(segment_size) OVER (PARTITION BY 1 ORDER BY segment_idx ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cum_segment_size FROM segment_size
+    ),
+    section_segments AS (
+        SELECT 
+        cum_segment_size / 100 as section_idx,
+        MIN(segment_idx) as min_segment,
+        MAX(segment_idx) as max_segment,
+        SUM(segment_size) as asset_count
+        FROM cumsum_segment_size
+        GROUP BY section_idx
     )
-    SELECT 
-    cum_segment_size / 100 as section_idx,
-    MIN(segment_idx) as min_segment,
-    MAX(segment_idx) as max_segment,
-    SUM(segment_size) as asset_count
-    FROM cumsum_segment_size
-    GROUP BY section_idx; 
+    SELECT
+    section_idx,
+    min_segment,
+    max_segment,
+    asset_count,
+    (
+        SELECT MAX(TimelineSegment.asset_taken_date)
+        FROM TimelineSegment
+        WHERE section_segments.min_segment = TimelineSegment.segment_idx
+        GROUP BY TimelineSegment.segment_idx
+    ) AS newest_asset_taken_date,
+    (
+        SELECT MIN(TimelineSegment.asset_taken_date)
+        FROM TimelineSegment
+        WHERE section_segments.max_segment = TimelineSegment.segment_idx
+        GROUP BY TimelineSegment.segment_idx
+    ) AS oldest_asset_taken_date
+    FROM section_segments;
     "#).load(conn)?;
     let sections = rows
         .into_iter()
-        .map(|row| TimelineSection {
-            id: TimelineSectionId {
-                segment_min: row.min_segment,
-                segment_max: row.max_segment,
-            },
-            num_assets: row.asset_count,
+        .map(|row| {
+            Ok(TimelineSection {
+                id: TimelineSectionId {
+                    segment_min: row.min_segment,
+                    segment_max: row.max_segment,
+                },
+                start_date: datetime_from_db_repr(row.newest_asset_taken_date)?,
+                end_date: datetime_from_db_repr(row.oldest_asset_taken_date)?,
+                num_assets: row.asset_count,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>>>()?;
     Ok(sections)
 }
 
@@ -222,7 +254,9 @@ pub enum TimelineGroupType {
 pub enum TimelineSegmentType {
     Group(TimelineGroupType),
     DateRange {
+        /// date of *most recent* asset in range
         start: DateTime<Utc>,
+        /// date of *oldest* asset in range
         end: DateTime<Utc>,
     },
 }

@@ -109,7 +109,13 @@ const TimelineChunk = z
   })
   .passthrough();
 const TimelineSection = z
-  .object({ avgAspectRatio: z.number(), id: z.string(), numAssets: z.number().int() })
+  .object({
+    avgAspectRatio: z.number(),
+    endDate: z.string().datetime({ offset: true }),
+    id: z.string(),
+    numAssets: z.number().int(),
+    startDate: z.string().datetime({ offset: true }),
+  })
   .passthrough();
 const TimelineSectionsResponse = z.object({ sections: z.array(TimelineSection) }).passthrough();
 const TimelineGroupId = z.string();

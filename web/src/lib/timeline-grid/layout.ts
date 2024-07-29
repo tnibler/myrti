@@ -167,49 +167,64 @@ export function layoutSegments(
   let minorTitleRowIdx = 0;
   let startAssetIndex = baseAssetIndex;
   for (const { segments, height } of mergedSegments) {
+    let showMinorTitles = true;
     if (segments[0].segment.type === 'creatingGroup') {
       console.assert(
         segments.length === 1,
         'creatingGroup segment must not be merged with other segment',
       );
-    }
-    const firstSegment = segments[0].segment;
-    const firstSegmentMonth = firstSegment.start.startOf('month');
-    if (lastMajorTitleDate === null || !lastMajorTitleDate.isSame(firstSegmentMonth)) {
-      const majorTitle: TimelineGridItem = {
-        type: 'segmentTitle',
-        titleType: 'major',
+      const titleInput: TimelineGridItem = {
+        type: 'createGroupTitleInput',
         top: startTop,
         height: opts.headerHeight,
-        title: segments[0].segment.start.format('MMMM YYYY'),
-        key: 'titleMajor' + firstSegmentMonth.format('YYYY-MM'), // broken because of duplicate months
+        key: 'createGroupTitleInput',
       };
-      items.push(majorTitle);
-      startTop += majorTitle.height;
-      lastMajorTitleDate = firstSegmentMonth;
+      items.push(titleInput);
+      startTop += titleInput.height;
+      showMinorTitles = false;
+    } else {
+      const firstSegment = segments[0].segment;
+      const firstSegmentMonth = firstSegment.start.startOf('month');
+      if (lastMajorTitleDate === null || !lastMajorTitleDate.isSame(firstSegmentMonth)) {
+        const majorTitle: TimelineGridItem = {
+          type: 'segmentTitle',
+          titleType: 'major',
+          top: startTop,
+          height: opts.headerHeight,
+          title: segments[0].segment.start.format('MMMM YYYY'),
+          key: 'titleMajor' + firstSegmentMonth.format('YYYY-MM'), // broken because of duplicate months
+        };
+        items.push(majorTitle);
+        startTop += majorTitle.height;
+        lastMajorTitleDate = firstSegmentMonth;
+      }
     }
     for (const { segment, boxes } of segments) {
       const startItemIndex = items.length;
-      const minorTitle: TimelineGridItem = {
-        type: 'segmentTitle',
-        titleType: 'day',
-        title: segment.type === 'group' ? segment.title : segment.start.format('MMMM Do'),
-        top: startTop,
-        height: minorTitleHeight,
-        left: boxes[0].left,
-        width: boxes.at(-1)!.left + boxes.at(-1)!.width - boxes[0].left,
-        titleRowIndex: minorTitleRowIdx,
-        key:
-          'titleMinor' +
-          (segment.type === 'group' ? 'group' + segment.groupId : segment.start.format()),
-      };
-      items.push(minorTitle);
+      let minorTitleHeight = 0;
+      if (showMinorTitles) {
+        const minorTitle: TimelineGridItem = {
+          type: 'segmentTitle',
+          titleType: 'day',
+          title: segment.type === 'group' ? segment.title : segment.start.format('MMMM Do'),
+          top: startTop,
+          height: minorTitleHeight,
+          left: boxes[0].left,
+          width: boxes.at(-1)!.left + boxes.at(-1)!.width - boxes[0].left,
+          titleRowIndex: minorTitleRowIdx,
+          key:
+            'titleMinor' +
+            (segment.type === 'group' ? 'group' + segment.groupId : segment.start.format()),
+        };
+        minorTitleHeight = minorTitle.height;
+        items.push(minorTitle);
+      }
       items.push(
         ...boxes.map((box, idxInSegment) => {
           const asset = segment.assets[idxInSegment];
           const item: TimelineGridItem & { type: 'asset' } = {
             type: 'asset',
-            top: box.top + startTop + minorTitle.height,
+            top: box.top + startTop + minorTitleHeight,
             left: box.left,
             width: box.width,
             height: box.height,

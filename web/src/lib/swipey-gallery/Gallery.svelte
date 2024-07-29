@@ -20,6 +20,17 @@
   let pagerY = 0;
   let topOffset = $state(0);
 
+  function onKeyDown(e: KeyboardEvent) {
+    console.assert(isOpen);
+    if (e.key === 'ArrowLeft') {
+      pager?.moveSlide('left');
+    } else if (e.key === 'ArrowRight') {
+      pager?.moveSlide('right');
+    } else if (e.key === 'Escape') {
+      close();
+    }
+  }
+
   onMount(() => shakaInit());
 
   function onOpenTransitionFinished() {}
@@ -38,9 +49,11 @@
     slideIndex = index;
     topOffset = scrollWrapper.scrollTop;
     isOpen = true;
+    document.addEventListener('keydown', onKeyDown);
   }
 
   export function close() {
+    document.removeEventListener('keydown', onKeyDown);
     pager?.close().then(() => {
       isOpen = false;
       scrollWrapper.classList.remove('modalOpen');

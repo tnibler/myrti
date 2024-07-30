@@ -107,16 +107,8 @@ async fn handle_album_thumb_message(
     actor: &mut ThumbnailActor,
     create_thumbnail: CreateAlbumThumbnail,
 ) -> Result<()> {
-    let avif_key = storage_key::album_thumbnail(
-        create_thumbnail.album_id,
-        create_thumbnail.size,
-        ThumbnailFormat::Avif,
-    );
-    let webp_key = storage_key::album_thumbnail(
-        create_thumbnail.album_id,
-        create_thumbnail.size,
-        ThumbnailFormat::Webp,
-    );
+    let avif_key = storage_key::album_thumbnail(create_thumbnail.album_id, ThumbnailFormat::Avif);
+    let webp_key = storage_key::album_thumbnail(create_thumbnail.album_id, ThumbnailFormat::Webp);
     let mut conn = actor.db_pool.get().await?;
     let create_thumbnail_with_paths = CreateAlbumThumbnailWithPaths {
         album_id: create_thumbnail.album_id,
@@ -153,8 +145,10 @@ fn resolve(op: &CreateAssetThumbnail) -> CreateThumbnailWithPaths {
         let webp_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Webp);
         let thumbnail_to_create = ThumbnailToCreateWithPaths {
             ty: thumb.ty,
-            webp_key,
-            avif_key,
+            file_keys: vec![
+                (ThumbnailFormat::Avif, avif_key),
+                (ThumbnailFormat::Webp, webp_key),
+            ],
         };
         thumbnails_to_create.push(thumbnail_to_create);
     }

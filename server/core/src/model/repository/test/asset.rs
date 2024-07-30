@@ -11,10 +11,9 @@ use proptest::prelude::*;
 use proptest_arb::{arb_new_asset, arb_new_video_asset};
 
 use crate::model::{
-    ThumbnailType, ThumbnailFormat,
     repository, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType,
     AudioRepresentation, AudioRepresentationId, CreateAsset, CreateAssetBase, CreateAssetImage,
-    CreateAssetSpe, Image, Size, TimestampInfo, Video, VideoAsset,
+    CreateAssetSpe, Image, Size, ThumbnailFormat, ThumbnailType, TimestampInfo, Video, VideoAsset,
     VideoRepresentation, VideoRepresentationId,
 };
 
@@ -67,9 +66,10 @@ fn inserting_mismatching_asset_ty_and_spe_fails() {
         id: AssetRootDirId(0),
         path: PathBuf::from("/path/to/assets"),
     };
-    let root_dir_id = assert_ok!(
-        repository::asset_root_dir::insert_asset_root(&mut conn, &asset_root_dir)
-    );
+    let root_dir_id = assert_ok!(repository::asset_root_dir::insert_asset_root(
+        &mut conn,
+        &asset_root_dir
+    ));
     let asset = Asset {
         sp: AssetSpe::Image(Image {
             image_format_name: "jpeg".into(),
@@ -152,7 +152,7 @@ fn prop_get_assets_with_missing_thumbnails() {
         );
         let assets_thumb_present: Vec<_> = assets_thumb_present
             .into_iter()
-            .map(|(asset, t_lg_orig, t_sm_sq)| 
+            .map(|(asset, t_lg_orig, t_sm_sq)|
                 (set_asset_root_dir(asset, root_dir_id), t_lg_orig, t_sm_sq)
             ).collect();
         let mut assets_with_ids: Vec<(Asset, bool, bool)> = Vec::default();
@@ -188,7 +188,7 @@ fn prop_get_assets_with_missing_thumbnails() {
             .collect();
         let actual = repository::asset::get_assets_with_missing_thumbnail(&mut conn, None);
         prop_assert!(actual.is_ok());
-        let actual_ids: HashSet<AssetId> = actual.unwrap().iter().map(|asset| asset.id).collect();
+        let actual_ids: HashSet<AssetId> = actual.unwrap().iter().map(|asset| asset.asset_id).collect();
         prop_assert_eq!(actual_ids, expected_with_missing_thumb);
     });
 }
@@ -204,9 +204,10 @@ fn get_videos_without_dash() {
         id: AssetRootDirId(0),
         path: PathBuf::from("/path/to/more/assets"),
     };
-    let root_dir_id = assert_ok!(
-        repository::asset_root_dir::insert_asset_root(&mut conn, &asset_root_dir)
-    );
+    let root_dir_id = assert_ok!(repository::asset_root_dir::insert_asset_root(
+        &mut conn,
+        &asset_root_dir
+    ));
     let root_dir2_id = assert_ok!(repository::asset_root_dir::insert_asset_root(
         &mut conn,
         &asset_root_dir2

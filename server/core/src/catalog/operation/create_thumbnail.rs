@@ -1,16 +1,17 @@
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{Context, Report, Result};
+use futures::{stream::FuturesUnordered, TryStreamExt};
 use tracing::instrument;
 
 use crate::{
-    core::storage::{Storage, StorageCommandOutput, StorageProvider},
+    core::storage::{CommandOutputFile, Storage, StorageCommandOutput, StorageProvider},
     interact,
     model::{
         repository::{
             self,
             db::{DbPool, PooledDbConn},
         },
-        AssetId, AssetType, Size, ThumbnailFormat, ThumbnailType,
+        AssetId, AssetThumbnail, AssetThumbnailId, AssetType, Size, ThumbnailFormat, ThumbnailType,
     },
     processing::{
         self,
@@ -28,6 +29,7 @@ pub struct CreateAssetThumbnail {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThumbnailToCreate {
     pub ty: ThumbnailType,
+    pub formats: Vec<ThumbnailFormat>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,8 +41,7 @@ pub struct CreateThumbnailWithPaths {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThumbnailToCreateWithPaths {
     pub ty: ThumbnailType,
-    pub avif_key: String,
-    pub webp_key: String,
+    pub file_keys: Vec<(ThumbnailFormat, String)>,
 }
 
 #[instrument(skip(conn), level = "debug")]
@@ -49,12 +50,15 @@ pub async fn apply_create_thumbnail(
     result: ThumbnailSideEffectSuccess,
 ) -> Result<()> {
     interact!(conn, move |conn| {
-        repository::asset::set_asset_has_thumbnail(
+        repository::asset::insert_asset_thumbnail(
             conn,
-            result.asset_id,
-            result.thumb.ty,
-            result.actual_size,
-            &[ThumbnailFormat::Avif, ThumbnailFormat::Webp],
+            AssetThumbnail {
+                id: AssetThumbnailId(0),
+                asset_id: result.asset_id,
+                ty: result.ty,
+                size: result.actual_size,
+                format: result.format,
+            },
         )?;
         Ok(())
     })
@@ -65,7 +69,8 @@ pub async fn apply_create_thumbnail(
 #[derive(Debug, Clone)]
 pub struct ThumbnailSideEffectSuccess {
     pub asset_id: AssetId,
-    pub thumb: ThumbnailToCreateWithPaths,
+    pub ty: ThumbnailType,
+    pub format: ThumbnailFormat,
     pub actual_size: Size,
 }
 
@@ -98,11 +103,14 @@ pub async fn perform_side_effects_create_thumbnail(
     for thumb in op.thumbnails {
         match create_thumbnail(in_path.clone(), asset.base.ty, &thumb, storage).await {
             Ok(res) => {
-                result.succeeded.push(ThumbnailSideEffectSuccess {
-                    asset_id: op.asset_id,
-                    thumb,
-                    actual_size: res.actual_size,
-                });
+                for (format, _file_key) in thumb.file_keys {
+                    result.succeeded.push(ThumbnailSideEffectSuccess {
+                        asset_id: op.asset_id,
+                        ty: thumb.ty,
+                        format,
+                        actual_size: res.actual_size,
+                    });
+                }
             }
             Err(err) => {
                 result.failed.push((thumb.clone(), err));
@@ -119,8 +127,14 @@ async fn create_thumbnail(
     thumb: &ThumbnailToCreateWithPaths,
     storage: &Storage,
 ) -> Result<ThumbnailResult> {
-    let out_file_avif = storage.new_command_out_file(&thumb.avif_key).await?;
-    let out_file_webp = storage.new_command_out_file(&thumb.webp_key).await?;
+    let out_files: Vec<CommandOutputFile> = thumb
+        .file_keys
+        .iter()
+        .map(|(_format, key)| storage.new_command_out_file(key))
+        .collect::<FuturesUnordered<_>>()
+        .try_collect()
+        .await
+        .wrap_err("error creating asset thumbnail output files")?;
     let out_dimension = match thumb.ty {
         ThumbnailType::SmallSquare => processing::image::OutDimension::Crop {
             width: 200,
@@ -131,10 +145,9 @@ async fn create_thumbnail(
         }
     };
     let (tx, rx) = tokio::sync::oneshot::channel();
-    let out_paths = vec![&out_file_avif, &out_file_webp];
     let thumbnail_params = ThumbnailParams {
         in_path: asset_path,
-        outputs: out_paths,
+        outputs: out_files.iter().collect(),
         out_dimension,
     };
     let res = match asset_type {
@@ -143,7 +156,8 @@ async fn create_thumbnail(
     };
     tx.send(res).unwrap();
     let result = rx.await.wrap_err("thumbnail task died or something")??;
-    out_file_webp.flush_to_storage().await?;
-    out_file_avif.flush_to_storage().await?;
+    for out_file in out_files {
+        out_file.flush_to_storage().await?;
+    }
     Ok(result)
 }

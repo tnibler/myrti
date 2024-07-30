@@ -5,6 +5,7 @@ use itertools::Itertools;
 use tracing::instrument;
 
 use crate::{
+    actor::thumbnail,
     catalog::{
         encoding_target::{av1, CodecTarget, VideoEncodingTarget},
         operation::package_video::{
@@ -14,8 +15,9 @@ use crate::{
     },
     interact,
     model::{
-        repository::{self, db::PooledDbConn},
-        AlbumId, AssetId, AssetThumbnails, ThumbnailType, VideoAsset,
+        repository::{self, asset::AssetHasThumbnails, db::PooledDbConn},
+        AlbumId, AssetId, AssetThumbnail, AssetThumbnails, ThumbnailFormat, ThumbnailType,
+        VideoAsset,
     },
     processing,
 };
@@ -29,32 +31,6 @@ use super::{
         package_video::PackageVideo,
     },
 };
-
-#[instrument(skip(conn))]
-pub async fn required_thumbnails_for_asset(
-    conn: &mut PooledDbConn,
-    asset_id: AssetId,
-) -> Result<CreateAssetThumbnail> {
-    let existing_thumbnails = interact!(conn, move |conn| {
-        repository::asset::get_thumbnails_for_asset(conn, asset_id)
-    })
-    .await??;
-    let mut create_thumbs = Vec::default();
-    if !existing_thumbnails.has_thumb_small_square {
-        create_thumbs.push(ThumbnailToCreate {
-            ty: ThumbnailType::SmallSquare,
-        });
-    }
-    if !existing_thumbnails.has_thumb_large_orig {
-        create_thumbs.push(ThumbnailToCreate {
-            ty: ThumbnailType::LargeOrigAspect,
-        });
-    }
-    Ok(CreateAssetThumbnail {
-        asset_id,
-        thumbnails: create_thumbs,
-    })
-}
 
 #[instrument(skip(conn))]
 pub async fn required_video_packaging_for_asset(
@@ -163,29 +139,80 @@ pub async fn required_image_conversion_for_asset(
     Ok(Default::default())
 }
 
+#[instrument(skip(conn))]
+pub async fn required_thumbnails_for_asset(
+    conn: &mut PooledDbConn,
+    asset_id: AssetId,
+) -> Result<CreateAssetThumbnail> {
+    let have_thumbnails = interact!(conn, move |conn| {
+        repository::asset::get_thumbnails_for_asset(conn, asset_id)
+    })
+    .await??;
+    Ok(CreateAssetThumbnail {
+        asset_id,
+        thumbnails: missing_asset_thumbnails(have_thumbnails),
+    })
+}
+
 #[instrument(skip(conn), level = "debug")]
 pub async fn thumbnails_to_create(conn: &mut PooledDbConn) -> Result<Vec<CreateAssetThumbnail>> {
     // always create all thumbnails if any are missing for now
     let limit: Option<i64> = None;
-    let assets: Vec<AssetThumbnails> = interact!(conn, move |conn| {
+    let assets_missing_thumbnails: Vec<AssetHasThumbnails> = interact!(conn, move |conn| {
         repository::asset::get_assets_with_missing_thumbnail(conn, limit)
             .wrap_err("could not query for Assets with missing thumbnails")
     })
     .await??;
-    Ok(assets
+    Ok(assets_missing_thumbnails
         .into_iter()
-        .map(|asset| CreateAssetThumbnail {
-            asset_id: asset.id,
-            thumbnails: vec![
-                ThumbnailToCreate {
-                    ty: ThumbnailType::SmallSquare,
-                },
-                ThumbnailToCreate {
-                    ty: ThumbnailType::LargeOrigAspect,
-                },
-            ],
-        })
+        .map(
+            |AssetHasThumbnails {
+                 asset_id,
+                 thumbnails,
+             }| CreateAssetThumbnail {
+                asset_id,
+                thumbnails: missing_asset_thumbnails(thumbnails),
+            },
+        )
         .collect())
+}
+
+fn missing_asset_thumbnails(have_thumbnails: Vec<AssetThumbnail>) -> Vec<ThumbnailToCreate> {
+    let have_sm_sq_formats: HashSet<ThumbnailFormat> = have_thumbnails
+        .iter()
+        .filter(|t| t.ty == ThumbnailType::SmallSquare)
+        .map(|t| t.format)
+        .collect();
+    let have_lg_orig_formats: HashSet<ThumbnailFormat> = have_thumbnails
+        .iter()
+        .filter(|t| t.ty == ThumbnailType::LargeOrigAspect)
+        .map(|t| t.format)
+        .collect();
+    let want_formats: HashSet<ThumbnailFormat> = [ThumbnailFormat::Webp, ThumbnailFormat::Avif]
+        .into_iter()
+        .collect();
+    let missing_lg_orig: Vec<_> = want_formats
+        .difference(&have_lg_orig_formats)
+        .copied()
+        .collect();
+    let missing_sm_sq: Vec<_> = want_formats
+        .difference(&have_sm_sq_formats)
+        .copied()
+        .collect();
+    let mut missing = Vec::new();
+    if !missing_lg_orig.is_empty() {
+        missing.push(ThumbnailToCreate {
+            ty: ThumbnailType::LargeOrigAspect,
+            formats: missing_lg_orig,
+        })
+    }
+    if !missing_sm_sq.is_empty() {
+        missing.push(ThumbnailToCreate {
+            ty: ThumbnailType::SmallSquare,
+            formats: missing_sm_sq,
+        })
+    }
+    missing
 }
 
 #[tracing::instrument(skip(conn))]

@@ -1,5 +1,8 @@
+use std::{fmt::Display, str::FromStr};
+
 use camino::Utf8PathBuf as PathBuf;
 use chrono::{DateTime, FixedOffset, Utc};
+use eyre::eyre;
 use serde::Serialize;
 
 use super::{AssetId, AssetRootDirId, AssetType};
@@ -77,5 +80,30 @@ impl AssetBase {
             | TimestampInfo::TzInferredLocation(tz)
             | TimestampInfo::TzGuessedLocal(tz) => self.taken_date.with_timezone(&tz),
         }
+    }
+}
+
+impl FromStr for ThumbnailFormat {
+    type Err = eyre::Report;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "webp" => Ok(ThumbnailFormat::Webp),
+            "avif" => Ok(ThumbnailFormat::Avif),
+            other => Err(eyre!("Can't parse unkown thumbnail format: {}", other)),
+        }
+    }
+}
+
+impl Display for ThumbnailFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ThumbnailFormat::Avif => "avif",
+                ThumbnailFormat::Webp => "webp",
+            }
+        )
     }
 }

@@ -9,12 +9,14 @@ use diesel::{insert_into, prelude::*};
 use eyre::{eyre, Context, Result};
 use tracing::{error, instrument};
 
-use crate::model::repository::db_entity::{to_db_asset_ty, AsInsertableAsset, DbAssetPathOnDisk};
+use crate::model::repository::db_entity::{
+    to_db_asset_ty, AsInsertableAsset, DbAssetPathOnDisk, DbAssetThumbnail,
+};
 use crate::model::util::{bool_to_int, hash_u64_to_vec8, to_db_thumbnail_type};
 use crate::model::{
-    self, Asset, AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetThumbnails,
-    AssetType, CreateAsset, CreateAssetSpe, Image, Size, ThumbnailFormat, ThumbnailType, Video,
-    VideoAsset,
+    self, Asset, AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetThumbnail,
+    AssetThumbnailId, AssetThumbnails, AssetType, CreateAsset, CreateAssetSpe, Image, Size,
+    ThumbnailFormat, ThumbnailType, Video, VideoAsset,
 };
 
 use super::db::DbConn;
@@ -109,93 +111,104 @@ struct DbAssetMissingThumbnails {
     pub sm_sq_missing: i32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AssetHasThumbnails {
+    pub asset_id: AssetId,
+    pub thumbnails: Vec<AssetThumbnail>,
+}
+
 #[instrument(skip(conn))]
 pub fn get_assets_with_missing_thumbnail(
     conn: &mut DbConn,
     limit: Option<i64>,
-) -> Result<Vec<AssetThumbnails>> {
-    let rows: Vec<DbAssetMissingThumbnails> = diesel::sql_query(
-        r#"
-    WITH lg_orig_missing AS 
-    (
-        SELECT Asset.asset_id, (COUNT(at0.thumbnail_id) < $1) AS missing
-        FROM Asset LEFT OUTER JOIN
-          (
-          SELECT AssetThumbnail.asset_id, thumbnail_id FROM `AssetThumbnail` WHERE ty = $2
-          ) at0
-        ON Asset.asset_id = at0.asset_id
-        GROUP BY Asset.asset_id
-    ),
-    sm_sq_missing AS 
-    (
-        SELECT Asset.asset_id, (COUNT(at1.thumbnail_id) < $1) AS missing
-        FROM Asset LEFT OUTER JOIN
-          (
-          SELECT AssetThumbnail.asset_id, thumbnail_id FROM `AssetThumbnail` WHERE ty=$3
-          ) at1
-        ON Asset.asset_id=at1.asset_id
-        GROUP BY Asset.asset_id
-    )
-    SELECT 
-    lg_orig_missing.asset_id AS asset_id,
-    lg_orig_missing.missing AS lg_orig_missing,
-    sm_sq_missing.missing AS sm_sq_missing
-    FROM lg_orig_missing 
-    LEFT OUTER JOIN sm_sq_missing
-    ON lg_orig_missing.asset_id = sm_sq_missing.asset_id
-    WHERE lg_orig_missing.missing != 0 OR sm_sq_missing != 0;
-"#,
-    )
-    // number of thumbnails per type we want. we could have only some formats for a thumbnail
-    // missing, but we don't really handle that here. Instead consider only assets with 0
-    // thumbnails as missing
-    .bind::<diesel::sql_types::Integer, _>(1)
-    .bind::<diesel::sql_types::Integer, _>(to_db_thumbnail_type(ThumbnailType::LargeOrigAspect))
-    .bind::<diesel::sql_types::Integer, _>(to_db_thumbnail_type(ThumbnailType::SmallSquare))
-    .load(conn)
-    .wrap_err("error querying for assets with missing thumbnails")?;
-    let res = rows
-        .into_iter()
-        .map(|row| AssetThumbnails {
-            id: AssetId(row.asset_id),
-            has_thumb_large_orig: row.lg_orig_missing != 0,
-            has_thumb_small_square: row.sm_sq_missing != 0,
-        })
-        .collect();
-    Ok(res)
-}
+) -> Result<Vec<AssetHasThumbnails>> {
+    #[derive(Debug, Clone, Queryable, Selectable)]
+    #[diesel(table_name = super::schema::Asset)]
+    #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+    struct AssetIdRow {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        pub asset_id: i64,
+    }
+    let rows_zero_thumbnails: Vec<AssetIdRow> = {
+        use diesel::dsl::{exists, not};
+        use schema::{Asset, AssetThumbnail};
+        Asset::table
+            .filter(not(exists(
+                AssetThumbnail::table.filter(AssetThumbnail::asset_id.eq(Asset::asset_id)),
+            )))
+            .select(AssetIdRow::as_select())
+            .load(conn)
+            .wrap_err("error querying for Assets with zero thumbnails")?
+    };
+    const NUM_THUMBNAILS_PER_ASSET: i32 = 4;
 
-#[derive(Debug, Clone, QueryableByName)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-struct DbAssetHasThumbnails {
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub asset_id: i64,
-    #[diesel(sql_type = diesel::sql_types::Integer)]
-    pub has_lg_orig: i32,
-    #[diesel(sql_type = diesel::sql_types::Integer)]
-    pub has_sm_sq: i32,
+    let rows_missing_thumbnails: Vec<DbAssetThumbnail> = diesel::sql_query(
+        r#"
+    SELECT * FROM AssetThumbnail
+    WHERE 
+    (
+        SELECT COUNT(*) FROM AssetThumbnail at
+        WHERE at.asset_id = AssetThumbnail.asset_id
+        GROUP BY at.asset_id
+    ) < $1
+    ORDER BY AssetThumbnail.asset_id;
+    "#,
+    )
+    .bind::<diesel::sql_types::Integer, _>(NUM_THUMBNAILS_PER_ASSET)
+    .load(conn)?;
+
+    let result_zero_thumbnails = rows_zero_thumbnails
+        .into_iter()
+        .map(|row| AssetHasThumbnails {
+            asset_id: AssetId(row.asset_id),
+            thumbnails: Vec::default(),
+        });
+
+    let result_missing_thumbnails = rows_missing_thumbnails
+        .into_iter()
+        .map(AssetThumbnail::try_from)
+        .collect::<Result<Vec<AssetThumbnail>>>()?
+        .into_iter()
+        .fold(
+            Vec::default(),
+            |mut acc: Vec<AssetHasThumbnails>, thumbnail| {
+                match acc.last_mut() {
+                    None => {
+                        acc.push(AssetHasThumbnails {
+                            asset_id: thumbnail.asset_id,
+                            thumbnails: vec![thumbnail],
+                        });
+                    }
+                    Some(a) if a.asset_id == thumbnail.asset_id => a.thumbnails.push(thumbnail),
+                    Some(a) => {
+                        debug_assert!(a.asset_id != thumbnail.asset_id);
+                        acc.push(AssetHasThumbnails {
+                            asset_id: thumbnail.asset_id,
+                            thumbnails: vec![thumbnail],
+                        });
+                    }
+                };
+                acc
+            },
+        );
+    Ok(result_zero_thumbnails
+        .chain(result_missing_thumbnails)
+        .collect())
 }
 
 #[instrument(skip(conn))]
-pub fn get_thumbnails_for_asset(conn: &mut DbConn, asset_id: AssetId) -> Result<AssetThumbnails> {
-    let row: DbAssetHasThumbnails = diesel::sql_query(r#"
-SELECT Asset.asset_id AS asset_id, (lg_orig.thumbnail_id IS NOT NULL) as has_lg_orig, (sm_sq.thumbnail_id IS NOT NULL) AS has_sm_sq
-FROM Asset
-LEFT OUTER JOIN AssetThumbnail lg_orig ON (Asset.asset_id = lg_orig.asset_id AND lg_orig.ty = ?)
-LEFT OUTER JOIN AssetThumbnail sm_sq ON (Asset.asset_id = sm_sq.asset_id AND sm_sq.ty = ?)
-WHERE 
-Asset.asset_id = ?;
-    "#)
-        .bind::<diesel::sql_types::BigInt, _>(asset_id.0)
-        .bind::<diesel::sql_types::Integer, _>(to_db_thumbnail_type(ThumbnailType::LargeOrigAspect))
-        .bind::<diesel::sql_types::Integer, _>(to_db_thumbnail_type(ThumbnailType::SmallSquare))
-        .get_result(conn)
-        .wrap_err("error querying for asset thumbnails")?;
-    Ok(AssetThumbnails {
-        id: AssetId(row.asset_id),
-        has_thumb_large_orig: row.has_lg_orig != 0,
-        has_thumb_small_square: row.has_sm_sq != 0,
-    })
+pub fn get_thumbnails_for_asset(
+    conn: &mut DbConn,
+    asset_id: AssetId,
+) -> Result<Vec<AssetThumbnail>> {
+    use schema::AssetThumbnail;
+    let rows: Vec<DbAssetThumbnail> = AssetThumbnail::table
+        .filter(AssetThumbnail::asset_id.eq(asset_id.0))
+        .select(DbAssetThumbnail::as_select())
+        .get_results(conn)?;
+    rows.into_iter()
+        .map(|r| r.try_into())
+        .collect::<Result<Vec<_>>>()
 }
 
 #[instrument(skip(conn, ffprobe_output))]
@@ -288,38 +301,23 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
 }
 
 #[instrument(skip(conn))]
-pub fn set_asset_has_thumbnail(
+pub fn insert_asset_thumbnail(
     conn: &mut DbConn,
-    asset_id: AssetId,
-    ty: ThumbnailType,
-    size: Size,
-    formats: &[ThumbnailFormat],
-) -> Result<()> {
-    // This whole thumbnail logic is weirdly in between flexible and basically hardcoded
-    // to only ever insert 1 pair of webp/avif thumbnails in both sqaure and original aspect ratios.
-    // If thumbnail formats ever become configurable or something, all this can be actually
-    // implemented.
+    thumbnail: AssetThumbnail,
+) -> Result<AssetThumbnailId> {
     use schema::AssetThumbnail;
-    conn.transaction(|conn| {
-        for format in formats {
-            let format_name = match format {
-                ThumbnailFormat::Webp => "webp",
-                ThumbnailFormat::Avif => "avif",
-            };
-            diesel::insert_into(AssetThumbnail::table)
-                .values((
-                    AssetThumbnail::asset_id.eq(asset_id.0),
-                    AssetThumbnail::ty.eq(to_db_thumbnail_type(ty)),
-                    AssetThumbnail::width.eq(size.width),
-                    AssetThumbnail::height.eq(size.height),
-                    AssetThumbnail::format_name.eq(format_name),
-                ))
-                .execute(conn)?;
-        }
-        Ok::<_, eyre::Report>(())
-    })
-    .wrap_err("error committing transaction inserting AssetThumbnail rows")?;
-    Ok(())
+    let id: i64 = diesel::insert_into(AssetThumbnail::table)
+        .values((
+            AssetThumbnail::asset_id.eq(thumbnail.asset_id.0),
+            AssetThumbnail::ty.eq(to_db_thumbnail_type(thumbnail.ty)),
+            AssetThumbnail::width.eq(thumbnail.size.width),
+            AssetThumbnail::height.eq(thumbnail.size.height),
+            AssetThumbnail::format_name.eq(thumbnail.format.to_string()),
+        ))
+        .returning(AssetThumbnail::thumbnail_id)
+        .get_result(conn)
+        .wrap_err("error inserting into table AssetThumbnail")?;
+    Ok(AssetThumbnailId(id))
 }
 
 #[instrument(skip(conn))]

@@ -498,6 +498,7 @@
   }
 
   .pager-wrapper {
+    z-index: 1000;
     overflow: hidden;
     touch-action: none;
   }

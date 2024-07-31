@@ -273,3 +273,63 @@ pub fn append_items_to_album(
         Ok(())
     })
 }
+
+#[instrument(skip(conn))]
+pub fn remove_items_from_album(
+    conn: &mut DbConn,
+    album_id: AlbumId,
+    item_ids: &[AlbumItemId],
+) -> Result<()> {
+    if item_ids.is_empty() {
+        return Ok(());
+    }
+    let mut delete_qb = diesel::sqlite::SqliteQueryBuilder::new();
+    delete_qb.push_sql(
+        r#"
+            DELETE FROM AlbumItem 
+            WHERE AlbumItem.album_id = $1
+            AND AlbumItem.album_item_id IN (
+        "#,
+    );
+    for (idx, _) in item_ids.iter().enumerate() {
+        delete_qb.push_bind_param();
+        if idx != item_ids.len() - 1 {
+            delete_qb.push_sql(", ");
+        }
+    }
+    delete_qb.push_sql(
+        r#"
+    );
+    "#,
+    );
+    let delete_query = {
+        let mut q = diesel::sql_query(delete_qb.finish())
+            .bind::<diesel::sql_types::BigInt, _>(album_id.0)
+            .into_boxed();
+        for item_id in item_ids {
+            q = q.bind::<diesel::sql_types::BigInt, _>(item_id.0);
+        }
+        q
+    };
+    conn.immediate_transaction(|conn| {
+        // delete rows
+        let affected_rows = delete_query.execute(conn).wrap_err("error deleting rows from table AlbumItem")?;
+        debug_assert!(affected_rows == item_ids.len());
+        // reset AlbumItem.idx column to 0..n
+        diesel::sql_query(r#"
+            WITH new_idxs AS (
+                SELECT AlbumItem.album_item_id, (DENSE_RANK() OVER (ORDER BY idx) - 1) AS new_idx FROM AlbumItem WHERE 
+                AlbumItem.album_id = $1
+                ORDER BY AlbumItem.idx
+            )
+            UPDATE AlbumItem
+            SET 
+            idx = (SELECT new_idx FROM new_idxs WHERE new_idxs.album_item_id = AlbumItem.album_item_id)
+            WHERE AlbumItem.album_id = $1;
+        "#)
+            .bind::<diesel::sql_types::BigInt, _>(album_id.0)
+            .execute(conn).wrap_err("error assigning new AlbumItem indices")?;
+        Ok::<_, eyre::Report>(())
+        })?;
+    Ok(())
+}

@@ -22,7 +22,7 @@ use crate::{
     http_error::{ApiResult, HttpError},
     schema::{
         asset::{Asset, AssetSpe, AssetWithSpe, Image, Video},
-        Album, AssetId,
+        Album, AlbumItemId, AssetId,
     },
 };
 
@@ -35,6 +35,7 @@ pub fn router() -> Router<SharedState> {
         .route("/:id/assets", put(append_assets_to_album))
         .route("/:id", get(get_album_details))
         .route("/:id/thumbnail/:size/:format", get(get_thumbnail))
+        .route("/:id/deleteItems", post(delete_album_items))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, ToSchema, IntoParams)]
@@ -256,4 +257,38 @@ pub async fn get_thumbnail(
     let body = AsyncReadBody::new(read);
     // TODO add size hint for files https://github.com/tokio-rs/axum/discussions/2074
     Ok((headers, body).into_response())
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema, IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteAlbumItemRequest {
+    pub item_ids: Vec<AlbumItemId>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/albums/{id}/deleteItems",
+    request_body = DeleteAlbumItemRequest,
+    responses((status = 200, body=()))
+)]
+#[tracing::instrument(fields(request = true), skip(app_state))]
+pub async fn delete_album_items(
+    Path(album_id): Path<String>,
+    State(app_state): State<SharedState>,
+    Json(req): Json<DeleteAlbumItemRequest>,
+) -> ApiResult<()> {
+    let conn = app_state.pool.get().await?;
+    let item_ids: Vec<model::AlbumItemId> = req
+        .item_ids
+        .into_iter()
+        .map(|id| Ok(model::AlbumItemId(id.0.parse()?)))
+        .collect::<Result<Vec<_>>>()
+        .wrap_err("bad item ids")?;
+    let album_id = model::AlbumId(album_id.parse().wrap_err("bad album id")?);
+    interact!(conn, move |conn| {
+        repository::album::remove_items_from_album(conn, album_id, &item_ids)
+            .wrap_err("error removing items from album")
+    })
+    .await??;
+    Ok(())
 }

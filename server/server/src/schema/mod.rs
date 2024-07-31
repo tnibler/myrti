@@ -48,7 +48,7 @@ macro_rules! impl_api_id {
     };
 }
 
-// The actual struct type declaration is not part of the macro so that utoipauto
+// The actual struct type declaration is not part of the macro so that utoipa_discover
 // picks up the declaration and notices the derive(ToSchema) on it.
 // That doesn't work if the declaration is in a macro.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, ToSchema)]
@@ -56,11 +56,14 @@ pub struct AssetId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, ToSchema)]
 pub struct AlbumId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, ToSchema)]
+pub struct AlbumItemId(pub String);
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, ToSchema)]
 pub struct AssetRootDirId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, ToSchema)]
 pub struct TimelineGroupId(pub String);
 
 impl_api_id!(AlbumId);
+impl_api_id!(AlbumItemId);
 impl_api_id!(AssetId);
 impl_api_id!(AssetRootDirId);
 impl_api_id!(TimelineGroupId);

@@ -49,6 +49,8 @@
     ZoomInIcon,
     ZoomOutIcon,
   } from 'lucide-svelte';
+  import dayjs from 'dayjs';
+  import type { AssetWithSpe } from '@lib/apitypes';
 
   let {
     numSlides,
@@ -68,6 +70,7 @@
   let slideIndexInitOffset = $state(0);
   let previousIndex: number = $state(slideIndex);
   let containerShift: number = $state(-1);
+  let isSidePanelOpen: boolean = $state(false);
 
   type SlideHolderState = {
     xTransform: number;
@@ -83,6 +86,16 @@
   // [1] the currently visible one and [2] the one off to the right
   let holderOrder = $state([0, 1, 2]);
   let holderStates: SlideHolderState[] = $state([]);
+  const currentSlide: Promise<SlideData> | null = $derived.by(() => {
+    if (holderOrder[1] === undefined || holderStates[holderOrder[1]] === undefined) {
+      return null;
+    }
+    const slideIdx = holderStates[holderOrder[1]].slideIndex;
+    if (slideIdx === null) {
+      return null;
+    }
+    return getSlide(slideIdx);
+  });
   let slideComponents: Slide[] = $state([]);
   let xTransform = $state(0);
   const transformString = $derived(`translate3d(${Math.round(xTransform)}px, 0px, 0px)`);
@@ -341,6 +354,7 @@
   }
 
   export async function close() {
+    isSidePanelOpen = false;
     const thumbnailBounds = getThumbnailBounds(slideIndex);
     backgroundOpacityTransition = true;
     // requestAnimationFrame(() => {
@@ -384,125 +398,128 @@
   let uiVisible = $state(true);
 </script>
 
-<!--Taken from photoswipe util/viewport-size.js getViewportSize -->
-<svelte:window bind:innerHeight={viewport.height} bind:innerWidth={viewport.width} />
-<!-- VV errors out, idk svelte 5 bug? -->
-<!-- <svelte:document bind:clientWidth={viewport.width} /> -->
-
 <div
-  class="pager-wrapper z-5"
-  class:cursor-hidden={!uiVisible}
-  bind:this={pagerWrapper}
+  class="
+  absolute top-0 left-0 w-full h-dvh
+  flex flex-row
+  touch-none overflow-hidden z-5"
+  style:cursor={uiVisible ? 'default' : 'none'}
   style:top={`${topOffset}px`}
 >
   <div
-    class="absolute w-full h-full top-0 left-0 bg-black z-0 transition-opacity duration-200 ease-in-out"
-    style:opacity={backgroundOpacity}
-    class:transition-opacity={backgroundOpacityTransition}
-  ></div>
-  <div class="slide-container" style="transform: {transformString};">
-    {#each holderStates as slideHolder (slideHolder.id)}
-      <SlideHolder
-        id={slideHolder.id}
-        isActive={slideHolder.isActive}
-        xTransform={slideHolder.xTransform}
-        openTransition={slideHolder.openTransition}
-        showContent={slideHolder.showContent}
-        onContentReady={() => onSlideContentReady(slideHolder.id)}
-        slide={slideHolder.slideIndex !== null ? getSlide(slideHolder.slideIndex) : null}
-        bind:this={slideComponents[slideHolder.id]}
-      />
-    {/each}
-  </div>
-  {#if uiVisible}
-    <!-- Note: idk what capture really means at time of writing. The intent is for the pointerdown/up/.. listeners in bindEvent()
-       to not be triggered when ui elements in this div are clicked. -->
+    class="grow relative"
+    bind:this={pagerWrapper}
+    bind:clientHeight={viewport.height}
+    bind:clientWidth={viewport.width}
+  >
     <div
-      class="absolute top-0 left-0 w-full h-full flex flex-col z-10 pointer-events-none"
-      out:fade
-      onpointerdowncapture={(e) => {
-        e.stopPropagation();
-      }}
-      onpointerupcapture={(e) => {
-        e.stopPropagation();
-      }}
-    >
-      <div
-        class="flex flex-row flex-shrink justify-end items-center
-	  h-16 px-2 gap-4 bg-gradient-to-b from-black/50 pointer-events-auto"
-      >
-        <button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
-          <RotateCwIcon color="white" />
-        </button>
-        <button
-          class="p-2"
-          class:button-visible={hasMouse}
-          onclick={() => onZoomOutClicked()}
-          disabled={isZoomOutDisabled}
-        >
-          <ZoomOutIcon color={isZoomOutDisabled ? '#aaa' : 'white'} />
-        </button>
-        <button
-          class="p-2"
-          class:button-visible={hasMouse}
-          onclick={() => onZoomInClicked()}
-          disabled={isZoomInDisabled}
-        >
-          <ZoomInIcon color={isZoomInDisabled ? '#aaa' : 'white'} />
-        </button>
-        <button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
-          <EyeOffIcon color="white" />
-        </button>
-        <button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
-          <InfoIcon color="white" />
-        </button>
-        <button class="p-4" class:button-visible={hasMouse} onclick={() => closeGallery()}>
-          <XIcon color="white" />
-        </button>
-      </div>
-      <div class="flex flex-row flex-grow justify-between {hasMouse ? '' : 'hidden'} ">
-        <button class="pl-5 pointer-events-auto" onclick={() => moveSlide('left')}>
-          <svg class="fill-white" id="arrow" viewBox="0 0 60 60" width="60" height="60"
-            ><path d="M29 43l-3 3-16-16 16-16 3 3-13 13 13 13z"></path></svg
-          >
-        </button>
-        <button class="pr-5 pointer-events-auto" onclick={() => moveSlide('right')}>
-          <svg class="fill-white -scale-x-[1]" viewBox="0 0 60 60" width="60" height="60"
-            ><use class="" xlink:href="#arrow"></use></svg
-          >
-        </button>
-      </div>
+      class="w-full h-full top-0 left-0 bg-black z-0 transition-opacity duration-200 ease-in-out"
+      style:opacity={backgroundOpacity}
+      class:transition-opacity={backgroundOpacityTransition}
+    ></div>
+    <div class="absolute top-0 left-0 w-full h-full" style="transform: {transformString};">
+      {#each holderStates as slideHolder (slideHolder.id)}
+        <SlideHolder
+          id={slideHolder.id}
+          isActive={slideHolder.isActive}
+          xTransform={slideHolder.xTransform}
+          openTransition={slideHolder.openTransition}
+          showContent={slideHolder.showContent}
+          onContentReady={() => onSlideContentReady(slideHolder.id)}
+          slide={slideHolder.slideIndex !== null ? getSlide(slideHolder.slideIndex) : null}
+          bind:this={slideComponents[slideHolder.id]}
+        />
+      {/each}
     </div>
-  {/if}
+    {#if uiVisible}
+      <!-- Note: idk what capture really means at time of writing. The intent is for the pointerdown/up/.. listeners in bindEvent()
+        to not be triggered when ui elements in this div are clicked. -->
+      <div
+        class="absolute top-0 left-0 w-full h-full flex flex-col z-10 pointer-events-none"
+        out:fade
+        onpointerdowncapture={(e) => {
+          e.stopPropagation();
+        }}
+        onpointerupcapture={(e) => {
+          e.stopPropagation();
+        }}
+      >
+        <div
+          class="flex flex-row flex-shrink justify-end items-center
+    h-16 px-2 gap-4 bg-gradient-to-b from-black/50 pointer-events-auto"
+        >
+          <button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
+            <RotateCwIcon color="white" />
+          </button>
+          <button
+            class="p-2"
+            class:button-visible={hasMouse}
+            onclick={() => onZoomOutClicked()}
+            disabled={isZoomOutDisabled}
+          >
+            <ZoomOutIcon color={isZoomOutDisabled ? '#aaa' : 'white'} />
+          </button>
+          <button
+            class="p-2"
+            class:button-visible={hasMouse}
+            onclick={() => onZoomInClicked()}
+            disabled={isZoomInDisabled}
+          >
+            <ZoomInIcon color={isZoomInDisabled ? '#aaa' : 'white'} />
+          </button>
+          <button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
+            <EyeOffIcon color="white" />
+          </button>
+          <button
+            class="p-2"
+            class:button-visible={hasMouse}
+            onclick={() => {
+              isSidePanelOpen = !isSidePanelOpen;
+              moveSlideAnimate('backToCenter');
+            }}
+          >
+            <InfoIcon color="white" />
+          </button>
+          <button class="p-4" class:button-visible={hasMouse} onclick={() => closeGallery()}>
+            <XIcon color="white" />
+          </button>
+        </div>
+        <div class="flex flex-row flex-grow justify-between {hasMouse ? '' : 'hidden'} ">
+          <button class="pl-5 pointer-events-auto" onclick={() => moveSlide('left')}>
+            <svg class="fill-white" id="arrow" viewBox="0 0 60 60" width="60" height="60"
+              ><path d="M29 43l-3 3-16-16 16-16 3 3-13 13 13 13z"></path></svg
+            >
+          </button>
+          <button class="pr-5 pointer-events-auto" onclick={() => moveSlide('right')}>
+            <svg class="fill-white -scale-x-[1]" viewBox="0 0 60 60" width="60" height="60"
+              ><use class="" xlink:href="#arrow"></use></svg
+            >
+          </button>
+        </div>
+      </div>
+    {/if}
+  </div>
+
+  <div class={'bg-white z-50 transition-all w-96 ' + (isSidePanelOpen ? 'mr-0' : 'mr-[-24rem]')}>
+    {#await currentSlide then slide}
+      {#if slide !== null}
+        {@const asset: AssetWithSpe = slide.asset}
+        <ul>
+          <li>
+            {asset.pathInRoot}
+          </li>
+
+          <li>
+            {dayjs.utc(asset.takenDate).format('LLL')}
+          </li>
+          <li>{asset.width}x{asset.height}</li>
+        </ul>
+      {/if}
+    {/await}
+  </div>
 </div>
 
 <style>
-  .pager-wrapper,
-  .slide-container {
-    position: absolute;
-    left: 0;
-    width: 100%;
-    height: 100dvh;
-  }
-
-  .pager-wrapper.cursor-hidden {
-    cursor: none;
-  }
-
-  .slide-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-  }
-
-  .pager-wrapper {
-    z-index: 1000;
-    overflow: hidden;
-    touch-action: none;
-  }
-
   .slide-container {
     user-select: none;
   }

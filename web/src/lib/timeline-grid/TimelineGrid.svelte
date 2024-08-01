@@ -19,7 +19,7 @@
   let gallery: Gallery;
 
   let { timeline, scrollWrapper = $bindable() }: TimelineGridProps = $props();
-  let thumbnailImgEls: Record<AssetId, HTMLImageElement> = $state({});
+  let thumbnailImgEls: Record<number, HTMLImageElement> = $state({});
   let gridItemTransitionClass: string | undefined = $state();
   let animationsDisabledToStart = true;
   let didMoveScrollToCurrentGalleryAsset = $state(false);

@@ -16,7 +16,7 @@ use crate::{
     schema::{
         asset::{AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
         timeline::{TimelineChunk, TimelineGroup, TimelineGroupType},
-        TimelineGroupId,
+        AssetId, TimelineGroupId,
     },
 };
 use core::{
@@ -40,7 +40,7 @@ pub fn router() -> Router<SharedState> {
 #[derive(Debug, Clone, Deserialize, IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineRequest {
-    pub last_asset_id: Option<String>,
+    pub last_asset_id: Option<AssetId>,
     pub max_count: i32,
     pub last_fetch: Option<String>,
 }
@@ -61,10 +61,10 @@ pub async fn get_timeline(
     debug!(?req_body);
     let local_tz = &chrono::Local; // TODO inject from config
     let now = Utc::now();
-    let last_asset_id = match req_body.last_asset_id {
-        Some(s) => Some(model::AssetId(s.parse().wrap_err("bad asset id")?)),
-        None => None,
-    };
+    let last_asset_id: Option<model::AssetId> = req_body
+        .last_asset_id
+        .map(model::AssetId::try_from)
+        .transpose()?;
     let conn = app_state.pool.get().await?;
     let groups = interact!(conn, move |conn| {
         repository::timeline::get_timeline_chunk(conn, last_asset_id, req_body.max_count.into())

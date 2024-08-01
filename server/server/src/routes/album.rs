@@ -14,7 +14,7 @@ use core::{
     catalog::storage_key,
     core::storage::{StorageProvider, StorageReadError},
     deadpool_diesel, interact,
-    model::{self, repository, AlbumId},
+    model::{self, repository},
 };
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
     http_error::{ApiResult, HttpError},
     schema::{
         asset::{Asset, AssetSpe, AssetWithSpe, Image, Video},
-        Album, AlbumItemId, AssetId,
+        Album, AlbumId, AlbumItemId, AssetId,
     },
 };
 
@@ -134,10 +134,10 @@ pub struct AlbumDetailsResponse {
 )]
 #[tracing::instrument(fields(request = true), err, skip(app_state))]
 pub async fn get_album_details(
-    Path(album_id): Path<String>,
+    Path(album_id): Path<AlbumId>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Json<AlbumDetailsResponse>> {
-    let album_id = album_id.parse().wrap_err("Invalid albumId").map(AlbumId)?;
+    let album_id: model::AlbumId = album_id.try_into()?;
     let conn = app_state.pool.get().await?;
     let items = interact!(conn, move |conn| {
         repository::album::get_items_in_album(conn, album_id)
@@ -196,11 +196,11 @@ pub struct AppendAssetsRequest {
 )]
 #[tracing::instrument(fields(request = true), skip(app_state))]
 pub async fn append_assets_to_album(
-    Path(album_id): Path<String>,
+    Path(album_id): Path<AlbumId>,
     State(app_state): State<SharedState>,
     Json(req): Json<AppendAssetsRequest>,
 ) -> ApiResult<Json<AppendAssetsResponse>> {
-    let album_id = album_id.parse().wrap_err("Invalid albumId").map(AlbumId)?;
+    let album_id: model::AlbumId = album_id.try_into()?;
     let asset_ids: Vec<_> = req
         .asset_ids
         .into_iter()
@@ -241,7 +241,7 @@ pub async fn get_album_thumbnail(
     Path((album_id, _size, format)): Path<(AlbumId, String, ThumbnailFormat)>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Response> {
-    let album_id = AlbumId(id.parse().wrap_err("bad album id")?);
+    let album_id: model::AlbumId = album_id.try_into()?;
     // TODO dedupe this, same thing is required for asset thumbnails and image reprs
     let (format, content_type) = match format {
         ThumbnailFormat::Avif => (model::ThumbnailFormat::Avif, "image/avif"),
@@ -284,7 +284,7 @@ pub struct DeleteAlbumItemRequest {
 )]
 #[tracing::instrument(fields(request = true), skip(app_state))]
 pub async fn delete_album_items(
-    Path(album_id): Path<String>,
+    Path(album_id): Path<AlbumId>,
     State(app_state): State<SharedState>,
     Json(req): Json<DeleteAlbumItemRequest>,
 ) -> ApiResult<()> {
@@ -295,7 +295,7 @@ pub async fn delete_album_items(
         .map(|id| Ok(model::AlbumItemId(id.0.parse()?)))
         .collect::<Result<Vec<_>>>()
         .wrap_err("bad item ids")?;
-    let album_id = model::AlbumId(album_id.parse().wrap_err("bad album id")?);
+    let album_id: model::AlbumId = album_id.try_into()?;
     interact!(conn, move |conn| {
         repository::album::remove_items_from_album(conn, album_id, &item_ids)
             .wrap_err("error removing items from album")

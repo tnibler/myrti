@@ -29,7 +29,7 @@ use crate::{
     app_state::SharedState,
     http_error::{ApiResult, HttpError},
     mime_type::{guess_mime_type, guess_mime_type_path},
-    schema::{asset::Asset, AssetId},
+    schema::{asset::Asset, AssetId, ImageRepresentationId},
 };
 
 pub fn router() -> Router<SharedState> {
@@ -106,10 +106,10 @@ responses(
 )]
 #[tracing::instrument(fields(request = true), skip(app_state))]
 async fn get_thumbnail(
-    Path((id, size, format)): Path<(String, ThumbnailSize, ThumbnailFormat)>,
+    Path((asset_id, size, format)): Path<(AssetId, ThumbnailSize, ThumbnailFormat)>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Response> {
-    let asset_id: model::AssetId = AssetId(id).try_into()?;
+    let asset_id: model::AssetId = asset_id.try_into()?;
     let (thumb_key, content_type) = match (size, format) {
         (ThumbnailSize::Small, ThumbnailFormat::Avif) => (
             storage_key::thumbnail(
@@ -177,11 +177,11 @@ responses(
 )]
 #[tracing::instrument(fields(request = true), skip(app_state))]
 async fn get_asset_file(
-    Path(id): Path<String>,
+    Path(asset_id): Path<AssetId>,
     Query(query): Query<HashMap<String, String>>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Response> {
-    let id: model::AssetId = AssetId(id).try_into()?;
+    let id: model::AssetId = asset_id.try_into()?;
     let conn = app_state.pool.get().await?;
     let path = interact!(conn, move |conn| {
         repository::asset::get_asset_path_on_disk(conn, id)
@@ -234,11 +234,11 @@ responses(
 )]
 #[tracing::instrument(fields(request = true), skip(app_state))]
 async fn get_image_asset_representation(
-    Path((asset_id, repr_id)): Path<(String, String)>,
+    Path((asset_id, repr_id)): Path<(AssetId, ImageRepresentationId)>,
     Query(query): Query<HashMap<String, String>>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Response> {
-    let repr_id = model::ImageRepresentationId(repr_id.parse().wrap_err("invalid repr_id")?);
+    let repr_id: model::ImageRepresentationId = repr_id.try_into()?;
     // removing format name/file extension from storage key would make this query unnecessary but
     // it's nice to have for now
     // Or maybe not since we need to set a MIME type?
@@ -313,14 +313,10 @@ async fn set_assets_hidden(
     State(app_state): State<SharedState>,
     Json(req): Json<HideAssetsRequest>,
 ) -> ApiResult<()> {
-    let asset_ids = req
+    let asset_ids: Vec<model::AssetId> = req
         .asset_ids
         .into_iter()
-        .map(|id| {
-            id.0.parse::<i64>()
-                .wrap_err("invalid AssetId")
-                .map(core::model::AssetId)
-        })
+        .map(model::AssetId::try_from)
         .collect::<Result<Vec<_>>>()?;
     let conn = app_state.pool.get().await?;
     interact!(conn, move |conn| {
@@ -351,7 +347,7 @@ async fn set_asset_rotation_correction(
     match req.rotation {
         Some(rot) if rot % 90 != 0 => Err(eyre!("Invalid rotation value").into()),
         rotation => {
-            let asset_id = model::AssetId(asset_id.0.parse().wrap_err("invalid asset id")?);
+            let asset_id: model::AssetId = asset_id.try_into()?;
             let conn = app_state.pool.get().await?;
             interact!(conn, move |conn| {
                 repository::asset::set_asset_rotation_correction(conn, asset_id, rotation)

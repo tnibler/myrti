@@ -20,7 +20,7 @@ pub fn router() -> Router<SharedState> {
 
 #[derive(Debug, Clone, Deserialize)]
 struct DashFilePath {
-    pub id: String,
+    pub id: AssetId,
     pub path: String,
 }
 
@@ -30,7 +30,7 @@ async fn get_dash_file(
     State(app_state): State<SharedState>,
     request: Request<Body>,
 ) -> ApiResult<Response> {
-    let asset_id: model::AssetId = AssetId(path.id).try_into()?;
+    let asset_id: model::AssetId = path.id.try_into()?;
 
     let storage_key = storage_key::dash_file(asset_id, format_args!("{}", &path.path));
     // TODO (#8)

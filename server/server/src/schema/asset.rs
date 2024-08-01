@@ -7,7 +7,7 @@ use std::borrow::Cow;
 
 use crate::mime_type::guess_mime_type;
 
-use super::{AssetId, AssetMetadata, AssetRootDirId};
+use super::{AssetId, AssetRootDirId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -28,7 +28,6 @@ pub struct Asset {
     pub height: i32,
     pub added_at: DateTime<Utc>,
     pub taken_date: DateTime<Utc>,
-    pub metadata: Option<AssetMetadata>,
     pub mime_type: String,
     pub rotation_correction: Option<i32>,
 }
@@ -89,7 +88,6 @@ impl From<&model::Asset> for Asset {
             height: value.base.size.height,
             added_at: value.base.added_at,
             taken_date: value.base.taken_date,
-            metadata: None,
             mime_type,
             rotation_correction: value.base.rotation_correction,
         }

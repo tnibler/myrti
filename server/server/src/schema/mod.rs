@@ -71,18 +71,3 @@ impl_api_id!(AssetRootDirId);
 impl_api_id!(ImageRepresentationId);
 impl_api_id!(TimelineGroupId);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
-pub struct AssetMetadata {
-    // exif data doesn't contain timezone info afaik
-    pub taken_date: Option<NaiveDateTime>,
-    pub width: Option<i32>,
-    pub height: Option<i32>,
-    #[serde(flatten)]
-    pub ty: AssetMetadataType,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
-pub enum AssetMetadataType {
-    Video { duration: Option<i32> },
-    Image { format: Option<String> },
-}

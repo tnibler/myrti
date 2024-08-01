@@ -18,24 +18,6 @@ const CreateAlbumRequest = z
   .passthrough();
 const CreateAlbumResponse = z.object({ albumId: z.number().int() }).passthrough();
 const AssetRootDirId = z.string();
-const AssetMetadataType = z.union([
-  z
-    .object({ Video: z.object({ duration: z.number().int().nullable() }).partial().passthrough() })
-    .passthrough(),
-  z
-    .object({ Image: z.object({ format: z.string().nullable() }).partial().passthrough() })
-    .passthrough(),
-]);
-const AssetMetadata = AssetMetadataType.and(
-  z
-    .object({
-      height: z.number().int().nullable(),
-      taken_date: z.string().datetime({ offset: true }).nullable(),
-      width: z.number().int().nullable(),
-    })
-    .partial()
-    .passthrough(),
-);
 const AssetType = z.enum(['image', 'video']);
 const Asset = z
   .object({
@@ -43,7 +25,6 @@ const Asset = z
     assetRootId: AssetRootDirId,
     height: z.number().int(),
     id: AssetId,
-    metadata: AssetMetadata.nullish(),
     mimeType: z.string(),
     pathInRoot: z.string(),
     rotationCorrection: z.number().int().nullish(),
@@ -161,8 +142,6 @@ export const schemas = {
   CreateAlbumRequest,
   CreateAlbumResponse,
   AssetRootDirId,
-  AssetMetadataType,
-  AssetMetadata,
   AssetType,
   Asset,
   ImageRepresentation,

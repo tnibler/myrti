@@ -784,14 +784,6 @@
           "id": {
             "$ref": "#/components/schemas/AssetId"
           },
-          "metadata": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AssetMetadata"
-              }
-            ],
-            "nullable": true
-          },
           "mimeType": {
             "type": "string"
           },
@@ -818,72 +810,6 @@
       },
       "AssetId": {
         "type": "string"
-      },
-      "AssetMetadata": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/AssetMetadataType"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "height": {
-                "type": "integer",
-                "format": "int32",
-                "nullable": true
-              },
-              "taken_date": {
-                "type": "string",
-                "format": "date-time",
-                "nullable": true
-              },
-              "width": {
-                "type": "integer",
-                "format": "int32",
-                "nullable": true
-              }
-            }
-          }
-        ]
-      },
-      "AssetMetadataType": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "Video"
-            ],
-            "properties": {
-              "Video": {
-                "type": "object",
-                "properties": {
-                  "duration": {
-                    "type": "integer",
-                    "format": "int32",
-                    "nullable": true
-                  }
-                }
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "Image"
-            ],
-            "properties": {
-              "Image": {
-                "type": "object",
-                "properties": {
-                  "format": {
-                    "type": "string",
-                    "nullable": true
-                  }
-                }
-              }
-            }
-          }
-        ]
       },
       "AssetRootDirId": {
         "type": "string"

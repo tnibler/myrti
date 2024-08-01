@@ -34,7 +34,7 @@ pub fn router() -> Router<SharedState> {
         .route("/", post(create_album))
         .route("/:id/assets", put(append_assets_to_album))
         .route("/:id", get(get_album_details))
-        .route("/:id/thumbnail/:size/:format", get(get_thumbnail))
+        .route("/:id/thumbnail/:size/:format", get(get_album_thumbnail))
         .route("/:id/deleteItems", post(delete_album_items))
 }
 
@@ -104,8 +104,16 @@ pub async fn create_album(
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
-#[serde(tag = "albumItemType", rename_all = "camelCase")]
-pub enum AlbumItem {
+#[serde(tag = "itemType", rename_all = "camelCase")]
+pub struct AlbumItem {
+    pub item_id: AlbumItemId,
+    #[serde(flatten)]
+    pub ty: AlbumItemType,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(tag = "itemType", rename_all = "camelCase")]
+pub enum AlbumItemType {
     // not a tuple struct because that doesn't work with utoipa
     Asset { asset: AssetWithSpe },
     Text { text: String },
@@ -137,21 +145,24 @@ pub async fn get_album_details(
     .await??;
     let items: Vec<_> = items
         .into_iter()
-        .map(|item| match item.item {
-            model::AlbumItemType::Asset(asset) => AlbumItem::Asset {
-                asset: AssetWithSpe {
-                    spe: match &asset.sp {
-                        model::AssetSpe::Image(_image) => AssetSpe::Image(Image {
-                            representations: Vec::default(), //FIXME
-                        }),
-                        model::AssetSpe::Video(video) => AssetSpe::Video(Video {
-                            has_dash: video.has_dash,
-                        }),
+        .map(|item| AlbumItem {
+            item_id: item.id.into(),
+            ty: match item.item {
+                model::AlbumItemType::Asset(asset) => AlbumItemType::Asset {
+                    asset: AssetWithSpe {
+                        spe: match &asset.sp {
+                            model::AssetSpe::Image(_image) => AssetSpe::Image(Image {
+                                representations: Vec::default(), //FIXME
+                            }),
+                            model::AssetSpe::Video(video) => AssetSpe::Video(Video {
+                                has_dash: video.has_dash,
+                            }),
+                        },
+                        asset: asset.into(),
                     },
-                    asset: asset.into(),
                 },
+                model::AlbumItemType::Text(text) => AlbumItemType::Text { text },
             },
-            model::AlbumItemType::Text(text) => AlbumItem::Text { text },
         })
         .collect();
     let album = interact!(conn, move |conn| {
@@ -226,8 +237,8 @@ responses(
         ("format" = ThumbnailFormat, Path, description = "Image format for thumbnail")
     )
 )]
-pub async fn get_thumbnail(
-    Path((id, _size, format)): Path<(String, String, ThumbnailFormat)>,
+pub async fn get_album_thumbnail(
+    Path((album_id, _size, format)): Path<(AlbumId, String, ThumbnailFormat)>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Response> {
     let album_id = AlbumId(id.parse().wrap_err("bad album id")?);

@@ -66,16 +66,6 @@
           "crate::routes::album"
         ],
         "operationId": "getAlbumDetails",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "description": "",
@@ -96,16 +86,6 @@
           "crate::routes::album"
         ],
         "operationId": "appendAssetsToAlbum",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -123,6 +103,86 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AppendAssetsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/albums/{id}/deleteItems": {
+      "post": {
+        "tags": [
+          "crate::routes::album"
+        ],
+        "operationId": "deleteAlbumItems",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAlbumItemRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "default": null,
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/albums/{id}/thumbnail/{size}/{format}": {
+      "get": {
+        "tags": [
+          "crate::routes::album"
+        ],
+        "operationId": "getAlbumThumbnail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "AlbumId to get thumbnail for",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/AlbumId"
+            }
+          },
+          {
+            "name": "size",
+            "in": "path",
+            "description": "Thumbnail size",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "path",
+            "description": "Image format for thumbnail",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ThumbnailFormat"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/octet": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -230,7 +290,7 @@
             "description": "AssetId",
             "required": true,
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/AssetId"
             }
           },
           {
@@ -239,7 +299,7 @@
             "description": "ImageRepresentationId",
             "required": true,
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/ImageRepresentationId"
             }
           }
         ],
@@ -303,7 +363,7 @@
             "description": "AssetId to get thumbnail for",
             "required": true,
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/AssetId"
             }
           },
           {
@@ -351,7 +411,11 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AssetId"
+                }
+              ],
               "nullable": true
             }
           },
@@ -604,22 +668,43 @@
         "type": "string"
       },
       "AlbumItem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AlbumItemType"
+          },
+          {
+            "type": "object",
+            "required": [
+              "itemId"
+            ],
+            "properties": {
+              "itemId": {
+                "$ref": "#/components/schemas/AlbumItemId"
+              }
+            }
+          }
+        ]
+      },
+      "AlbumItemId": {
+        "type": "string"
+      },
+      "AlbumItemType": {
         "oneOf": [
           {
             "type": "object",
             "required": [
               "asset",
-              "albumItemType"
+              "itemType"
             ],
             "properties": {
-              "albumItemType": {
+              "asset": {
+                "$ref": "#/components/schemas/AssetWithSpe"
+              },
+              "itemType": {
                 "type": "string",
                 "enum": [
                   "asset"
                 ]
-              },
-              "asset": {
-                "$ref": "#/components/schemas/AssetWithSpe"
               }
             }
           },
@@ -627,10 +712,10 @@
             "type": "object",
             "required": [
               "text",
-              "albumItemType"
+              "itemType"
             ],
             "properties": {
-              "albumItemType": {
+              "itemType": {
                 "type": "string",
                 "enum": [
                   "text"
@@ -643,7 +728,7 @@
           }
         ],
         "discriminator": {
-          "propertyName": "albumItemType"
+          "propertyName": "itemType"
         }
       },
       "AppendAssetsRequest": {
@@ -901,6 +986,20 @@
           }
         }
       },
+      "DeleteAlbumItemRequest": {
+        "type": "object",
+        "required": [
+          "itemIds"
+        ],
+        "properties": {
+          "itemIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlbumItemId"
+            }
+          }
+        }
+      },
       "HideAssetAction": {
         "type": "string",
         "enum": [
@@ -969,6 +1068,9 @@
             "format": "int32"
           }
         }
+      },
+      "ImageRepresentationId": {
+        "type": "string"
       },
       "SegmentType": {
         "oneOf": [

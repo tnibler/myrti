@@ -65,10 +65,12 @@ const Image = z.object({ representations: z.array(ImageRepresentation) }).passth
 const Video = z.object({ hasDash: z.boolean() }).passthrough();
 const AssetSpe = z.union([Image, Video]);
 const AssetWithSpe = Asset.and(AssetSpe).and(z.object({}).partial().passthrough());
-const AlbumItem = z.discriminatedUnion('albumItemType', [
-  z.object({ albumItemType: z.literal('asset'), asset: AssetWithSpe }).passthrough(),
-  z.object({ albumItemType: z.literal('text'), text: z.string() }).passthrough(),
+const AlbumItemType = z.discriminatedUnion('itemType', [
+  z.object({ asset: AssetWithSpe, itemType: z.literal('asset') }).passthrough(),
+  z.object({ itemType: z.literal('text'), text: z.string() }).passthrough(),
 ]);
+const AlbumItemId = z.string();
+const AlbumItem = AlbumItemType.and(z.object({ itemId: AlbumItemId }).passthrough());
 const AlbumDetailsResponse = z
   .object({
     description: z.string().nullish(),
@@ -78,6 +80,7 @@ const AlbumDetailsResponse = z
   .passthrough();
 const AppendAssetsRequest = z.object({ assetIds: z.array(AssetId) }).passthrough();
 const AppendAssetsResponse = z.object({ success: z.boolean() }).passthrough();
+const DeleteAlbumItemRequest = z.object({ itemIds: z.array(AlbumItemId) }).passthrough();
 const HideAssetAction = z.enum(['hide', 'unhide']);
 const HideAssetsRequest = z
   .object({ assetIds: z.array(AssetId), what: HideAssetAction })
@@ -86,6 +89,7 @@ const SetAssetRotationRequest = z
   .object({ rotation: z.number().int().nullable() })
   .partial()
   .passthrough();
+const lastAssetId = AssetId.nullish();
 const TimelineGroupType = z.discriminatedUnion('type', [
   z.object({ date: z.string(), type: z.literal('day') }).passthrough(),
   z
@@ -146,6 +150,7 @@ const CreateTimelineGroupResponse = z
 const AddToTimelineGroupRequest = z
   .object({ assets: z.array(AssetId), groupId: TimelineGroupId })
   .passthrough();
+const ImageRepresentationId = z.string();
 const ThumbnailFormat = z.enum(['avif', 'webp']);
 const ThumbnailSize = z.enum(['small', 'large']);
 
@@ -165,13 +170,17 @@ export const schemas = {
   Video,
   AssetSpe,
   AssetWithSpe,
+  AlbumItemType,
+  AlbumItemId,
   AlbumItem,
   AlbumDetailsResponse,
   AppendAssetsRequest,
   AppendAssetsResponse,
+  DeleteAlbumItemRequest,
   HideAssetAction,
   HideAssetsRequest,
   SetAssetRotationRequest,
+  lastAssetId,
   TimelineGroupType,
   TimelineGroup,
   TimelineChunk,
@@ -184,6 +193,7 @@ export const schemas = {
   CreateTimelineGroupRequest,
   CreateTimelineGroupResponse,
   AddToTimelineGroupRequest,
+  ImageRepresentationId,
   ThumbnailFormat,
   ThumbnailSize,
 };
@@ -215,13 +225,6 @@ const endpoints = makeApi([
     path: '/api/albums/:id',
     alias: 'getAlbumDetails',
     requestFormat: 'json',
-    parameters: [
-      {
-        name: 'id',
-        type: 'Path',
-        schema: z.string(),
-      },
-    ],
     response: AlbumDetailsResponse,
   },
   {
@@ -235,13 +238,46 @@ const endpoints = makeApi([
         type: 'Body',
         schema: AppendAssetsRequest,
       },
+    ],
+    response: z.object({ success: z.boolean() }).passthrough(),
+  },
+  {
+    method: 'post',
+    path: '/api/albums/:id/deleteItems',
+    alias: 'deleteAlbumItems',
+    requestFormat: 'json',
+    parameters: [
+      {
+        name: 'body',
+        type: 'Body',
+        schema: DeleteAlbumItemRequest,
+      },
+    ],
+    response: z.unknown().nullable().default(null),
+  },
+  {
+    method: 'get',
+    path: '/api/albums/:id/thumbnail/:size/:format',
+    alias: 'getAlbumThumbnail',
+    requestFormat: 'json',
+    parameters: [
       {
         name: 'id',
         type: 'Path',
         schema: z.string(),
       },
+      {
+        name: 'size',
+        type: 'Path',
+        schema: z.string(),
+      },
+      {
+        name: 'format',
+        type: 'Path',
+        schema: z.enum(['avif', 'webp']),
+      },
     ],
-    response: z.object({ success: z.boolean() }).passthrough(),
+    response: z.void(),
   },
   {
     method: 'get',
@@ -379,7 +415,7 @@ const endpoints = makeApi([
       {
         name: 'lastAssetId',
         type: 'Query',
-        schema: z.string().nullish(),
+        schema: lastAssetId,
       },
       {
         name: 'maxCount',

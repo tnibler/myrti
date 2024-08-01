@@ -28,11 +28,11 @@
   let sections: Section[] = $derived.by(() => {
     let sections: Section[] = [];
     for (const item of items) {
-      if (item.albumItemType === 'text') {
+      if (item.itemType === 'text') {
         sections.push({ type: 'text', text: item.text });
         continue;
       }
-      console.assert(item.albumItemType === 'asset');
+      console.assert(item.itemType === 'asset');
       const lastSection = sections[sections.length - 1];
       if (!lastSection || lastSection.type != 'asset') {
         sections.push({ type: 'asset', assets: [item.asset] });
@@ -43,7 +43,7 @@
     return sections;
   });
   const assets: AssetWithSpe[] = $derived.by(() => {
-    return items.filter((item) => item.albumItemType === 'asset').map((item) => item.asset);
+    return items.filter((item) => item.itemType === 'asset').map((item) => item.asset);
   });
 
   type SectionLayout =

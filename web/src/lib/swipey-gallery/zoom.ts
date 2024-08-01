@@ -1,24 +1,29 @@
-import type { ZoomState } from "./gestures";
-import { type PanBounds, clampPanToBounds, computePanBounds } from "./pan-bounds";
-import { pointsEqual, type Point, type Size, distance } from "./util_types"
+import type { ZoomState } from './gestures';
+import { type PanBounds, clampPanToBounds, computePanBounds } from './pan-bounds';
+import { pointsEqual, type Point, type Size, distance } from './util_types';
 import type { SlideState, SlideControls } from './Slide.svelte';
 import type { GalleryControls } from './Pager.svelte';
 
 export type ZoomLevels = {
-  fit: number,
-  fill: number,
-  vFill: number,
-  secondary: number,
-  max: number,
-  min: number,
-}
-
+  fit: number;
+  fill: number;
+  vFill: number;
+  secondary: number;
+  max: number;
+  min: number;
+};
 
 const MAX_IMAGE_WIDTH = 4000;
 const ZOOM_OUT_FRICTION = 0.15;
 const ZOOM_IN_FRICTION = 0.25;
 
-export function computeZoomLevels({ maxSize, panAreaSize }: { maxSize: Size, panAreaSize: Size }): ZoomLevels {
+export function computeZoomLevels({
+  maxSize,
+  panAreaSize,
+}: {
+  maxSize: Size;
+  panAreaSize: Size;
+}): ZoomLevels {
   const hRatio = panAreaSize.width / maxSize.width;
   const vRatio = panAreaSize.height / maxSize.height;
 
@@ -28,32 +33,59 @@ export function computeZoomLevels({ maxSize, panAreaSize }: { maxSize: Size, pan
 
   const fit3x = fit * 3;
 
-  const secondary = (maxSize.width * fit3x <= MAX_IMAGE_WIDTH) ? fit3x : MAX_IMAGE_WIDTH / maxSize.width;
+  const secondary =
+    maxSize.width * fit3x <= MAX_IMAGE_WIDTH ? fit3x : MAX_IMAGE_WIDTH / maxSize.width;
   const max = fit * 20;
   return {
-    fit, fill, vFill, secondary, max, min: fit
-  }
+    fit,
+    fill,
+    vFill,
+    secondary,
+    max,
+    min: fit,
+  };
 }
 
 export type ZoomUpdate = {
-  newSlidePan: Point,
-  newZoomLevel: number
+  newSlidePan: Point;
+  newZoomLevel: number;
 };
 
-export function zoomTo(toZoomLevel: number, zoomPoint: Point, currentZoomLevel: number, slide: SlideState): ZoomUpdate {
+export function zoomTo(
+  toZoomLevel: number,
+  zoomPoint: Point,
+  currentZoomLevel: number,
+  slide: SlideState,
+): ZoomUpdate {
   const newSlidePan = {
-    x: computePanForChangedZoomLevel('x', toZoomLevel, slide.currentZoomLevel, zoomPoint, zoomPoint, slide.pan),
-    y: computePanForChangedZoomLevel('y', toZoomLevel, slide.currentZoomLevel, zoomPoint, zoomPoint, slide.pan),
-  }
+    x: computePanForChangedZoomLevel(
+      'x',
+      toZoomLevel,
+      slide.currentZoomLevel,
+      zoomPoint,
+      zoomPoint,
+      slide.pan,
+    ),
+    y: computePanForChangedZoomLevel(
+      'y',
+      toZoomLevel,
+      slide.currentZoomLevel,
+      zoomPoint,
+      zoomPoint,
+      slide.pan,
+    ),
+  };
   return {
     newSlidePan,
-    newZoomLevel: zoomLevel
+    newZoomLevel: zoomLevel,
   };
 }
 
 export function updateZoom(state: ZoomState, slide: SlideState): ZoomUpdate | null {
-  if (!state.doZoom
-    || (pointsEqual(state.p1, state.p1.prev) && pointsEqual(state.p2, state.p2.prev))) {
+  if (
+    !state.doZoom ||
+    (pointsEqual(state.p1, state.p1.prev) && pointsEqual(state.p2, state.p2.prev))
+  ) {
     return null;
   }
   const p1 = state.p1;
@@ -63,7 +95,7 @@ export function updateZoom(state: ZoomState, slide: SlideState): ZoomUpdate | nu
   const zoomPoint = centerPoint(p1, p2);
   const zoomStartPoint = centerPoint(p1.start, p2.start);
   // zoom level without any correction/clamping/friction
-  const rawZoomLevel = state.startZoomLevel * distance(p1, p2) / distance(p1.start, p2.start);
+  const rawZoomLevel = (state.startZoomLevel * distance(p1, p2)) / distance(p1.start, p2.start);
   let zoomLevel = rawZoomLevel;
   if (rawZoomLevel < minZoomLevel) {
     // todo bgOpacity, pinch to close
@@ -72,12 +104,26 @@ export function updateZoom(state: ZoomState, slide: SlideState): ZoomUpdate | nu
     zoomLevel = maxZoomLevel + (rawZoomLevel - maxZoomLevel) * ZOOM_IN_FRICTION;
   }
   const newSlidePan = {
-    x: computePanForChangedZoomLevel('x', zoomLevel, state.startZoomLevel, zoomPoint, zoomStartPoint, state.zoomStartPan),
-    y: computePanForChangedZoomLevel('y', zoomLevel, state.startZoomLevel, zoomPoint, zoomStartPoint, state.zoomStartPan),
-  }
+    x: computePanForChangedZoomLevel(
+      'x',
+      zoomLevel,
+      state.startZoomLevel,
+      zoomPoint,
+      zoomStartPoint,
+      state.zoomStartPan,
+    ),
+    y: computePanForChangedZoomLevel(
+      'y',
+      zoomLevel,
+      state.startZoomLevel,
+      zoomPoint,
+      zoomStartPoint,
+      state.zoomStartPan,
+    ),
+  };
   return {
     newSlidePan,
-    newZoomLevel: zoomLevel
+    newZoomLevel: zoomLevel,
   };
 }
 
@@ -87,7 +133,7 @@ export function finishZoom(state: ZoomState, slide: SlideControls, gallery: Gall
   }
   const p1 = state.p1;
   const p2 = state.p2;
-  const rawZoomLevel = state.startZoomLevel * distance(p1, p2) / distance(p1.start, p2.start);
+  const rawZoomLevel = (state.startZoomLevel * distance(p1, p2)) / distance(p1.start, p2.start);
   // TODO pinch to close
   // const isOverMaxZoomLevel = rawZoomLevel > (slide.zoomLevels.fit * 1.15); // needed for pinch to close
   const zoomPoint = centerPoint(p1, p2);
@@ -95,28 +141,46 @@ export function finishZoom(state: ZoomState, slide: SlideControls, gallery: Gall
   correctZoomPan(zoomPoint, slide, gallery);
 }
 
-export function correctZoomPan(
-  zoomPoint: Point,
-  slide: SlideControls,
-  gallery: GalleryControls,
-) {
+export function correctZoomPan(zoomPoint: Point, slide: SlideControls, gallery: GalleryControls) {
   if (!slide.canBeZoomed) {
     return;
   }
   const initialZoomLevel = slide.currentZoomLevel;
   const initialPan = { x: slide.pan.x, y: slide.pan.y };
-  const zoomNeedsCorrected = initialZoomLevel < slide.zoomLevels.min || initialZoomLevel > slide.zoomLevels.max;
-  const correctedZoomLevel = Math.max(Math.min(initialZoomLevel, slide.zoomLevels.max), slide.zoomLevels.min);
+  const zoomNeedsCorrected =
+    initialZoomLevel < slide.zoomLevels.min || initialZoomLevel > slide.zoomLevels.max;
+  const correctedZoomLevel = Math.max(
+    Math.min(initialZoomLevel, slide.zoomLevels.max),
+    slide.zoomLevels.min,
+  );
   // pan after hypothetically setting correctedZoomLevel
   const zoomAdjustedPan = {
     // zoomPoint is passed as both zoomPoint and zoomStartPoint since the bounce back animation
     // is really a new zoom gesture without any movement of the finger points
-    x: computePanForChangedZoomLevel('x', correctedZoomLevel, initialZoomLevel, zoomPoint, zoomPoint, initialPan),
-    y: computePanForChangedZoomLevel('y', correctedZoomLevel, initialZoomLevel, zoomPoint, zoomPoint, initialPan),
-  }
+    x: computePanForChangedZoomLevel(
+      'x',
+      correctedZoomLevel,
+      initialZoomLevel,
+      zoomPoint,
+      zoomPoint,
+      initialPan,
+    ),
+    y: computePanForChangedZoomLevel(
+      'y',
+      correctedZoomLevel,
+      initialZoomLevel,
+      zoomPoint,
+      zoomPoint,
+      initialPan,
+    ),
+  };
   // now clamp zoomAdjustedPan to bounds after hypothetically setting correctedZoomLevel
   // panAreaSize is really always gallery.viewportSize
-  const panBoundsWithCorrectedZoom: PanBounds = computePanBounds(slide.size, gallery.pager.viewportSize, correctedZoomLevel);
+  const panBoundsWithCorrectedZoom: PanBounds = computePanBounds(
+    slide.size,
+    gallery.pager.viewportSize,
+    correctedZoomLevel,
+  );
   const finalCorrectedPan: Point = clampPanToBounds(zoomAdjustedPan, panBoundsWithCorrectedZoom);
 
   const panNeedsCorrected = !pointsEqual(finalCorrectedPan, initialPan);
@@ -131,40 +195,50 @@ export function correctZoomPan(
   const panDeltaY = finalCorrectedPan.y - initialPan.y;
   const zoomDelta = correctedZoomLevel - initialZoomLevel;
   gallery.animations.stopAnimationsFor('pan');
-  gallery.animations.startSpringAnimation({
-    start: 0,
-    end: 1000,
-    velocity: 0,
-    dampingRatio: 1,
-    frequency: 40,
-    onUpdate: (tt) => {
-      const t = tt / 1000; // normalize from 0 to 1
-      if (panNeedsCorrected) {
-        const pan = {
-          x: initialPan.x + panDeltaX * t,
-          y: initialPan.y + panDeltaY * t
-        };
-        slide.pan = pan;
-      }
-      if (zoomNeedsCorrected) {
-        const zoom = initialZoomLevel + zoomDelta * t;
-        slide.setZoomLevel(zoom);
-      }
+  gallery.animations.startSpringAnimation(
+    {
+      start: 0,
+      end: 1000,
+      velocity: 0,
+      dampingRatio: 1,
+      frequency: 40,
+      onUpdate: (tt) => {
+        const t = tt / 1000; // normalize from 0 to 1
+        if (panNeedsCorrected) {
+          const pan = {
+            x: initialPan.x + panDeltaX * t,
+            y: initialPan.y + panDeltaY * t,
+          };
+          slide.pan = pan;
+        }
+        if (zoomNeedsCorrected) {
+          const zoom = initialZoomLevel + zoomDelta * t;
+          slide.setZoomLevel(zoom);
+        }
+      },
+      onFinish: () => {
+        slide.applyCurrentZoomPan();
+      },
     },
-    onFinish: () => {
-      slide.applyCurrentZoomPan();
-    }
-  }, 'pan');
+    'pan',
+  );
 }
 
-export function computePanForChangedZoomLevel(axis: 'x' | 'y', zoomLevel: number, startZoomLevel: number, zoomPoint: Point, zoomStartPoint: Point, zoomStartPan: Point): number {
+export function computePanForChangedZoomLevel(
+  axis: 'x' | 'y',
+  zoomLevel: number,
+  startZoomLevel: number,
+  zoomPoint: Point,
+  zoomStartPoint: Point,
+  zoomStartPan: Point,
+): number {
   const zoomFactor = zoomLevel / startZoomLevel;
-  return zoomPoint[axis] - ((zoomStartPoint[axis] - zoomStartPan[axis]) * zoomFactor);
+  return zoomPoint[axis] - (zoomStartPoint[axis] - zoomStartPan[axis]) * zoomFactor;
 }
 
 function centerPoint(p1: Point, p2: Point): Point {
   return {
     x: (p1.x + p2.x) / 2,
-    y: (p1.y + p2.y) / 2
-  }
+    y: (p1.y + p2.y) / 2,
+  };
 }

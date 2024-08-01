@@ -31,29 +31,24 @@ THE SOFTWARE.
 */
 
 export type SpringParams = {
-  start: number,
-  end: number,
-  velocity: number,
-  dampingRatio: number | undefined,
-  frequency: number | undefined,
+  start: number;
+  end: number;
+  velocity: number;
+  dampingRatio: number | undefined;
+  frequency: number | undefined;
   onUpdate: (position: number) => void;
   onFinish: () => void | undefined;
-}
+};
 
 type CancelAnimation = {
   cancel: () => void;
-}
+};
 
 const DEFAULT_DAMPING_RATIO = 0.75;
 const DEFAULT_FREQUENCY = 12;
 
 export function springAnimation(params: SpringParams): CancelAnimation {
-  const {
-    start,
-    end,
-    onUpdate,
-    onFinish,
-  } = params;
+  const { start, end, onUpdate, onFinish } = params;
   const dampingRatio = params.dampingRatio ?? DEFAULT_DAMPING_RATIO;
   const frequency = params.frequency ?? DEFAULT_FREQUENCY;
 
@@ -87,54 +82,48 @@ export function springAnimation(params: SpringParams): CancelAnimation {
     cancel: () => {
       cancelAnimationFrame(raf!);
       raf = null;
-    }
-  }
-
+    },
+  };
 }
 
 type Easer = {
-  ease: (position: number, deltaTime: number, velocity: number) => { dp: number, velocity: number },
-}
+  ease: (position: number, deltaTime: number, velocity: number) => { dp: number; velocity: number };
+};
 
-/** 
- * @param position (currentPos - end) 
+/**
+ * @param position (currentPos - end)
  * @param deltaTime milliseconds */
 function springEaser(dampingRatio: number, frequency: number): Easer {
-  console.assert(dampingRatio <= 1, "invalid springAnimation params");
-  const dampedFrequency = dampingRatio < 1 ? frequency * Math.sqrt(1 - dampingRatio ** 2) : frequency;
+  console.assert(dampingRatio <= 1, 'invalid springAnimation params');
+  const dampedFrequency =
+    dampingRatio < 1 ? frequency * Math.sqrt(1 - dampingRatio ** 2) : frequency;
 
   const ease = (position: number, deltaTime: number, velocity: number) => {
     deltaTime /= 1000;
-    const dampingPower = Math.E ** (-dampingRatio * frequency * deltaTime)
+    const dampingPower = Math.E ** (-dampingRatio * frequency * deltaTime);
 
     if (dampingRatio === 1) {
       const coeff = velocity + frequency * position;
 
       const dp = (position + coeff * deltaTime) * dampingPower;
 
-      const newVelocity = dp
-        * (-frequency) + coeff
-        * dampingPower;
-      return { dp, velocity: newVelocity }
+      const newVelocity = dp * -frequency + coeff * dampingPower;
+      return { dp, velocity: newVelocity };
     } else if (dampingRatio < 1) {
-      const coeff = (1 / dampedFrequency)
-        * (dampingRatio * frequency * position + velocity);
+      const coeff = (1 / dampedFrequency) * (dampingRatio * frequency * position + velocity);
 
       const dampedFCos = Math.cos(dampedFrequency * deltaTime);
       const dampedFSin = Math.sin(dampedFrequency * deltaTime);
 
-      const dp = dampingPower
-        * (position * dampedFCos + coeff * dampedFSin);
+      const dp = dampingPower * (position * dampedFCos + coeff * dampedFSin);
 
-      const newVelocity = dp
-        * (-frequency)
-        * dampingRatio
-        + dampingPower
-        * (-dampedFrequency * position * dampedFSin
-          + dampedFrequency * coeff * dampedFCos);
-      return { dp, velocity: newVelocity }
+      const newVelocity =
+        dp * -frequency * dampingRatio +
+        dampingPower *
+          (-dampedFrequency * position * dampedFSin + dampedFrequency * coeff * dampedFCos);
+      return { dp, velocity: newVelocity };
     }
     return { dp: 0, velocity: 0 };
   };
-  return { ease }
+  return { ease };
 }

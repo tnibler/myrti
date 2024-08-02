@@ -343,7 +343,6 @@
   }
 
   export async function close() {
-    isSidePanelOpen = false;
     const thumbnailBounds = getThumbnailBounds(slideIndex);
     backgroundOpacityTransition = true;
     // requestAnimationFrame(() => {

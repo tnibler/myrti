@@ -119,6 +119,21 @@
     }
   });
 
+  $effect(() => {
+    // handle viewport size changes and zoom slide to at least fill viewport
+    if (effectiveZoom < zoomLevels.min) {
+      // slide is smaller than viewport
+      cssTransformZoom = 1;
+      domZoom = zoomLevels.min;
+      pan = panBounds.center;
+    } else if (effectiveZoom > zoomLevels.min && !userHasZoomed) {
+      // user has not zoomed, slide should fit viewport
+      cssTransformZoom = 1;
+      domZoom = zoomLevels.fit;
+      pan = panBounds.center;
+    }
+  });
+
   let userHasZoomed = $state(false);
   let lastZoomPoint: Point | null = $state(null);
   export const controls: SlideControls = {

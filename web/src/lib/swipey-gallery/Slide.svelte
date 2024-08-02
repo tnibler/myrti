@@ -53,6 +53,8 @@
   let gallery: GalleryControls = getContext('gallery');
   let pan: Point = $state({ x: 0, y: 0 });
   let panAreaSize: Size = $derived(gallery.pager.viewportSize); // TODO missing padding like photoswipe
+  const centerX = $derived(panAreaSize.width / 2);
+  const centerY = $derived(panAreaSize.height / 2);
   let zoomLevels: ZoomLevels = $derived(
     computeZoomLevels({
       maxSize: data.size,
@@ -342,7 +344,11 @@
       userHasZoomed = false;
     } else {
       const currentZoom = domZoom * cssTransformZoom;
-      const point = p.toPoint;
+      // toPoint is with origin at top left, pan here is with origin in the center
+      const point = {
+        x: p.toPoint.x - centerX,
+        y: p.toPoint.y - centerY,
+      };
       const newPan = {
         x: computePanForChangedZoomLevel('x', p.toLevel, currentZoom, point, point, pan),
         y: computePanForChangedZoomLevel('y', p.toLevel, currentZoom, point, point, pan),
@@ -363,7 +369,8 @@
   class:cursor-grabbing={cursor === 'grabbing'}
   style="
   	transform-origin: 0px 0px 0px;
-	transform: translate3d({pan.x}px, {pan.y}px, 0) scale3d({cssTransformZoom}, {cssTransformZoom}, 1);"
+	transform: translate3d({pan.x + centerX}px, {pan.y +
+    centerY}px, 0) scale3d({cssTransformZoom}, {cssTransformZoom}, 1);"
 >
   {#key data.type}
     {#if data.type === 'image' && showContent}

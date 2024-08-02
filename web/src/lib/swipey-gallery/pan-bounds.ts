@@ -32,8 +32,8 @@ function computeBounds(
   const padding = 0;
   const ps = panAreaSize[axis];
   const s = slideSize[axis] * zoomLevel;
-  const center = Math.round((ps - s) / 2) + padding;
-  const max = s > ps ? Math.round(ps - s) + padding : center;
-  const min = s > ps ? padding : center;
+  const center = Math.round(-s / 2) + padding;
+  const max = s > ps ? Math.round(ps / 2 - s) + padding : center;
+  const min = s > ps ? Math.round(-ps / 2) + padding : center;
   return { center, max, min };
 }

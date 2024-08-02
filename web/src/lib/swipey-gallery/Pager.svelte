@@ -34,7 +34,7 @@
 <script lang="ts">
   import Slide from './Slide.svelte';
   import SlideHolder from './SlideHolder.svelte';
-  import { onMount, setContext, untrack } from 'svelte';
+  import { onMount, setContext } from 'svelte';
   import { newGestureController } from './gestures';
   import type { SlideData } from './slide-data';
   import { newAnimationControls, type AnimationControls } from './animations';
@@ -67,13 +67,12 @@
   const slideWidth = $derived(viewport.width + viewport.width * slideSpacing);
 
   /** Index of slide we started at, used to compute correct offset of the pager/slide elements */
-  let slideIndexInitOffset = $state(0);
+  const initialSlideIndex = slideIndex;
   let previousIndex: number = $state(slideIndex);
   let containerShift: number = $state(-1);
   let isSidePanelOpen: boolean = $state(false);
 
   type SlideHolderState = {
-    xTransform: number;
     id: number;
     slideIndex: number | null;
     openTransition: OpenTransitionParams | null;
@@ -97,7 +96,11 @@
     return getSlide(slideIdx);
   });
   let slideComponents: Slide[] = $state([]);
-  let xTransform = $state(0);
+  const xTransformSlideCenter = $derived(
+    -(slideIndex - initialSlideIndex) * slideWidth * (1 + slideSpacing),
+  );
+  let xTransformOffset = $state(0);
+  let xTransform = $derived(xTransformSlideCenter + xTransformOffset);
   const transformString = $derived(`translate3d(${Math.round(xTransform)}px, 0px, 0px)`);
   let backgroundOpacity = $state(0);
   /** enable CSS transition when assigning backgroundOpacity. Only set on open and close. */
@@ -119,10 +122,10 @@
       return viewport;
     },
     get currentSlideX() {
-      return slideWidth * -(slideIndex - slideIndexInitOffset);
+      return xTransformSlideCenter;
     },
     get isShifted() {
-      return xTransform !== this.currentSlideX;
+      return xTransformOffset !== 0;
     },
     get x() {
       return xTransform;
@@ -130,9 +133,9 @@
     moveXBy: (delta) => {
       const SWIPE_END_FRICTION = 0.3;
       if ((slideIndex == 0 && 0 < delta) || (slideIndex == numSlides - 1 && delta < 0)) {
-        xTransform += delta * SWIPE_END_FRICTION;
+        xTransformOffset += delta * SWIPE_END_FRICTION;
       } else {
-        xTransform += delta;
+        xTransformOffset += delta;
       }
     },
     moveSlideAnimate,
@@ -165,7 +168,6 @@
       slideIndex,
       slideIndex === numSlides - 1 ? null : slideIndex + 1,
     ];
-    slideIndexInitOffset = slideIndex;
     const openTransition = {
       onTransitionEnd: afterOpenTransition,
       fromBounds: getThumbnailBounds(slideIndex),
@@ -175,7 +177,6 @@
       return {
         // maybe hide left and right holders until open anim finished? see main-scroll.js:111
         id: id,
-        xTransform: (id - 1) * slideWidth,
         slideIndex: idxs[id],
         openTransition: id === 1 ? openTransition : null,
         isActive: id === 1,
@@ -188,17 +189,6 @@
     return () => {
       unbindEvents();
     };
-  });
-
-  // update SlideHolder x position when viewport width changes
-  $effect(() => {
-    viewport.width;
-    untrack(() => {
-      for (let i = 0; i < 3; i += 1) {
-        const holderState = holderStates[holderOrder[i]];
-        holderState.xTransform = (containerShift + i) * slideWidth;
-      }
-    });
   });
 
   function afterOpenTransition() {
@@ -262,19 +252,20 @@
     if (index !== slideIndex) {
       holderStates[holderOrder[1]].isActive = false;
     }
-    const destX = -(index - slideIndexInitOffset) * slideWidth;
+    const destX = -(index - initialSlideIndex) * slideWidth * (1 + slideSpacing);
     animations.stopAnimationsFor('pager');
     animations.startSpringAnimation(
       {
-        start: xTransform,
-        end: destX,
+        start: 0,
+        end: destX - xTransformSlideCenter,
         velocity: 0,
         frequency: 30,
         dampingRatio: 1, //0.7,
         onUpdate: (x: number) => {
-          xTransform = x;
+          xTransformOffset = x;
         },
         onFinish: () => {
+          xTransformOffset = 0;
           if (direction !== 'backToCenter') {
             previousIndex = slideIndex;
             slideIndex = index;
@@ -287,6 +278,7 @@
   }
 
   export function moveSlide(direction: 'left' | 'right') {
+    console.log('moveSlide', direction);
     animations.stopAllAnimations();
     let diff = 0;
     if (direction === 'left') {
@@ -300,8 +292,7 @@
     }
     previousIndex = slideIndex;
     slideIndex = newIndex;
-    const destX = -(newIndex - slideIndexInitOffset) * slideWidth;
-    xTransform = destX;
+    xTransformOffset = 0;
     reorderSlideHoldersAfterAnim();
   }
 
@@ -317,12 +308,10 @@
       containerShift += 1;
       holderOrder = [holderOrder[1], holderOrder[2], holderOrder[0]];
       movedHolder = holderStates[holderOrder[2]];
-      movedHolder.xTransform = (containerShift + 2) * slideWidth;
     } else if (shiftedLeft) {
       containerShift -= 1;
       holderOrder = [holderOrder[2], holderOrder[0], holderOrder[1]];
       movedHolder = holderStates[holderOrder[0]];
-      movedHolder.xTransform = containerShift * slideWidth;
     } else if (diffMod3 === 0) {
       // nothing to do
       return;
@@ -419,10 +408,12 @@
     ></div>
     <div class="absolute top-0 left-0 w-full h-full" style="transform: {transformString};">
       {#each holderStates as slideHolder (slideHolder.id)}
+        {@const x =
+          (containerShift + holderOrder.indexOf(slideHolder.id)) * (1 + slideSpacing) * slideWidth}
         <SlideHolder
           id={slideHolder.id}
           isActive={slideHolder.isActive}
-          xTransform={slideHolder.xTransform}
+          xTransform={x}
           openTransition={slideHolder.openTransition}
           showContent={slideHolder.showContent}
           onContentReady={() => onSlideContentReady(slideHolder.id)}

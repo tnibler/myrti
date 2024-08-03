@@ -187,6 +187,7 @@ pub async fn index_file(
         timestamp_info,
         size,
         rotation_correction: None,
+        exiftool_output: exiftool_json,
         hash: Some(hash),
         gps_coordinates: coordinates,
     };

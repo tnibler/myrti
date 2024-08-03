@@ -241,6 +241,7 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
         width: create_asset.base.size.width,
         height: create_asset.base.size.height,
         rotation_correction: create_asset.base.rotation_correction,
+        exiftool_output: Cow::Borrowed(&create_asset.base.exiftool_output),
         gps_latitude: create_asset.base.gps_coordinates.map(|c| c.lat),
         gps_longitude: create_asset.base.gps_coordinates.map(|c| c.lon),
         image_format_name: match &create_asset.spe {
@@ -325,6 +326,17 @@ pub fn get_video_assets_without_dash(conn: &mut DbConn) -> Result<Vec<VideoAsset
         .into_iter()
         .map(|db_asset| VideoAsset::try_from(model::Asset::try_from(db_asset)?))
         .collect::<Result<Vec<VideoAsset>>>()
+}
+
+#[instrument(skip(conn))]
+pub fn get_asset_exiftool_output(conn: &mut DbConn, asset_id: AssetId) -> Result<Vec<u8>> {
+    use schema::Asset;
+    let exiftool_output: Vec<u8> = Asset::table
+        .filter(Asset::asset_id.eq(asset_id.0))
+        .select(Asset::exiftool_output)
+        .get_result(conn)
+        .wrap_err("error querying table Asset")?;
+    Ok(exiftool_output)
 }
 
 #[instrument(skip(conn))]

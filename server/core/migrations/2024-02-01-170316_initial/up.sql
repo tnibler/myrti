@@ -32,6 +32,8 @@ CREATE TABLE Asset (
   thumb_hash BLOB,
 
   -- Metadata
+  -- exiftool -j -g -c
+  exiftool_output BLOB NOT NULL,
   -- latitude and longitude are stored multipled by 10e8
   gps_latitude INTEGER,
   gps_longitude INTEGER,

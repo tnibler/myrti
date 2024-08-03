@@ -117,6 +117,7 @@ pub struct DbInsertAsset<'a> {
     pub width: i32,
     pub height: i32,
     pub rotation_correction: Option<i32>,
+    pub exiftool_output: Cow<'a, [u8]>,
     pub gps_latitude: Option<i64>,
     pub gps_longitude: Option<i64>,
     pub image_format_name: Option<Cow<'a, str>>,

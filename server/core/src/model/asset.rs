@@ -2,10 +2,7 @@ use camino::Utf8PathBuf as PathBuf;
 use chrono::{DateTime, Utc};
 use eyre::{eyre, Report};
 
-use super::{
-    AssetBase, AssetRootDirId, GpsCoordinates, Size,
-    TimestampInfo,
-};
+use super::{AssetBase, AssetRootDirId, GpsCoordinates, Size, TimestampInfo};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Image {
@@ -68,6 +65,8 @@ pub struct CreateAssetBase {
     pub rotation_correction: Option<i32>,
     /// Seahash of the file, if already computed
     pub hash: Option<u64>,
+    /// JSON output of exiftool
+    pub exiftool_output: Vec<u8>,
     pub gps_coordinates: Option<GpsCoordinates>,
 }
 

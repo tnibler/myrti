@@ -5,10 +5,7 @@ import type {
   TimelineSection as ApiTimelineSection,
   TimelineSegment as ApiTimelineSegment,
 } from '@lib/apitypes';
-import dayjs, { Dayjs } from 'dayjs';
-import localizedFormat from 'dayjs/plugin/localizedFormat';
-import advancedFormat from 'dayjs/plugin/advancedFormat';
-import utc from 'dayjs/plugin/utc';
+import { dayjs, type Dayjs } from '@lib/dayjs';
 import { klona } from 'klona/json';
 import { SvelteMap } from 'svelte/reactivity';
 import { layoutSegments } from './layout';
@@ -154,9 +151,6 @@ export function createTimeline(
   }) => void,
   api: Api,
 ): ITimelineGrid {
-  dayjs.extend(localizedFormat);
-  dayjs.extend(advancedFormat);
-  dayjs.extend(utc);
   let isInitialized = false;
   let viewport: Viewport = { width: 0, height: 0 };
   let state: TimelineState = $state({ state: 'justLooking' });

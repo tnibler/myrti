@@ -17,6 +17,7 @@
     "axios": "^1.7.2",
     "dayjs": "^1.11.12",
     "elegua": "^2.2.3",
+    "i18next": "^23.12.2",
     "justified-layout": "^4.1.0",
     "klona": "^2.0.6",
     "lucide-svelte": "^0.363.0",

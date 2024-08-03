@@ -1,0 +1,22 @@
+{
+  "nav": {
+    "photos": "Photos",
+    "albums": "Albums",
+    "map": "Map"
+  },
+  "close": "Close",
+  "ok": "Ok",
+  "cancel": "Cancel",
+  "create": "Create",
+  "add_to_group": "Add to group",
+  "unnamed_group": "Unnamed group",
+  "group_title_placeholder": "Group title",
+  "album_title_placeholder": "Album title",
+  "add_to_album": "Add to album",
+  "create_new_album": "Create new album",
+  "new_album": "New album",
+  "remove_from_album": "Remove from album",
+  "new_album": "New album",
+  "hide": "Hide",
+  "n_selected": "{{n}} selected"
+}

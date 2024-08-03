@@ -3,6 +3,7 @@
   import Button from './ui/Button.svelte';
   import { onMount } from 'svelte';
   import { api } from './apiclient';
+  import { intl } from '@lib/i18next';
 
   type Submit =
     | {
@@ -64,16 +65,20 @@
       class="flex flex-row justify-between items-baseline px-5 py-5 border-solid border-gray-200 border-b"
     >
       <p class="font-medium text-xl">
-        {showCreateAlbumForm ? 'Create new album' : 'Add to album'}
+        {intl(showCreateAlbumForm ? 'create_new_album' : 'add_to_album')}
       </p>
-      <Button text="Close" onclick={() => dialog!.close()} />
+      <Button text={intl('close')} onclick={() => dialog!.close()} />
     </div>
     {#if showCreateAlbumForm}
       <form onsubmit={onCreateClicked}>
         <div class="flex-1 py-4 px-6 flex flex-col justify-between">
-          <input placeholder="Title" class="font-medium text-lg" bind:this={albumNameInput} />
+          <input
+            placeholder={intl('album_title_placeholder')}
+            class="font-medium text-lg"
+            bind:this={albumNameInput}
+          />
           <Button
-            text="Create"
+            text={intl('create')}
             primary
             class="self-end {createButtonVisible ? '' : 'display-none'}"
             onclick={(e) => onCreateClicked(e)}
@@ -89,7 +94,7 @@
                 <path d={mdiPlus} fill="#000" />
               </svg>
             </div>
-            New Album
+            {intl('new_album')}
           </div>
         </button>
         {#each albums as album (album.id)}

@@ -2,6 +2,7 @@
   import { mdiClose } from '@mdi/js';
   import IconButton from './ui/IconButton.svelte';
   import { BookImageIcon, EyeOffIcon, ImagesIcon } from 'lucide-svelte';
+  import { intl } from '@lib/i18next';
 
   type Props = {
     numAssetsSelected: number;
@@ -37,7 +38,7 @@
       </svg>
     </button>
     <div class="font-medium">
-      {numAssetsSelected} selected
+      {intl('n_selected', { n: numAssetsSelected })}
     </div>
   </div>
 
@@ -46,20 +47,20 @@
       onclick={() => {
         onAddToGroupClicked();
       }}
-      text="Add to group"><ImagesIcon /></IconButton
+      text={intl('add_to_group')}><ImagesIcon /></IconButton
     >
     <IconButton
       onclick={() => {
         onAddToAlbumClicked();
       }}
-      text="Add to album"
+      text={intl('add_to_album')}
       ><BookImageIcon />
     </IconButton>
     <IconButton
       onclick={() => {
         onHideClicked();
       }}
-      text="Hide"
+      text={intl('hide')}
       ><EyeOffIcon />
     </IconButton>
   </div>

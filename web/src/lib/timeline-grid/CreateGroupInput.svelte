@@ -3,6 +3,7 @@
   import type { TimelineGridItem } from './timeline.svelte';
   import type { ActionReturn } from 'svelte/action';
   import { onMount } from 'svelte';
+  import { intl } from '@lib/i18next';
 
   type Props = {
     item: TimelineGridItem & { type: 'createGroupTitleInput' };
@@ -44,15 +45,15 @@
 </script>
 
 <div class="absolute w-full flex-row" style="top: {item.top}px;">
-  <input use:inputKeyBinds placeholder="Enter group title" bind:this={input} />
+  <input use:inputKeyBinds placeholder={intl('group_title_placeholder')} bind:this={input} />
   <Button
-    text="Ok"
+    text={intl('ok')}
     onclick={() => {
       trySubmit();
     }}
   />
   <Button
-    text="Cancel"
+    text={intl('cancel')}
     onclick={() => {
       onCancel();
     }}

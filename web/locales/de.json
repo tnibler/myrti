@@ -1,0 +1,22 @@
+{
+  "nav": {
+    "photos": "Fotos",
+    "albums": "Alben",
+    "map": "Karte"
+  },
+  "close": "Schließen",
+  "ok": "Ok",
+  "cancel": "Abbrechen",
+  "create": "Erstellen",
+  "add_to_group": "Zu Gruppe hinzufügen",
+  "unnamed_group": "Unbenannte Gruppe",
+  "group_title_placeholder": "Überschrift",
+  "album_title_placeholder": "Titel",
+  "add_to_album": "Zu Album hinzufügen",
+  "create_new_album": "Neues Album erstellen",
+  "new_album": "Neues Album",
+  "remove_from_album": "Aus Album entfernen",
+  "new_album": "Neues Album",
+  "hide": "Verstecken",
+  "n_selected": "{{n}} ausgewählt"
+}

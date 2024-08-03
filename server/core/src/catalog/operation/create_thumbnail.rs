@@ -47,6 +47,7 @@ pub struct ThumbnailToCreateWithPaths {
 #[instrument(skip(conn), level = "debug")]
 pub async fn apply_create_thumbnail(
     conn: &mut PooledDbConn,
+    asset_id: AssetId,
     result: ThumbnailSideEffectSuccess,
 ) -> Result<()> {
     interact!(conn, move |conn| {
@@ -54,7 +55,7 @@ pub async fn apply_create_thumbnail(
             conn,
             AssetThumbnail {
                 id: AssetThumbnailId(0),
-                asset_id: result.asset_id,
+                asset_id,
                 ty: result.ty,
                 size: result.actual_size,
                 format: result.format,
@@ -68,13 +69,13 @@ pub async fn apply_create_thumbnail(
 
 #[derive(Debug, Clone)]
 pub struct ThumbnailSideEffectSuccess {
-    pub asset_id: AssetId,
     pub ty: ThumbnailType,
     pub format: ThumbnailFormat,
     pub actual_size: Size,
 }
 
 pub struct ThumbnailSideEffectResult {
+    pub asset_id: AssetId,
     pub succeeded: Vec<ThumbnailSideEffectSuccess>,
     pub failed: Vec<(ThumbnailToCreateWithPaths, Report)>,
 }
@@ -86,6 +87,7 @@ pub async fn perform_side_effects_create_thumbnail(
     op: CreateThumbnailWithPaths,
 ) -> Result<ThumbnailSideEffectResult> {
     let mut result = ThumbnailSideEffectResult {
+        asset_id: op.asset_id,
         succeeded: Vec::default(),
         failed: Vec::default(),
     };
@@ -105,7 +107,6 @@ pub async fn perform_side_effects_create_thumbnail(
             Ok(res) => {
                 for (format, _file_key) in thumb.file_keys {
                     result.succeeded.push(ThumbnailSideEffectSuccess {
-                        asset_id: op.asset_id,
                         ty: thumb.ty,
                         format,
                         actual_size: res.actual_size,

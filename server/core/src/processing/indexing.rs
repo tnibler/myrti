@@ -45,7 +45,7 @@ pub async fn index_file(
     let ffprobe_path = bin_paths
         .and_then(|bp| bp.ffprobe.as_ref())
         .map(|p| p.as_path());
-    let metadata = read_media_metadata(path, exiftool_path)
+    let (exiftool_json, metadata) = read_media_metadata(path, exiftool_path)
         .await
         .wrap_err("could not read file metadata")?;
     let file_type = match &metadata.file.file_type {

@@ -94,10 +94,14 @@ pub mod exiftool {
 pub async fn read_media_metadata(
     path: &Path,
     exiftool_bin_path: Option<&Path>,
-) -> Result<exiftool::Output> {
+) -> Result<(Vec<u8>, exiftool::Output)> {
     let mut command = Command::new(exiftool_bin_path.unwrap_or("exiftool".into()));
     command
-        .args(["-j", "-g", "-n"])
+        .args([
+            "-j", // JSON
+            "-g", // group headings (File, EXIF, Maker Notes, Copmosite)
+            "-n", // no print conversion to human readable
+        ])
         .arg(path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -108,11 +112,12 @@ pub async fn read_media_metadata(
         .instrument(debug_span!("exiftool"))
         .await
         .wrap_err("exiftool error")?;
-    let mut json_out: Vec<exiftool::Output> =
-        serde_json::from_slice(&output.stdout).wrap_err("failed to parse exiftool output")?;
-    json_out
-        .pop()
-        .ok_or(eyre!("failed to parse exiftool output"))
+    let raw_json = output.stdout;
+    let parsed: exiftool::Output = serde_json::from_slice::<Vec<exiftool::Output>>(&raw_json)
+        .wrap_err("failed to parse exiftool output")?
+        .pop() // json is an array with a single element
+        .ok_or(eyre!("failed to parse exiftool output"))?;
+    Ok((raw_json, parsed))
 }
 
 #[derive(Debug, Clone)]

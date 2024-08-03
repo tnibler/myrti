@@ -1,22 +1,29 @@
 use eyre::{Report, Result};
 use tokio::sync::mpsc;
+use tracing::Instrument;
 
 use crate::{
     catalog::operation::package_video::{
-        apply_package_video, perform_side_effects_package_video, PackageVideo,
+        apply_package_video, perform_side_effects_package_video, CompletedPackageVideo,
+        PackageVideo,
     },
     config,
     core::storage::Storage,
     model::repository::db::DbPool,
 };
 
+use super::simple_queue_actor::{Actor, ActorOptions, MsgFrom, QueuedActorHandle};
+
+pub type VideoPackagingActorHandle = QueuedActorHandle<VideoPackagingTaskMsg>;
+pub type MsgFromVideoPackaging = MsgFrom<VideoPackagingTaskResult>;
+
 #[derive(Debug, Clone)]
-pub enum VideoPackagingMessage {
+pub enum VideoPackagingTaskMsg {
     PackageVideo(PackageVideo),
 }
 
 #[derive(Debug)]
-pub enum VideoPackagingResult {
+pub enum VideoPackagingTaskResult {
     PackagingComplete(PackageVideo),
     PackagingError {
         package_video: PackageVideo,
@@ -24,66 +31,111 @@ pub enum VideoPackagingResult {
     },
 }
 
-pub struct VideoPackagingActorHandle {
-    pub send: mpsc::Sender<VideoPackagingMessage>,
-    pub recv_result: mpsc::Receiver<VideoPackagingResult>,
+pub fn start_video_packaging_actor(
+    db_pool: DbPool,
+    storage: Storage,
+    config: config::Config,
+    send_from_us: mpsc::UnboundedSender<MsgFromVideoPackaging>,
+) -> QueuedActorHandle<VideoPackagingTaskMsg> {
+    let actor = VideoPackagingActor {
+        db_pool,
+        storage,
+        config,
+    };
+    QueuedActorHandle::new(
+        actor,
+        send_from_us,
+        ActorOptions {
+            max_tasks: 1,
+            max_queue_size: 100,
+        },
+    )
 }
 
-impl VideoPackagingActorHandle {
-    pub fn new(db_pool: DbPool, storage: Storage, config: config::Config) -> Self {
-        let (send, recv) = mpsc::channel(10000);
-        let (send_result, recv_result) = mpsc::channel(1000);
-        let actor = VideoPackagingActor {
-            db_pool,
-            storage,
-            config,
-            recv,
-            send_result,
-        };
-        tokio::spawn(run_video_packaging_actor(actor));
-        Self { send, recv_result }
+impl QueuedActorHandle<VideoPackagingTaskMsg> {
+    pub fn msg_package_video(&self, msg: PackageVideo) -> Result<()> {
+        self.msg_do_task(VideoPackagingTaskMsg::PackageVideo(msg))
     }
 }
 
 struct VideoPackagingActor {
-    pub db_pool: DbPool,
-    pub storage: Storage,
-    pub config: config::Config,
-    pub recv: mpsc::Receiver<VideoPackagingMessage>,
-    pub send_result: mpsc::Sender<VideoPackagingResult>,
+    db_pool: DbPool,
+    storage: Storage,
+    config: config::Config,
 }
 
-async fn run_video_packaging_actor(mut actor: VideoPackagingActor) {
-    while let Some(msg) = actor.recv.recv().await {
+impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingActor {
+    async fn run_task(
+        &mut self,
+        msg: VideoPackagingTaskMsg,
+        result_send: mpsc::UnboundedSender<(super::actor::TaskId, VideoPackagingTaskResult)>,
+        task_id: super::actor::TaskId,
+        ctl_recv: mpsc::UnboundedReceiver<super::actor::MsgTaskControl>,
+    ) {
         match msg {
-            VideoPackagingMessage::PackageVideo(package_video) => {
-                let res = handle_message(&mut actor, &package_video).await;
-                if let Err(report) = res {
-                    let _ = actor
-                        .send_result
-                        .send(VideoPackagingResult::PackagingError {
-                            package_video,
-                            report: report.wrap_err("error running video packaging task"),
-                        })
-                        .await;
+            VideoPackagingTaskMsg::PackageVideo(package_video) => {
+                let db_pool = self.db_pool.clone();
+                let storage = self.storage.clone();
+                let bin_paths = self.config.bin_paths.clone();
+                async fn apply_result(
+                    db_pool: DbPool,
+                    result: CompletedPackageVideo,
+                ) -> Result<()> {
+                    let mut conn = db_pool.get().await?;
+                    apply_package_video(&mut conn, result.clone()).await
                 }
+                tokio::task::spawn(
+                    async move {
+                        let result = perform_side_effects_package_video(
+                            &db_pool,
+                            &storage,
+                            &package_video,
+                            bin_paths.as_ref(),
+                        )
+                        .await;
+                        match result {
+                            Ok(result) => {
+                                let apply_result = apply_result(db_pool, result).await;
+                                match apply_result {
+                                    Ok(()) => {
+                                        result_send
+                                            .send((
+                                                task_id,
+                                                VideoPackagingTaskResult::PackagingComplete(
+                                                    package_video,
+                                                ),
+                                            ))
+                                            .expect("Receiver must be alive");
+                                    }
+                                    Err(report) => {
+                                        result_send
+                                            .send((
+                                                task_id,
+                                                VideoPackagingTaskResult::PackagingError {
+                                                    package_video,
+                                                    report,
+                                                },
+                                            ))
+                                            .expect("Receiver must be alive");
+                                    }
+                                }
+                            }
+                            Err(report) => {
+                                result_send
+                                    .send((
+                                        task_id,
+                                        VideoPackagingTaskResult::PackagingError {
+                                            package_video,
+                                            report,
+                                        },
+                                    ))
+                                    .expect("Receiver must be alive");
+                            }
+                        }
+                    }
+                    .in_current_span(),
+                );
             }
-        };
+        }
     }
-}
-
-async fn handle_message(
-    actor: &mut VideoPackagingActor,
-    package_video: &PackageVideo,
-) -> Result<()> {
-    let completed_package_video = perform_side_effects_package_video(
-        actor.db_pool.clone(),
-        &actor.storage,
-        package_video,
-        actor.config.bin_paths.as_ref(),
-    )
-    .await?;
-    let mut conn = actor.db_pool.get().await?;
-    apply_package_video(&mut conn, completed_package_video).await?;
-    Ok(())
 }

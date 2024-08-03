@@ -44,7 +44,7 @@ pub struct ThumbnailToCreateWithPaths {
     pub file_keys: Vec<(ThumbnailFormat, String)>,
 }
 
-#[instrument(skip(conn), level = "debug")]
+#[instrument(skip(conn))]
 pub async fn apply_create_thumbnail(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
@@ -74,6 +74,7 @@ pub struct ThumbnailSideEffectSuccess {
     pub actual_size: Size,
 }
 
+#[derive(Debug)]
 pub struct ThumbnailSideEffectResult {
     pub asset_id: AssetId,
     pub succeeded: Vec<ThumbnailSideEffectSuccess>,

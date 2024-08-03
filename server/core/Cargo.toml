@@ -44,6 +44,7 @@ diesel_migrations = { version = "2.1.0", features = ["sqlite"] }
 deadpool-diesel = { version = "0.5.0", features = ["sqlite", "tracing", "serde"] }
 deadpool = { version = "0.10.0", features = ["rt_tokio_1"] }
 libsqlite3-sys = { version = "0.28.0", features = ["bundled"] }
+strum = { version = "0.26.3", features = ["derive"] }
 
 [build-dependencies]
 cc = "1.0.79"

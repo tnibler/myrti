@@ -7,7 +7,7 @@ use crate::{
             ImageConversionActorHandle, ImageConversionMessage, ImageConversionResult,
         },
         indexing::{IndexingActorHandle, IndexingMessage, IndexingResult},
-        thumbnail::{ThumbnailActorHandle, ThumbnailMessage},
+        thumbnail::{ThumbnailActorHandle, ThumbnailTaskMsg, ToThumbnailMsg},
         video_packaging::{VideoPackagingActorHandle, VideoPackagingMessage, VideoPackagingResult},
     },
     catalog::rules,
@@ -40,8 +40,9 @@ pub struct SchedulerHandle {
 impl SchedulerHandle {
     pub fn new(db_pool: DbPool, storage: Storage, config: Config) -> Self {
         let indexing_actor = IndexingActorHandle::new(db_pool.clone(), config.clone());
+        let (from_thumbnail_send, from_thumbnail_recv) = mpsc::unbounded_channel();
         let thumbnail_actor =
-            ThumbnailActorHandle::new(db_pool.clone(), storage.clone(), config.clone());
+            ThumbnailActorHandle::new(db_pool.clone(), storage.clone(), from_thumbnail_send);
         let video_packaging_actor =
             VideoPackagingActorHandle::new(db_pool.clone(), storage.clone(), config.clone());
         let image_conversion_actor =
@@ -98,7 +99,7 @@ async fn run_scheduler(sched: Scheduler) {
         image_conversion_actor,
     } = sched;
     let mut video_result_recv = video_packaging_actor.recv_result;
-    let mut thumbnail_result_recv = thumbnail_actor.recv_result;
+    // let mut thumbnail_result_recv = thumbnail_actor.recv_result;
     let mut image_conversion_result_recv = image_conversion_actor.recv_result;
     loop {
         tokio::select! {
@@ -128,9 +129,9 @@ async fn run_scheduler(sched: Scheduler) {
                     tracing::error!("Error packaging video {}:\n{:?}", package_video.asset_id, report);
                 }
             }
-            Some(thumbnail_result) = thumbnail_result_recv.recv() => {
-                tracing::error!("Error creating thumbnail:\n{:?}", thumbnail_result);
-            }
+            // Some(thumbnail_result) = thumbnail_result_recv.recv() => {
+            //     tracing::error!("Error creating thumbnail:\n{:?}", thumbnail_result);
+            // }
             Some(image_conversion_result) = image_conversion_result_recv.recv() => {
                 match image_conversion_result {
                     ImageConversionResult::ConversionError { convert_image, report } => {
@@ -146,7 +147,7 @@ async fn run_scheduler(sched: Scheduler) {
 async fn on_startup(
     db_pool: DbPool,
     indexing_send: mpsc::Sender<IndexingMessage>,
-    thumbnail_send: mpsc::Sender<ThumbnailMessage>,
+    thumbnail_send: mpsc::Sender<ToThumbnailMsg>,
     video_packaging_send: mpsc::Sender<VideoPackagingMessage>,
     image_conversion_send: mpsc::Sender<ImageConversionMessage>,
 ) {
@@ -182,13 +183,19 @@ async fn on_startup(
             .await;
     }
     if !thumbnails_required.is_empty() {
-        let _ = thumbnail_send
-            .send(ThumbnailMessage::CreateAssetThumbnails(thumbnails_required))
-            .await;
+        for t in thumbnails_required {
+            let _ = thumbnail_send
+                .send(ToThumbnailMsg::DoTask(
+                    ThumbnailTaskMsg::CreateAssetThumbnail(t),
+                ))
+                .await;
+        }
     }
     for album_thumb in album_thumbnails_required {
         let _ = thumbnail_send
-            .send(ThumbnailMessage::CreateAlbumThumbnail(album_thumb))
+            .send(ToThumbnailMsg::DoTask(
+                ThumbnailTaskMsg::CreateAlbumThumbnail(album_thumb),
+            ))
             .await;
     }
 
@@ -224,7 +231,7 @@ async fn handle_msg(msg: SchedulerMessage, indexing_send: &mpsc::Sender<Indexing
 async fn on_new_asset_indexed(
     asset_id: AssetId,
     db_pool: DbPool,
-    thumbnail_send: mpsc::Sender<ThumbnailMessage>,
+    thumbnail_send: mpsc::Sender<ToThumbnailMsg>,
     video_packaging_send: mpsc::Sender<VideoPackagingMessage>,
     image_conversion_send: mpsc::Sender<ImageConversionMessage>,
 ) {
@@ -234,9 +241,9 @@ async fn on_new_asset_indexed(
         .expect("TODO");
     if !thumbnails_required.thumbnails.is_empty() {
         let _ = thumbnail_send
-            .send(ThumbnailMessage::CreateAssetThumbnails(vec![
-                thumbnails_required,
-            ]))
+            .send(ToThumbnailMsg::DoTask(
+                ThumbnailTaskMsg::CreateAssetThumbnail(thumbnails_required),
+            ))
             .await;
     }
     let video_packaging_required = rules::required_video_packaging_for_asset(&mut conn, asset_id)

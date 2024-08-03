@@ -74,6 +74,7 @@ pub struct ThumbnailSideEffectSuccess {
     pub actual_size: Size,
 }
 
+#[derive(Debug)]
 pub struct ThumbnailSideEffectResult {
     pub asset_id: AssetId,
     pub succeeded: Vec<ThumbnailSideEffectSuccess>,

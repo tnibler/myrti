@@ -13,7 +13,7 @@ use axum::{
 };
 use axum_extra::body::AsyncReadBody;
 use eyre::{eyre, Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
 use tracing::Instrument;
 use utoipa::ToSchema;
@@ -36,6 +36,7 @@ pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/", get(get_all_assets))
         .route("/:id", get(get_asset))
+        .route("/:id/details", get(get_asset_details))
         .route("/thumbnail/:id/:size/:format", get(get_thumbnail))
         .route("/original/:id", get(get_asset_file))
         .route("/timeline", get(super::timeline::get_timeline))
@@ -78,6 +79,48 @@ async fn get_asset(
     State(_app_state): State<SharedState>,
 ) -> ApiResult<Json<Asset>> {
     Err(eyre!("not implemented"))?
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetDetailsResponse {
+    pub exiftool_output: serde_json::Value,
+}
+
+#[utoipa::path(get, path = "/api/asset/{id}/details",
+responses(
+    (status = 200, body = AssetDetailsResponse),
+    (status = NOT_FOUND, description = "Asset not found")
+),
+    params(
+        ("id" = String, Path, description = "AssetId")
+    )
+)
+]
+async fn get_asset_details(
+    Path(asset_id): Path<AssetId>,
+    State(app_state): State<SharedState>,
+) -> ApiResult<Json<AssetDetailsResponse>> {
+    let asset_id: model::AssetId = asset_id.try_into()?;
+    let conn = app_state.pool.get().await?;
+    let exiftool_output = interact!(conn, move |conn| {
+        repository::asset::get_asset_exiftool_output(conn, asset_id)
+    })
+    .await??;
+    let json = match serde_json::from_slice(&exiftool_output)
+        .wrap_err("failed to parse JSON exiftool_output")?
+    {
+        // raw exiftool output in db is an array with a single element [{/*...*/}],
+        // so remove that wrapping array
+        serde_json::Value::Array(mut inner) if inner.len() == 1 => {
+            Ok(inner.pop().expect("length was checked to be 1"))
+        }
+
+        other => Err(eyre!("unexpected in JSON exiftool output: {:?}", other)),
+    }?;
+    Ok(Json(AssetDetailsResponse {
+        exiftool_output: json,
+    }))
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, ToSchema)]

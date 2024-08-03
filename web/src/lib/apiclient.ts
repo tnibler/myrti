@@ -93,6 +93,7 @@ const TimelineChunk = z
     groups: z.array(TimelineGroup),
   })
   .passthrough();
+const AssetDetailsResponse = z.object({ exiftoolOutput: z.unknown() }).passthrough();
 const TimelineSection = z
   .object({
     avgAspectRatio: z.number(),
@@ -163,6 +164,7 @@ export const schemas = {
   TimelineGroupType,
   TimelineGroup,
   TimelineChunk,
+  AssetDetailsResponse,
   TimelineSection,
   TimelineSectionsResponse,
   TimelineGroupId,
@@ -278,6 +280,27 @@ const endpoints = makeApi([
       },
     ],
     response: Asset,
+    errors: [
+      {
+        status: 404,
+        description: `Asset not found`,
+        schema: z.void(),
+      },
+    ],
+  },
+  {
+    method: 'get',
+    path: '/api/asset/:id/details',
+    alias: 'getAssetDetails',
+    requestFormat: 'json',
+    parameters: [
+      {
+        name: 'id',
+        type: 'Path',
+        schema: z.string(),
+      },
+    ],
+    response: z.object({ exiftoolOutput: z.unknown() }).passthrough(),
     errors: [
       {
         status: 404,

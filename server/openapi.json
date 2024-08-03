@@ -486,6 +486,40 @@
         }
       }
     },
+    "/api/asset/{id}/details": {
+      "get": {
+        "tags": [
+          "crate::routes::asset"
+        ],
+        "operationId": "getAssetDetails",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "AssetId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDetailsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Asset not found"
+          }
+        }
+      }
+    },
     "/api/timeline/sections": {
       "get": {
         "tags": [
@@ -806,6 +840,15 @@
             "type": "integer",
             "format": "int32"
           }
+        }
+      },
+      "AssetDetailsResponse": {
+        "type": "object",
+        "required": [
+          "exiftoolOutput"
+        ],
+        "properties": {
+          "exiftoolOutput": {}
         }
       },
       "AssetId": {

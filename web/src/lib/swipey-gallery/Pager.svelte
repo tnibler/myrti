@@ -51,6 +51,7 @@
   } from 'lucide-svelte';
   import dayjs from 'dayjs';
   import type { AssetWithSpe } from '@lib/apitypes';
+  import InfoPanel from './InfoPanel.svelte';
 
   let {
     numSlides,
@@ -278,7 +279,6 @@
   }
 
   export function moveSlide(direction: 'left' | 'right') {
-    console.log('moveSlide', direction);
     animations.stopAllAnimations();
     let diff = 0;
     if (direction === 'left') {
@@ -493,17 +493,7 @@
   <div class={'bg-white z-50 transition-all w-96 ' + (isSidePanelOpen ? 'mr-0' : 'mr-[-24rem]')}>
     {#await currentSlide then slide}
       {#if slide !== null}
-        {@const asset: AssetWithSpe = slide.asset}
-        <ul>
-          <li>
-            {asset.pathInRoot}
-          </li>
-
-          <li>
-            {dayjs.utc(asset.takenDate).format('LLL')}
-          </li>
-          <li>{asset.width}x{asset.height}</li>
-        </ul>
+        <InfoPanel asset={slide.asset} />
       {/if}
     {/await}
   </div>

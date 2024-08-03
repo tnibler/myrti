@@ -143,7 +143,7 @@ pub fn from_db_asset_ty(i: i32) -> Result<AssetType> {
 }
 
 // TODO roundtrip proptests making sure that composition of these is identity
-fn to_db_timezone_info(tzi: &TimestampInfo) -> i32 {
+pub fn to_db_timezone_info(tzi: &TimestampInfo) -> i32 {
     match tzi {
         TimestampInfo::TzCertain(_) => 1,
         TimestampInfo::UtcCertain => 2,
@@ -171,77 +171,6 @@ fn from_db_timezone_info(i: i32, tz_offset: Option<&str>) -> Result<TimestampInf
         (2, _) => Ok(TimestampInfo::UtcCertain),
         (6, _) => Ok(TimestampInfo::NoTimestamp),
         _ => Err(eyre!("invalid timezone_info combination in db row ")),
-    }
-}
-
-pub trait AsInsertableAsset {
-    fn as_insertable<'a, 'b>(&'a self, ffprobe_output: Option<Cow<'b, [u8]>>) -> DbInsertAsset<'a>
-    where
-        'b: 'a;
-}
-
-impl AsInsertableAsset for Asset {
-    fn as_insertable<'a, 'b>(&'a self, ffprobe_output: Option<Cow<'b, [u8]>>) -> DbInsertAsset<'a>
-    where
-        'b: 'a,
-    {
-        let timezone_offset: Option<_> = match self.base.timestamp_info {
-            TimestampInfo::TzCertain(tz)
-            | TimestampInfo::TzSetByUser(tz)
-            | TimestampInfo::TzInferredLocation(tz)
-            | TimestampInfo::TzGuessedLocal(tz) => Some(Cow::Owned(tz.to_string())),
-            TimestampInfo::UtcCertain | TimestampInfo::NoTimestamp => None,
-        };
-        DbInsertAsset {
-            asset_id: None,
-            ty: to_db_asset_ty(self.base.ty),
-            root_dir_id: self.base.root_dir_id.0,
-            file_type: Cow::Borrowed(&self.base.file_type),
-            file_path: Cow::Borrowed(self.base.file_path.as_str()),
-            is_hidden: bool_to_int(self.base.is_hidden),
-            hash: self.base.hash.map(|h| Cow::Owned(h.to_le_bytes().to_vec())),
-            added_at: datetime_to_db_repr(&self.base.added_at),
-            taken_date: datetime_to_db_repr(&self.base.taken_date),
-            timezone_offset,
-            timezone_info: to_db_timezone_info(&self.base.timestamp_info),
-            width: self.base.size.width,
-            height: self.base.size.height,
-            rotation_correction: self.base.rotation_correction,
-            gps_latitude: self.base.gps_coordinates.map(|c| c.lat),
-            gps_longitude: self.base.gps_coordinates.map(|c| c.lon),
-            image_format_name: match &self.sp {
-                AssetSpe::Image(img) => Some(Cow::Borrowed(&img.image_format_name)),
-                AssetSpe::Video(_) => None,
-            },
-            ffprobe_output: match &self.sp {
-                AssetSpe::Image(_) => {
-                    debug_assert!(
-                        ffprobe_output.is_none(),
-                        "ffrobe_output must not be set to insert image Asset"
-                    );
-                    None
-                }
-                AssetSpe::Video(_video) => ffprobe_output,
-            },
-            video_codec_name: match &self.sp {
-                AssetSpe::Image(_) => None,
-                AssetSpe::Video(video) => Some(Cow::Borrowed(&video.video_codec_name)),
-            },
-            video_bitrate: match &self.sp {
-                AssetSpe::Video(video) => Some(video.video_bitrate),
-                _ => None,
-            },
-            audio_codec_name: match &self.sp {
-                AssetSpe::Video(video) => {
-                    Some(video.audio_codec_name.as_deref().map(Cow::Borrowed)).flatten()
-                }
-                _ => None,
-            },
-            has_dash: match &self.sp {
-                AssetSpe::Video(video) => Some(bool_to_int(video.has_dash)),
-                _ => None,
-            },
-        }
     }
 }
 

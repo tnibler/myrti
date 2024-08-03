@@ -9,18 +9,18 @@ use diesel::{insert_into, prelude::*};
 use eyre::{eyre, Context, Result};
 use tracing::{error, instrument};
 
-use crate::model::repository::db_entity::{
-    to_db_asset_ty, AsInsertableAsset, DbAssetPathOnDisk, DbAssetThumbnail,
-};
-use crate::model::util::{bool_to_int, hash_u64_to_vec8, to_db_thumbnail_type};
 use crate::model::{
     self, Asset, AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetThumbnail,
     AssetThumbnailId, AssetThumbnails, AssetType, CreateAsset, CreateAssetSpe, Image, Size,
-    ThumbnailFormat, ThumbnailType, Video, VideoAsset,
+    ThumbnailFormat, ThumbnailType, TimestampInfo, Video, VideoAsset,
+};
+use crate::model::{
+    repository::db_entity::{to_db_asset_ty, DbAssetPathOnDisk, DbAssetThumbnail},
+    util::{bool_to_int, datetime_to_db_repr, hash_u64_to_vec8, to_db_thumbnail_type},
 };
 
 use super::db::DbConn;
-use super::db_entity::DbAsset;
+use super::db_entity::{to_db_timezone_info, DbAsset, DbInsertAsset};
 use super::schema;
 
 #[instrument(skip(conn))]
@@ -211,87 +211,69 @@ pub fn get_thumbnails_for_asset(
         .collect::<Result<Vec<_>>>()
 }
 
-#[instrument(skip(conn, ffprobe_output))]
-#[deprecated = "use create_asset instead"]
-#[doc(hidden)]
-/// Only really used for tests an in create_asset
-/// ffprobe_output is passed separately because adding it as a field to DbAsset would mean we have
-/// to query and pass it around everywhere, even though it's almost never needed.
-/// Later big tables like Asset could probably be divided into important and less important fields
-/// and spread over two different struct types for sqlx queries
-pub fn insert_asset(
-    conn: &mut DbConn,
-    asset: &Asset,
-    ffprobe_output: Option<impl AsRef<[u8]>>,
-) -> Result<AssetId> {
-    if asset.base.id.0 != 0 {
-        error!("attempting to insert Asset with non-zero id");
-        return Err(eyre!("attempting to insert Asset with non-zero id"));
-    }
-    if asset.base.ty
-        != match asset.sp {
-            AssetSpe::Image(_) => AssetType::Image,
-            AssetSpe::Video(_) => AssetType::Video,
-        }
-    {
-        error!("attempting to insert Asset with mismatching type and sp fields");
-        return Err(eyre!(
-            "attempting to insert Asset with mismatching type and sp fields"
-        ));
-    }
-    let ffprobe_output: Option<&[u8]> = ffprobe_output.as_ref().map(|o| o.as_ref());
-
-    let insertable = asset.as_insertable(ffprobe_output.map(Cow::Borrowed));
-    let id: i64 = insert_into(schema::Asset::table)
-        .values(&insertable)
-        .returning(schema::Asset::asset_id)
-        .get_result(conn)
-        .wrap_err("error inserting Asset")?;
-    Ok(AssetId(id))
-}
-
 #[instrument(skip(conn))]
 pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<AssetId> {
-    let (ty, sp, ffprobe_output) = match create_asset.spe {
-        CreateAssetSpe::Image(image) => (
-            AssetType::Image,
-            AssetSpe::Image(Image {
-                image_format_name: image.image_format_name.clone(),
-            }),
-            None,
-        ),
-        CreateAssetSpe::Video(video) => (
-            AssetType::Video,
-            AssetSpe::Video(Video {
-                video_codec_name: video.video_codec_name.clone(),
-                video_bitrate: video.video_bitrate,
-                audio_codec_name: video.audio_codec_name.clone(),
-                has_dash: video.has_dash,
-            }),
-            Some(video.ffprobe_output),
-        ),
+    let timezone_offset: Option<_> = match create_asset.base.timestamp_info {
+        TimestampInfo::TzCertain(tz)
+        | TimestampInfo::TzSetByUser(tz)
+        | TimestampInfo::TzInferredLocation(tz)
+        | TimestampInfo::TzGuessedLocal(tz) => Some(Cow::Owned(tz.to_string())),
+        TimestampInfo::UtcCertain | TimestampInfo::NoTimestamp => None,
     };
-    let asset_base = AssetBase {
-        id: AssetId(0),
-        ty,
-        root_dir_id: create_asset.base.root_dir_id,
-        file_type: create_asset.base.file_type,
-        file_path: create_asset.base.file_path,
-        is_hidden: false,
-        added_at: Utc::now(), // db stores milliseconds only
-        taken_date: create_asset.base.taken_date,
-        timestamp_info: create_asset.base.timestamp_info,
-        size: create_asset.base.size,
+    let insertable: DbInsertAsset = DbInsertAsset {
+        asset_id: None,
+        ty: to_db_asset_ty(match &create_asset.spe {
+            CreateAssetSpe::Image(_) => AssetType::Image,
+            CreateAssetSpe::Video(_) => AssetType::Video,
+        }),
+        root_dir_id: create_asset.base.root_dir_id.0,
+        file_type: create_asset.base.file_type.into(),
+        file_path: create_asset.base.file_path.as_str().into(),
+        is_hidden: bool_to_int(false),
+        hash: create_asset
+            .base
+            .hash
+            .map(|h| Cow::Owned(h.to_le_bytes().to_vec())),
+        added_at: datetime_to_db_repr(&Utc::now()),
+        taken_date: datetime_to_db_repr(&create_asset.base.taken_date),
+        timezone_offset,
+        timezone_info: to_db_timezone_info(&create_asset.base.timestamp_info),
+        width: create_asset.base.size.width,
+        height: create_asset.base.size.height,
         rotation_correction: create_asset.base.rotation_correction,
-        gps_coordinates: create_asset.base.gps_coordinates,
-        hash: create_asset.base.hash,
+        gps_latitude: create_asset.base.gps_coordinates.map(|c| c.lat),
+        gps_longitude: create_asset.base.gps_coordinates.map(|c| c.lon),
+        image_format_name: match &create_asset.spe {
+            CreateAssetSpe::Image(img) => Some(img.image_format_name.as_str().into()),
+            CreateAssetSpe::Video(_) => None,
+        },
+        ffprobe_output: match &create_asset.spe {
+            CreateAssetSpe::Image(_) => None,
+            CreateAssetSpe::Video(video) => Some(video.ffprobe_output.0.as_slice().into()),
+        },
+        video_codec_name: match &create_asset.spe {
+            CreateAssetSpe::Image(_) => None,
+            CreateAssetSpe::Video(video) => Some(video.video_codec_name.as_str().into()),
+        },
+        video_bitrate: match &create_asset.spe {
+            CreateAssetSpe::Image(_) => None,
+            CreateAssetSpe::Video(video) => Some(video.video_bitrate),
+        },
+        audio_codec_name: match &create_asset.spe {
+            CreateAssetSpe::Image(_) => None,
+            CreateAssetSpe::Video(video) => Some(
+                video
+                    .audio_codec_name
+                    .as_ref()
+                    .map(|a| Cow::Borrowed(a.as_str())),
+            )
+            .flatten(),
+        },
+        has_dash: match &create_asset.spe {
+            CreateAssetSpe::Image(_) => None,
+            CreateAssetSpe::Video(video) => Some(bool_to_int(video.has_dash)),
+        },
     };
-    let asset = Asset {
-        base: asset_base,
-        sp,
-    };
-
-    let insertable = asset.as_insertable(ffprobe_output.map(|o| Cow::Owned(o.0)));
     let id: i64 = insert_into(schema::Asset::table)
         .values(&insertable)
         .returning(schema::Asset::asset_id)

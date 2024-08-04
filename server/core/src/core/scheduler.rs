@@ -8,7 +8,7 @@ use crate::{
         self,
         image_conversion::{ImageConversionActorHandle, MsgFromImageConversion},
         indexing::{IndexingActorHandle, MsgFromIndexing},
-        thumbnail::{MsgFromThumbnail, ThumbnailActorHandle},
+        thumbnail::{self, new_thumbnail_actor, MsgFromThumbnail, ThumbnailActorHandle},
         video_packaging::{MsgFromVideoPackaging, VideoPackagingActorHandle},
     },
     catalog::rules,
@@ -73,7 +73,7 @@ impl SchedulerHandle {
 
         let (from_thumbnail_send, from_thumbnail_recv) = mpsc::unbounded_channel();
         let thumbnail_actor =
-            ThumbnailActorHandle::new(db_pool.clone(), storage.clone(), from_thumbnail_send);
+            new_thumbnail_actor(db_pool.clone(), storage.clone(), from_thumbnail_send);
 
         let (from_video_packaging_send, from_video_packaging_recv) = mpsc::unbounded_channel();
         let video_packaging_actor = VideoPackagingActorHandle::new(
@@ -190,6 +190,7 @@ impl Scheduler {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     async fn on_new_asset_indexed(&self, asset_id: AssetId) {
         let mut conn = self.db_pool.get().await.unwrap();
         let thumbnails_required = rules::required_thumbnails_for_asset(&mut conn, asset_id)
@@ -217,39 +218,45 @@ impl Scheduler {
         }
     }
 
+    #[tracing::instrument(skip(self))]
     async fn on_thumbnail_msg(&mut self, msg: MsgFromThumbnail) -> Result<()> {
+        tracing::debug!("msg");
         let actor_state = &mut self.actor_states[Actors::Thumbnail as usize];
         match msg {
             MsgFromThumbnail::ActivityChange {
                 is_running,
-                running_tasks,
+                active_tasks,
                 queued_tasks,
             } => {
-                let is_idle = is_running && running_tasks == 0 && queued_tasks == 0;
-                if is_idle && actor_state.has_dropped_msgs {
-                    tracing::debug!("thumbnail actor idle, getting more work");
+                let is_idle = is_running && active_tasks == 0 && queued_tasks == 0;
+                let found_new_work = if is_idle && actor_state.has_dropped_msgs {
                     actor_state.has_dropped_msgs = false;
                     let mut conn = self.db_pool.get().await?;
                     let thumbnails_required =
                         rules::thumbnails_to_create(&mut conn).await.expect("TODO");
+                    let any_work = !thumbnails_required.is_empty();
                     for t in thumbnails_required {
                         let _ = self.thumbnail_actor.msg_create_asset_thumbnail(t);
                     }
+                    any_work
+                } else {
+                    false
+                };
+                if !found_new_work {
+                    tracing::info!("Thumbnail actor idle");
                 }
             }
             MsgFromThumbnail::DroppedMessage => {
                 actor_state.has_dropped_msgs = true;
             }
-            MsgFromThumbnail::AssetThumbnailError { thumbnail, report } => {
-                tracing::warn!(?thumbnail, ?report, "TODO unhandled asset thumbnail error");
-            }
-            MsgFromThumbnail::AlbumThumbnailError { thumbnail, report } => {
-                tracing::warn!(?thumbnail, ?report, "TODO unhandled album thumbnail error");
+            MsgFromThumbnail::TaskResult(result) => {
+                tracing::debug!(?result);
             }
         }
         Ok(())
     }
 
+    #[tracing::instrument(skip(self))]
     async fn handle_message(&self, msg: SchedulerMessage) {
         match msg {
             SchedulerMessage::Timer => {}

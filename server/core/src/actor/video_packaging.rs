@@ -122,10 +122,9 @@ async fn run_video_packaging_actor(
                                     break;
                                 }
                             }
-                            let _ = actor.send_from_us.send(MsgFromThumbnail::ActivityChange {
-                                is_running,
-                                running_tasks,
-                                queued_tasks: queue.len(),
+                            let _ = actor.send_from_us.send(MsgFromVideoPackaging::ActivityChange {
+                                running: running_tasks,
+                                queued: queue.len(),
                             });
                             // TODO: unsuspend running jobs
                         }

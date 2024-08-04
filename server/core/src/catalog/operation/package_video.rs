@@ -213,7 +213,7 @@ pub async fn apply_package_video(conn: &mut PooledDbConn, op: CompletedPackageVi
 
 #[instrument(skip(pool, storage), level = "debug")]
 pub async fn perform_side_effects_package_video(
-    pool: DbPool,
+    pool: &DbPool,
     storage: &Storage,
     package_video: &PackageVideo,
     bin_paths: Option<&config::BinPaths>,

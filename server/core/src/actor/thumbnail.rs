@@ -262,19 +262,27 @@ impl ThumbnailActor {
 }
 
 fn resolve(op: &CreateAssetThumbnail) -> CreateThumbnailWithPaths {
-    let mut thumbnails_to_create: Vec<ThumbnailToCreateWithPaths> = Vec::default();
-    for thumb in &op.thumbnails {
-        let avif_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Avif);
-        let webp_key = storage_key::thumbnail(op.asset_id, thumb.ty, ThumbnailFormat::Webp);
-        let thumbnail_to_create = ThumbnailToCreateWithPaths {
-            ty: thumb.ty,
-            file_keys: vec![
-                (ThumbnailFormat::Avif, avif_key),
-                (ThumbnailFormat::Webp, webp_key),
-            ],
-        };
-        thumbnails_to_create.push(thumbnail_to_create);
-    }
+    let thumbnails_to_create: Vec<ThumbnailToCreateWithPaths> = op
+        .thumbnails
+        .iter()
+        .map(|thumb| {
+            let file_keys = thumb
+                .formats
+                .iter()
+                .copied()
+                .map(|format| {
+                    (
+                        format,
+                        storage_key::thumbnail(op.asset_id, thumb.ty, format),
+                    )
+                })
+                .collect();
+            ThumbnailToCreateWithPaths {
+                ty: thumb.ty,
+                file_keys,
+            }
+        })
+        .collect();
     CreateThumbnailWithPaths {
         asset_id: op.asset_id,
         thumbnails: thumbnails_to_create,

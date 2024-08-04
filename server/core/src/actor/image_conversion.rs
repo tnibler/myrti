@@ -29,11 +29,11 @@ pub enum MsgFromImageConversion {
 
 #[derive(Clone)]
 pub struct ImageConversionActorHandle {
-    send: mpsc::UnboundedSender<ToImageConversionMsg>,
+    send: mpsc::UnboundedSender<MsgToImageConversion>,
 }
 
 #[derive(Debug, Clone)]
-enum ToImageConversionMsg {
+enum MsgToImageConversion {
     Pause,
     Resume,
     DoTask(DoTaskMsg),
@@ -58,7 +58,7 @@ impl ImageConversionActorHandle {
         config: config::Config,
         send_from_us: mpsc::UnboundedSender<MsgFromImageConversion>,
     ) -> Self {
-        let (send, recv) = mpsc::unbounded_channel::<ToImageConversionMsg>();
+        let (send, recv) = mpsc::unbounded_channel::<MsgToImageConversion>();
         let (task_result_send, task_result_recv) = mpsc::unbounded_channel::<TaskResult>();
         let actor = ImageConversionActor {
             db_pool,
@@ -69,6 +69,24 @@ impl ImageConversionActorHandle {
         };
         tokio::spawn(run_image_conversion_actor(recv, task_result_recv, actor));
         Self { send }
+    }
+
+    pub fn msg_convert_image(&self, convert_image: ConvertImage) -> Result<()> {
+        self.send
+            .send(MsgToImageConversion::DoTask(DoTaskMsg::ConvertImage(
+                convert_image,
+            )))?;
+        Ok(())
+    }
+
+    pub fn msg_pause_all(&self) -> Result<()> {
+        self.send.send(MsgToImageConversion::Pause)?;
+        Ok(())
+    }
+
+    pub fn msg_resume_all(&self) -> Result<()> {
+        self.send.send(MsgToImageConversion::Resume)?;
+        Ok(())
     }
 }
 
@@ -83,7 +101,7 @@ struct ImageConversionActor {
 const MAX_TASKS: usize = 4;
 const MAX_QUEUE_SIZE: usize = 10;
 async fn run_image_conversion_actor(
-    mut actor_recv: mpsc::UnboundedReceiver<ToImageConversionMsg>,
+    mut actor_recv: mpsc::UnboundedReceiver<MsgToImageConversion>,
     mut task_result_recv: mpsc::UnboundedReceiver<TaskResult>,
     actor: ImageConversionActor,
 ) {
@@ -94,13 +112,13 @@ async fn run_image_conversion_actor(
         tokio::select! {
             Some(msg) = actor_recv.recv() => {
                 match msg {
-                    ToImageConversionMsg::Pause => {
+                    MsgToImageConversion::Pause => {
                         is_running = false;
                     }
-                    ToImageConversionMsg::Resume => {
+                    MsgToImageConversion::Resume => {
                         is_running = true;
                     }
-                    ToImageConversionMsg::DoTask(task) => {
+                    MsgToImageConversion::DoTask(task) => {
                         if is_running && running_tasks < MAX_TASKS {
                             tracing::debug!(?task, "received msg, processing immediately");
                             running_tasks += 1;
@@ -124,6 +142,12 @@ async fn run_image_conversion_actor(
                 }
             }
             Some(task_result) = task_result_recv.recv() => {
+                let handling_result = actor.on_image_conversion_result(task_result).await;
+                if let Err(err) = handling_result {
+                    // TODO: do something
+                    tracing::error!(?err, "error applying operation");
+                }
+
                 running_tasks -= 1;
                 if !is_running || (queue.is_empty() && running_tasks == 0) {
                     tracing::debug!("no more messages, idle");
@@ -136,11 +160,6 @@ async fn run_image_conversion_actor(
                     running: running_tasks,
                     queued: queue.len(),
                 });
-                let handling_result = actor.on_image_conversion_result(task_result).await;
-                if let Err(err) = handling_result {
-                    // TODO: do something
-                    tracing::error!(?err, "error applying operation");
-                }
             }
         }
     }

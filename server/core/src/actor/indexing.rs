@@ -35,7 +35,7 @@ pub enum MsgFromIndexing {
 }
 
 #[derive(Debug, Clone)]
-enum IndexingMsg {
+enum MsgToIndexing {
     Pause,
     Resume,
     DoTask(DoTaskMsg),
@@ -48,7 +48,7 @@ enum DoTaskMsg {
 
 #[derive(Clone)]
 pub struct IndexingActorHandle {
-    send: mpsc::UnboundedSender<IndexingMsg>,
+    send: mpsc::UnboundedSender<MsgToIndexing>,
 }
 
 impl IndexingActorHandle {
@@ -69,9 +69,19 @@ impl IndexingActorHandle {
 
     pub fn msg_index_asset_root(&self, root_dir_id: AssetRootDirId) -> Result<()> {
         self.send
-            .send(IndexingMsg::DoTask(DoTaskMsg::IndexAssetRootDir {
+            .send(MsgToIndexing::DoTask(DoTaskMsg::IndexAssetRootDir {
                 root_dir_id,
             }))?;
+        Ok(())
+    }
+
+    pub fn msg_pause_all(&self) -> Result<()> {
+        self.send.send(MsgToIndexing::Pause)?;
+        Ok(())
+    }
+
+    pub fn msg_resume_all(&self) -> Result<()> {
+        self.send.send(MsgToIndexing::Resume)?;
         Ok(())
     }
 }
@@ -85,7 +95,10 @@ struct IndexingActor {
 const MAX_TASKS: usize = 4;
 const MAX_QUEUE_SIZE: usize = 10;
 
-async fn run_indexing_actor(mut recv: mpsc::UnboundedReceiver<IndexingMsg>, actor: IndexingActor) {
+async fn run_indexing_actor(
+    mut recv: mpsc::UnboundedReceiver<MsgToIndexing>,
+    actor: IndexingActor,
+) {
     let mut is_running = true;
     let mut running_tasks: usize = 0;
     let mut queue: VecDeque<DoTaskMsg> = Default::default();
@@ -93,15 +106,15 @@ async fn run_indexing_actor(mut recv: mpsc::UnboundedReceiver<IndexingMsg>, acto
         tokio::select! {
             Some(msg) = recv.recv() => {
                 match msg {
-                    IndexingMsg::Pause => {
+                    MsgToIndexing::Pause => {
                         is_running = false;
                         // TODO: pause currently running indexing jobs
                     }
-                    IndexingMsg::Resume => {
+                    MsgToIndexing::Resume => {
                         is_running = true;
                         // TODO: unpause currently running indexing jobs
                     }
-                    IndexingMsg::DoTask(task) => {
+                    MsgToIndexing::DoTask(task) => {
                         if is_running && running_tasks < MAX_TASKS {
                             running_tasks += 1;
                             let _ = actor.send_from_us.send(MsgFromIndexing::ActivityChange {
@@ -130,7 +143,6 @@ impl IndexingActor {
         match msg {
             DoTaskMsg::IndexAssetRootDir { root_dir_id } => {
                 let send_copy = self.send_from_us.clone();
-                let bin_paths = self.config.bin_paths.clone();
 
                 let start_result = handle_indexing_message(
                     self.db_pool.clone(),

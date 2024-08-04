@@ -29,11 +29,11 @@ pub enum MsgFromVideoPackaging {
 
 #[derive(Clone)]
 pub struct VideoPackagingActorHandle {
-    send: mpsc::UnboundedSender<ToVideoPackagingMsg>,
+    send: mpsc::UnboundedSender<MsgToVideoPackaging>,
 }
 
 #[derive(Debug, Clone)]
-enum ToVideoPackagingMsg {
+enum MsgToVideoPackaging {
     Pause,
     Resume,
     DoTask(DoTaskMsg),
@@ -53,7 +53,7 @@ impl VideoPackagingActorHandle {
         config: config::Config,
         send_from_us: mpsc::UnboundedSender<MsgFromVideoPackaging>,
     ) -> Self {
-        let (send, recv) = mpsc::unbounded_channel::<ToVideoPackagingMsg>();
+        let (send, recv) = mpsc::unbounded_channel::<MsgToVideoPackaging>();
         let (task_result_send, task_result_recv) = mpsc::unbounded_channel::<TaskResult>();
         let actor = VideoPackagingActor {
             db_pool,
@@ -68,7 +68,17 @@ impl VideoPackagingActorHandle {
 
     pub fn msg_package_video(&self, msg: PackageVideo) -> Result<()> {
         self.send
-            .send(ToVideoPackagingMsg::DoTask(DoTaskMsg::PackageVideo(msg)))?;
+            .send(MsgToVideoPackaging::DoTask(DoTaskMsg::PackageVideo(msg)))?;
+        Ok(())
+    }
+
+    pub fn msg_pause_all(&self) -> Result<()> {
+        self.send.send(MsgToVideoPackaging::Pause)?;
+        Ok(())
+    }
+
+    pub fn msg_resumt_all(&self) -> Result<()> {
+        self.send.send(MsgToVideoPackaging::Resume)?;
         Ok(())
     }
 }
@@ -84,7 +94,7 @@ struct VideoPackagingActor {
 const MAX_TASKS: usize = 4;
 const MAX_QUEUE_SIZE: usize = 10;
 async fn run_video_packaging_actor(
-    mut actor_recv: mpsc::UnboundedReceiver<ToVideoPackagingMsg>,
+    mut actor_recv: mpsc::UnboundedReceiver<MsgToVideoPackaging>,
     mut task_result_recv: mpsc::UnboundedReceiver<TaskResult>,
     actor: VideoPackagingActor,
 ) {
@@ -95,15 +105,15 @@ async fn run_video_packaging_actor(
         tokio::select! {
             Some(msg) = actor_recv.recv() => {
                 match msg {
-                    ToVideoPackagingMsg::Pause => {
+                    MsgToVideoPackaging::Pause => {
                         is_running = false;
                         // TODO: pause running tasks
                     }
-                    ToVideoPackagingMsg::Resume => {
+                    MsgToVideoPackaging::Resume => {
                         is_running = true;
                         // TODO: unpause running tasks
                     }
-                    ToVideoPackagingMsg::DoTask(task) => {
+                    MsgToVideoPackaging::DoTask(task) => {
                         if is_running && running_tasks < MAX_TASKS {
                             tracing::debug!(?task, "received msg, processing immediately");
                             running_tasks += 1;
@@ -127,6 +137,12 @@ async fn run_video_packaging_actor(
                 }
             }
             Some(task_result) = task_result_recv.recv() => {
+                let handling_result = actor.on_video_packaging_result(task_result).await;
+                if let Err(err) = handling_result {
+                    // TODO: do something
+                    tracing::error!(?err, "error applying operation");
+                }
+
                 running_tasks -= 1;
                 if !is_running || (queue.is_empty() && running_tasks == 0) {
                     tracing::debug!("no more messages, idle");
@@ -139,11 +155,6 @@ async fn run_video_packaging_actor(
                     running: running_tasks,
                     queued: queue.len(),
                 });
-                let handling_result = actor.on_video_packaging_result(task_result).await;
-                if let Err(err) = handling_result {
-                    // TODO: do something
-                    tracing::error!(?err, "error applying operation");
-                }
             }
         }
     }

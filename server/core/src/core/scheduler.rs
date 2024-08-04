@@ -1,8 +1,12 @@
+use eyre::Result;
+use strum::EnumCount;
 use tokio::sync::mpsc;
 use tracing::instrument;
 
 use crate::{
     actor::{
+        self,
+        image_conversion::{ImageConversionActorHandle, MsgFromImageConversion},
         indexing::{IndexingActorHandle, MsgFromIndexing},
         thumbnail::{MsgFromThumbnail, ThumbnailActorHandle},
         video_packaging::{MsgFromVideoPackaging, VideoPackagingActorHandle},
@@ -34,13 +38,29 @@ pub struct SchedulerHandle {
     pub send: mpsc::Sender<SchedulerMessage>,
 }
 
+#[derive(Debug, Copy, Clone, strum::EnumCount)]
+#[repr(usize)]
+enum Actors {
+    Indexing,
+    Thumbnail,
+    ImageConversion,
+    VideoPackaging,
+}
+
+#[derive(Debug, Default)]
+struct ActorState {
+    has_dropped_msgs: bool,
+}
+
 struct Scheduler {
-    pub db_pool: DbPool,
-    pub storage: Storage,
-    pub config: Config,
-    pub indexing_actor: IndexingActorHandle,
-    pub thumbnail_actor: ThumbnailActorHandle,
-    pub video_packaging_actor: VideoPackagingActorHandle,
+    db_pool: DbPool,
+    storage: Storage,
+    config: Config,
+    actor_states: [ActorState; Actors::COUNT],
+    indexing_actor: IndexingActorHandle,
+    thumbnail_actor: ThumbnailActorHandle,
+    video_packaging_actor: VideoPackagingActorHandle,
+    image_conversion_actor: ImageConversionActorHandle,
 }
 
 impl SchedulerHandle {
@@ -60,8 +80,14 @@ impl SchedulerHandle {
             config.clone(),
             from_video_packaging_send,
         );
-        // let image_conversion_actor =
-        //     ImageConversionActorHandle::new(db_pool.clone(), storage.clone(), config.clone());
+
+        let (from_image_conversion_send, from_image_conversion_recv) = mpsc::unbounded_channel();
+        let image_conversion_actor = ImageConversionActorHandle::new(
+            db_pool.clone(),
+            storage.clone(),
+            config.clone(),
+            from_image_conversion_send,
+        );
 
         let db_pool_copy = db_pool.clone();
         // let video_packaging_send = video_packaging_actor.send.clone();
@@ -71,9 +97,11 @@ impl SchedulerHandle {
             db_pool,
             storage,
             config,
+            actor_states: Default::default(),
             indexing_actor: indexing_actor.clone(),
             thumbnail_actor: thumbnail_actor.clone(),
             video_packaging_actor: video_packaging_actor.clone(),
+            image_conversion_actor: image_conversion_actor.clone(),
         };
         tokio::spawn(run_scheduler(
             sched,
@@ -81,44 +109,60 @@ impl SchedulerHandle {
             from_indexing_recv,
             from_thumbnail_recv,
             from_video_packaging_recv,
+            from_image_conversion_recv,
         ));
         tokio::spawn(on_startup(
             db_pool_copy,
             indexing_actor,
             thumbnail_actor,
             video_packaging_actor,
+            image_conversion_actor,
         ));
         Self { send }
     }
 }
 
 async fn run_scheduler(
-    sched: Scheduler,
+    mut sched: Scheduler,
     mut recv: mpsc::Receiver<SchedulerMessage>,
     mut indexing_recv: mpsc::UnboundedReceiver<MsgFromIndexing>,
     mut thumbnail_recv: mpsc::UnboundedReceiver<MsgFromThumbnail>,
     mut video_packaging_recv: mpsc::UnboundedReceiver<MsgFromVideoPackaging>,
+    mut image_conversion_recv: mpsc::UnboundedReceiver<MsgFromImageConversion>,
 ) {
     loop {
         tokio::select! {
             Some(msg) = recv.recv() => {
                 sched.handle_message(msg).await;
             }
-            Some(indexing_result) = indexing_recv.recv() => {
-                sched.on_indexing_result(indexing_result).await;
+            Some(indexing_msg) = indexing_recv.recv() => {
+                sched.on_indexing_msg(indexing_msg).await;
+            }
+            Some(thumbnail_msg) = thumbnail_recv.recv() => {
+                sched.on_thumbnail_msg(thumbnail_msg).await;
             }
         }
     }
 }
 
 impl Scheduler {
-    async fn on_indexing_result(&self, indexing_result: MsgFromIndexing) {
-        match indexing_result {
+    async fn on_indexing_msg(&mut self, msg: MsgFromIndexing) {
+        let actor_state = &mut self.actor_states[Actors::Indexing as usize];
+        match msg {
             MsgFromIndexing::ActivityChange {
                 running_tasks,
                 queued_tasks,
-            } => {}
-            MsgFromIndexing::DroppedMessage => {}
+            } => {
+                let is_idle = running_tasks == 0 && queued_tasks == 0;
+                if is_idle && actor_state.has_dropped_msgs {
+                    actor_state.has_dropped_msgs = false;
+                    // TODO: what do we do here. reindex all? for other actors we look up in db
+                    // what work they can do but this one is different
+                }
+            }
+            MsgFromIndexing::DroppedMessage => {
+                actor_state.has_dropped_msgs = true;
+            }
             MsgFromIndexing::NewAsset(asset_id) => {
                 self.on_new_asset_indexed(asset_id).await;
             }
@@ -157,21 +201,49 @@ impl Scheduler {
             rules::required_video_packaging_for_asset(&mut conn, asset_id)
                 .await
                 .expect("TODO");
-        // for vid_pack in video_packaging_required {
-        //     let _ = self.video_packaging_actor.send
-        //         .send(VideoPackagingMessage::PackageVideo(vid_pack))
-        //     .await;
-        // }
+        for vid_pack in video_packaging_required {
+            let _ = self.video_packaging_actor.msg_package_video(vid_pack);
+        }
 
         let image_conversion_required =
             rules::required_image_conversion_for_asset(&mut conn, asset_id)
                 .await
                 .expect("TODO");
-        // for img_convert in image_conversion_required {
-        //     let _ = self.image_conversion_actor.send
-        //         .send(ImageConversionMessage::ConvertImage(img_convert))
-        //     .await;
-        // }
+        for img_convert in image_conversion_required {
+            let _ = self.image_conversion_actor.msg_convert_image(img_convert);
+        }
+    }
+
+    async fn on_thumbnail_msg(&mut self, msg: MsgFromThumbnail) -> Result<()> {
+        let actor_state = &mut self.actor_states[Actors::Thumbnail as usize];
+        match msg {
+            MsgFromThumbnail::ActivityChange {
+                running_tasks,
+                queued_tasks,
+            } => {
+                let is_idle = running_tasks == 0 && queued_tasks == 0;
+                if is_idle && actor_state.has_dropped_msgs {
+                    tracing::debug!("thumbnail actor idle, getting more work");
+                    actor_state.has_dropped_msgs = false;
+                    let mut conn = self.db_pool.get().await?;
+                    let thumbnails_required =
+                        rules::thumbnails_to_create(&mut conn).await.expect("TODO");
+                    for t in thumbnails_required {
+                        let _ = self.thumbnail_actor.msg_create_asset_thumbnail(t);
+                    }
+                }
+            }
+            MsgFromThumbnail::DroppedMessage => {
+                actor_state.has_dropped_msgs = true;
+            }
+            MsgFromThumbnail::AssetThumbnailError { thumbnail, report } => {
+                tracing::warn!(?thumbnail, ?report, "TODO unhandled asset thumbnail error");
+            }
+            MsgFromThumbnail::AlbumThumbnailError { thumbnail, report } => {
+                tracing::warn!(?thumbnail, ?report, "TODO unhandled album thumbnail error");
+            }
+        }
+        Ok(())
     }
 
     async fn handle_message(&self, msg: SchedulerMessage) {
@@ -192,6 +264,7 @@ async fn on_startup(
     indexing_actor: IndexingActorHandle,
     thumbnail_actor: ThumbnailActorHandle,
     video_packaging_actor: VideoPackagingActorHandle,
+    image_conversion_actor: ImageConversionActorHandle,
 ) {
     let mut conn = db_pool
         .get()
@@ -217,15 +290,11 @@ async fn on_startup(
     for vid_pack in video_packaging_required {
         let _ = video_packaging_actor.msg_package_video(vid_pack);
     }
-    // for img_convert in image_conversion_required {
-    //     let _ = image_conversion_send
-    //         .send(ImageConversionMessage::ConvertImage(img_convert))
-    //         .await;
-    // }
-    if !thumbnails_required.is_empty() {
-        for t in thumbnails_required {
-            let _ = thumbnail_actor.msg_create_asset_thumbnail(t);
-        }
+    for img_convert in image_conversion_required {
+        let _ = image_conversion_actor.msg_convert_image(img_convert);
+    }
+    for t in thumbnails_required {
+        let _ = thumbnail_actor.msg_create_asset_thumbnail(t);
     }
     for album_thumb in album_thumbnails_required {
         let _ = thumbnail_actor.msg_create_album_thumbnail(album_thumb);

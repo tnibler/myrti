@@ -29,21 +29,8 @@ use crate::{
     processing::hash::hash_file,
 };
 
-#[derive(Debug, Clone)]
-pub enum ThumbnailTaskMsg {
-    CreateAssetThumbnail(CreateAssetThumbnail),
-    CreateAlbumThumbnail(CreateAlbumThumbnail),
-}
-
-#[derive(Debug, Clone)]
-pub enum ToThumbnailMsg {
-    Pause,
-    Resume,
-    DoTask(ThumbnailTaskMsg),
-}
-
 #[derive(Debug)]
-pub enum FromThumbnailMsg {
+pub enum MsgFromThumbnail {
     ActivityChange {
         running: usize,
         queued: usize,
@@ -59,26 +46,31 @@ pub enum FromThumbnailMsg {
     },
 }
 
-#[derive(Debug)]
-pub enum ThumbnailResult {
-    OtherError(Report),
-    ThumbnailError {
-        thumbnail: CreateAssetThumbnail,
-        report: Report,
-    },
+#[derive(Clone)]
+pub struct ThumbnailActorHandle {
+    send: mpsc::UnboundedSender<ToThumbnailMsg>,
 }
 
-pub struct ThumbnailActorHandle {
-    pub send: mpsc::Sender<ToThumbnailMsg>,
+#[derive(Debug, Clone)]
+enum ThumbnailTaskMsg {
+    CreateAssetThumbnail(CreateAssetThumbnail),
+    CreateAlbumThumbnail(CreateAlbumThumbnail),
+}
+
+#[derive(Debug, Clone)]
+enum ToThumbnailMsg {
+    Pause,
+    Resume,
+    DoTask(ThumbnailTaskMsg),
 }
 
 impl ThumbnailActorHandle {
     pub fn new(
         db_pool: DbPool,
         storage: Storage,
-        from_thumbnail_send: mpsc::UnboundedSender<FromThumbnailMsg>,
+        from_thumbnail_send: mpsc::UnboundedSender<MsgFromThumbnail>,
     ) -> Self {
-        let (send, recv) = mpsc::channel(10000);
+        let (send, recv) = mpsc::unbounded_channel();
         tokio::spawn(run_thumbnail_actor(
             recv,
             from_thumbnail_send,
@@ -86,6 +78,30 @@ impl ThumbnailActorHandle {
             storage,
         ));
         Self { send }
+    }
+
+    pub fn msg_create_asset_thumbnail(&self, msg: CreateAssetThumbnail) -> Result<()> {
+        self.send.send(ToThumbnailMsg::DoTask(
+            ThumbnailTaskMsg::CreateAssetThumbnail(msg),
+        ))?;
+        Ok(())
+    }
+
+    pub fn msg_create_album_thumbnail(&self, msg: CreateAlbumThumbnail) -> Result<()> {
+        self.send.send(ToThumbnailMsg::DoTask(
+            ThumbnailTaskMsg::CreateAlbumThumbnail(msg),
+        ))?;
+        Ok(())
+    }
+
+    pub fn msg_pause(&self) -> Result<()> {
+        self.send.send(ToThumbnailMsg::Pause)?;
+        Ok(())
+    }
+
+    pub fn msg_resume(&self) -> Result<()> {
+        self.send.send(ToThumbnailMsg::Resume)?;
+        Ok(())
     }
 }
 
@@ -106,8 +122,8 @@ struct ThumbnailActor {
 const MAX_TASKS: usize = 4;
 const MAX_QUEUE_SIZE: usize = 10;
 async fn run_thumbnail_actor(
-    mut actor_recv: mpsc::Receiver<ToThumbnailMsg>,
-    actor_send: mpsc::UnboundedSender<FromThumbnailMsg>,
+    mut actor_recv: mpsc::UnboundedReceiver<ToThumbnailMsg>,
+    actor_send: mpsc::UnboundedSender<MsgFromThumbnail>,
     db_pool: DbPool,
     storage: Storage,
 ) {
@@ -135,7 +151,7 @@ async fn run_thumbnail_actor(
                         if is_running && running_tasks < MAX_TASKS {
                             tracing::debug!(?task, "received msg, processing immediately");
                             running_tasks += 1;
-                            let _ = actor_send.send(FromThumbnailMsg::ActivityChange {
+                            let _ = actor_send.send(MsgFromThumbnail::ActivityChange {
                                 running: running_tasks,
                                 queued: queue.len(),
                             });
@@ -143,12 +159,12 @@ async fn run_thumbnail_actor(
                         } else if queue.len() < MAX_QUEUE_SIZE {
                             tracing::debug!("received msg, queuing it");
                             queue.push_back(task);
-                            let _ = actor_send.send(FromThumbnailMsg::ActivityChange {
+                            let _ = actor_send.send(MsgFromThumbnail::ActivityChange {
                                 running: running_tasks,
                                 queued: queue.len(),
                             });
                         } else {
-                            let _ = actor_send.send(FromThumbnailMsg::DroppedMessage);
+                            let _ = actor_send.send(MsgFromThumbnail::DroppedMessage);
                             tracing::debug!("received msg, queue full, dropping");
                         }
                     }
@@ -164,7 +180,7 @@ async fn run_thumbnail_actor(
                     actor.process_message(msg).await;
                     running_tasks += 1;
                 }
-                let _ = actor_send.send(FromThumbnailMsg::ActivityChange {
+                let _ = actor_send.send(MsgFromThumbnail::ActivityChange {
                     running: running_tasks,
                     queued: queue.len(),
                 });

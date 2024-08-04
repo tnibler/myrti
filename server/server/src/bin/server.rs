@@ -201,6 +201,7 @@ async fn main() -> Result<()> {
         .nest("/api/assetRoots", routes::asset_roots::router())
         .nest("/api/dash", routes::dash::router())
         .nest("/api/timelinegroup", routes::timeline_group::router())
+        .nest("/api/jobs", routes::jobs::router())
         .nest("/api", routes::api_router())
         .fallback_service(SpaServeDirService::new(ServeDir::new("./static")))
         .layer(

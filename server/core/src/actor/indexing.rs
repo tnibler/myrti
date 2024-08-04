@@ -80,7 +80,7 @@ struct IndexingActor {
 const MAX_TASKS: usize = 4;
 const MAX_QUEUE_SIZE: usize = 10;
 
-async fn run_indexing_actor(mut recv: mpsc::UnboundedReceiver<IndexingMsg>, mut actor: IndexingActor) {
+async fn run_indexing_actor(mut recv: mpsc::UnboundedReceiver<IndexingMsg>, actor: IndexingActor) {
     let mut is_running = true;
     let mut running_tasks: usize = 0;
     let mut queue: VecDeque<DoTaskMsg> = Default::default();

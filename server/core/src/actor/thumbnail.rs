@@ -68,15 +68,17 @@ impl ThumbnailActorHandle {
     pub fn new(
         db_pool: DbPool,
         storage: Storage,
-        from_thumbnail_send: mpsc::UnboundedSender<MsgFromThumbnail>,
+        send_from_us: mpsc::UnboundedSender<MsgFromThumbnail>,
     ) -> Self {
-        let (send, recv) = mpsc::unbounded_channel();
-        tokio::spawn(run_thumbnail_actor(
-            recv,
-            from_thumbnail_send,
+        let (send, recv) = mpsc::unbounded_channel::<ToThumbnailMsg>();
+        let (task_result_send, mut task_result_recv) = mpsc::unbounded_channel::<TaskResult>();
+        let actor = ThumbnailActor {
             db_pool,
             storage,
-        ));
+            send_from_us,
+            task_result_send,
+        };
+        tokio::spawn(run_thumbnail_actor(recv, task_result_recv, actor));
         Self { send }
     }
 
@@ -113,7 +115,7 @@ enum TaskResult {
 struct ThumbnailActor {
     db_pool: DbPool,
     storage: Storage,
-
+    send_from_us: mpsc::UnboundedSender<MsgFromThumbnail>,
     task_result_send: mpsc::UnboundedSender<TaskResult>,
 }
 
@@ -121,16 +123,9 @@ const MAX_TASKS: usize = 4;
 const MAX_QUEUE_SIZE: usize = 10;
 async fn run_thumbnail_actor(
     mut actor_recv: mpsc::UnboundedReceiver<ToThumbnailMsg>,
-    actor_send: mpsc::UnboundedSender<MsgFromThumbnail>,
-    db_pool: DbPool,
-    storage: Storage,
+    mut task_result_recv: mpsc::UnboundedReceiver<TaskResult>,
+    actor: ThumbnailActor,
 ) {
-    let (task_result_send, mut task_result_recv) = mpsc::unbounded_channel::<TaskResult>();
-    let actor = ThumbnailActor {
-        db_pool,
-        storage,
-        task_result_send,
-    };
 
     let mut is_running = true;
     let mut running_tasks: usize = 0;
@@ -149,7 +144,7 @@ async fn run_thumbnail_actor(
                         if is_running && running_tasks < MAX_TASKS {
                             tracing::debug!(?task, "received msg, processing immediately");
                             running_tasks += 1;
-                            let _ = actor_send.send(MsgFromThumbnail::ActivityChange {
+                            let _ = actor.send_from_us.send(MsgFromThumbnail::ActivityChange {
                                 running: running_tasks,
                                 queued: queue.len(),
                             });
@@ -157,12 +152,12 @@ async fn run_thumbnail_actor(
                         } else if queue.len() < MAX_QUEUE_SIZE {
                             tracing::debug!("received msg, queuing it");
                             queue.push_back(task);
-                            let _ = actor_send.send(MsgFromThumbnail::ActivityChange {
+                            let _ = actor.send_from_us.send(MsgFromThumbnail::ActivityChange {
                                 running: running_tasks,
                                 queued: queue.len(),
                             });
                         } else {
-                            let _ = actor_send.send(MsgFromThumbnail::DroppedMessage);
+                            let _ = actor.send_from_us.send(MsgFromThumbnail::DroppedMessage);
                             tracing::debug!("received msg, queue full, dropping");
                         }
                     }
@@ -178,7 +173,7 @@ async fn run_thumbnail_actor(
                     actor.process_message(msg).await;
                     running_tasks += 1;
                 }
-                let _ = actor_send.send(MsgFromThumbnail::ActivityChange {
+                let _ = actor.send_from_us.send(MsgFromThumbnail::ActivityChange {
                     running: running_tasks,
                     queued: queue.len(),
                 });

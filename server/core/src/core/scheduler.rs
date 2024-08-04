@@ -3,18 +3,15 @@ use tracing::instrument;
 
 use crate::{
     actor::{
-        image_conversion::{
-            ImageConversionActorHandle, ImageConversionMessage, ImageConversionResult,
-        },
-        indexing::{MsgFromIndexing, IndexingActorHandle},
+        indexing::{IndexingActorHandle, MsgFromIndexing},
         thumbnail::{MsgFromThumbnail, ThumbnailActorHandle},
-        video_packaging::{VideoPackagingActorHandle, VideoPackagingMessage, VideoPackagingResult},
+        video_packaging::{MsgFromVideoPackaging, VideoPackagingActorHandle},
     },
     catalog::rules,
     config::Config,
     interact,
     model::{
-        repository::{self, album_thumbnail, db::DbPool},
+        repository::{self, db::DbPool},
         AssetId, AssetRootDirId,
     },
 };
@@ -37,16 +34,32 @@ pub struct SchedulerHandle {
     pub send: mpsc::Sender<SchedulerMessage>,
 }
 
+struct Scheduler {
+    pub db_pool: DbPool,
+    pub storage: Storage,
+    pub config: Config,
+    pub indexing_actor: IndexingActorHandle,
+    pub thumbnail_actor: ThumbnailActorHandle,
+    pub video_packaging_actor: VideoPackagingActorHandle,
+}
+
 impl SchedulerHandle {
     pub fn new(db_pool: DbPool, storage: Storage, config: Config) -> Self {
         let (from_indexing_send, from_indexing_recv) = mpsc::unbounded_channel();
-        let indexing_actor = IndexingActorHandle::new(db_pool.clone(), config.clone(), from_indexing_send);
+        let indexing_actor =
+            IndexingActorHandle::new(db_pool.clone(), config.clone(), from_indexing_send);
 
         let (from_thumbnail_send, from_thumbnail_recv) = mpsc::unbounded_channel();
         let thumbnail_actor =
             ThumbnailActorHandle::new(db_pool.clone(), storage.clone(), from_thumbnail_send);
-        // let video_packaging_actor =
-        //     VideoPackagingActorHandle::new(db_pool.clone(), storage.clone(), config.clone());
+
+        let (from_video_packaging_send, from_video_packaging_recv) = mpsc::unbounded_channel();
+        let video_packaging_actor = VideoPackagingActorHandle::new(
+            db_pool.clone(),
+            storage.clone(),
+            config.clone(),
+            from_video_packaging_send,
+        );
         // let image_conversion_actor =
         //     ImageConversionActorHandle::new(db_pool.clone(), storage.clone(), config.clone());
 
@@ -60,12 +73,20 @@ impl SchedulerHandle {
             config,
             indexing_actor: indexing_actor.clone(),
             thumbnail_actor: thumbnail_actor.clone(),
+            video_packaging_actor: video_packaging_actor.clone(),
         };
-        tokio::spawn(run_scheduler(sched, recv, from_indexing_recv, from_thumbnail_recv));
+        tokio::spawn(run_scheduler(
+            sched,
+            recv,
+            from_indexing_recv,
+            from_thumbnail_recv,
+            from_video_packaging_recv,
+        ));
         tokio::spawn(on_startup(
             db_pool_copy,
             indexing_actor,
             thumbnail_actor,
+            video_packaging_actor,
         ));
         Self { send }
     }
@@ -76,6 +97,7 @@ async fn run_scheduler(
     mut recv: mpsc::Receiver<SchedulerMessage>,
     mut indexing_recv: mpsc::UnboundedReceiver<MsgFromIndexing>,
     mut thumbnail_recv: mpsc::UnboundedReceiver<MsgFromThumbnail>,
+    mut video_packaging_recv: mpsc::UnboundedReceiver<MsgFromVideoPackaging>,
 ) {
     loop {
         tokio::select! {
@@ -89,29 +111,35 @@ async fn run_scheduler(
     }
 }
 
-struct Scheduler {
-    pub db_pool: DbPool,
-    pub storage: Storage,
-    pub config: Config,
-    pub indexing_actor: IndexingActorHandle,
-    pub thumbnail_actor: ThumbnailActorHandle,
-}
-
 impl Scheduler {
     async fn on_indexing_result(&self, indexing_result: MsgFromIndexing) {
         match indexing_result {
-            MsgFromIndexing::ActivityChange { running_tasks, queued_tasks } => {},
-            MsgFromIndexing::DroppedMessage => {
-            },
+            MsgFromIndexing::ActivityChange {
+                running_tasks,
+                queued_tasks,
+            } => {}
+            MsgFromIndexing::DroppedMessage => {}
             MsgFromIndexing::NewAsset(asset_id) => {
                 self.on_new_asset_indexed(asset_id).await;
-            },
-            MsgFromIndexing::IndexingError { root_dir_id, path, report } => {
-                tracing::error!(?root_dir_id, ?path, ?report, "TODO unhandled indexing error");
-            },
-            MsgFromIndexing::FailedToStartIndexing { root_dir_id, report } => {
+            }
+            MsgFromIndexing::IndexingError {
+                root_dir_id,
+                path,
+                report,
+            } => {
+                tracing::error!(
+                    ?root_dir_id,
+                    ?path,
+                    ?report,
+                    "TODO unhandled indexing error"
+                );
+            }
+            MsgFromIndexing::FailedToStartIndexing {
+                root_dir_id,
+                report,
+            } => {
                 tracing::error!(?root_dir_id, %report, "TODO unhandled failed to start indexing job");
-            },
+            }
         }
     }
 
@@ -121,20 +149,24 @@ impl Scheduler {
             .await
             .expect("TODO");
         if !thumbnails_required.thumbnails.is_empty() {
-            let _ = self.thumbnail_actor.msg_create_asset_thumbnail(thumbnails_required);
+            let _ = self
+                .thumbnail_actor
+                .msg_create_asset_thumbnail(thumbnails_required);
         }
-        let video_packaging_required = rules::required_video_packaging_for_asset(&mut conn, asset_id)
-            .await
-            .expect("TODO");
+        let video_packaging_required =
+            rules::required_video_packaging_for_asset(&mut conn, asset_id)
+                .await
+                .expect("TODO");
         // for vid_pack in video_packaging_required {
         //     let _ = self.video_packaging_actor.send
         //         .send(VideoPackagingMessage::PackageVideo(vid_pack))
         //     .await;
         // }
 
-        let image_conversion_required = rules::required_image_conversion_for_asset(&mut conn, asset_id)
-            .await
-            .expect("TODO");
+        let image_conversion_required =
+            rules::required_image_conversion_for_asset(&mut conn, asset_id)
+                .await
+                .expect("TODO");
         // for img_convert in image_conversion_required {
         //     let _ = self.image_conversion_actor.send
         //         .send(ImageConversionMessage::ConvertImage(img_convert))
@@ -143,14 +175,14 @@ impl Scheduler {
     }
 
     async fn handle_message(&self, msg: SchedulerMessage) {
-    match msg {
-        SchedulerMessage::Timer => {}
-        SchedulerMessage::UserRequest(user_request) => match user_request {
-            UserRequest::ReindexAssetRoot(root_dir_id) => {
-                let _ = self.indexing_actor.msg_index_asset_root(root_dir_id);
-            }
-        },
-    }
+        match msg {
+            SchedulerMessage::Timer => {}
+            SchedulerMessage::UserRequest(user_request) => match user_request {
+                UserRequest::ReindexAssetRoot(root_dir_id) => {
+                    let _ = self.indexing_actor.msg_index_asset_root(root_dir_id);
+                }
+            },
+        }
     }
 }
 
@@ -159,6 +191,7 @@ async fn on_startup(
     db_pool: DbPool,
     indexing_actor: IndexingActorHandle,
     thumbnail_actor: ThumbnailActorHandle,
+    video_packaging_actor: VideoPackagingActorHandle,
 ) {
     let mut conn = db_pool
         .get()
@@ -181,11 +214,9 @@ async fn on_startup(
         album_thumbnail = album_thumbnails_required.len(),
         "Collected required jobs"
     );
-    // for vid_pack in video_packaging_required {
-    //     let _ = video_packaging_send
-    //         .send(VideoPackagingMessage::PackageVideo(vid_pack))
-    //         .await;
-    // }
+    for vid_pack in video_packaging_required {
+        let _ = video_packaging_actor.msg_package_video(vid_pack);
+    }
     // for img_convert in image_conversion_required {
     //     let _ = image_conversion_send
     //         .send(ImageConversionMessage::ConvertImage(img_convert))
@@ -210,4 +241,3 @@ async fn on_startup(
         let _ = indexing_actor.msg_index_asset_root(asset_root.id);
     }
 }
-

@@ -71,7 +71,7 @@ impl ThumbnailActorHandle {
         send_from_us: mpsc::UnboundedSender<MsgFromThumbnail>,
     ) -> Self {
         let (send, recv) = mpsc::unbounded_channel::<ToThumbnailMsg>();
-        let (task_result_send, mut task_result_recv) = mpsc::unbounded_channel::<TaskResult>();
+        let (task_result_send, task_result_recv) = mpsc::unbounded_channel::<TaskResult>();
         let actor = ThumbnailActor {
             db_pool,
             storage,
@@ -126,7 +126,6 @@ async fn run_thumbnail_actor(
     mut task_result_recv: mpsc::UnboundedReceiver<TaskResult>,
     actor: ThumbnailActor,
 ) {
-
     let mut is_running = true;
     let mut running_tasks: usize = 0;
     let mut queue: VecDeque<DoTaskMsg> = Default::default();
@@ -201,7 +200,7 @@ impl ThumbnailActor {
                 tokio::task::spawn(async move {
                     let result =
                         do_asset_thumbnail_side_effects(db_pool, storage, create_thumbnail).await;
-                    result_send.send(TaskResult::Asset(result));
+                    result_send.send(TaskResult::Asset(result)).expect("TODO this error must be handled, since the work won't be written to db which is relevant");
                 });
             }
             DoTaskMsg::CreateAlbumThumbnail(create_thumbnail) => {
@@ -211,7 +210,7 @@ impl ThumbnailActor {
                 tokio::task::spawn(async move {
                     let result =
                         do_album_thumbnail_side_effects(db_pool, storage, create_thumbnail).await;
-                    result_send.send(TaskResult::Album(result));
+                    result_send.send(TaskResult::Album(result)).expect("TODO this error must be handled, since the work won't be written to db which is relevant");
                 });
             }
         }

@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{eyre, Context, Result};
-use tokio::sync::{mpsc, watch};
+use tokio::sync::mpsc;
 use tracing::instrument;
 use walkdir::WalkDir;
 
@@ -52,21 +52,26 @@ pub struct IndexingActorHandle {
 }
 
 impl IndexingActorHandle {
-    pub fn new(db_pool: DbPool, config: config::Config, send_from_us: mpsc::UnboundedSender<MsgFromIndexing>) -> Self {
+    pub fn new(
+        db_pool: DbPool,
+        config: config::Config,
+        send_from_us: mpsc::UnboundedSender<MsgFromIndexing>,
+    ) -> Self {
         let (send, recv) = mpsc::unbounded_channel();
         let actor = IndexingActor {
             db_pool,
             config,
-            send_from_us
+            send_from_us,
         };
         tokio::spawn(run_indexing_actor(recv, actor));
-        Self {
-            send,
-        }
+        Self { send }
     }
 
     pub fn msg_index_asset_root(&self, root_dir_id: AssetRootDirId) -> Result<()> {
-        self.send.send(IndexingMsg::DoTask(DoTaskMsg::IndexAssetRootDir { root_dir_id }))?;
+        self.send
+            .send(IndexingMsg::DoTask(DoTaskMsg::IndexAssetRootDir {
+                root_dir_id,
+            }))?;
         Ok(())
     }
 }
@@ -127,13 +132,21 @@ impl IndexingActor {
                 let send_copy = self.send_from_us.clone();
                 let bin_paths = self.config.bin_paths.clone();
 
-                let start_result = handle_indexing_message(self.db_pool.clone(), send_copy, self.config.bin_paths.clone(), root_dir_id).await;
+                let start_result = handle_indexing_message(
+                    self.db_pool.clone(),
+                    send_copy,
+                    self.config.bin_paths.clone(),
+                    root_dir_id,
+                )
+                .await;
 
                 if let Err(report) = start_result {
-                    let _ = self.send_from_us.send(MsgFromIndexing::FailedToStartIndexing {
-                        root_dir_id,
-                        report: report.wrap_err("Error starting indexing job")
-                    });
+                    let _ = self
+                        .send_from_us
+                        .send(MsgFromIndexing::FailedToStartIndexing {
+                            root_dir_id,
+                            report: report.wrap_err("Error starting indexing job"),
+                        });
                 }
             }
         }
@@ -175,7 +188,8 @@ async fn index_asset_root(
                 if e.file_type().is_file() {
                     let utf8_path = camino::Utf8Path::from_path(e.path());
                     if let Some(path) = utf8_path {
-                        let indexing_res = index_file(path, &asset_root, &pool, bin_paths.as_ref()).await;
+                        let indexing_res =
+                            index_file(path, &asset_root, &pool, bin_paths.as_ref()).await;
                         let msg = match indexing_res {
                             Ok(None) => {
                                 continue;
@@ -195,16 +209,15 @@ async fn index_asset_root(
                 }
             }
             Err(e) => {
-                let _ = send_result
-                    .send(MsgFromIndexing::IndexingError {
-                        root_dir_id: asset_root.id,
-                        path: e.path().map(|p| {
-                            p.to_owned()
-                                .try_into()
-                                .expect("only UTF-8 paths are supported")
-                        }),
-                        report: eyre!("error while listing directory: {}", e),
-                    });
+                let _ = send_result.send(MsgFromIndexing::IndexingError {
+                    root_dir_id: asset_root.id,
+                    path: e.path().map(|p| {
+                        p.to_owned()
+                            .try_into()
+                            .expect("only UTF-8 paths are supported")
+                    }),
+                    report: eyre!("error while listing directory: {}", e),
+                });
             }
         }
     }

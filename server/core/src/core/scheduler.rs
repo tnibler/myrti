@@ -26,6 +26,8 @@ use super::storage::Storage;
 pub enum SchedulerMessage {
     Timer,
     UserRequest(UserRequest),
+    PauseAllJobs,
+    ResumeAllJobs,
 }
 
 #[derive(Debug)]
@@ -146,7 +148,7 @@ async fn run_scheduler(
 }
 
 impl Scheduler {
-    async fn on_indexing_msg(&mut self, msg: MsgFromIndexing) {
+    async fn on_indexing_msg(&mut self, msg: MsgFromIndexing) -> Result<()> {
         let actor_state = &mut self.actor_states[Actors::Indexing as usize];
         match msg {
             MsgFromIndexing::ActivityChange {
@@ -185,6 +187,7 @@ impl Scheduler {
                 tracing::error!(?root_dir_id, %report, "TODO unhandled failed to start indexing job");
             }
         }
+        Ok(())
     }
 
     async fn on_new_asset_indexed(&self, asset_id: AssetId) {
@@ -218,10 +221,11 @@ impl Scheduler {
         let actor_state = &mut self.actor_states[Actors::Thumbnail as usize];
         match msg {
             MsgFromThumbnail::ActivityChange {
+                is_running,
                 running_tasks,
                 queued_tasks,
             } => {
-                let is_idle = running_tasks == 0 && queued_tasks == 0;
+                let is_idle = is_running && running_tasks == 0 && queued_tasks == 0;
                 if is_idle && actor_state.has_dropped_msgs {
                     tracing::debug!("thumbnail actor idle, getting more work");
                     actor_state.has_dropped_msgs = false;
@@ -254,6 +258,18 @@ impl Scheduler {
                     let _ = self.indexing_actor.msg_index_asset_root(root_dir_id);
                 }
             },
+            SchedulerMessage::PauseAllJobs => {
+                let _ = self.indexing_actor.msg_pause_all();
+                let _ = self.thumbnail_actor.msg_pause_all();
+                let _ = self.video_packaging_actor.msg_pause_all();
+                let _ = self.image_conversion_actor.msg_pause_all();
+            }
+            SchedulerMessage::ResumeAllJobs => {
+                let _ = self.indexing_actor.msg_resume_all();
+                let _ = self.thumbnail_actor.msg_resume_all();
+                let _ = self.video_packaging_actor.msg_resume_all();
+                let _ = self.image_conversion_actor.msg_resume_all();
+            }
         }
     }
 }

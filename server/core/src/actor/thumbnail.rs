@@ -32,6 +32,7 @@ use crate::{
 #[derive(Debug)]
 pub enum MsgFromThumbnail {
     ActivityChange {
+        is_running: bool,
         running_tasks: usize,
         queued_tasks: usize,
     },
@@ -134,31 +135,53 @@ async fn run_thumbnail_actor(
             Some(msg) = actor_recv.recv() => {
                 match msg {
                     MsgToThumbnail::Pause => {
-                        is_running = false;
+                        if is_running {
+                            tracing::debug!("pausing");
+                            is_running = false;
+                        }
                     }
                     MsgToThumbnail::Resume => {
-                        is_running = true;
+                        if !is_running {
+                            is_running = true;
+                            tracing::debug!("resuming");
+                            while running_tasks < MAX_TASKS {
+                                if let Some(msg) = queue.pop_front() {
+                                    tracing::debug!(?msg, "dequeuing message");
+                                    actor.process_message(msg).await;
+                                    running_tasks += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                            let _ = actor.send_from_us.send(MsgFromThumbnail::ActivityChange {
+                                is_running,
+                                running_tasks,
+                                queued_tasks: queue.len(),
+                            });
+                        }
                     }
                     MsgToThumbnail::DoTask(task) => {
                         if is_running && running_tasks < MAX_TASKS {
                             tracing::debug!(?task, "received msg, processing immediately");
                             running_tasks += 1;
                             let _ = actor.send_from_us.send(MsgFromThumbnail::ActivityChange {
-                                 running_tasks,
+                                is_running,
+                                running_tasks,
                                 queued_tasks: queue.len(),
                             });
                             actor.process_message(task).await;
                         } else if queue.len() < MAX_QUEUE_SIZE {
                             queue.push_back(task);
                             let _ = actor.send_from_us.send(MsgFromThumbnail::ActivityChange {
-                                 running_tasks,
+                                is_running,
+                                running_tasks,
                                 queued_tasks: queue.len(),
                             });
                         } else {
                             let _ = actor.send_from_us.send(MsgFromThumbnail::DroppedMessage);
                         }
                     }
-                }
+            }
             }
             Some(task_result) = task_result_recv.recv() => {
                 tracing::debug!("received task result");
@@ -180,6 +203,7 @@ async fn run_thumbnail_actor(
                     running_tasks += 1;
                 }
                 let _ = actor.send_from_us.send(MsgFromThumbnail::ActivityChange {
+                    is_running,
                     running_tasks,
                     queued_tasks: queue.len(),
                 });
@@ -191,6 +215,7 @@ async fn run_thumbnail_actor(
 impl ThumbnailActor {
     #[tracing::instrument(skip(self))]
     pub async fn process_message(&self, msg: DoTaskMsg) {
+        tracing::debug!("process_message");
         match msg {
             DoTaskMsg::CreateAssetThumbnail(create_thumbnail) => {
                 let db_pool = self.db_pool.clone();

@@ -77,7 +77,7 @@ impl VideoPackagingActorHandle {
         Ok(())
     }
 
-    pub fn msg_resumt_all(&self) -> Result<()> {
+    pub fn msg_resume_all(&self) -> Result<()> {
         self.send.send(MsgToVideoPackaging::Resume)?;
         Ok(())
     }

@@ -44,7 +44,7 @@ pub struct ThumbnailToCreateWithPaths {
     pub file_keys: Vec<(ThumbnailFormat, String)>,
 }
 
-#[instrument(skip(conn), level = "debug")]
+#[instrument(skip(conn))]
 pub async fn apply_create_thumbnail(
     conn: &mut PooledDbConn,
     asset_id: AssetId,

@@ -110,8 +110,25 @@ async fn run_video_packaging_actor(
                         // TODO: pause running tasks
                     }
                     MsgToVideoPackaging::Resume => {
-                        is_running = true;
-                        // TODO: unpause running tasks
+                        if !is_running {
+                            is_running = true;
+                            tracing::debug!("resuming");
+                            while running_tasks < MAX_TASKS {
+                                if let Some(msg) = queue.pop_front() {
+                                    tracing::debug!(?msg, "dequeuing message");
+                                    actor.process_message(msg).await;
+                                    running_tasks += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                            let _ = actor.send_from_us.send(MsgFromThumbnail::ActivityChange {
+                                is_running,
+                                running_tasks,
+                                queued_tasks: queue.len(),
+                            });
+                            // TODO: unsuspend running jobs
+                        }
                     }
                     MsgToVideoPackaging::DoTask(task) => {
                         if is_running && running_tasks < MAX_TASKS {

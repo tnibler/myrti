@@ -52,16 +52,16 @@ pub struct ThumbnailActorHandle {
 }
 
 #[derive(Debug, Clone)]
-enum ThumbnailTaskMsg {
-    CreateAssetThumbnail(CreateAssetThumbnail),
-    CreateAlbumThumbnail(CreateAlbumThumbnail),
-}
-
-#[derive(Debug, Clone)]
 enum ToThumbnailMsg {
     Pause,
     Resume,
-    DoTask(ThumbnailTaskMsg),
+    DoTask(DoTaskMsg),
+}
+
+#[derive(Debug, Clone)]
+enum DoTaskMsg {
+    CreateAssetThumbnail(CreateAssetThumbnail),
+    CreateAlbumThumbnail(CreateAlbumThumbnail),
 }
 
 impl ThumbnailActorHandle {
@@ -81,16 +81,14 @@ impl ThumbnailActorHandle {
     }
 
     pub fn msg_create_asset_thumbnail(&self, msg: CreateAssetThumbnail) -> Result<()> {
-        self.send.send(ToThumbnailMsg::DoTask(
-            ThumbnailTaskMsg::CreateAssetThumbnail(msg),
-        ))?;
+        self.send
+            .send(ToThumbnailMsg::DoTask(DoTaskMsg::CreateAssetThumbnail(msg)))?;
         Ok(())
     }
 
     pub fn msg_create_album_thumbnail(&self, msg: CreateAlbumThumbnail) -> Result<()> {
-        self.send.send(ToThumbnailMsg::DoTask(
-            ThumbnailTaskMsg::CreateAlbumThumbnail(msg),
-        ))?;
+        self.send
+            .send(ToThumbnailMsg::DoTask(DoTaskMsg::CreateAlbumThumbnail(msg)))?;
         Ok(())
     }
 
@@ -136,7 +134,7 @@ async fn run_thumbnail_actor(
 
     let mut is_running = true;
     let mut running_tasks: usize = 0;
-    let mut queue: VecDeque<ThumbnailTaskMsg> = Default::default();
+    let mut queue: VecDeque<DoTaskMsg> = Default::default();
     loop {
         tokio::select! {
             Some(msg) = actor_recv.recv() => {
@@ -199,9 +197,9 @@ async fn run_thumbnail_actor(
 
 impl ThumbnailActor {
     #[tracing::instrument(skip(self))]
-    pub async fn process_message(&self, msg: ThumbnailTaskMsg) {
+    pub async fn process_message(&self, msg: DoTaskMsg) {
         match msg {
-            ThumbnailTaskMsg::CreateAssetThumbnail(create_thumbnail) => {
+            DoTaskMsg::CreateAssetThumbnail(create_thumbnail) => {
                 let db_pool = self.db_pool.clone();
                 let storage = self.storage.clone();
                 let result_send = self.task_result_send.clone();
@@ -211,7 +209,7 @@ impl ThumbnailActor {
                     result_send.send(TaskResult::Asset(result));
                 });
             }
-            ThumbnailTaskMsg::CreateAlbumThumbnail(create_thumbnail) => {
+            DoTaskMsg::CreateAlbumThumbnail(create_thumbnail) => {
                 let db_pool = self.db_pool.clone();
                 let storage = self.storage.clone();
                 let result_send = self.task_result_send.clone();

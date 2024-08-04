@@ -74,10 +74,10 @@ impl VideoPackagingActorHandle {
 }
 
 struct VideoPackagingActor {
-    pub db_pool: DbPool,
-    pub storage: Storage,
-    pub config: config::Config,
-    pub send_from_us: mpsc::UnboundedSender<MsgFromVideoPackaging>,
+    db_pool: DbPool,
+    storage: Storage,
+    config: config::Config,
+    send_from_us: mpsc::UnboundedSender<MsgFromVideoPackaging>,
     task_result_send: mpsc::UnboundedSender<TaskResult>,
 }
 
@@ -97,9 +97,11 @@ async fn run_video_packaging_actor(
                 match msg {
                     ToVideoPackagingMsg::Pause => {
                         is_running = false;
+                        // TODO: pause running tasks
                     }
                     ToVideoPackagingMsg::Resume => {
                         is_running = true;
+                        // TODO: unpause running tasks
                     }
                     ToVideoPackagingMsg::DoTask(task) => {
                         if is_running && running_tasks < MAX_TASKS {

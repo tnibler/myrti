@@ -12,7 +12,9 @@ use crate::{
     model::repository::db::DbPool,
 };
 
-use super::simple_queue_actor::{Actor, ActorOptions, MsgFrom, QueuedActorHandle};
+use super::simple_queue_actor::{
+    Actor, ActorOptions, MsgFrom, MsgTaskControl, QueuedActorHandle, TaskId,
+};
 
 pub type VideoPackagingActorHandle = QueuedActorHandle<VideoPackagingTaskMsg>;
 pub type MsgFromVideoPackaging = MsgFrom<VideoPackagingTaskResult>;
@@ -68,9 +70,9 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
     async fn run_task(
         &mut self,
         msg: VideoPackagingTaskMsg,
-        result_send: mpsc::UnboundedSender<(super::actor::TaskId, VideoPackagingTaskResult)>,
-        task_id: super::actor::TaskId,
-        ctl_recv: mpsc::UnboundedReceiver<super::actor::MsgTaskControl>,
+        result_send: mpsc::UnboundedSender<(TaskId, VideoPackagingTaskResult)>,
+        task_id: TaskId,
+        ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
     ) {
         match msg {
             VideoPackagingTaskMsg::PackageVideo(package_video) => {

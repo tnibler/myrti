@@ -28,7 +28,7 @@ use tracing_subscriber::{prelude::*, EnvFilter};
 use core::{
     config::Config,
     core::{
-        scheduler::SchedulerHandle,
+        scheduler::{SchedulerHandle, SchedulerMessage},
         storage::{LocalFileStorage, Storage},
     },
     deadpool_diesel, interact,
@@ -48,6 +48,11 @@ struct Cli {
     config: String,
     #[arg(long)]
     skip_startup_check: bool,
+
+    /// Pause image/video processing on startup (for development)
+    #[arg(long, default_value_t = false)]
+    pause_processing: bool,
+
     #[cfg(feature = "opentelemetry")]
     #[arg(long)]
     otel_endpoint: Option<String>,
@@ -184,11 +189,20 @@ async fn main() -> Result<()> {
     std::fs::create_dir_all(&storage_path).unwrap();
     let storage: Storage = LocalFileStorage::new(storage_path).into();
     let scheduler = SchedulerHandle::new(pool.clone(), storage.clone(), config);
+
+    if args.pause_processing {
+        scheduler
+            .send
+            .send(SchedulerMessage::PauseAllProcessing)
+            .await
+            .expect("scheduler must be alive")
+    }
     scheduler
         .send
         .send(SchedulerMessage::Startup)
         .await
         .expect("scheduler must be alive");
+
     let shared_state: SharedState = Arc::new(AppState {
         pool: pool.clone(),
         storage,

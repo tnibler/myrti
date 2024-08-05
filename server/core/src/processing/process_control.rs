@@ -45,7 +45,7 @@ pub async fn run_process(
                         let (signal, do_return) = match msg {
                             ProcessControl::Suspend => (Signal::SIGTSTP, false),
                             ProcessControl::Resume => (Signal::SIGCONT, false),
-                            ProcessControl::Quit => (Signal::SIGQUIT, true),
+                            ProcessControl::Quit => (Signal::SIGQUIT, false), // wait for it to exit on quit
                             ProcessControl::Kill => (Signal::SIGKILL, true),
                         };
                         let pid = Pid::from_raw(pid.try_into().expect("pid_t is a signed 32-bit int"));

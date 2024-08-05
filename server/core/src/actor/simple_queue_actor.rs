@@ -26,7 +26,7 @@ pub enum MsgTo<T: Debug> {
     DoTask(T),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum MsgTaskControl {
     Pause,
     Resume,
@@ -108,6 +108,9 @@ impl<Task: Debug + Send + Sync, TaskResult: Debug + Send + Sync, A: Actor<Task, 
     async fn pause_all(&mut self) {
         if self.is_running {
             tracing::debug!("pausing");
+            self.task_ctl_sends.values().for_each(|send| {
+                send.send(MsgTaskControl::Pause).expect("TODO");
+            });
             self.is_running = false;
             self.signal_activity_change();
         }
@@ -117,6 +120,9 @@ impl<Task: Debug + Send + Sync, TaskResult: Debug + Send + Sync, A: Actor<Task, 
     async fn resume_all(&mut self) {
         if !self.is_running {
             self.is_running = true;
+            self.task_ctl_sends.values().for_each(|send| {
+                send.send(MsgTaskControl::Resume).expect("TODO");
+            });
             self.dequeue_work_if_available().await;
             self.signal_activity_change();
         }

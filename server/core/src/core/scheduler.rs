@@ -94,9 +94,6 @@ impl SchedulerHandle {
             from_image_conversion_send,
         );
 
-        let db_pool_copy = db_pool.clone();
-        // let video_packaging_send = video_packaging_actor.send.clone();
-        // let image_conversion_send = image_conversion_actor.send.clone();
         let (send, recv) = mpsc::channel(1000);
         let sched = Scheduler {
             db_pool,
@@ -115,13 +112,6 @@ impl SchedulerHandle {
             from_thumbnail_recv,
             from_video_packaging_recv,
             from_image_conversion_recv,
-        ));
-        tokio::spawn(on_startup(
-            db_pool_copy,
-            indexing_actor,
-            thumbnail_actor,
-            video_packaging_actor,
-            image_conversion_actor,
         ));
         Self { send }
     }
@@ -282,6 +272,15 @@ impl Scheduler {
                 let _ = self.thumbnail_actor.msg_resume_all();
                 let _ = self.video_packaging_actor.msg_resume_all();
                 let _ = self.image_conversion_actor.msg_resume_all();
+            }
+            SchedulerMessage::Startup => {
+                tokio::spawn(on_startup(
+                    self.db_pool.clone(),
+                    self.indexing_actor.clone(),
+                    self.thumbnail_actor.clone(),
+                    self.video_packaging_actor.clone(),
+                    self.image_conversion_actor.clone(),
+                ));
             }
         }
     }

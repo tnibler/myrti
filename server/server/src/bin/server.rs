@@ -184,6 +184,11 @@ async fn main() -> Result<()> {
     std::fs::create_dir_all(&storage_path).unwrap();
     let storage: Storage = LocalFileStorage::new(storage_path).into();
     let scheduler = SchedulerHandle::new(pool.clone(), storage.clone(), config);
+    scheduler
+        .send
+        .send(SchedulerMessage::Startup)
+        .await
+        .expect("scheduler must be alive");
     let shared_state: SharedState = Arc::new(AppState {
         pool: pool.clone(),
         storage,

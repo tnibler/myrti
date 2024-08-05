@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
 use eyre::{Report, Result};
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::{
@@ -10,6 +13,7 @@ use crate::{
     config,
     core::storage::Storage,
     model::repository::db::DbPool,
+    processing::process_control::ProcessControl,
 };
 
 use super::simple_queue_actor::{
@@ -73,7 +77,7 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
         msg: VideoPackagingTaskMsg,
         result_send: mpsc::UnboundedSender<(TaskId, VideoPackagingTaskResult)>,
         task_id: TaskId,
-        ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
+        mut ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
     ) {
         match msg {
             VideoPackagingTaskMsg::PackageVideo(package_video) => {
@@ -87,6 +91,29 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                     let mut conn = db_pool.get().await?;
                     apply_package_video(&mut conn, result.clone()).await
                 }
+                let (process_control_send, process_control_recv) = tokio::sync::mpsc::channel(1);
+                let cancel_pipe = CancellationToken::new();
+                let cancel_pipe2 = cancel_pipe.clone();
+                tokio::task::spawn(
+                    async move {
+                        loop {
+                            tokio::select! {
+                                _ = cancel_pipe2.cancelled() => {
+                                    break;
+                                }
+                                Some(msg) = ctl_recv.recv() => {
+                                    let process_control = match msg {
+                                        MsgTaskControl::Pause => ProcessControl::Suspend,
+                                        MsgTaskControl::Resume => ProcessControl::Resume,
+                                        MsgTaskControl::Cancel => ProcessControl::Quit,
+                                    };
+                                    process_control_send.send(process_control).await.expect("TODO");
+                                }
+                            }
+                        }
+                    }
+                    .in_current_span(),
+                );
                 tokio::task::spawn(
                     async move {
                         let result = perform_side_effects_package_video(
@@ -94,8 +121,10 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                             &storage,
                             &package_video,
                             bin_paths.as_ref(),
+                            process_control_recv,
                         )
                         .await;
+                        cancel_pipe.cancel();
                         match result {
                             Ok(result) => {
                                 let apply_result = apply_result(db_pool, result).await;

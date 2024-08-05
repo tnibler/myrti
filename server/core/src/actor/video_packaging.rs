@@ -51,6 +51,7 @@ pub fn start_video_packaging_actor(
             max_tasks: 1,
             max_queue_size: 100,
         },
+        tracing::info_span!("video_packaging"),
     )
 }
 

@@ -6,6 +6,7 @@ use std::{
 
 use eyre::{Context, Result};
 use tokio::sync::mpsc;
+use tracing::Instrument;
 
 #[derive(Debug)]
 pub enum MsgFrom<T: Debug> {
@@ -42,11 +43,15 @@ impl<Task: Debug + Send + Sync + 'static> QueuedActorHandle<Task> {
         actor: A,
         send_from_us: mpsc::UnboundedSender<MsgFrom<TaskResult>>,
         opts: ActorOptions,
+        span: tracing::Span,
     ) -> Self {
         let (send, recv) = mpsc::unbounded_channel::<MsgTo<Task>>();
-        tokio::task::spawn(async move {
-            run_actor(recv, send_from_us, actor, opts).await;
-        });
+        tokio::task::spawn(
+            async move {
+                run_actor(recv, send_from_us, actor, opts).await;
+            }
+            .instrument(span),
+        );
         QueuedActorHandle { send }
     }
 

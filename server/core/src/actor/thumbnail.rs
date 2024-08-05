@@ -60,6 +60,7 @@ pub fn start_thumbnail_actor(
             max_tasks: 8,
             max_queue_size: 1000,
         },
+        tracing::info_span!("thumbnail"),
     )
 }
 

@@ -99,17 +99,6 @@ pub fn get_assets(conn: &mut DbConn) -> Result<Vec<Asset>> {
         .collect::<Result<Vec<_>>>()
 }
 
-#[derive(Debug, Clone, QueryableByName)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-struct DbAssetMissingThumbnails {
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub asset_id: i64,
-    #[diesel(sql_type = diesel::sql_types::Integer)]
-    pub lg_orig_missing: i32,
-    #[diesel(sql_type = diesel::sql_types::Integer)]
-    pub sm_sq_missing: i32,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AssetHasThumbnails {
     pub asset_id: AssetId,

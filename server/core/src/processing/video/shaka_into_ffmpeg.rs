@@ -4,7 +4,10 @@ use eyre::{Context, Result};
 use tokio::fs::File;
 use tracing::instrument;
 
-use crate::core::storage::{Storage, StorageProvider};
+use crate::{
+    core::storage::{Storage, StorageProvider},
+    processing::process_control::ProcessControlReceiver,
+};
 
 use super::{
     ffmpeg::{FFmpeg, FFmpegTrait},
@@ -22,6 +25,7 @@ pub trait ShakaIntoFFmpegTrait {
         storage: &Storage,
         shaka_bin_path: Option<&Path>,
         ffmpeg_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<ShakaResult>;
 }
 
@@ -40,6 +44,7 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
         storage: &Storage,
         shaka_bin_path: Option<&Path>,
         ffmpeg_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<ShakaResult> {
         let tempdir = tempfile::tempdir().wrap_err("error creating temp directory")?;
         // we need the filename from output_key (it will be written into the media_info fiel
@@ -57,8 +62,14 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
             .try_into()
             .expect("tempfile path should be utf8");
         let shaka_out_path = utf8_temp_path.join(&out_filename);
-        ShakaPackager::run_with_local_output(input, repr_type, &shaka_out_path, shaka_bin_path)
-            .await?;
+        ShakaPackager::run_with_local_output(
+            input,
+            repr_type,
+            &shaka_out_path,
+            shaka_bin_path,
+            control_recv,
+        )
+        .await?;
         let media_info_filename = format!("{}.media_info", &out_filename);
         let media_info_key = format!("{}.media_info", output_key);
         let mut write_media_info = storage.open_write_stream(&media_info_key).await?;
@@ -73,6 +84,7 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
                 output_key,
                 storage,
                 ffmpeg_bin_path,
+                control_recv,
             )
             .await?;
         Ok(ShakaResult { media_info_key })
@@ -102,6 +114,7 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpegMock {
         storage: &Storage,
         shaka_bin_path: Option<&Path>,
         ffmpeg_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<ShakaResult> {
         ffmpeg
             .run(
@@ -109,6 +122,7 @@ impl ShakaIntoFFmpegTrait for ShakaIntoFFmpegMock {
                 output_key,
                 storage,
                 ffmpeg_bin_path,
+                control_recv,
             )
             .await?;
         let media_info_key = format!("{}.media_info", output_key);

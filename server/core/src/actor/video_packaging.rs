@@ -1,8 +1,10 @@
 use eyre::{Report, Result};
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::{
+    actor::misc::pipe_task_ctl_to_process_ctl,
     catalog::operation::package_video::{
         apply_package_video, perform_side_effects_package_video, CompletedPackageVideo,
         PackageVideo,
@@ -87,6 +89,10 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                     let mut conn = db_pool.get().await?;
                     apply_package_video(&mut conn, result.clone()).await
                 }
+                let (process_control_send, process_control_recv) = tokio::sync::mpsc::channel(1);
+                let cancel_pipe = CancellationToken::new();
+                // listen for task ctl messages and pass them to child processes
+                pipe_task_ctl_to_process_ctl(ctl_recv, process_control_send, cancel_pipe.clone());
                 tokio::task::spawn(
                     async move {
                         let result = perform_side_effects_package_video(
@@ -94,8 +100,10 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                             &storage,
                             &package_video,
                             bin_paths.as_ref(),
+                            process_control_recv,
                         )
                         .await;
+                        cancel_pipe.cancel(); // stop piping task ctl messages to child processes
                         match result {
                             Ok(result) => {
                                 let apply_result = apply_result(db_pool, result).await;

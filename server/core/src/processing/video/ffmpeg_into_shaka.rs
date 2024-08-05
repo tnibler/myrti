@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use eyre::{Context, Result};
 
-use crate::core::storage::Storage;
+use crate::{core::storage::Storage, processing::process_control::ProcessControlReceiver};
 
 use super::{
     ffmpeg::{FFmpeg, FFmpegLocalOutputTrait, FFmpegTrait},
@@ -18,7 +18,11 @@ pub trait FFmpegIntoShakaFFmpegTrait {
 
     fn new(input: PathBuf, video: Option<&ProduceVideo>, audio: Option<&ProduceAudio>) -> Self;
 
-    async fn run_ffmpeg(self, ffmpeg_bin_path: Option<&Path>) -> Result<Self::Next>;
+    async fn run_ffmpeg(
+        self,
+        ffmpeg_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
+    ) -> Result<Self::Next>;
 }
 
 #[async_trait]
@@ -29,6 +33,7 @@ pub trait FFmpegIntoShakaTrait {
         output_key: &str,
         storage: &Storage,
         shaka_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<ShakaResult>;
 
     async fn ffprobe_get_streams(&self, ffmpeg_bin_path: Option<&Path>) -> Result<FFProbeStreams>;
@@ -59,7 +64,11 @@ impl FFmpegIntoShakaFFmpegTrait for FFmpegIntoShaka {
         Self { input, ffmpeg }
     }
 
-    async fn run_ffmpeg(self, ffmpeg_bin_path: Option<&Path>) -> Result<Self::Next> {
+    async fn run_ffmpeg(
+        self,
+        ffmpeg_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
+    ) -> Result<Self::Next> {
         let ffmpeg_out_path = tempfile::Builder::new()
             .suffix(".mp4")
             .tempfile()
@@ -70,7 +79,12 @@ impl FFmpegIntoShakaFFmpegTrait for FFmpegIntoShaka {
             .try_into()
             .expect("temp files should have utf8 paths");
         self.ffmpeg
-            .run_with_local_output(self.input.as_str(), &utf8_path, ffmpeg_bin_path)
+            .run_with_local_output(
+                self.input.as_str(),
+                &utf8_path,
+                ffmpeg_bin_path,
+                control_recv,
+            )
             .await?;
         Ok(FFmpegIntoShakaAfterFFmpeg { ffmpeg_out_path })
     }
@@ -88,10 +102,20 @@ impl FFmpegIntoShakaTrait for FFmpegIntoShakaAfterFFmpeg {
         output_key: &str,
         storage: &Storage,
         shaka_bin_path: Option<&Path>,
+
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<ShakaResult> {
         let utf8_path = camino::Utf8Path::from_path(&self.ffmpeg_out_path)
             .expect("tempfile path should be utf8");
-        ShakaPackager::run(utf8_path, repr_type, output_key, storage, shaka_bin_path).await
+        ShakaPackager::run(
+            utf8_path,
+            repr_type,
+            output_key,
+            storage,
+            shaka_bin_path,
+            control_recv,
+        )
+        .await
     }
 
     async fn ffprobe_get_streams(&self, ffprobe_bin_path: Option<&Path>) -> Result<FFProbeStreams> {
@@ -122,7 +146,11 @@ impl FFmpegIntoShakaFFmpegTrait for FFmpegIntoShakaMock {
         }
     }
 
-    async fn run_ffmpeg(self, ffmpeg_bin_path: Option<&Path>) -> Result<Self::Next> {
+    async fn run_ffmpeg(
+        self,
+        ffmpeg_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
+    ) -> Result<Self::Next> {
         Ok(self)
     }
 }
@@ -137,6 +165,7 @@ impl FFmpegIntoShakaTrait for FFmpegIntoShakaMock {
         output_key: &str,
         storage: &Storage,
         shaka_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<ShakaResult> {
         super::shaka::ShakaPackagerMock::run(
             &PathBuf::from("MOCK_PATH"),
@@ -144,6 +173,7 @@ impl FFmpegIntoShakaTrait for FFmpegIntoShakaMock {
             output_key,
             storage,
             shaka_bin_path,
+            control_recv,
         )
         .await
     }

@@ -6,7 +6,10 @@ use eyre::{eyre, Context, Result};
 use tokio::process::Command;
 use tracing::{debug, instrument};
 
-use crate::core::storage::{Storage, StorageCommandOutput, StorageProvider};
+use crate::{
+    core::storage::{Storage, StorageCommandOutput, StorageProvider},
+    processing::process_control::{run_process, ProcessControlReceiver},
+};
 
 pub trait CommandInputOutput {}
 
@@ -17,6 +20,7 @@ pub trait FFmpegLocalOutputTrait {
         input: &str,
         output: &Path,
         ffmpeg_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<()>;
 }
 
@@ -29,6 +33,7 @@ pub trait FFmpegTrait {
         output_key: &str,
         storage: &Storage,
         ffmpeg_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<()>;
 }
 
@@ -45,6 +50,7 @@ impl FFmpegLocalOutputTrait for FFmpeg {
         input: &str,
         output: &Path,
         ffmpeg_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<()> {
         let mut command = Command::new(ffmpeg_bin_path.unwrap_or("ffmpeg".into()));
         command
@@ -57,16 +63,14 @@ impl FFmpegLocalOutputTrait for FFmpeg {
         command.args(self.flags.iter());
         command.arg(output);
         debug!(command = ?command.as_std(), "Invoking ffmpeg");
-        let result = command
-            .spawn()
-            .wrap_err("error calling ffmpeg")?
-            .wait()
+        let child = command.spawn().wrap_err("error calling ffmpeg")?;
+        match run_process(child, control_recv)
             .await
-            .wrap_err("error waiting for ffmpeg")?;
-        if result.success() {
-            Ok(())
-        } else {
-            Err(eyre!("ffmpeg exited with an error"))
+            .wrap_err("error waiting for ffmpeg")?
+        {
+            None => Err(eyre!("ffmpeg terminated early")),
+            Some(output) if output.status.success() => Ok(()),
+            Some(_output) => Err(eyre!("ffmpeg exited with an error")),
         }
     }
 }
@@ -86,10 +90,16 @@ impl FFmpegTrait for FFmpeg {
         output_key: &str,
         storage: &Storage,
         ffmpeg_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<()> {
         let command_out_file = storage.new_command_out_file(output_key).await?;
-        self.run_with_local_output(input, command_out_file.path(), ffmpeg_bin_path)
-            .await?;
+        self.run_with_local_output(
+            input,
+            command_out_file.path(),
+            ffmpeg_bin_path,
+            control_recv,
+        )
+        .await?;
         command_out_file.flush_to_storage().await?;
         Ok(())
     }
@@ -113,6 +123,7 @@ impl FFmpegTrait for FFmpegMock {
         output_key: &str,
         storage: &Storage,
         ffmpeg_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<()> {
         let command_out_file = storage.new_command_out_file(output_key).await?;
         command_out_file.flush_to_storage().await?;

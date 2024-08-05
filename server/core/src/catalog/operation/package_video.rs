@@ -2,6 +2,7 @@ use std::ffi::OsString;
 
 use diesel::Connection;
 use eyre::{eyre, Context, Result};
+use tokio::sync::mpsc;
 use tracing::{error, instrument};
 
 use crate::{
@@ -22,6 +23,7 @@ use crate::{
     },
     processing::{
         commands::{FFmpeg, FFmpegIntoShaka, MpdGenerator, ShakaIntoFFmpeg, ShakaPackager},
+        process_control::ProcessControl,
         video::{
             ffmpeg::FFmpegTrait,
             ffmpeg_into_shaka::{FFmpegIntoShakaFFmpegTrait, FFmpegIntoShakaTrait},
@@ -217,6 +219,7 @@ pub async fn perform_side_effects_package_video(
     storage: &Storage,
     package_video: &PackageVideo,
     bin_paths: Option<&config::BinPaths>,
+    mut process_control_recv: mpsc::Receiver<ProcessControl>,
 ) -> Result<CompletedPackageVideo> {
     let asset_id = package_video.asset_id;
     let conn = pool.get().await?;
@@ -249,7 +252,11 @@ pub async fn perform_side_effects_package_video(
             ffmpeg_video_op.as_ref(),
             ffmpeg_audio_op.as_ref(),
         );
-        Some(ffmpeg_into_shaka.run_ffmpeg(ffmpeg_path).await?)
+        Some(
+            ffmpeg_into_shaka
+                .run_ffmpeg(ffmpeg_path, &mut process_control_recv)
+                .await?,
+        )
     } else {
         None
     };
@@ -265,6 +272,7 @@ pub async fn perform_side_effects_package_video(
                 output_key,
                 storage,
                 shaka_packager_path,
+                &mut process_control_recv,
             )
             .await
             .wrap_err("could not shaka package audio stream")?;
@@ -291,6 +299,7 @@ pub async fn perform_side_effects_package_video(
                     &transcode.output_key,
                     storage,
                     shaka_packager_path,
+                    &mut process_control_recv,
                 )
                 .await?;
             Some(CreatedAudioRepr::Transcode(AudioTranscodeResult {
@@ -332,6 +341,7 @@ pub async fn perform_side_effects_package_video(
                     storage,
                     shaka_packager_path,
                     ffmpeg_path,
+                    &mut process_control_recv,
                 )
                 .await?;
 
@@ -346,6 +356,7 @@ pub async fn perform_side_effects_package_video(
                     output_key,
                     storage,
                     shaka_packager_path,
+                    &mut process_control_recv,
                 )
                 .await
                 .wrap_err("could not shaka package audio stream")?;
@@ -372,6 +383,7 @@ pub async fn perform_side_effects_package_video(
                     &transcode.output_key,
                     storage,
                     shaka_packager_path,
+                    &mut process_control_recv,
                 )
                 .await?;
             let probe = ffmpeg_into_shaka

@@ -218,6 +218,7 @@ pub async fn perform_side_effects_package_video(
     package_video: &PackageVideo,
     bin_paths: Option<&config::BinPaths>,
 ) -> Result<CompletedPackageVideo> {
+    let (control_send, mut control_recv) = tokio::sync::mpsc::channel(1); // TODO pass in
     let asset_id = package_video.asset_id;
     let conn = pool.get().await?;
     let asset_path = interact!(conn, move |conn| {
@@ -249,7 +250,11 @@ pub async fn perform_side_effects_package_video(
             ffmpeg_video_op.as_ref(),
             ffmpeg_audio_op.as_ref(),
         );
-        Some(ffmpeg_into_shaka.run_ffmpeg(ffmpeg_path).await?)
+        Some(
+            ffmpeg_into_shaka
+                .run_ffmpeg(ffmpeg_path, &mut control_recv)
+                .await?,
+        )
     } else {
         None
     };
@@ -265,6 +270,7 @@ pub async fn perform_side_effects_package_video(
                 output_key,
                 storage,
                 shaka_packager_path,
+                &mut control_recv,
             )
             .await
             .wrap_err("could not shaka package audio stream")?;
@@ -291,6 +297,7 @@ pub async fn perform_side_effects_package_video(
                     &transcode.output_key,
                     storage,
                     shaka_packager_path,
+                    &mut control_recv,
                 )
                 .await?;
             Some(CreatedAudioRepr::Transcode(AudioTranscodeResult {
@@ -332,6 +339,7 @@ pub async fn perform_side_effects_package_video(
                     storage,
                     shaka_packager_path,
                     ffmpeg_path,
+                    &mut control_recv,
                 )
                 .await?;
 
@@ -346,6 +354,7 @@ pub async fn perform_side_effects_package_video(
                     output_key,
                     storage,
                     shaka_packager_path,
+                    &mut control_recv,
                 )
                 .await
                 .wrap_err("could not shaka package audio stream")?;
@@ -372,6 +381,7 @@ pub async fn perform_side_effects_package_video(
                     &transcode.output_key,
                     storage,
                     shaka_packager_path,
+                    &mut control_recv,
                 )
                 .await?;
             let probe = ffmpeg_into_shaka

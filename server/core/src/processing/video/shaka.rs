@@ -6,7 +6,10 @@ use eyre::{eyre, Context, Result};
 use tokio::process::Command;
 use tracing::{debug, instrument};
 
-use crate::core::storage::{Storage, StorageCommandOutput, StorageProvider};
+use crate::{
+    core::storage::{Storage, StorageCommandOutput, StorageProvider},
+    processing::process_control::{run_process, ProcessControlReceiver},
+};
 
 #[async_trait]
 pub trait ShakaPackagerTrait {
@@ -16,6 +19,7 @@ pub trait ShakaPackagerTrait {
         output_key: &str,
         storage: &Storage,
         shaka_packager_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<ShakaResult>;
 }
 
@@ -26,6 +30,7 @@ pub trait ShakaPackagerWithLocalOutputTrait {
         repr_type: RepresentationType,
         output: &Path,
         shaka_packager_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<()>;
 }
 
@@ -56,6 +61,7 @@ impl ShakaPackagerWithLocalOutputTrait for ShakaPackager {
         repr_type: RepresentationType,
         output: &Path,
         shaka_packager_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<()> {
         let command_out_dir = output
             .parent()
@@ -85,18 +91,20 @@ impl ShakaPackagerWithLocalOutputTrait for ShakaPackager {
         command.arg("--output_media_info");
 
         debug!(?command, "Invoking shaka-packager");
-        let result = command
+        let child = command
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()
-            .wrap_err("error calling shaka packager")?
-            .wait_with_output()
-            .await?;
-        match result.status.success() {
-            true => Ok(()),
-            false => Err(eyre!(
-                "shaka packager exited with error:\n{}",
-                String::from_utf8_lossy(&result.stderr)
+            .wrap_err("error calling shaka packager")?;
+        match run_process(child, control_recv)
+            .await
+            .wrap_err("error waiting for skaka packager")?
+        {
+            None => Err(eyre!("shaka terminated early")),
+            Some(output) if output.status.success() => Ok(()),
+            Some(output) => Err(eyre!(
+                "shaka packager exited with an error:\n{}",
+                String::from_utf8_lossy(&output.stderr)
             )),
         }
     }
@@ -111,6 +119,7 @@ impl ShakaPackagerTrait for ShakaPackager {
         output_key: &str,
         storage: &Storage,
         shaka_packager_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<ShakaResult> {
         let mp4_out_file = storage.new_command_out_file(output_key).await?;
         let media_info_key = format!("{}.media_info", output_key);
@@ -127,6 +136,7 @@ impl ShakaPackagerTrait for ShakaPackager {
             repr_type,
             mp4_out_file.path(),
             shaka_packager_bin_path,
+            control_recv,
         )
         .await?;
 
@@ -148,6 +158,7 @@ impl ShakaPackagerTrait for ShakaPackagerMock {
         output_key: &str,
         storage: &Storage,
         shaka_packager_bin_path: Option<&Path>,
+        control_recv: &mut ProcessControlReceiver,
     ) -> Result<ShakaResult> {
         let mp4_out_file = storage.new_command_out_file(output_key).await?;
         let media_info_key = format!("{}.media_info", output_key);

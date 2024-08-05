@@ -28,10 +28,11 @@ use super::storage::Storage;
 
 #[derive(Debug)]
 pub enum SchedulerMessage {
+    Startup,
     Timer,
     UserRequest(UserRequest),
-    PauseAllJobs,
-    ResumeAllJobs,
+    PauseAllProcessing,
+    ResumeAllProcessing,
 }
 
 #[derive(Debug)]
@@ -261,14 +262,12 @@ impl Scheduler {
                     let _ = self.indexing_actor.msg_index_asset_root(root_dir_id);
                 }
             },
-            SchedulerMessage::PauseAllJobs => {
-                let _ = self.indexing_actor.msg_pause_all();
+            SchedulerMessage::PauseAllProcessing => {
                 let _ = self.thumbnail_actor.msg_pause_all();
                 let _ = self.video_packaging_actor.msg_pause_all();
                 let _ = self.image_conversion_actor.msg_pause_all();
             }
-            SchedulerMessage::ResumeAllJobs => {
-                let _ = self.indexing_actor.msg_resume_all();
+            SchedulerMessage::ResumeAllProcessing => {
                 let _ = self.thumbnail_actor.msg_resume_all();
                 let _ = self.video_packaging_actor.msg_resume_all();
                 let _ = self.image_conversion_actor.msg_resume_all();

@@ -131,14 +131,24 @@ async fn run_scheduler(
                 sched.handle_message(msg).await;
             }
             Some(indexing_msg) = indexing_recv.recv() => {
-                sched.on_indexing_msg(indexing_msg).await;
+                if let Err(err) = sched.on_indexing_msg(indexing_msg).await {
+                    tracing::error!(?err, "error in scheduler");
+                }
             }
             Some(thumbnail_msg) = thumbnail_recv.recv() => {
-                sched.on_thumbnail_msg(thumbnail_msg).await;
+                if let Err(err) = sched.on_thumbnail_msg(thumbnail_msg).await {
+                    tracing::error!(?err, "error in scheduler");
+                }
             }
             Some(video_packaging_msg) = video_packaging_recv.recv() => {
+                if let Err(err) = sched.on_video_packaging_msg(video_packaging_msg).await {
+                    tracing::error!(?err, "error in scheduler");
+                }
             }
             Some(image_conversion_msg) = image_conversion_recv.recv() => {
+                if let Err(err) = sched.on_image_conversion_msg(image_conversion_msg).await {
+                    tracing::error!(?err, "error in scheduler");
+                }
             }
         }
     }
@@ -163,7 +173,9 @@ impl Scheduler {
                 actor_state.has_dropped_msgs = true;
             }
             MsgFromIndexing::NewAsset(asset_id) => {
-                self.on_new_asset_indexed(asset_id).await;
+                if let Err(err) = self.on_new_asset_indexed(asset_id).await {
+                    tracing::error!(?err, "error in on_new_asset_indexed");
+                }
             }
             MsgFromIndexing::IndexingError {
                 root_dir_id,
@@ -188,31 +200,30 @@ impl Scheduler {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn on_new_asset_indexed(&self, asset_id: AssetId) {
+    async fn on_new_asset_indexed(&self, asset_id: AssetId) -> Result<()> {
         let mut conn = self.db_pool.get().await.unwrap();
-        let thumbnails_required = rules::required_thumbnails_for_asset(&mut conn, asset_id)
-            .await
-            .expect("TODO");
+        let thumbnails_required = rules::required_thumbnails_for_asset(&mut conn, asset_id).await?;
         if !thumbnails_required.thumbnails.is_empty() {
-            let _ = self
-                .thumbnail_actor
-                .msg_create_asset_thumbnail(thumbnails_required);
+            self.thumbnail_actor
+                .msg_create_asset_thumbnail(thumbnails_required)
+                .expect("receiver must be alive");
         }
         let video_packaging_required =
-            rules::required_video_packaging_for_asset(&mut conn, asset_id)
-                .await
-                .expect("TODO");
+            rules::required_video_packaging_for_asset(&mut conn, asset_id).await?;
         for vid_pack in video_packaging_required {
-            let _ = self.video_packaging_actor.msg_package_video(vid_pack);
+            self.video_packaging_actor
+                .msg_package_video(vid_pack)
+                .expect("receiver must be alive");
         }
 
         let image_conversion_required =
-            rules::required_image_conversion_for_asset(&mut conn, asset_id)
-                .await
-                .expect("TODO");
+            rules::required_image_conversion_for_asset(&mut conn, asset_id).await?;
         for img_convert in image_conversion_required {
-            let _ = self.image_conversion_actor.msg_convert_image(img_convert);
+            self.image_conversion_actor
+                .msg_convert_image(img_convert)
+                .expect("receiver must be alive");
         }
+        Ok(())
     }
 
     #[tracing::instrument(skip(self))]
@@ -228,11 +239,12 @@ impl Scheduler {
                 let found_new_work = if is_idle && actor_state.has_dropped_msgs {
                     actor_state.has_dropped_msgs = false;
                     let mut conn = self.db_pool.get().await?;
-                    let thumbnails_required =
-                        rules::thumbnails_to_create(&mut conn).await.expect("TODO");
+                    let thumbnails_required = rules::thumbnails_to_create(&mut conn).await?;
                     let any_work = !thumbnails_required.is_empty();
                     for t in thumbnails_required {
-                        let _ = self.thumbnail_actor.msg_create_asset_thumbnail(t);
+                        self.thumbnail_actor
+                            .msg_create_asset_thumbnail(t)
+                            .expect("receiver must be alive");
                     }
                     any_work
                 } else {
@@ -246,6 +258,82 @@ impl Scheduler {
                 actor_state.has_dropped_msgs = true;
             }
             MsgFromThumbnail::TaskResult(result) => {
+                tracing::debug!(?result);
+            }
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn on_video_packaging_msg(&mut self, msg: MsgFromVideoPackaging) -> Result<()> {
+        let actor_state = &mut self.actor_states[Actors::VideoPackaging as usize];
+        match msg {
+            MsgFromVideoPackaging::ActivityChange {
+                is_running,
+                active_tasks,
+                queued_tasks,
+            } => {
+                let is_idle = is_running && active_tasks == 0 && queued_tasks == 0;
+                let found_new_work = if is_idle && actor_state.has_dropped_msgs {
+                    actor_state.has_dropped_msgs = false;
+                    let mut conn = self.db_pool.get().await?;
+                    let video_packaging_required = rules::video_packaging_due(&mut conn).await?;
+                    let any_work = !video_packaging_required.is_empty();
+                    for v in video_packaging_required {
+                        self.video_packaging_actor
+                            .msg_package_video(v)
+                            .expect("receiver must be alive");
+                    }
+                    any_work
+                } else {
+                    false
+                };
+                if is_idle && !found_new_work {
+                    tracing::info!("VideoPackaging actor idle");
+                }
+            }
+            MsgFromVideoPackaging::DroppedMessage => {
+                actor_state.has_dropped_msgs = true;
+            }
+            MsgFromVideoPackaging::TaskResult(result) => {
+                tracing::debug!(?result);
+            }
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn on_image_conversion_msg(&mut self, msg: MsgFromImageConversion) -> Result<()> {
+        let actor_state = &mut self.actor_states[Actors::ImageConversion as usize];
+        match msg {
+            MsgFromImageConversion::ActivityChange {
+                is_running,
+                active_tasks,
+                queued_tasks,
+            } => {
+                let is_idle = is_running && active_tasks == 0 && queued_tasks == 0;
+                let found_new_work = if is_idle && actor_state.has_dropped_msgs {
+                    actor_state.has_dropped_msgs = false;
+                    let mut conn = self.db_pool.get().await?;
+                    let image_conversion_required = rules::image_conversion_due(&mut conn).await?;
+                    let any_work = !image_conversion_required.is_empty();
+                    for i in image_conversion_required {
+                        self.image_conversion_actor
+                            .msg_convert_image(i)
+                            .expect("receiver must be alive");
+                    }
+                    any_work
+                } else {
+                    false
+                };
+                if is_idle && !found_new_work {
+                    tracing::info!("ImageConversion actor idle");
+                }
+            }
+            MsgFromImageConversion::DroppedMessage => {
+                actor_state.has_dropped_msgs = true;
+            }
+            MsgFromImageConversion::TaskResult(result) => {
                 tracing::debug!(?result);
             }
         }

@@ -6,13 +6,12 @@ use color_eyre::eyre;
 use diesel::dsl::sql;
 use diesel::sql_types::Bool;
 use diesel::{insert_into, prelude::*};
-use eyre::{eyre, Context, Result};
-use tracing::{error, instrument};
+use eyre::{Context, Result};
+use tracing::instrument;
 
 use crate::model::{
-    self, Asset, AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetThumbnail,
-    AssetThumbnailId, AssetThumbnails, AssetType, CreateAsset, CreateAssetSpe, Image, Size,
-    ThumbnailFormat, ThumbnailType, TimestampInfo, Video, VideoAsset,
+    self, Asset, AssetId, AssetPathOnDisk, AssetRootDirId, AssetThumbnail, AssetThumbnailId,
+    AssetType, CreateAsset, CreateAssetSpe, TimestampInfo, VideoAsset,
 };
 use crate::model::{
     repository::db_entity::{to_db_asset_ty, DbAssetPathOnDisk, DbAssetThumbnail},

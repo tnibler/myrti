@@ -5,7 +5,6 @@ use itertools::Itertools;
 use tracing::instrument;
 
 use crate::{
-    actor::thumbnail,
     catalog::{
         encoding_target::{av1, CodecTarget, VideoEncodingTarget},
         operation::package_video::{
@@ -16,8 +15,7 @@ use crate::{
     interact,
     model::{
         repository::{self, asset::AssetHasThumbnails, db::PooledDbConn},
-        AlbumId, AssetId, AssetThumbnail, AssetThumbnails, ThumbnailFormat, ThumbnailType,
-        VideoAsset,
+        AlbumId, AssetId, AssetThumbnail, ThumbnailFormat, ThumbnailType, VideoAsset,
     },
     processing,
 };

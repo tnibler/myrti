@@ -4,7 +4,7 @@ use std::{
     future::Future,
 };
 
-use eyre::{Context, Result};
+use eyre::Result;
 use tokio::sync::mpsc;
 use tracing::Instrument;
 

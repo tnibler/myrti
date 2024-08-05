@@ -15,7 +15,6 @@ use axum_extra::body::AsyncReadBody;
 use eyre::{eyre, Context, Result};
 use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
-use tracing::Instrument;
 use utoipa::ToSchema;
 
 use core::{

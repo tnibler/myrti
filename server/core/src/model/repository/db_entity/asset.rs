@@ -6,7 +6,7 @@ use diesel::{prelude::Insertable, Queryable, QueryableByName, Selectable};
 use eyre::{eyre, Context, Result};
 
 use crate::model::{
-    util::{bool_to_int, datetime_from_db_repr, datetime_to_db_repr, hash_vec8_to_u64},
+    util::{datetime_from_db_repr, hash_vec8_to_u64},
     Asset, AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetType,
     GpsCoordinates, Image, Size, TimestampInfo, Video,
 };

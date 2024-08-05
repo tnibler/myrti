@@ -5,12 +5,11 @@ use tracing::instrument;
 
 use crate::{
     actor::{
-        self,
         image_conversion::{
             start_image_conversion_actor, ImageConversionActorHandle, MsgFromImageConversion,
         },
         indexing::{IndexingActorHandle, MsgFromIndexing},
-        thumbnail::{self, start_thumbnail_actor, MsgFromThumbnail, ThumbnailActorHandle},
+        thumbnail::{start_thumbnail_actor, MsgFromThumbnail, ThumbnailActorHandle},
         video_packaging::{
             start_video_packaging_actor, MsgFromVideoPackaging, VideoPackagingActorHandle,
         },

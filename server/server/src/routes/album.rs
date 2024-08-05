@@ -21,7 +21,7 @@ use crate::{
     app_state::SharedState,
     http_error::{ApiResult, HttpError},
     schema::{
-        asset::{Asset, AssetSpe, AssetWithSpe, Image, Video},
+        asset::{AssetSpe, AssetWithSpe, Image, Video},
         Album, AlbumId, AlbumItemId, AssetId,
     },
 };

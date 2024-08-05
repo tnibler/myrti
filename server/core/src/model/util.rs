@@ -1,6 +1,6 @@
 use chrono::{DateTime, TimeZone, Utc};
 use eyre::{eyre, Context, Result};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::ThumbnailType;
 

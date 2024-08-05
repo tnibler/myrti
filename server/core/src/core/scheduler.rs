@@ -32,6 +32,8 @@ pub enum SchedulerMessage {
     UserRequest(UserRequest),
     PauseAllProcessing,
     ResumeAllProcessing,
+    PauseVideoPackaging,
+    ResumeVideoPackaging,
 }
 
 #[derive(Debug)]
@@ -350,14 +352,36 @@ impl Scheduler {
                 }
             },
             SchedulerMessage::PauseAllProcessing => {
-                let _ = self.thumbnail_actor.msg_pause_all();
-                let _ = self.video_packaging_actor.msg_pause_all();
-                let _ = self.image_conversion_actor.msg_pause_all();
+                self.thumbnail_actor
+                    .msg_pause_all()
+                    .expect("receiver must be alive");
+                self.video_packaging_actor
+                    .msg_pause_all()
+                    .expect("receiver must be alive");
+                self.image_conversion_actor
+                    .msg_pause_all()
+                    .expect("receiver must be alive");
             }
             SchedulerMessage::ResumeAllProcessing => {
-                let _ = self.thumbnail_actor.msg_resume_all();
-                let _ = self.video_packaging_actor.msg_resume_all();
-                let _ = self.image_conversion_actor.msg_resume_all();
+                self.thumbnail_actor
+                    .msg_resume_all()
+                    .expect("receiver must be alive");
+                self.video_packaging_actor
+                    .msg_resume_all()
+                    .expect("receiver must be alive");
+                self.image_conversion_actor
+                    .msg_resume_all()
+                    .expect("receiver must be alive");
+            }
+            SchedulerMessage::PauseVideoPackaging => {
+                self.video_packaging_actor
+                    .msg_pause_all()
+                    .expect("receiver must be alive");
+            }
+            SchedulerMessage::ResumeVideoPackaging => {
+                self.video_packaging_actor
+                    .msg_resume_all()
+                    .expect("receiver must be alive");
             }
             SchedulerMessage::Startup => {
                 tokio::spawn(on_startup(

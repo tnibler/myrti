@@ -6,6 +6,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::{
+    actor::misc::pipe_task_ctl_to_process_ctl,
     catalog::operation::package_video::{
         apply_package_video, perform_side_effects_package_video, CompletedPackageVideo,
         PackageVideo,
@@ -77,7 +78,7 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
         msg: VideoPackagingTaskMsg,
         result_send: mpsc::UnboundedSender<(TaskId, VideoPackagingTaskResult)>,
         task_id: TaskId,
-        mut ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
+        ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
     ) {
         match msg {
             VideoPackagingTaskMsg::PackageVideo(package_video) => {
@@ -93,27 +94,8 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                 }
                 let (process_control_send, process_control_recv) = tokio::sync::mpsc::channel(1);
                 let cancel_pipe = CancellationToken::new();
-                let cancel_pipe2 = cancel_pipe.clone();
-                tokio::task::spawn(
-                    async move {
-                        loop {
-                            tokio::select! {
-                                _ = cancel_pipe2.cancelled() => {
-                                    break;
-                                }
-                                Some(msg) = ctl_recv.recv() => {
-                                    let process_control = match msg {
-                                        MsgTaskControl::Pause => ProcessControl::Suspend,
-                                        MsgTaskControl::Resume => ProcessControl::Resume,
-                                        MsgTaskControl::Cancel => ProcessControl::Quit,
-                                    };
-                                    process_control_send.send(process_control).await.expect("TODO");
-                                }
-                            }
-                        }
-                    }
-                    .in_current_span(),
-                );
+                // listen for task ctl messages and pass them to child processes
+                pipe_task_ctl_to_process_ctl(ctl_recv, process_control_send, cancel_pipe.clone());
                 tokio::task::spawn(
                     async move {
                         let result = perform_side_effects_package_video(
@@ -124,7 +106,7 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                             process_control_recv,
                         )
                         .await;
-                        cancel_pipe.cancel();
+                        cancel_pipe.cancel(); // stop piping task ctl messages to child processes
                         match result {
                             Ok(result) => {
                                 let apply_result = apply_result(db_pool, result).await;

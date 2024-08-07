@@ -83,6 +83,7 @@ pub struct CreateAssetVideo {
     pub ffprobe_output: FFProbeOutput,
     pub video_codec_name: String,
     pub video_bitrate: i64,
+    pub video_duration_ms: Option<i64>,
     pub audio_codec_name: Option<String>,
     pub has_dash: bool,
 }

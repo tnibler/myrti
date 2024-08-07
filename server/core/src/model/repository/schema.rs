@@ -43,6 +43,7 @@ diesel::table! {
         ffprobe_output -> Nullable<Binary>,
         video_codec_name -> Nullable<Text>,
         video_bitrate -> Nullable<BigInt>,
+        video_duration_ms -> Nullable<BigInt>,
         audio_codec_name -> Nullable<Text>,
         has_dash -> Nullable<Integer>,
     }

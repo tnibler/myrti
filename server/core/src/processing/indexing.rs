@@ -71,6 +71,7 @@ pub async fn index_file(
             let create_video = CreateAssetVideo {
                 video_codec_name: video.codec_name.to_ascii_lowercase(),
                 video_bitrate: video.bitrate,
+                video_duration_ms: video.duration_ms,
                 audio_codec_name: streams
                     .audio
                     .map(|audio| audio.codec_name.to_ascii_lowercase()),

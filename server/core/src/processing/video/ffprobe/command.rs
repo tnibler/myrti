@@ -72,7 +72,8 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
     #[derive(Debug, Clone, Deserialize)]
     struct FFProbeVideoStream {
         pub codec_name: String,
-        pub duration: String,
+        /// Seconds. Quoted decimal number. May not be present if no stream metadata exists
+        pub duration: Option<String>,
         pub width: i32,
         pub height: i32,
         pub bit_rate: String,
@@ -121,6 +122,20 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
                 rotation: match video.side_data_list {
                     Some(side_datas) => side_datas.first().and_then(|sd| sd.rotation),
                     _ => None,
+                },
+                duration_ms: match video.duration.as_deref().map(str::parse::<f32>) {
+                    None => None,
+                    Some(Ok(n)) => Some((n * 1000.0).round() as i64),
+                    Some(Err(err)) => {
+                        // unsure if this can happen, let's see if it ever does
+                        debug_assert!(false, "ffprobe: stream duration present but fails to parse");
+                        tracing::error!(
+                            video.duration,
+                            ?err,
+                            "ffprobe: stream duration present but fails to parse"
+                        );
+                        None
+                    }
                 },
             })),
             FFProbeStreamType::Audio(audio) => Ok(StreamType::Audio(AudioStream {
@@ -234,6 +249,7 @@ fn ffprobe_output_parsed_correctly() {
             height: 1080,
             bitrate: 28034318,
             rotation: Some(-90),
+            duration_ms: Some(26285),
         }),
         StreamType::Audio(AudioStream {
             codec_name: "aac".into(),
@@ -298,6 +314,7 @@ fn ffprobe_output_parsed_correctly() {
         height: 720,
         bitrate: 11841634,
         rotation: None,
+        duration_ms: Some(30080),
     })]
     .into_iter()
     .collect();

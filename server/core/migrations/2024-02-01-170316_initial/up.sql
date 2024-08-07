@@ -45,6 +45,7 @@ CREATE TABLE Asset (
   ffprobe_output BLOB,
   video_codec_name TEXT,
   video_bitrate INTEGER,
+  video_duration_ms INTEGER,
   audio_codec_name TEXT,
   has_dash INTEGER,
 
@@ -61,6 +62,7 @@ CREATE TABLE Asset (
       AND ffprobe_output IS NULL
       AND video_codec_name IS NULL
       AND video_bitrate IS NULL
+      AND video_duration_ms IS NULL
       AND audio_codec_name IS NULL
       AND has_dash IS NULL)
     OR (
@@ -70,7 +72,7 @@ CREATE TABLE Asset (
       AND video_codec_name IS NOT NULL
       AND video_bitrate IS NOT NULL 
       AND has_dash IS NOT NULL
-      -- audio_codec_name can be null if there's no audio stream
+      -- audio_codec_name, video_duration_ms can be null if there's no audio stream
   )),
 
   CHECK((gps_latitude IS NULL AND gps_longitude IS NULL) OR (gps_latitude IS NOT NULL AND gps_longitude IS NOT NULL))

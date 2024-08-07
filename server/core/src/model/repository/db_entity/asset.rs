@@ -124,6 +124,7 @@ pub struct DbInsertAsset<'a> {
     pub ffprobe_output: Option<Cow<'a, [u8]>>,
     pub video_codec_name: Option<Cow<'a, str>>,
     pub video_bitrate: Option<i64>,
+    pub video_duration_ms: Option<i64>,
     pub audio_codec_name: Option<Cow<'a, str>>,
     pub has_dash: Option<i32>,
 }

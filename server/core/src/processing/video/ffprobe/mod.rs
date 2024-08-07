@@ -23,6 +23,7 @@ pub struct VideoStream {
     pub height: i32,
     pub bitrate: i64,
     pub rotation: Option<i32>,
+    pub duration_ms: Option<i64>,
 }
 
 pub struct FFProbe {}

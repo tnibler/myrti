@@ -248,6 +248,10 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
             CreateAssetSpe::Image(_) => None,
             CreateAssetSpe::Video(video) => Some(video.video_bitrate),
         },
+        video_duration_ms: match &create_asset.spe {
+            CreateAssetSpe::Image(_) => None,
+            CreateAssetSpe::Video(video) => video.video_duration_ms,
+        },
         audio_codec_name: match &create_asset.spe {
             CreateAssetSpe::Image(_) => None,
             CreateAssetSpe::Video(video) => Some(

@@ -28,12 +28,6 @@ pub enum ImageConversionTaskResult {
     },
 }
 
-#[derive(Debug)]
-struct ImageConversionResult {
-    result: ImageConversionSideEffectResult,
-    convert_image: ConvertImage,
-}
-
 pub fn start_image_conversion_actor(
     db_pool: DbPool,
     storage: Storage,

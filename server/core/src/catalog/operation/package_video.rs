@@ -213,7 +213,7 @@ pub async fn apply_package_video(conn: &mut PooledDbConn, op: CompletedPackageVi
     .await?
 }
 
-#[instrument(skip(pool, storage), level = "debug")]
+#[instrument(skip(pool, storage, process_control_recv), level = "debug")]
 pub async fn perform_side_effects_package_video(
     pool: &DbPool,
     storage: &Storage,
@@ -377,6 +377,7 @@ pub async fn perform_side_effects_package_video(
                     ));
                 }
             };
+            // TODO: handle ShakaResult Exited by signal etc
             let shaka_result = ffmpeg_into_shaka
                 .run_shaka_packager(
                     RepresentationType::Video,

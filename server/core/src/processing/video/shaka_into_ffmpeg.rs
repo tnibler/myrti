@@ -35,7 +35,7 @@ pub struct ShakaIntoFFmpeg {}
 impl ShakaIntoFFmpegTrait for ShakaIntoFFmpeg {
     type FFmpeg = FFmpeg;
 
-    #[instrument(name = "shaka_into_ffmpeg", skip(ffmpeg, storage))]
+    #[instrument(name = "shaka_into_ffmpeg", skip(ffmpeg, storage, control_recv))]
     async fn run(
         input: &Path,
         repr_type: RepresentationType,
@@ -105,7 +105,7 @@ use super::ffmpeg::FFmpegMock;
 impl ShakaIntoFFmpegTrait for ShakaIntoFFmpegMock {
     type FFmpeg = FFmpegMock;
 
-    #[instrument(name = "shaka_into_ffmpeg", skip(ffmpeg, storage))]
+    #[instrument(name = "shaka_into_ffmpeg", skip(ffmpeg, storage, control_recv))]
     async fn run(
         input: &Path,
         repr_type: RepresentationType,

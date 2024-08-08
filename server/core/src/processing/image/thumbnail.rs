@@ -5,7 +5,9 @@ use eyre::{Context, Result};
 use crate::{
     core::storage::{CommandOutputFile, StorageCommandOutput},
     model::Size,
-    processing::image::ffmpeg_snapshot::ffmpeg_snapshot,
+    processing::{
+        image::ffmpeg_snapshot::ffmpeg_snapshot, process_control::ProcessControlReceiver,
+    },
 };
 
 use super::{
@@ -28,7 +30,10 @@ pub struct ThumbnailResult {
 #[async_trait]
 pub trait GenerateThumbnailTrait {
     async fn generate_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<ThumbnailResult>;
-    async fn generate_video_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<ThumbnailResult>;
+    async fn generate_video_thumbnail<'a>(
+        params: ThumbnailParams<'a>,
+        control_recv: &mut ProcessControlReceiver,
+    ) -> Result<ThumbnailResult>;
 }
 
 pub struct GenerateThumbnail {}
@@ -66,8 +71,11 @@ impl GenerateThumbnailTrait for GenerateThumbnail {
         })
     }
 
-    #[tracing::instrument]
-    async fn generate_video_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<ThumbnailResult> {
+    #[tracing::instrument(skip(control_recv))]
+    async fn generate_video_thumbnail<'a>(
+        params: ThumbnailParams<'a>,
+        control_recv: &mut ProcessControlReceiver,
+    ) -> Result<ThumbnailResult> {
         let snapshot_path = tempfile::Builder::new()
             .prefix("snap")
             .suffix(".webp")
@@ -79,7 +87,14 @@ impl GenerateThumbnailTrait for GenerateThumbnail {
             .try_into()
             .expect("tempfile paths should be UTF8");
         // fixme ffmpeg path should come from config
-        ffmpeg_snapshot(&params.in_path, &utf8_snapshot_path, Some("ffmpeg")).await?;
+        ffmpeg_snapshot(
+            &params.in_path,
+            &utf8_snapshot_path,
+            Some("ffmpeg"),
+            control_recv,
+        )
+        .await
+        .wrap_err("error taking video snapshot")?;
         Self::generate_thumbnail(ThumbnailParams {
             in_path: utf8_snapshot_path,
             ..params
@@ -101,7 +116,10 @@ impl GenerateThumbnailTrait for GenerateThumbnailMock {
     }
 
     #[tracing::instrument]
-    async fn generate_video_thumbnail<'a>(_params: ThumbnailParams<'a>) -> Result<ThumbnailResult> {
+    async fn generate_video_thumbnail<'a>(
+        _params: ThumbnailParams<'a>,
+        _control_recv: &mut ProcessControlReceiver,
+    ) -> Result<ThumbnailResult> {
         Ok(ThumbnailResult {
             actual_size: Size {
                 width: 400,

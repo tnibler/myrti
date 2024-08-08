@@ -10,9 +10,12 @@ use crate::{
             start_image_conversion_actor, ImageConversionActorHandle, MsgFromImageConversion,
         },
         indexing::{IndexingActorHandle, MsgFromIndexing},
-        thumbnail::{start_thumbnail_actor, MsgFromThumbnail, ThumbnailActorHandle},
+        thumbnail::{
+            start_thumbnail_actor, MsgFromThumbnail, ThumbnailActorHandle, ThumbnailTaskResult,
+        },
         video_packaging::{
             start_video_packaging_actor, MsgFromVideoPackaging, VideoPackagingActorHandle,
+            VideoPackagingTaskResult,
         },
     },
     catalog::rules,
@@ -22,6 +25,7 @@ use crate::{
         repository::{self, db::DbPool},
         AssetId, AssetRootDirId,
     },
+    processing::video::ffmpeg::FFmpegError,
 };
 
 use super::storage::Storage;
@@ -189,6 +193,7 @@ async fn run_scheduler(
             }
         }
     }
+    tracing::info!("Exiting scheduler main loop");
 }
 
 impl Scheduler {
@@ -295,7 +300,41 @@ impl Scheduler {
                 actor_state.has_dropped_msgs = true;
             }
             MsgFromThumbnail::TaskResult(result) => {
-                tracing::debug!(?result);
+                match result {
+                    ThumbnailTaskResult::Asset(ref result) => match result {
+                        Err(_) => {
+                            // something weird went wrong
+                            tracing::warn!(?result);
+                        }
+                        Ok(result) => {
+                            result
+                                .failed
+                                .iter()
+                                .filter(|(_, err)| {
+                                    // if task was cancelled, we don't care about it
+                                    !matches!(
+                                        err.downcast_ref::<FFmpegError>(),
+                                        Some(FFmpegError::TerminatedBySignal)
+                                    )
+                                })
+                                .for_each(|(create_thumbnail, err)| {
+                                    tracing::warn!(?create_thumbnail, ?err)
+                                });
+                        }
+                    },
+                    ThumbnailTaskResult::Album(ref result) => match result {
+                        Err(err) => {
+                            let is_cancellation = matches!(
+                                err.downcast_ref::<FFmpegError>(),
+                                Some(FFmpegError::TerminatedBySignal)
+                            );
+                            if !is_cancellation {
+                                tracing::warn!(?result);
+                            }
+                        }
+                        Ok(_result) => {}
+                    },
+                };
             }
         }
         Ok(())
@@ -333,7 +372,21 @@ impl Scheduler {
                 actor_state.has_dropped_msgs = true;
             }
             MsgFromVideoPackaging::TaskResult(result) => {
-                tracing::debug!(?result);
+                let was_cancelled = match result {
+                    VideoPackagingTaskResult::PackagingError {
+                        package_video: _,
+                        ref report,
+                    } => matches!(
+                        report.downcast_ref::<FFmpegError>(),
+                        Some(FFmpegError::TerminatedBySignal)
+                    ),
+                    _ => false,
+                };
+                if was_cancelled {
+                    tracing::debug!("video packaging cancelled");
+                } else {
+                    tracing::debug!(?result);
+                }
             }
         }
         Ok(())

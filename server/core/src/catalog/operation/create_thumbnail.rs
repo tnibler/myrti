@@ -17,6 +17,7 @@ use crate::{
         self,
         commands::GenerateThumbnail,
         image::thumbnail::{GenerateThumbnailTrait, ThumbnailParams, ThumbnailResult},
+        process_control::ProcessControlReceiver,
     },
 };
 
@@ -81,11 +82,12 @@ pub struct ThumbnailSideEffectResult {
     pub failed: Vec<(ThumbnailToCreateWithPaths, Report)>,
 }
 
-#[instrument(skip(pool, storage), level = "debug")]
+#[instrument(skip(pool, storage, control_recv), level = "debug")]
 pub async fn perform_side_effects_create_thumbnail(
     storage: &Storage,
     pool: DbPool,
     op: CreateThumbnailWithPaths,
+    control_recv: &mut ProcessControlReceiver,
 ) -> Result<ThumbnailSideEffectResult> {
     let mut result = ThumbnailSideEffectResult {
         asset_id: op.asset_id,
@@ -104,7 +106,15 @@ pub async fn perform_side_effects_create_thumbnail(
     .await??;
     // TODO don't await sequentially. Not super bad because op.thumbnails is small but still
     for thumb in op.thumbnails {
-        match create_thumbnail(in_path.clone(), asset.base.ty, &thumb, storage).await {
+        match create_thumbnail(
+            in_path.clone(),
+            asset.base.ty,
+            &thumb,
+            storage,
+            control_recv,
+        )
+        .await
+        {
             Ok(res) => {
                 for (format, _file_key) in thumb.file_keys {
                     result.succeeded.push(ThumbnailSideEffectSuccess {
@@ -122,12 +132,13 @@ pub async fn perform_side_effects_create_thumbnail(
     Ok(result)
 }
 
-#[instrument(skip(storage))]
+#[instrument(skip(storage, control_recv))]
 async fn create_thumbnail(
     asset_path: PathBuf,
     asset_type: AssetType,
     thumb: &ThumbnailToCreateWithPaths,
     storage: &Storage,
+    control_recv: &mut ProcessControlReceiver,
 ) -> Result<ThumbnailResult> {
     let out_files: Vec<CommandOutputFile> = thumb
         .file_keys
@@ -154,7 +165,9 @@ async fn create_thumbnail(
     };
     let res = match asset_type {
         AssetType::Image => GenerateThumbnail::generate_thumbnail(thumbnail_params).await,
-        AssetType::Video => GenerateThumbnail::generate_video_thumbnail(thumbnail_params).await,
+        AssetType::Video => {
+            GenerateThumbnail::generate_video_thumbnail(thumbnail_params, control_recv).await
+        }
     };
     tx.send(res).unwrap();
     let result = rx.await.wrap_err("thumbnail task died or something")??;

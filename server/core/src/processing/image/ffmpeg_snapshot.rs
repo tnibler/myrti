@@ -5,33 +5,33 @@ use eyre::{eyre, Context, Result};
 use tokio::process::Command;
 use tracing::instrument;
 
+use crate::processing::{
+    process_control::{run_process, ProcessControlReceiver, ProcessResult},
+    video::ffmpeg::FFmpegError,
+};
+
 #[instrument]
 pub async fn ffmpeg_snapshot(
     video_path: &Path,
     output: &Path,
     ffmpeg_bin_path: Option<&str>,
+    control_recv: &mut ProcessControlReceiver,
 ) -> Result<()> {
-    let exit_status = Command::new(ffmpeg_bin_path.unwrap_or("ffmpeg"))
+    let child = Command::new(ffmpeg_bin_path.unwrap_or("ffmpeg"))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .arg("-nostdin")
-        .arg("-y")
+        .args(["-nostdin", "-y", "-hide_banner"])
         .arg("-i")
         .arg(video_path)
         .args(["-ss", "00:00:00.00", "-frames:v", "1"])
         .arg(output)
         .spawn()
-        .wrap_err("failed to call ffmpeg")?
-        .wait()
-        .await
-        .wrap_err("ffmpeg error")?;
-    match exit_status.code() {
-        Some(0) => Ok(()),
-        Some(_) => Err(eyre!(
-            "error taking video snapshot: ffmpeg exited with non-zero code"
-        )),
-        None => Err(eyre!(
-            "error taking video snapshot: ffmpeg exited by signal"
-        )),
+        .wrap_err(FFmpegError::ErrorStarting)?;
+
+    match run_process(child, control_recv).await {
+        ProcessResult::RanToEnd(output) if output.status.success() => Ok(()),
+        ProcessResult::RanToEnd(_output) => Err(eyre!("ffmpeg exited with an error")),
+        ProcessResult::TerminatedBySignal(_) => Err(FFmpegError::TerminatedBySignal.into()),
+        ProcessResult::OtherError(err) => Err(err.wrap_err("error running ffmpeg")),
     }
 }

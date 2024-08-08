@@ -8,8 +8,16 @@ use tracing::{debug, instrument};
 
 use crate::{
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
-    processing::process_control::{run_process, ProcessControlReceiver},
+    processing::process_control::{run_process, ProcessControlReceiver, ProcessResult},
 };
+
+#[derive(thiserror::Error, Debug)]
+pub enum FFmpegError {
+    #[error("Error starting FFmpeg")]
+    ErrorStarting,
+    #[error("FFmpeg exited by signal")]
+    TerminatedBySignal,
+}
 
 pub trait CommandInputOutput {}
 
@@ -44,7 +52,7 @@ pub struct FFmpeg {
 
 #[async_trait]
 impl FFmpegLocalOutputTrait for FFmpeg {
-    #[instrument(err, name = "ffmpeg", skip(self))]
+    #[instrument(err, name = "ffmpeg", skip(self, control_recv))]
     async fn run_with_local_output(
         &self,
         input: &str,
@@ -63,14 +71,12 @@ impl FFmpegLocalOutputTrait for FFmpeg {
         command.args(self.flags.iter());
         command.arg(output);
         debug!(command = ?command.as_std(), "Invoking ffmpeg");
-        let child = command.spawn().wrap_err("error calling ffmpeg")?;
-        match run_process(child, control_recv)
-            .await
-            .wrap_err("error waiting for ffmpeg")?
-        {
-            None => Err(eyre!("ffmpeg terminated early")),
-            Some(output) if output.status.success() => Ok(()),
-            Some(_output) => Err(eyre!("ffmpeg exited with an error")),
+        let child = command.spawn().wrap_err(FFmpegError::ErrorStarting)?;
+        match run_process(child, control_recv).await {
+            ProcessResult::RanToEnd(output) if output.status.success() => Ok(()),
+            ProcessResult::RanToEnd(_output) => Err(eyre!("ffmpeg exited with an error")),
+            ProcessResult::TerminatedBySignal(_) => Err(FFmpegError::TerminatedBySignal.into()),
+            ProcessResult::OtherError(err) => Err(err.wrap_err("error running ffmpeg")),
         }
     }
 }

@@ -13,6 +13,7 @@ use crate::{
         self,
         commands::GenerateThumbnail,
         image::thumbnail::{GenerateThumbnailTrait, ThumbnailParams},
+        process_control::ProcessControlReceiver,
     },
 };
 
@@ -32,11 +33,12 @@ pub struct CreateAlbumThumbnailWithPaths {
     pub avif_key: String,
 }
 
-#[instrument(skip(conn, storage))]
+#[instrument(skip(conn, storage, control_recv))]
 pub async fn perform_side_effects_create_thumbnail(
     storage: &Storage,
     conn: &mut PooledDbConn,
     op: CreateAlbumThumbnailWithPaths,
+    control_recv: &mut ProcessControlReceiver,
 ) -> Result<()> {
     let (in_path, asset) = interact!(conn, move |conn| {
         let in_path = repository::asset::get_asset_path_on_disk(conn, op.asset_id)?.path_on_disk();
@@ -51,6 +53,7 @@ pub async fn perform_side_effects_create_thumbnail(
         &op.avif_key,
         op.size,
         storage,
+        control_recv,
     )
     .await?;
     Ok(())
@@ -88,7 +91,7 @@ pub async fn apply_create_thumbnail(
     Ok(CreateAlbumThumbnailResult { thumbnail_ids: ids })
 }
 
-#[instrument(skip(storage))]
+#[instrument(skip(storage, control_recv))]
 async fn create_thumbnail(
     asset_path: PathBuf,
     asset_type: AssetType,
@@ -96,6 +99,7 @@ async fn create_thumbnail(
     avif_key: &str,
     size: i32,
     storage: &Storage,
+    control_recv: &mut ProcessControlReceiver,
 ) -> Result<()> {
     let out_file_avif = storage.new_command_out_file(avif_key).await?;
     let out_file_webp = storage.new_command_out_file(webp_key).await?;
@@ -103,19 +107,18 @@ async fn create_thumbnail(
         width: size,
         height: size,
     };
-    let (tx, rx) = tokio::sync::oneshot::channel();
     let out_paths = vec![&out_file_avif, &out_file_webp];
     let thumbnail_params = ThumbnailParams {
         in_path: asset_path,
         outputs: out_paths,
         out_dimension,
     };
-    let res = match asset_type {
-        AssetType::Image => GenerateThumbnail::generate_thumbnail(thumbnail_params).await,
-        AssetType::Video => GenerateThumbnail::generate_video_thumbnail(thumbnail_params).await,
+    let _res = match asset_type {
+        AssetType::Image => GenerateThumbnail::generate_thumbnail(thumbnail_params).await?,
+        AssetType::Video => {
+            GenerateThumbnail::generate_video_thumbnail(thumbnail_params, control_recv).await?
+        }
     };
-    tx.send(res).unwrap();
-    let _ = rx.await.wrap_err("thumbnail task died or something")??;
     out_file_webp.flush_to_storage().await?;
     out_file_avif.flush_to_storage().await?;
     Ok(())

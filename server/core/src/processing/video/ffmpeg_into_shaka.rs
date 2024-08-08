@@ -12,6 +12,8 @@ use super::{
     FFProbe, FFProbeStreams,
 };
 
+// TODO: handling process interruption here is a mess
+
 #[async_trait]
 pub trait FFmpegIntoShakaFFmpegTrait {
     type Next: FFmpegIntoShakaTrait;

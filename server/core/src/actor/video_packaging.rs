@@ -1,5 +1,5 @@
 use eyre::{Report, Result};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
@@ -39,6 +39,7 @@ pub fn start_video_packaging_actor(
     db_pool: DbPool,
     storage: Storage,
     config: config::Config,
+    did_shutdown_send: oneshot::Sender<()>,
     send_from_us: mpsc::UnboundedSender<MsgFromVideoPackaging>,
 ) -> QueuedActorHandle<VideoPackagingTaskMsg> {
     let actor = VideoPackagingActor {
@@ -49,6 +50,7 @@ pub fn start_video_packaging_actor(
     QueuedActorHandle::new(
         actor,
         send_from_us,
+        did_shutdown_send,
         ActorOptions {
             max_tasks: 1,
             max_queue_size: 100,
@@ -104,6 +106,7 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                         )
                         .await;
                         cancel_pipe.cancel(); // stop piping task ctl messages to child processes
+                        tracing::info!("ffmpeg complete");
                         match result {
                             Ok(result) => {
                                 let apply_result = apply_result(db_pool, result).await;

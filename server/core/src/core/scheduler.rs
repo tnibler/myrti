@@ -1,6 +1,7 @@
 use eyre::Result;
+use futures::{stream::FuturesUnordered, StreamExt, TryStreamExt};
 use strum::EnumCount;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tracing::instrument;
 
 use crate::{
@@ -34,6 +35,7 @@ pub enum SchedulerMessage {
     ResumeAllProcessing,
     PauseVideoPackaging,
     ResumeVideoPackaging,
+    Shutdown,
 }
 
 #[derive(Debug)]
@@ -64,7 +66,13 @@ struct Scheduler {
     db_pool: DbPool,
     storage: Storage,
     config: Config,
+
+    waiting_for_shutdown: bool,
+    did_shutdown_send: Option<oneshot::Sender<()>>,
+    actor_did_shutdown_recvs: Option<Vec<oneshot::Receiver<()>>>,
+
     actor_states: [ActorState; Actors::COUNT],
+
     indexing_actor: IndexingActorHandle,
     thumbnail_actor: ThumbnailActorHandle,
     video_packaging_actor: VideoPackagingActorHandle,
@@ -72,27 +80,44 @@ struct Scheduler {
 }
 
 impl SchedulerHandle {
-    pub fn new(db_pool: DbPool, storage: Storage, config: Config) -> Self {
+    pub fn new(
+        db_pool: DbPool,
+        storage: Storage,
+        config: Config,
+        did_shutdown_send: oneshot::Sender<()>,
+    ) -> Self {
+        // TODO: indexign shutdown
+        let (indexing_did_shutdown_send, indexing_did_shutdown_recv) = oneshot::channel::<()>();
         let (from_indexing_send, from_indexing_recv) = mpsc::unbounded_channel();
         let indexing_actor =
             IndexingActorHandle::new(db_pool.clone(), config.clone(), from_indexing_send);
 
+        let (thumbnail_did_shutdown_send, thumbnail_did_shutdown_recv) = oneshot::channel();
         let (from_thumbnail_send, from_thumbnail_recv) = mpsc::unbounded_channel();
-        let thumbnail_actor =
-            start_thumbnail_actor(db_pool.clone(), storage.clone(), from_thumbnail_send);
+        let thumbnail_actor = start_thumbnail_actor(
+            db_pool.clone(),
+            storage.clone(),
+            thumbnail_did_shutdown_send,
+            from_thumbnail_send,
+        );
 
+        let (video_did_shutdown_send, video_did_shutdown_recv) = oneshot::channel();
         let (from_video_packaging_send, from_video_packaging_recv) = mpsc::unbounded_channel();
         let video_packaging_actor = start_video_packaging_actor(
             db_pool.clone(),
             storage.clone(),
             config.clone(),
+            video_did_shutdown_send,
             from_video_packaging_send,
         );
 
+        let (image_conversion_did_shutdown_send, image_conversion_did_shutdown_recv) =
+            oneshot::channel();
         let (from_image_conversion_send, from_image_conversion_recv) = mpsc::unbounded_channel();
         let image_conversion_actor = start_image_conversion_actor(
             db_pool.clone(),
             storage.clone(),
+            image_conversion_did_shutdown_send,
             from_image_conversion_send,
         );
 
@@ -101,6 +126,13 @@ impl SchedulerHandle {
             db_pool,
             storage,
             config,
+            waiting_for_shutdown: false,
+            did_shutdown_send: Some(did_shutdown_send),
+            actor_did_shutdown_recvs: Some(vec![
+                thumbnail_did_shutdown_recv,
+                video_did_shutdown_recv,
+                image_conversion_did_shutdown_recv,
+            ]),
             actor_states: Default::default(),
             indexing_actor: indexing_actor.clone(),
             thumbnail_actor: thumbnail_actor.clone(),
@@ -151,6 +183,9 @@ async fn run_scheduler(
                 if let Err(err) = sched.on_image_conversion_msg(image_conversion_msg).await {
                     tracing::error!(?err, "error in scheduler");
                 }
+            }
+            else => {
+                break;
             }
         }
     }
@@ -343,7 +378,7 @@ impl Scheduler {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn handle_message(&self, msg: SchedulerMessage) {
+    async fn handle_message(&mut self, msg: SchedulerMessage) {
         match msg {
             SchedulerMessage::Timer => {}
             SchedulerMessage::UserRequest(user_request) => match user_request {
@@ -382,6 +417,42 @@ impl Scheduler {
                 self.video_packaging_actor
                     .msg_resume_all()
                     .expect("receiver must be alive");
+            }
+            SchedulerMessage::Shutdown => {
+                if !self.waiting_for_shutdown {
+                    self.waiting_for_shutdown = true;
+                    self.video_packaging_actor
+                        .msg_shutdown()
+                        .expect("receiver must be alive");
+                    self.thumbnail_actor
+                        .msg_shutdown()
+                        .expect("receiver must be alive");
+                    self.image_conversion_actor
+                        .msg_shutdown()
+                        .expect("receiver must be alive");
+                    let did_shutdown_recvs = self
+                        .actor_did_shutdown_recvs
+                        .take()
+                        .expect("must be Some before shutdown called");
+                    let did_shutdown_send = self
+                        .did_shutdown_send
+                        .take()
+                        .expect("must be Some before shutdown called");
+                    tokio::task::spawn(async move {
+                        // for recv in did_shutdown_recvs {
+                        //     recv.await.expect("TODO senders must be alive");
+                        //     tracing::info!("one task shutdown");
+                        // }
+                        did_shutdown_recvs
+                            .into_iter()
+                            .collect::<FuturesUnordered<_>>()
+                            .try_collect::<Vec<()>>()
+                            .await
+                            .expect("TODO senders must be alive");
+                        tracing::info!("all actors shutdown");
+                        did_shutdown_send.send(()).expect("receiver must be alive");
+                    });
+                }
             }
             SchedulerMessage::Startup => {
                 tokio::spawn(on_startup(

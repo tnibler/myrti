@@ -22,6 +22,7 @@ pub type ProcessControlReceiver = mpsc::Receiver<ProcessControl>;
 pub async fn run_process(
     child: tokio::process::Child,
     control_recv: &mut mpsc::Receiver<ProcessControl>,
+    // stdout_lines_send: mpsc::Receiver<Option<String>>,
 ) -> Result<Option<std::process::Output>> {
     let pid = child.id().expect("child process must not have completed");
     let (send, mut recv) = oneshot::channel();

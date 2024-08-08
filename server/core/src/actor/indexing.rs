@@ -39,6 +39,7 @@ enum MsgToIndexing {
     Pause,
     Resume,
     DoTask(DoTaskMsg),
+    Shutdown,
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +132,8 @@ async fn run_indexing_actor(
                         } else {
                             let _ = actor.send_from_us.send(MsgFromIndexing::DroppedMessage);
                         }
+                    }
+                    MsgToIndexing::Shutdown => {
                     }
                 }
             }

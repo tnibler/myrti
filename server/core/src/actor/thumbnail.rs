@@ -1,7 +1,7 @@
 use chrono::Utc;
 use deadpool_diesel;
 use eyre::Result;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tracing::Instrument;
 
 use crate::{
@@ -50,12 +50,14 @@ pub enum ThumbnailTaskResult {
 pub fn start_thumbnail_actor(
     db_pool: DbPool,
     storage: Storage,
+    did_shutdown_send: oneshot::Sender<()>,
     send_from_us: mpsc::UnboundedSender<MsgFromThumbnail>,
 ) -> ThumbnailActorHandle {
     let actor = ThumbnailActor { db_pool, storage };
     QueuedActorHandle::new(
         actor,
         send_from_us,
+        did_shutdown_send,
         ActorOptions {
             max_tasks: 8,
             max_queue_size: 1000,
@@ -86,7 +88,7 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
         msg: ThumbnailTaskMsg,
         result_send: mpsc::UnboundedSender<(TaskId, ThumbnailTaskResult)>,
         task_id: TaskId,
-        _ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
+        mut ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
     ) {
         match msg {
             ThumbnailTaskMsg::CreateAssetThumbnail(create_thumbnail) => {
@@ -94,9 +96,7 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
                 let storage = self.storage.clone();
                 tokio::task::spawn(async move {
                     // ugly, rewrite this with try blocks one day hopefuly
-                    let result =
-                        do_asset_thumbnail_side_effects(db_pool.clone(), storage, create_thumbnail)
-                            .await;
+                    let result = do_asset_thumbnail_side_effects(db_pool.clone(), storage, create_thumbnail).await;
                     async fn apply_result(
                         db_pool: DbPool,
                         result: ThumbnailSideEffectResult,
@@ -131,6 +131,7 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
                             .send((task_id, ThumbnailTaskResult::Asset(result)))
                             .expect("Receiver must be alive");
                     }
+                    drop(ctl_recv); // TODO: dummy usage 
                 }.in_current_span());
             }
             ThumbnailTaskMsg::CreateAlbumThumbnail(create_thumbnail) => {

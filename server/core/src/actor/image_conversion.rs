@@ -1,5 +1,5 @@
 use eyre::{Report, Result};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tracing::Instrument;
 
 use crate::{
@@ -31,12 +31,14 @@ pub enum ImageConversionTaskResult {
 pub fn start_image_conversion_actor(
     db_pool: DbPool,
     storage: Storage,
+    did_shutdown_send: oneshot::Sender<()>,
     send_from_us: mpsc::UnboundedSender<MsgFromImageConversion>,
 ) -> ImageConversionActorHandle {
     let actor = ImageConversionActor { db_pool, storage };
     QueuedActorHandle::new(
         actor,
         send_from_us,
+        did_shutdown_send,
         ActorOptions {
             max_tasks: 8,
             max_queue_size: 1000,

@@ -1,10 +1,11 @@
 use chrono::Utc;
 use deadpool_diesel;
 use eyre::Result;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tracing::Instrument;
 
 use crate::{
+    actor::misc::task_loop,
     catalog::{
         operation::{
             create_album_thumbnail::{self, CreateAlbumThumbnail, CreateAlbumThumbnailWithPaths},
@@ -25,11 +26,11 @@ use crate::{
         },
         AssetId, FailedThumbnailJob, ThumbnailFormat,
     },
-    processing::hash::hash_file,
+    processing::{hash::hash_file, process_control::ProcessControlReceiver},
 };
 
 use super::simple_queue_actor::{
-    Actor, ActorOptions, MsgFrom, MsgTaskControl, QueuedActorHandle, TaskId,
+    Actor, ActorOptions, MsgFrom, MsgTaskControl, QueuedActorHandle, TaskError, TaskId,
 };
 
 pub type ThumbnailActorHandle = QueuedActorHandle<ThumbnailTaskMsg>;
@@ -50,12 +51,14 @@ pub enum ThumbnailTaskResult {
 pub fn start_thumbnail_actor(
     db_pool: DbPool,
     storage: Storage,
+    did_shutdown_send: oneshot::Sender<()>,
     send_from_us: mpsc::UnboundedSender<MsgFromThumbnail>,
 ) -> ThumbnailActorHandle {
     let actor = ThumbnailActor { db_pool, storage };
     QueuedActorHandle::new(
         actor,
         send_from_us,
+        did_shutdown_send,
         ActorOptions {
             max_tasks: 8,
             max_queue_size: 1000,
@@ -80,70 +83,103 @@ struct ThumbnailActor {
 }
 
 impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
-    #[tracing::instrument(skip(self))]
+    #[tracing::instrument(skip(self, ctl_recv))]
     async fn run_task(
         &mut self,
         msg: ThumbnailTaskMsg,
-        result_send: mpsc::UnboundedSender<(TaskId, ThumbnailTaskResult)>,
+        result_send: mpsc::UnboundedSender<(TaskId, Result<ThumbnailTaskResult, TaskError>)>,
         task_id: TaskId,
-        _ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
+        mut ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
     ) {
+        let (process_control_send, mut process_control_recv) = mpsc::channel(1);
         match msg {
             ThumbnailTaskMsg::CreateAssetThumbnail(create_thumbnail) => {
                 let db_pool = self.db_pool.clone();
                 let storage = self.storage.clone();
-                tokio::task::spawn(async move {
-                    // ugly, rewrite this with try blocks one day hopefuly
-                    let result =
-                        do_asset_thumbnail_side_effects(db_pool.clone(), storage, create_thumbnail)
-                            .await;
-                    async fn apply_result(
-                        db_pool: DbPool,
-                        result: ThumbnailSideEffectResult,
-                    ) -> Result<ThumbnailSideEffectResult> {
-                        let mut conn = db_pool.get().await?;
-                        if !result.failed.is_empty() {
-                            for (_thumbnail, report) in &result.failed {
-                                tracing::warn!(?report, %result.asset_id, "failed to create thumbnail");
+                tokio::task::spawn(
+                    async move {
+                        // ugly, rewrite this with try blocks one day hopefuly
+                        let result_fut = do_asset_thumbnail_side_effects(
+                            db_pool.clone(),
+                            storage,
+                            create_thumbnail,
+                            &mut process_control_recv,
+                        );
+                        let task_result =
+                            task_loop(result_fut, &mut ctl_recv, process_control_send).await;
+                        let result = match task_result {
+                            Ok(r) => r,
+                            Err(err) => {
+                                result_send
+                                    .send((task_id, Err(err)))
+                                    .expect("Receiver must be alive");
+                                return;
                             }
-                            save_failed_thumbnail(&mut conn, result.asset_id).await?;
-                        }
-                        for succeeded in &result.succeeded {
-                            apply_create_thumbnail(&mut conn, result.asset_id, succeeded.clone())
+                        };
+                        async fn apply_result(
+                            db_pool: DbPool,
+                            result: ThumbnailSideEffectResult,
+                        ) -> Result<ThumbnailSideEffectResult> {
+                            let mut conn = db_pool.get().await?;
+                            if !result.failed.is_empty() {
+                                for (_thumbnail, report) in &result.failed {
+                                    tracing::warn!(?report, %result.asset_id, "failed to create thumbnail");
+                                }
+                                save_failed_thumbnail(&mut conn, result.asset_id).await?;
+                            }
+                            for succeeded in &result.succeeded {
+                                apply_create_thumbnail(
+                                    &mut conn,
+                                    result.asset_id,
+                                    succeeded.clone(),
+                                )
                                 .await?;
+                            }
+                            Ok(result)
                         }
-                        Ok(result)
-                    }
-                    if let Ok(result) = result {
-                        let apply_result = apply_result(db_pool, result).await;
-                        if let Ok(result) = apply_result {
-                            result_send
-                                .send((task_id, ThumbnailTaskResult::Asset(Ok(result))))
-                                .expect("Receiver must be alive");
+                        if let Ok(result) = result {
+                            let apply_result = apply_result(db_pool, result).await;
+                            if let Ok(result) = apply_result {
+                                result_send
+                                    .send((task_id, Ok(ThumbnailTaskResult::Asset(Ok(result)))))
+                                    .expect("Receiver must be alive");
+                            } else {
+                                // error applying to db
+                                result_send
+                                    .send((task_id, Ok(ThumbnailTaskResult::Asset(apply_result))))
+                                    .expect("Receiver must be alive");
+                            }
                         } else {
-                            // error applying to db
                             result_send
-                                .send((task_id, ThumbnailTaskResult::Asset(apply_result)))
+                                .send((task_id, Ok(ThumbnailTaskResult::Asset(result))))
                                 .expect("Receiver must be alive");
                         }
-                    } else {
-                        result_send
-                            .send((task_id, ThumbnailTaskResult::Asset(result)))
-                            .expect("Receiver must be alive");
                     }
-                }.in_current_span());
+                    .in_current_span(),
+                );
             }
             ThumbnailTaskMsg::CreateAlbumThumbnail(create_thumbnail) => {
                 let db_pool = self.db_pool.clone();
                 let storage = self.storage.clone();
                 tokio::task::spawn(
                     async move {
-                        let result = do_album_thumbnail_side_effects(
+                        let result_fut = do_album_thumbnail_side_effects(
                             db_pool.clone(),
                             storage,
                             create_thumbnail,
-                        )
-                        .await;
+                            &mut process_control_recv,
+                        );
+                        let task_result =
+                            task_loop(result_fut, &mut ctl_recv, process_control_send).await;
+                        let result = match task_result {
+                            Ok(r) => r,
+                            Err(err) => {
+                                result_send
+                                    .send((task_id, Err(err)))
+                                    .expect("Receiver must be alive");
+                                return;
+                            }
+                        };
 
                         async fn apply_result(
                             db_pool: DbPool,
@@ -161,17 +197,17 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
                             let apply_result = apply_result(db_pool, result).await;
                             if let Ok(result) = apply_result {
                                 result_send
-                                    .send((task_id, ThumbnailTaskResult::Album(Ok(result))))
+                                    .send((task_id, Ok(ThumbnailTaskResult::Album(Ok(result)))))
                                     .expect("Receiver must be alive");
                             } else {
                                 // error applying to db
                                 result_send
-                                    .send((task_id, ThumbnailTaskResult::Album(apply_result)))
+                                    .send((task_id, Ok(ThumbnailTaskResult::Album(apply_result))))
                                     .expect("Receiver must be alive");
                             }
                         } else {
                             result_send
-                                .send((task_id, ThumbnailTaskResult::Album(result)))
+                                .send((task_id, Ok(ThumbnailTaskResult::Album(result))))
                                 .expect("Receiver must be alive");
                         }
                     }
@@ -215,6 +251,7 @@ async fn do_asset_thumbnail_side_effects(
     db_pool: DbPool,
     storage: Storage,
     op: CreateAssetThumbnail,
+    control_recv: &mut ProcessControlReceiver,
 ) -> Result<ThumbnailSideEffectResult> {
     let conn = db_pool.get().await?;
     let asset_id = op.asset_id;
@@ -246,7 +283,13 @@ async fn do_asset_thumbnail_side_effects(
     drop(conn); // don't hold connection over long operations that don't need it
 
     let op_resolved = resolve(&op);
-    perform_side_effects_create_thumbnail(&storage, db_pool.clone(), op_resolved.clone()).await
+    perform_side_effects_create_thumbnail(
+        &storage,
+        db_pool.clone(),
+        op_resolved.clone(),
+        control_recv,
+    )
+    .await
 }
 
 #[tracing::instrument(skip(db_pool, storage))]
@@ -254,6 +297,7 @@ async fn do_album_thumbnail_side_effects(
     db_pool: DbPool,
     storage: Storage,
     op: CreateAlbumThumbnail,
+    control_recv: &mut ProcessControlReceiver,
 ) -> Result<CreateAlbumThumbnailWithPaths> {
     let avif_key = storage_key::album_thumbnail(op.album_id, ThumbnailFormat::Avif);
     let webp_key = storage_key::album_thumbnail(op.album_id, ThumbnailFormat::Webp);
@@ -269,6 +313,7 @@ async fn do_album_thumbnail_side_effects(
         &storage,
         &mut conn,
         op_with_paths.clone(),
+        control_recv,
     )
     .await?;
     Ok(op_with_paths)

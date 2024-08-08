@@ -8,8 +8,16 @@ use tracing::{debug, instrument};
 
 use crate::{
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
-    processing::process_control::{run_process, ProcessControlReceiver},
+    processing::process_control::{run_process, ProcessControlReceiver, ProcessResult},
 };
+
+#[derive(thiserror::Error, Debug)]
+pub enum ShakaError {
+    #[error("Error starting shaka packager")]
+    ErrorStarting,
+    #[error("shaka packager exited by signal")]
+    TerminatedBySignal,
+}
 
 #[async_trait]
 pub trait ShakaPackagerTrait {
@@ -55,7 +63,7 @@ pub struct ShakaResult {
 
 #[async_trait]
 impl ShakaPackagerWithLocalOutputTrait for ShakaPackager {
-    #[instrument(err, name = "shaka_packager")]
+    #[instrument(err, name = "shaka_packager", skip(control_recv))]
     async fn run_with_local_output(
         input: &Path,
         repr_type: RepresentationType,
@@ -96,23 +104,22 @@ impl ShakaPackagerWithLocalOutputTrait for ShakaPackager {
             .stderr(Stdio::piped())
             .spawn()
             .wrap_err("error calling shaka packager")?;
-        match run_process(child, control_recv)
-            .await
-            .wrap_err("error waiting for skaka packager")?
-        {
-            None => Err(eyre!("shaka terminated early")),
-            Some(output) if output.status.success() => Ok(()),
-            Some(output) => Err(eyre!(
+
+        match run_process(child, control_recv).await {
+            ProcessResult::RanToEnd(output) if output.status.success() => Ok(()),
+            ProcessResult::RanToEnd(output) => Err(eyre!(
                 "shaka packager exited with an error:\n{}",
                 String::from_utf8_lossy(&output.stderr)
             )),
+            ProcessResult::TerminatedBySignal(_) => Err(ShakaError::TerminatedBySignal.into()),
+            ProcessResult::OtherError(err) => Err(err.wrap_err("error running shaka packager")),
         }
     }
 }
 
 #[async_trait]
 impl ShakaPackagerTrait for ShakaPackager {
-    #[tracing::instrument(err, skip(storage))]
+    #[tracing::instrument(err, skip(storage, control_recv))]
     async fn run(
         input: &Path,
         repr_type: RepresentationType,

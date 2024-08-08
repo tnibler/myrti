@@ -5,7 +5,7 @@ use std::{
 };
 
 use eyre::Result;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tracing::Instrument;
 
 #[derive(Debug)]
@@ -16,13 +16,14 @@ pub enum MsgFrom<T: Debug> {
         queued_tasks: usize,
     },
     DroppedMessage,
-    TaskResult(T),
+    TaskResult(Result<T, TaskError>),
 }
 
 #[derive(Debug)]
 pub enum MsgTo<T: Debug> {
     PauseAll,
     ResumeAll,
+    Shutdown,
     DoTask(T),
 }
 
@@ -31,6 +32,14 @@ pub enum MsgTaskControl {
     Pause,
     Resume,
     Cancel,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum TaskError {
+    #[error("Task was cancelled")]
+    Cancelled,
+    #[error("Task failed")]
+    Other(#[from] eyre::Report),
 }
 
 #[derive(Clone)]
@@ -42,13 +51,14 @@ impl<Task: Debug + Send + Sync + 'static> QueuedActorHandle<Task> {
     pub fn new<TaskResult: Debug + Send + Sync + 'static, A: Actor<Task, TaskResult> + 'static>(
         actor: A,
         send_from_us: mpsc::UnboundedSender<MsgFrom<TaskResult>>,
+        did_shutdown_send: oneshot::Sender<()>,
         opts: ActorOptions,
         span: tracing::Span,
     ) -> Self {
         let (send, recv) = mpsc::unbounded_channel::<MsgTo<Task>>();
         tokio::task::spawn(
             async move {
-                run_actor(recv, send_from_us, actor, opts).await;
+                run_actor(recv, send_from_us, did_shutdown_send, actor, opts).await;
             }
             .instrument(span),
         );
@@ -65,6 +75,11 @@ impl<Task: Debug + Send + Sync + 'static> QueuedActorHandle<Task> {
         Ok(())
     }
 
+    pub fn msg_shutdown(&self) -> Result<()> {
+        self.send.send(MsgTo::Shutdown)?;
+        Ok(())
+    }
+
     pub fn msg_do_task(&self, msg: Task) -> Result<()> {
         self.send.send(MsgTo::DoTask(msg))?;
         Ok(())
@@ -75,7 +90,7 @@ pub trait Actor<Task: Debug + Send + Sync, TaskResult: Debug + Send + Sync>: Sen
     fn run_task(
         &mut self,
         msg: Task,
-        result_send: mpsc::UnboundedSender<(TaskId, TaskResult)>,
+        result_send: mpsc::UnboundedSender<(TaskId, Result<TaskResult, TaskError>)>,
         task_id: TaskId,
         ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
     ) -> impl Future<Output = ()> + Send;
@@ -91,10 +106,13 @@ struct Runner<
     active_tasks: usize,
     queue: VecDeque<Task>,
     send_from_us: mpsc::UnboundedSender<MsgFrom<TaskResult>>,
-    actor_result_send: mpsc::UnboundedSender<(TaskId, TaskResult)>,
+    actor_result_send: mpsc::UnboundedSender<(TaskId, Result<TaskResult, TaskError>)>,
     actor: A,
     next_task_id: TaskId,
     task_ctl_sends: HashMap<TaskId, mpsc::UnboundedSender<MsgTaskControl>>,
+
+    did_shutdown_send: Option<oneshot::Sender<()>>,
+    waiting_for_shutdown: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -124,6 +142,18 @@ impl<Task: Debug + Send + Sync, TaskResult: Debug + Send + Sync, A: Actor<Task, 
                 send.send(MsgTaskControl::Resume).expect("TODO");
             });
             self.dequeue_work_if_available().await;
+            self.signal_activity_change();
+        }
+    }
+
+    async fn shutdown(&mut self) {
+        if !self.waiting_for_shutdown {
+            self.is_running = false;
+            tracing::info!("starting shutdown");
+            self.waiting_for_shutdown = true;
+            self.task_ctl_sends.values().for_each(|send| {
+                send.send(MsgTaskControl::Cancel).expect("TODO");
+            });
             self.signal_activity_change();
         }
     }
@@ -162,7 +192,17 @@ impl<Task: Debug + Send + Sync, TaskResult: Debug + Send + Sync, A: Actor<Task, 
     }
 
     #[tracing::instrument(skip(self))]
-    fn signal_activity_change(&self) {
+    fn signal_activity_change(&mut self) {
+        if self.active_tasks == 0 && self.waiting_for_shutdown {
+            self.is_running = false;
+            self.waiting_for_shutdown = false;
+            tracing::info!("no more active tasks doing shutdown");
+            self.did_shutdown_send
+                .take()
+                .expect("TODO shutdown can only be called once")
+                .send(())
+                .expect("receiver must be alive");
+        }
         self.send_from_us
             .send(MsgFrom::ActivityChange {
                 is_running: self.is_running,
@@ -172,7 +212,7 @@ impl<Task: Debug + Send + Sync, TaskResult: Debug + Send + Sync, A: Actor<Task, 
             .expect(SEND_ERROR_MESSAGE);
     }
 
-    async fn on_task_finished(&mut self, task_id: TaskId, result: TaskResult) {
+    async fn on_task_finished(&mut self, task_id: TaskId, result: Result<TaskResult, TaskError>) {
         assert!(
             self.task_ctl_sends.remove(&task_id).is_some(),
             "TaskId of finished task not in map"
@@ -214,6 +254,7 @@ pub async fn run_actor<
 >(
     mut actor_recv: mpsc::UnboundedReceiver<MsgTo<Task>>,
     send: mpsc::UnboundedSender<MsgFrom<TaskResult>>,
+    did_shutdown_send: oneshot::Sender<()>,
     actor: impl Actor<Task, TaskResult>,
     opts: ActorOptions,
 ) {
@@ -228,6 +269,8 @@ pub async fn run_actor<
         actor,
         next_task_id: TaskId(0),
         task_ctl_sends: Default::default(),
+        did_shutdown_send: Some(did_shutdown_send),
+        waiting_for_shutdown: false,
     };
     loop {
         tokio::select! {
@@ -238,6 +281,9 @@ pub async fn run_actor<
                     }
                     MsgTo::ResumeAll => {
                         runner.resume_all().await;
+                    }
+                    MsgTo::Shutdown => {
+                        runner.shutdown().await;
                     }
                     MsgTo::DoTask(task) => {
                         runner.on_task_received(task).await;

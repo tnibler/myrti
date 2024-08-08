@@ -12,7 +12,7 @@ use myrti::{
     routes,
     spa_serve_dir::SpaServeDirService,
 };
-use tokio::signal;
+use tokio::{signal, sync::oneshot};
 use tower::ServiceBuilder;
 use tower_http::{
     cors::{Any, CorsLayer},
@@ -188,7 +188,13 @@ async fn main() -> Result<()> {
     store_asset_roots_from_config(config_dir, &config, &pool).await?;
     std::fs::create_dir_all(&storage_path).unwrap();
     let storage: Storage = LocalFileStorage::new(storage_path).into();
-    let scheduler = SchedulerHandle::new(pool.clone(), storage.clone(), config);
+    let (scheduler_did_shutdown_send, scheduler_did_shutdown_recv) = oneshot::channel();
+    let scheduler = SchedulerHandle::new(
+        pool.clone(),
+        storage.clone(),
+        config,
+        scheduler_did_shutdown_send,
+    );
 
     if args.pause_processing {
         scheduler
@@ -206,7 +212,7 @@ async fn main() -> Result<()> {
     let shared_state: SharedState = Arc::new(AppState {
         pool: pool.clone(),
         storage,
-        scheduler,
+        scheduler: scheduler.clone(),
     });
     let cors = CorsLayer::new()
         // allow `GET` and `POST` when accessing the resource
@@ -244,7 +250,14 @@ async fn main() -> Result<()> {
         .await
         .unwrap();
     info!("Shutting down...");
-
+    scheduler
+        .send
+        .send(SchedulerMessage::Shutdown)
+        .await
+        .expect("scheduler must be alive");
+    scheduler_did_shutdown_recv
+        .await
+        .expect("scheduler must be alive");
     Ok(())
 }
 

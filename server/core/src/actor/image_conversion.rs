@@ -12,7 +12,7 @@ use crate::{
 };
 
 use super::simple_queue_actor::{
-    Actor, ActorOptions, MsgFrom, MsgTaskControl, QueuedActorHandle, TaskId,
+    Actor, ActorOptions, MsgFrom, MsgTaskControl, QueuedActorHandle, TaskError, TaskId,
 };
 
 pub type ImageConversionTaskMsg = ConvertImage;
@@ -62,9 +62,9 @@ impl Actor<ImageConversionTaskMsg, ImageConversionTaskResult> for ImageConversio
     async fn run_task(
         &mut self,
         msg: ImageConversionTaskMsg,
-        result_send: mpsc::UnboundedSender<(TaskId, ImageConversionTaskResult)>,
+        result_send: mpsc::UnboundedSender<(TaskId, Result<ImageConversionTaskResult, TaskError>)>,
         task_id: TaskId,
-        _ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
+        ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
     ) {
         let db_pool = self.db_pool.clone();
         let storage = self.storage.clone();
@@ -89,7 +89,7 @@ impl Actor<ImageConversionTaskMsg, ImageConversionTaskResult> for ImageConversio
                                 result_send
                                     .send((
                                         task_id,
-                                        ImageConversionTaskResult::ConversionComplete(msg),
+                                        Ok(ImageConversionTaskResult::ConversionComplete(msg)),
                                     ))
                                     .expect("Receiver must be alive");
                             }
@@ -97,10 +97,10 @@ impl Actor<ImageConversionTaskMsg, ImageConversionTaskResult> for ImageConversio
                                 result_send
                                     .send((
                                         task_id,
-                                        ImageConversionTaskResult::ConversionError {
+                                        Ok(ImageConversionTaskResult::ConversionError {
                                             convert_image: msg,
                                             report,
-                                        },
+                                        }),
                                     ))
                                     .expect("Receiver must be alive");
                             }
@@ -110,14 +110,15 @@ impl Actor<ImageConversionTaskMsg, ImageConversionTaskResult> for ImageConversio
                         result_send
                             .send((
                                 task_id,
-                                ImageConversionTaskResult::ConversionError {
+                                Ok(ImageConversionTaskResult::ConversionError {
                                     convert_image: msg,
                                     report,
-                                },
+                                }),
                             ))
                             .expect("Receiver must be alive");
                     }
                 };
+                drop(ctl_recv); // must be alive for entire task duration
             }
             .in_current_span(),
         );

@@ -10,7 +10,7 @@ use crate::processing::{
     video::ffmpeg::FFmpegError,
 };
 
-#[instrument]
+#[instrument(skip(control_recv))]
 pub async fn ffmpeg_snapshot(
     video_path: &Path,
     output: &Path,

@@ -6,6 +6,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::{
+    actor::misc::task_loop,
     catalog::{
         operation::{
             create_album_thumbnail::{self, CreateAlbumThumbnail, CreateAlbumThumbnailWithPaths},
@@ -26,14 +27,11 @@ use crate::{
         },
         AssetId, FailedThumbnailJob, ThumbnailFormat,
     },
-    processing::{
-        hash::hash_file, process_control::ProcessControlReceiver, video::ffmpeg::FFmpegError,
-    },
+    processing::{hash::hash_file, process_control::ProcessControlReceiver},
 };
 
-use super::{
-    misc::pipe_task_ctl_to_process_ctl,
-    simple_queue_actor::{Actor, ActorOptions, MsgFrom, MsgTaskControl, QueuedActorHandle, TaskId},
+use super::simple_queue_actor::{
+    Actor, ActorOptions, MsgFrom, MsgTaskControl, QueuedActorHandle, TaskError, TaskId,
 };
 
 pub type ThumbnailActorHandle = QueuedActorHandle<ThumbnailTaskMsg>;
@@ -90,13 +88,11 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
     async fn run_task(
         &mut self,
         msg: ThumbnailTaskMsg,
-        result_send: mpsc::UnboundedSender<(TaskId, ThumbnailTaskResult)>,
+        result_send: mpsc::UnboundedSender<(TaskId, Result<ThumbnailTaskResult, TaskError>)>,
         task_id: TaskId,
-        ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
+        mut ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
     ) {
         let (process_control_send, mut process_control_recv) = mpsc::channel(1);
-        let cancel_pipe = CancellationToken::new();
-        pipe_task_ctl_to_process_ctl(ctl_recv, process_control_send, cancel_pipe.clone());
         match msg {
             ThumbnailTaskMsg::CreateAssetThumbnail(create_thumbnail) => {
                 let db_pool = self.db_pool.clone();
@@ -104,39 +100,33 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
                 tokio::task::spawn(
                     async move {
                         // ugly, rewrite this with try blocks one day hopefuly
-                        let result = do_asset_thumbnail_side_effects(
+                        let result_fut = do_asset_thumbnail_side_effects(
                             db_pool.clone(),
                             storage,
                             create_thumbnail,
                             &mut process_control_recv,
-                        )
-                        .await;
+                        );
+                        let task_result =
+                            task_loop(result_fut, &mut ctl_recv, process_control_send).await;
+                        let result = match task_result {
+                            Ok(r) => r,
+                            Err(err) => {
+                                result_send
+                                    .send((task_id, Err(err)))
+                                    .expect("Receiver must be alive");
+                                return;
+                            }
+                        };
                         async fn apply_result(
                             db_pool: DbPool,
                             result: ThumbnailSideEffectResult,
                         ) -> Result<ThumbnailSideEffectResult> {
                             let mut conn = db_pool.get().await?;
                             if !result.failed.is_empty() {
-                                // for (_thumbnail, report) in &result.failed {
-                                //     tracing::warn!(?report, %result.asset_id, "failed to create thumbnail");
-                                // }
-                                let all_errors_are_cancellation = result
-                                    .failed
-                                    .iter()
-                                    .map(|(_, err)| {
-                                        matches!(
-                                            err.downcast_ref::<FFmpegError>(),
-                                            Some(FFmpegError::TerminatedBySignal)
-                                        )
-                                    })
-                                    .all(|b| b);
-                                tracing::info!(
-                                    "all errors cancellation {}",
-                                    all_errors_are_cancellation
-                                );
-                                if !all_errors_are_cancellation {
-                                    save_failed_thumbnail(&mut conn, result.asset_id).await?;
+                                for (_thumbnail, report) in &result.failed {
+                                    tracing::warn!(?report, %result.asset_id, "failed to create thumbnail");
                                 }
+                                save_failed_thumbnail(&mut conn, result.asset_id).await?;
                             }
                             for succeeded in &result.succeeded {
                                 apply_create_thumbnail(
@@ -152,21 +142,19 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
                             let apply_result = apply_result(db_pool, result).await;
                             if let Ok(result) = apply_result {
                                 result_send
-                                    .send((task_id, ThumbnailTaskResult::Asset(Ok(result))))
+                                    .send((task_id, Ok(ThumbnailTaskResult::Asset(Ok(result)))))
                                     .expect("Receiver must be alive");
                             } else {
                                 // error applying to db
                                 result_send
-                                    .send((task_id, ThumbnailTaskResult::Asset(apply_result)))
+                                    .send((task_id, Ok(ThumbnailTaskResult::Asset(apply_result))))
                                     .expect("Receiver must be alive");
                             }
                         } else {
                             result_send
-                                .send((task_id, ThumbnailTaskResult::Asset(result)))
+                                .send((task_id, Ok(ThumbnailTaskResult::Asset(result))))
                                 .expect("Receiver must be alive");
                         }
-                        drop(process_control_recv); // TODO: dummy usage
-                        cancel_pipe.cancel();
                     }
                     .in_current_span(),
                 );
@@ -176,13 +164,23 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
                 let storage = self.storage.clone();
                 tokio::task::spawn(
                     async move {
-                        let result = do_album_thumbnail_side_effects(
+                        let result_fut = do_album_thumbnail_side_effects(
                             db_pool.clone(),
                             storage,
                             create_thumbnail,
                             &mut process_control_recv,
-                        )
-                        .await;
+                        );
+                        let task_result =
+                            task_loop(result_fut, &mut ctl_recv, process_control_send).await;
+                        let result = match task_result {
+                            Ok(r) => r,
+                            Err(err) => {
+                                result_send
+                                    .send((task_id, Err(err)))
+                                    .expect("Receiver must be alive");
+                                return;
+                            }
+                        };
 
                         async fn apply_result(
                             db_pool: DbPool,
@@ -200,21 +198,19 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
                             let apply_result = apply_result(db_pool, result).await;
                             if let Ok(result) = apply_result {
                                 result_send
-                                    .send((task_id, ThumbnailTaskResult::Album(Ok(result))))
+                                    .send((task_id, Ok(ThumbnailTaskResult::Album(Ok(result)))))
                                     .expect("Receiver must be alive");
                             } else {
                                 // error applying to db
                                 result_send
-                                    .send((task_id, ThumbnailTaskResult::Album(apply_result)))
+                                    .send((task_id, Ok(ThumbnailTaskResult::Album(apply_result))))
                                     .expect("Receiver must be alive");
                             }
                         } else {
                             result_send
-                                .send((task_id, ThumbnailTaskResult::Album(result)))
+                                .send((task_id, Ok(ThumbnailTaskResult::Album(result))))
                                 .expect("Receiver must be alive");
                         }
-                        drop(process_control_recv);
-                        cancel_pipe.cancel();
                     }
                     .in_current_span(),
                 );

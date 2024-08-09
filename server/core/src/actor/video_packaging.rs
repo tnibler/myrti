@@ -1,10 +1,12 @@
 use eyre::{Report, Result};
 use tokio::sync::{mpsc, oneshot};
-use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use crate::{
-    actor::misc::pipe_task_ctl_to_process_ctl,
+    actor::{
+        misc::{pipe_task_ctl_to_process_ctl, task_loop},
+        simple_queue_actor::TaskError,
+    },
     catalog::operation::package_video::{
         apply_package_video, perform_side_effects_package_video, CompletedPackageVideo,
         PackageVideo,
@@ -75,9 +77,9 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
     async fn run_task(
         &mut self,
         msg: VideoPackagingTaskMsg,
-        result_send: mpsc::UnboundedSender<(TaskId, VideoPackagingTaskResult)>,
+        result_send: mpsc::UnboundedSender<(TaskId, Result<VideoPackagingTaskResult, TaskError>)>,
         task_id: TaskId,
-        ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
+        mut ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
     ) {
         match msg {
             VideoPackagingTaskMsg::PackageVideo(package_video) => {
@@ -91,22 +93,28 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                     let mut conn = db_pool.get().await?;
                     apply_package_video(&mut conn, result.clone()).await
                 }
-                let (process_control_send, process_control_recv) = tokio::sync::mpsc::channel(1);
-                let cancel_pipe = CancellationToken::new();
-                // listen for task ctl messages and pass them to child processes
-                pipe_task_ctl_to_process_ctl(ctl_recv, process_control_send, cancel_pipe.clone());
                 tokio::task::spawn(
                     async move {
-                        let result = perform_side_effects_package_video(
+                        let (process_control_send, process_control_recv) =
+                            tokio::sync::mpsc::channel(1);
+                        let result_fut = perform_side_effects_package_video(
                             &db_pool,
                             &storage,
                             &package_video,
                             bin_paths.as_ref(),
                             process_control_recv,
-                        )
-                        .await;
-                        cancel_pipe.cancel(); // stop piping task ctl messages to child processes
-                        tracing::info!("ffmpeg complete");
+                        );
+                        let task_result =
+                            task_loop(result_fut, &mut ctl_recv, process_control_send).await;
+                        let result = match task_result {
+                            Ok(r) => r,
+                            Err(err) => {
+                                result_send
+                                    .send((task_id, Err(err)))
+                                    .expect("Receiver must be alive");
+                                return;
+                            }
+                        };
                         match result {
                             Ok(result) => {
                                 let apply_result = apply_result(db_pool, result).await;
@@ -115,9 +123,9 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                                         result_send
                                             .send((
                                                 task_id,
-                                                VideoPackagingTaskResult::PackagingComplete(
+                                                Ok(VideoPackagingTaskResult::PackagingComplete(
                                                     package_video,
-                                                ),
+                                                )),
                                             ))
                                             .expect("Receiver must be alive");
                                     }
@@ -125,10 +133,10 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                                         result_send
                                             .send((
                                                 task_id,
-                                                VideoPackagingTaskResult::PackagingError {
+                                                Ok(VideoPackagingTaskResult::PackagingError {
                                                     package_video,
                                                     report,
-                                                },
+                                                }),
                                             ))
                                             .expect("Receiver must be alive");
                                     }
@@ -138,10 +146,10 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                                 result_send
                                     .send((
                                         task_id,
-                                        VideoPackagingTaskResult::PackagingError {
+                                        Ok(VideoPackagingTaskResult::PackagingError {
                                             package_video,
                                             report,
-                                        },
+                                        }),
                                     ))
                                     .expect("Receiver must be alive");
                             }

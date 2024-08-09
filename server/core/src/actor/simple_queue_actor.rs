@@ -16,7 +16,7 @@ pub enum MsgFrom<T: Debug> {
         queued_tasks: usize,
     },
     DroppedMessage,
-    TaskResult(T),
+    TaskResult(Result<T, TaskError>),
 }
 
 #[derive(Debug)]
@@ -32,6 +32,14 @@ pub enum MsgTaskControl {
     Pause,
     Resume,
     Cancel,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum TaskError {
+    #[error("Task was cancelled")]
+    Cancelled,
+    #[error("Task failed")]
+    Other(#[from] eyre::Report),
 }
 
 #[derive(Clone)]
@@ -82,7 +90,7 @@ pub trait Actor<Task: Debug + Send + Sync, TaskResult: Debug + Send + Sync>: Sen
     fn run_task(
         &mut self,
         msg: Task,
-        result_send: mpsc::UnboundedSender<(TaskId, TaskResult)>,
+        result_send: mpsc::UnboundedSender<(TaskId, Result<TaskResult, TaskError>)>,
         task_id: TaskId,
         ctl_recv: mpsc::UnboundedReceiver<MsgTaskControl>,
     ) -> impl Future<Output = ()> + Send;
@@ -98,7 +106,7 @@ struct Runner<
     active_tasks: usize,
     queue: VecDeque<Task>,
     send_from_us: mpsc::UnboundedSender<MsgFrom<TaskResult>>,
-    actor_result_send: mpsc::UnboundedSender<(TaskId, TaskResult)>,
+    actor_result_send: mpsc::UnboundedSender<(TaskId, Result<TaskResult, TaskError>)>,
     actor: A,
     next_task_id: TaskId,
     task_ctl_sends: HashMap<TaskId, mpsc::UnboundedSender<MsgTaskControl>>,
@@ -204,7 +212,7 @@ impl<Task: Debug + Send + Sync, TaskResult: Debug + Send + Sync, A: Actor<Task, 
             .expect(SEND_ERROR_MESSAGE);
     }
 
-    async fn on_task_finished(&mut self, task_id: TaskId, result: TaskResult) {
+    async fn on_task_finished(&mut self, task_id: TaskId, result: Result<TaskResult, TaskError>) {
         assert!(
             self.task_ctl_sends.remove(&task_id).is_some(),
             "TaskId of finished task not in map"

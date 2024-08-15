@@ -1,33 +1,33 @@
-<script lang="ts">
+<script lang="ts" generics="TPos">
   import { onMount } from 'svelte';
   import Pager, { type PagerProps } from './Pager.svelte';
 
-  type GalleryProps = PagerProps & {
+  type GalleryProps<TPos> = PagerProps<TPos> & {
     scrollWrapper: HTMLElement;
     restoreScrollOnClose: boolean;
   };
 
   let {
-    numSlides,
     getSlide,
+    getNextSlidePosition,
     getThumbnailBounds,
     scrollWrapper = $bindable(),
     restoreScrollOnClose,
-  }: GalleryProps = $props();
-  let isOpen: boolean = $state(false);
-  let slideIndex = $state(0);
-  let pager: Pager | null = $state(null);
+  }: GalleryProps<TPos> = $props();
+  let isOpen: false | { currentPosition: TPos } = $state(false);
+  let pager: Pager<TPos> | null = $state(null);
   let pagerY = 0;
   let topOffset = $state(0);
 
   function onKeyDown(e: KeyboardEvent) {
-    console.assert(isOpen);
-    if (e.key === 'ArrowLeft') {
-      pager?.moveSlide('left');
-    } else if (e.key === 'ArrowRight') {
-      pager?.moveSlide('right');
-    } else if (e.key === 'Escape') {
-      close();
+    if (isOpen !== false) {
+      if (e.key === 'ArrowLeft') {
+        pager?.moveSlide('left');
+      } else if (e.key === 'ArrowRight') {
+        pager?.moveSlide('right');
+      } else if (e.key === 'Escape') {
+        close();
+      }
     }
   }
 
@@ -35,20 +35,21 @@
 
   function onOpenTransitionFinished() {}
 
-  export function setIndex(index: number) {
-    slideIndex = index;
+  export function setPosition(pos: TPos) {
+    if (isOpen !== false) {
+      isOpen.currentPosition = pos;
+    }
   }
 
-  export function open(index: number) {
+  export function open(pos: TPos) {
     requestAnimationFrame(() => {
       pagerY = scrollWrapper.scrollTop;
       scrollWrapper.classList.add('modalOpen');
       topOffset = 0;
       scrollWrapper.scrollTo(0, pagerY);
     });
-    slideIndex = index;
     topOffset = scrollWrapper.scrollTop;
-    isOpen = true;
+    isOpen = { currentPosition: pos };
     document.addEventListener('keydown', onKeyDown);
   }
 
@@ -79,14 +80,14 @@
   }
 </script>
 
-{#if isOpen}
+{#if isOpen !== false}
   <Pager
-    {numSlides}
     {getSlide}
     {getThumbnailBounds}
     {onOpenTransitionFinished}
+    {getNextSlidePosition}
+    bind:currentPosition={isOpen.currentPosition}
     closeGallery={close}
-    bind:slideIndex
     bind:this={pager}
     {topOffset}
   />

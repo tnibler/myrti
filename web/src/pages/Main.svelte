@@ -19,7 +19,7 @@
   };
 
   const timeline: ITimelineGrid = $state(createTimeline(layoutConfig, onAjustTimelineScrollY));
-  const inSelectionMode = $derived(timeline.selectedAssets.size > 0);
+  const inSelectionMode = $derived(timeline.numAssetsSelected > 0);
   let timelineScrollWrapper: HTMLElement | null = $state(null);
 
   let addToAlbumDialog: AddToAlbumDialog | null = $state(null);
@@ -35,7 +35,7 @@
   async function onCreateAlbumSubmit(
     submitted: { action: 'createNew'; albumName: string } | { action: 'addTo'; albumId: string },
   ) {
-    const assetIds = Array.from(timeline.selectedAssets.keys());
+    const assetIds = Array.from(timeline.selectedAssetIds);
     if (submitted.action === 'createNew') {
       await createAlbum({
         assets: assetIds,
@@ -68,6 +68,8 @@
     await timeline.hideSelectedAssets();
     timeline.clearSelection();
   }
+
+  const numAssetsSelected: number = $derived(timeline.numAssetsSelected);
 </script>
 
 {#snippet timelineGrid()}
@@ -76,7 +78,7 @@
 
 {#snippet timelineSelectAppBar()}
   <TimelineSelectAppBar
-    numAssetsSelected={timeline.selectedAssets.size}
+    {numAssetsSelected}
     onCancelSelectClicked={() => timeline.clearSelection()}
     {onAddToAlbumClicked}
     {onAddToGroupClicked}

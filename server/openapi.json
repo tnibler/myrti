@@ -553,6 +553,37 @@
         }
       }
     },
+    "/api/photoSeries": {
+      "post": {
+        "tags": [
+          "crate::routes::photo_series"
+        ],
+        "operationId": "createSeries",
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSeriesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSeriesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/timeline/sections": {
       "get": {
         "tags": [
@@ -830,7 +861,6 @@
           "id",
           "assetRootId",
           "pathInRoot",
-          "assetType",
           "width",
           "height",
           "addedAt",
@@ -844,9 +874,6 @@
           },
           "assetRootId": {
             "$ref": "#/components/schemas/AssetRootDirId"
-          },
-          "assetType": {
-            "$ref": "#/components/schemas/AssetType"
           },
           "height": {
             "type": "integer",
@@ -891,15 +918,57 @@
       "AssetRootDirId": {
         "type": "string"
       },
+      "AssetSeriesId": {
+        "type": "string"
+      },
       "AssetSpe": {
         "oneOf": [
           {
-            "$ref": "#/components/schemas/Image"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Image"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "assetType"
+                ],
+                "properties": {
+                  "assetType": {
+                    "type": "string",
+                    "enum": [
+                      "image"
+                    ]
+                  }
+                }
+              }
+            ]
           },
           {
-            "$ref": "#/components/schemas/Video"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Video"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "assetType"
+                ],
+                "properties": {
+                  "assetType": {
+                    "type": "string",
+                    "enum": [
+                      "video"
+                    ]
+                  }
+                }
+              }
+            ]
           }
-        ]
+        ],
+        "discriminator": {
+          "propertyName": "assetType"
+        }
       },
       "AssetType": {
         "type": "string",
@@ -952,6 +1021,31 @@
           "albumId": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "CreateSeriesRequest": {
+        "type": "object",
+        "required": [
+          "assetIds"
+        ],
+        "properties": {
+          "assetIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetId"
+            }
+          }
+        }
+      },
+      "CreateSeriesResponse": {
+        "type": "object",
+        "required": [
+          "seriesId"
+        ],
+        "properties": {
+          "seriesId": {
+            "$ref": "#/components/schemas/AssetSeriesId"
           }
         }
       },
@@ -1258,6 +1352,73 @@
           "propertyName": "type"
         }
       },
+      "TimelineItem": {
+        "oneOf": [
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetWithSpe"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "itemType"
+                ],
+                "properties": {
+                  "itemType": {
+                    "type": "string",
+                    "enum": [
+                      "asset"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "seriesId",
+              "assets",
+              "selectionIndices",
+              "totalSize",
+              "itemType"
+            ],
+            "properties": {
+              "assets": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AssetWithSpe"
+                },
+                "description": "assets[0] is most recent, last is oldest asset"
+              },
+              "itemType": {
+                "type": "string",
+                "enum": [
+                  "assetSeries"
+                ]
+              },
+              "selectionIndices": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "seriesId": {
+                "$ref": "#/components/schemas/AssetSeriesId"
+              },
+              "totalSize": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        ],
+        "discriminator": {
+          "propertyName": "itemType"
+        }
+      },
       "TimelineSection": {
         "type": "object",
         "required": [
@@ -1314,13 +1475,13 @@
             "type": "object",
             "required": [
               "sortDate",
-              "assets"
+              "items"
             ],
             "properties": {
-              "assets": {
+              "items": {
                 "type": "array",
                 "items": {
-                  "$ref": "#/components/schemas/AssetWithSpe"
+                  "$ref": "#/components/schemas/TimelineItem"
                 }
               },
               "sortDate": {

@@ -1,14 +1,15 @@
 <script lang="ts">
   import Gallery from '@lib/swipey-gallery/Gallery.svelte';
   import type { ThumbnailBounds } from '@lib/swipey-gallery/thumbnail-bounds';
-  import { slideForAsset, type SlideData } from '@lib/swipey-gallery/slide-data';
-  import type { AssetId } from '@api/myrti';
+  import type { AssetId, AssetWithSpe } from '@api/myrti';
   import type { ITimelineGrid } from '@lib/timeline-grid/timeline.svelte';
   import type { ActionReturn } from 'svelte/action';
   import GridTile from '@lib/ui/GridTile.svelte';
   import SegmentTitle from './SegmentTitle.svelte';
   import type { SelectState } from '@lib/ui/GridTile.svelte';
   import CreateGroupInput from './CreateGroupInput.svelte';
+  import type { PositionInTimeline, TimelineItem } from './timeline-types';
+  import type { GallerySlide, SingleAssetSlide } from '@lib/swipey-gallery/gallery-types';
 
   type TimelineGridProps = {
     timeline: ITimelineGrid;
@@ -16,10 +17,10 @@
   };
 
   let viewport = $state({ width: 0, height: 0 });
-  let gallery: Gallery;
+  let gallery: Gallery<PositionInTimeline>;
 
   let { timeline, scrollWrapper = $bindable() }: TimelineGridProps = $props();
-  let thumbnailImgEls: Record<number, HTMLImageElement> = $state({});
+  const thumbnailImgEls: Map<string, HTMLImageElement> = new Map();
   let gridItemTransitionClass: string | undefined = $state();
   let animationsDisabledToStart = true;
   let didMoveScrollToCurrentGalleryAsset = $state(false);
@@ -51,23 +52,14 @@
     }, 200);
   });
 
-  $effect(() => {
-    // null fields accumulate in thumbnailImgEls, so clear them periodically
-    if (Object.keys(thumbnailImgEls).length > visibleItems.length * 5) {
-      Object.keys(thumbnailImgEls)
-        .filter((k) => thumbnailImgEls[k] === null)
-        .forEach((k) => delete thumbnailImgEls[k]);
-    }
-  });
-
   const intersectionObserver = new IntersectionObserver(handleSectionIntersect, {
     // I don't know how rootMargin works; using scrollWrapper, its child <section> or document does not work correctly, so we just make the intersection test divs larger to achieve the same effect
     rootMargin: '0px',
   });
 
-  export async function scrollToAssetIndex(index: number) {
+  export async function scrollToTimelineItem(pos: PositionInTimeline) {
     const marginTop = 100;
-    const item = await timeline.moveViewToAsset(index);
+    const item = await timeline.getGridItemAtPosition(pos);
     if (
       item !== null &&
       (item.top < scrollWrapper.scrollTop ||
@@ -116,6 +108,22 @@
     };
   }
 
+  /** Roundabout way to bind the <img> of a GridTile to an entry in a Map */
+  function getThumbnailImgElBindAction(
+    key: PositionInTimeline,
+  ): (el: HTMLImageElement) => ActionReturn {
+    // objects can't easily be used as keys in js, so construct a string key instead
+    const k = `${key.sectionIndex}-${key.segmentIndex}-${key.itemIndex}`;
+    return (el) => {
+      thumbnailImgEls.set(k, el);
+      return {
+        destroy: () => {
+          thumbnailImgEls.delete(k);
+        },
+      };
+    };
+  }
+
   const visibleItems = $derived.by(() => {
     const items = timeline.items
       .slice(timeline.visibleItems.startIdx, timeline.visibleItems.endIdx)
@@ -131,9 +139,9 @@
     return items;
   });
 
-  function getSelectState(assetId: AssetId): SelectState {
-    if (timeline.state === 'justLooking' && timeline.selectedAssets.size > 0) {
-      const isSelected = timeline.selectedAssets.has(assetId);
+  function getSelectState(item: TimelineItem): SelectState {
+    if (timeline.state === 'justLooking' && timeline.numAssetsSelected > 0) {
+      const isSelected = timeline.isItemSelected(item);
       return { state: 'select', isSelected };
     } else if (timeline.state === 'justLooking') {
       return { state: 'default' };
@@ -142,18 +150,18 @@
     }
   }
 
-  function toggleAssetSelected(assetId: AssetId) {
-    const isSelected = timeline.selectedAssets.has(assetId);
-    timeline.setAssetSelected(assetId, !isSelected);
+  function toggleItemSelected(item: TimelineItem) {
+    const isSelected = timeline.isItemSelected(item);
+    timeline.setItemSelected(item, !isSelected);
   }
 
-  function onAssetClick(assetIdx: number) {
+  function onAssetClick(item: TimelineItem & ({ itemType: 'asset' } | { itemType: 'photoStack' })) {
     didMoveScrollToCurrentGalleryAsset = false;
-    gallery.open(assetIdx);
+    gallery.open(item.pos);
   }
 
-  function getThumbnailBounds(assetIndex: number): ThumbnailBounds {
-    const img = thumbnailImgEls[assetIndex];
+  function getThumbnailBounds(pos: PositionInTimeline): ThumbnailBounds {
+    const img = thumbnailImgEls.get(`${pos.sectionIndex}-${pos.segmentIndex}-${pos.itemIndex}`);
     if (!img) {
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     }
@@ -167,14 +175,79 @@
     };
   }
 
-  async function getSlide(assetIndex: number): Promise<SlideData | null> {
-    const asset = await timeline.getOrLoadAssetAtIndex(assetIndex);
-    if (asset === null) {
-      return null;
+  function slideForAsset(asset: AssetWithSpe): SingleAssetSlide {
+    if (asset.assetType === 'image') {
+      return {
+        assetType: 'image',
+        asset,
+        size: { width: asset.width, height: asset.height },
+        src: '/api/assets/original/' + asset.id,
+        placeholderSrc: '/api/assets/thumbnail/' + asset.id + '/large/avif',
+      };
+    } else {
+      const videoSource = asset.hasDash
+        ? { videoSource: 'dash' as const, mpdManifestUrl: '/api/dash/' + asset.id + '/stream.mpd' }
+        : {
+            videoSource: 'original' as const,
+            mimeType: asset.mimeType,
+            src: '/api/assets/original/' + asset.id,
+          };
+      return {
+        assetType: 'video',
+        asset,
+        size: { width: asset.width, height: asset.height },
+        placeholderSrc: '/api/assets/thumbnail/' + asset.id + '/large/avif',
+        ...videoSource,
+      };
     }
-    await scrollToAssetIndex(assetIndex);
-    return slideForAsset(asset);
   }
+
+  async function getSlide(pos: PositionInTimeline): Promise<GallerySlide<PositionInTimeline>> {
+    const item = await timeline.getItem(pos);
+    await scrollToTimelineItem(pos);
+    if (item.itemType === 'asset') {
+      const slide = slideForAsset(item);
+      return { ...slide, pos, slideType: 'singleAsset' };
+    } else {
+      const coverSlide = slideForAsset(item.series.assets[item.coverIndex]);
+      return {
+        slideType: 'assetSeries',
+        coverSlide,
+        series: item.series,
+        coverIndex: item.coverIndex,
+        pos,
+      };
+    }
+  }
+
+  /** bound rectangles of grid items in timeline.addToGroupClickAreas */
+  const clickAreaRects = $derived(
+    timeline.addToGroupClickAreas.map((clickArea) => {
+      let currentTop = Infinity;
+      let currentBottom = -Infinity;
+      let currentLeft = viewport.width;
+      let currentRight = 0;
+      for (const item of clickArea.gridItems) {
+        currentTop = Math.min(item.top, currentTop);
+        currentBottom = Math.max(item.top + item.height, currentBottom);
+        if (
+          item.type === 'asset' ||
+          item.type === 'photoStack' ||
+          (item.type === 'segmentTitle' && item.titleType === 'day')
+        ) {
+          currentLeft = Math.min(item.left, currentLeft);
+          currentRight = Math.max(item.left + item.width, currentRight);
+        }
+      }
+      return {
+        groupId: clickArea.groupId,
+        top: currentTop,
+        left: currentLeft,
+        width: currentRight - currentLeft,
+        height: currentBottom - currentTop,
+      };
+    }),
+  );
 </script>
 
 <div class="scroll-wrapper" bind:this={scrollWrapper} bind:clientHeight={viewport.height}>
@@ -200,13 +273,28 @@
           asset={item.asset}
           box={item}
           onAssetClick={() => {
-            onAssetClick(item.assetIndex);
+            onAssetClick(item.timelineItem);
           }}
           onSelectToggled={() => {
-            toggleAssetSelected(item.asset.id);
+            toggleItemSelected(item.timelineItem);
           }}
-          selectState={getSelectState(item.asset.id)}
-          bind:imgEl={thumbnailImgEls[item.assetIndex]}
+          selectState={getSelectState(item.timelineItem)}
+          imgElAction={getThumbnailImgElBindAction(item.timelineItem.pos)}
+        />
+      {:else if item.type === 'photoStack'}
+        <GridTile
+          className={gridItemTransitionClass}
+          asset={item.series.assets[item.coverIndex]}
+          box={item}
+          showStackIcon
+          onAssetClick={() => {
+            onAssetClick(item.timelineItem);
+          }}
+          onSelectToggled={() => {
+            toggleItemSelected(item.timelineItem);
+          }}
+          selectState={getSelectState(item.timelineItem)}
+          imgElAction={getThumbnailImgElBindAction(item.timelineItem.pos)}
         />
       {:else if item.type === 'segmentTitle'}
         <SegmentTitle
@@ -228,26 +316,25 @@
         />
       {/if}
     {/each}
-    {#each timeline.addToGroupClickAreas as area}
-      <div
-        role="button"
-        class="absolute cursor-pointer hover:bg-black/10 border-black/20 hover:border-black/40 border-2 rounded-lg"
-        style="top: {area.top}px;  height: {area.height}px; left: 0px; width: 100%;"
+    {#each clickAreaRects as area}
+      <button
+        class="absolute z-20 hover:bg-black/10 border-black/20 hover:border-black/40 border-2 rounded-lg"
+        style="top: {area.top}px;  height: {area.height}px; left: {area.left}px; width: {area.width}px;"
         onclick={() => {
           timeline.addSelectedToExistingGroup(area.groupId);
         }}
-      ></div>
+      ></button>
     {/each}
   </section>
 </div>
 
 <Gallery
   bind:this={gallery}
-  numSlides={timeline.totalNumAssets}
   {getThumbnailBounds}
   {getSlide}
   {scrollWrapper}
   {restoreScrollOnGalleryClose}
+  getNextSlidePosition={timeline.getNextItemPosition}
 />
 
 <style>

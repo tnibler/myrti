@@ -2,6 +2,7 @@ pub mod album;
 pub mod album_thumbnail;
 pub mod asset;
 pub mod asset_root_dir;
+pub mod asset_series;
 pub mod config;
 pub mod db;
 pub mod db_entity;

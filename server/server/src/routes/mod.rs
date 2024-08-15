@@ -19,6 +19,7 @@ pub mod asset;
 pub mod asset_roots;
 pub mod dash;
 pub mod jobs;
+pub mod photo_series;
 pub mod timeline;
 pub mod timeline_group;
 

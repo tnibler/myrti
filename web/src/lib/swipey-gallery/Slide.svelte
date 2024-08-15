@@ -35,14 +35,14 @@
   import { clampPanToBounds, computePanBounds, type PanBounds } from './pan-bounds';
   import type { ThumbnailBounds } from './thumbnail-bounds';
   import { fade } from 'svelte/transition';
-  import type { VideoSlideData, ImageSlideData, SlideData } from './slide-data';
   import SlideImage from './SlideImage.svelte';
   import SlideVideo from './SlideVideo.svelte';
   import './slide.css';
   import type { GalleryControls } from './Pager.svelte';
+  import type { GallerySlideData, SingleAssetSlide } from './gallery-types';
 
   type SlideProps = {
-    data: SlideData;
+    data: GallerySlideData;
     isActive: boolean;
     openTransition: OpenTransitionParams | null;
     showContent: boolean;
@@ -55,9 +55,11 @@
   let panAreaSize: Size = $derived(gallery.pager.viewportSize); // TODO missing padding like photoswipe
   const centerX = $derived(panAreaSize.width / 2);
   const centerY = $derived(panAreaSize.height / 2);
+  // temporary until functionality to show all assets in series is built
+  const slideToDisplay = $derived(data.slideType === 'singleAsset' ? data : data.coverSlide);
   let zoomLevels: ZoomLevels = $derived(
     computeZoomLevels({
-      maxSize: data.size,
+      maxSize: slideToDisplay.size,
       panAreaSize,
     }),
   );
@@ -67,7 +69,7 @@
 	after that zoom gets applied to the DOM element and transform scale is reset. */
   let cssTransformZoom: number = $state(1);
   const effectiveZoom = $derived(domZoom * cssTransformZoom);
-  const panBounds = $derived(computePanBounds(data.size, panAreaSize, effectiveZoom));
+  const panBounds = $derived(computePanBounds(slideToDisplay.size, panAreaSize, effectiveZoom));
   let slideImage: SlideImage | null = $state(null);
   let slideVideo: SlideVideo | null = $state(null);
   let placeholderEl: HTMLImageElement | null = $state(null);
@@ -94,16 +96,16 @@
   );
   /** Wait this long after the real content is ready to hide the placeholder to reveal the <img> underneath.
 	Without this, there is a flicker on some devices/browsers. */
-  const PLACEHOLDER_HIDE_DELAY = data.assetType === 'image' ? 450 : 0;
+  const PLACEHOLDER_HIDE_DELAY = slideToDisplay.assetType === 'image' ? 450 : 0;
   let zoomWrapperDiv: HTMLDivElement | null = $state(null);
 
   // for some reason the slideImage/slideVideo bindings don't get unset when the bound component
   // is removed, so we do it manually here
   $effect(() => {
-    data.assetType;
+    slideToDisplay.assetType;
     untrack(() => {
-      slideImage = data.assetType === 'image' ? slideImage : null;
-      slideVideo = data.tssetType === 'video' ? slideVideo : null;
+      slideImage = slideToDisplay.assetType === 'image' ? slideImage : null;
+      slideVideo = slideToDisplay.assetType === 'video' ? slideVideo : null;
     });
   });
 
@@ -159,7 +161,7 @@
       return true;
     },
     get size() {
-      return data.size;
+      return slideToDisplay.size;
     },
     setZoomLevel: (newZoom) => {
       cssTransformZoom = newZoom / domZoom;
@@ -211,15 +213,15 @@
   let isGrabbing = $state(false);
   let transitionTransformClass = $state(false);
   let { width, height } = $derived({
-    width: data.size.width * domZoom,
-    height: data.size.height * domZoom,
+    width: slideToDisplay.size.width * domZoom,
+    height: slideToDisplay.size.height * domZoom,
   });
 
   $effect(() => {
-    const slide = data;
+    slideToDisplay;
     // reinitialize zoom/pan transition states everytime slide is displayed
     untrack(() => {
-      initializeForNewSlide(slide, panAreaSize);
+      initializeForNewSlide(slideToDisplay, panAreaSize);
     });
   });
 
@@ -233,7 +235,7 @@
     }
   });
 
-  function initializeForNewSlide(slide: SlideData, panAreaSize: Size) {
+  function initializeForNewSlide(slide: SingleAssetSlide, panAreaSize: Size) {
     const newZoomLevels = computeZoomLevels({
       maxSize: untrack(() => slide.size),
       panAreaSize: untrack(() => panAreaSize),
@@ -387,20 +389,20 @@
 	transform: translate3d({pan.x + centerX}px, {pan.y +
     centerY}px, 0) scale3d({cssTransformZoom}, {cssTransformZoom}, 1);"
 >
-  {#key data.assetType}
-    {#if data.assetType === 'image' && showContent}
+  {#key slideToDisplay.assetType}
+    {#if slideToDisplay.assetType === 'image' && showContent}
       <SlideImage
         bind:this={slideImage}
         size={{ width, height }}
-        slideData={data as ImageSlideData}
+        slideData={slideToDisplay}
         isVisible={isContentVisible}
         onContentReady={onSlideContentReady}
       />
-    {:else if data.assetType === 'video' && showContent}
+    {:else if slideToDisplay.assetType === 'video' && showContent}
       <SlideVideo
         bind:this={slideVideo}
         size={{ width, height }}
-        slideData={data as VideoSlideData}
+        slideData={slideToDisplay}
         isVisible={isContentVisible}
         {isActive}
         onContentReady={onSlideContentReady}

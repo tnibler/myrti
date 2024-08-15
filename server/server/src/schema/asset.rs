@@ -22,8 +22,6 @@ pub struct Asset {
     pub id: AssetId,
     pub asset_root_id: AssetRootDirId,
     pub path_in_root: String,
-    #[serde(rename = "assetType")]
-    pub ty: AssetType,
     pub width: i32,
     pub height: i32,
     pub added_at: DateTime<Utc>,
@@ -42,7 +40,7 @@ pub struct AssetWithSpe {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
-#[serde(untagged)]
+#[serde(rename_all = "camelCase", tag = "assetType")]
 pub enum AssetSpe {
     Image(Image),
     Video(Video),
@@ -83,7 +81,6 @@ impl From<&model::Asset> for Asset {
             id: value.base.id.into(),
             asset_root_id: value.base.root_dir_id.into(),
             path_in_root: value.base.file_path.to_string(),
-            ty: value.base.ty.into(),
             width: value.base.size.width,
             height: value.base.size.height,
             added_at: value.base.added_at,

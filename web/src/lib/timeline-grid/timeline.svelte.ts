@@ -1,11 +1,12 @@
 import type {
-  Api,
   AssetId,
   AssetWithSpe,
   TimelineSection as ApiTimelineSection,
   TimelineSegment as ApiTimelineSegment,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  TimelineItem as ApiTimelineItem,
 } from '@api/myrti';
-import { dayjs, type Dayjs } from '@lib/dayjs';
+import { dayjs } from '@lib/dayjs';
 import { klona } from 'klona/json';
 import { SvelteMap } from 'svelte/reactivity';
 import { layoutSegments } from './layout';
@@ -22,20 +23,32 @@ import {
   getTimelineSectionsResponse,
   getTimelineSegmentsResponse,
 } from '../../api/myrti.zod';
+import type {
+  AddToGroupClickArea,
+  ItemRange,
+  AssetSeries,
+  TimelineItem,
+  TimelineSection,
+  TimelineSegment,
+} from './timeline-types';
 
+/** A component displayed in the timeline */
 export type TimelineGridItem = { key: string; top: number; height: number } & (
   | {
       type: 'asset';
       left: number;
       width: number;
-      /** Index (only counting 'asset' Items) in timeline  */
-      assetIndex: number;
       asset: AssetWithSpe;
+      timelineItem: TimelineItem;
     }
   | {
-      type: 'assetPlaceholder';
+      type: 'photoStack';
       left: number;
       width: number;
+      series: AssetSeries;
+      coverIndex: number;
+      numAssets: number;
+      timelineItem: TimelineItem;
     }
   | {
       type: 'segmentTitle';
@@ -55,35 +68,14 @@ export type TimelineGridItem = { key: string; top: number; height: number } & (
     }
 );
 
-export type Viewport = { width: number; height: number };
-
-export type ItemRange = { startIdx: number; endIdx: number };
-
-export type Segment = {
-  type: string;
-  assets: AssetWithSpe[];
-  sortDate: string;
-  start: Dayjs;
-  end: Dayjs;
-  itemRange: ItemRange | null;
-} & (
-  | {
-      type: 'dateRange';
-    }
-  | {
-      type: 'group';
-      title: string;
-      groupId: string;
-      clickArea: AddToGroupClickArea | null;
-    }
-  | { type: 'creatingGroup' }
-);
-
-type AddToGroupClickArea = {
-  top: number;
-  height: number;
-  groupId: string;
+/** Backlink from TimelineItem to its segment/section */
+export type PositionInTimeline = {
+  sectionIndex: number;
+  segmentIndex: number;
+  itemIndex: number;
 };
+
+export type Viewport = { width: number; height: number };
 
 export interface ITimelineGrid {
   readonly state: 'justLooking' | 'creatingTimelineGroup';
@@ -95,8 +87,6 @@ export interface ITimelineGrid {
   /** Range of indices into items corresponding to currently visible section*/
   readonly visibleItems: ItemRange;
   readonly options: TimelineOptions;
-  /** Maps currently selected assetIds to a number that are in order of selection (but not contiguous) */
-  readonly selectedAssets: Map<AssetId, number>;
   readonly addToGroupClickAreas: AddToGroupClickArea[];
   // /** Assets are highlighted when something is selected and shift is pressed to preview
   //  * possible range selection. */
@@ -106,11 +96,19 @@ export interface ITimelineGrid {
   resize: (viewport: Viewport, scrollTop: number) => void;
   set setAnimationsEnabled(v: ((enabled: boolean) => Promise<void>) | null);
   onScrollChange: (top: number) => void;
-  moveViewToAsset: (assetIndex: number) => Promise<TimelineGridItem | null>;
+  getGridItemAtPosition: (pos: PositionInTimeline) => Promise<TimelineGridItem | null>;
   setActualItemHeight: (itemIndex: number, newHeight: number) => void;
-  getOrLoadAssetAtIndex: (index: number) => Promise<AssetWithSpe | null>;
+  getNextItemPosition: (
+    pos: PositionInTimeline,
+    dir: 'left' | 'right',
+  ) => PositionInTimeline | null;
+  getItem: (pos: PositionInTimeline) => Promise<TimelineItem>;
+  /** previous/newer item */
   clearSelection: () => void;
-  setAssetSelected: (assetId: string, selected: boolean) => void;
+  setItemSelected: (item: TimelineItem, selected: boolean) => void;
+  isItemSelected: (item: TimelineItem) => boolean;
+  readonly numAssetsSelected: number;
+  readonly selectedAssetIds: AssetId[];
   // /** @param clickedAssetIndex asset clicked to perform range selection */
   // setRangeSelected: (clickedAssetIndex: number, selected: boolean) => void;
   // /** Asset is hoevered while shift is pressed, selection range should be highlighted */
@@ -131,23 +129,11 @@ export type TimelineOptions = {
   loadWithinMargin: number;
 };
 
-export type TimelineSection = {
-  top: number;
-  height: number;
-  data: ApiTimelineSection;
-  segments: Segment[] | null;
-  items: ItemRange | null;
-  /** Date of most recent asset in section */
-  startDate: Dayjs;
-  /** Date of oldest asset in section */
-  endDate: Dayjs;
-};
-
 type TimelineState =
   | { state: 'justLooking' }
   | {
       state: 'creatingTimelineGroup';
-      assetsInGroup: AssetId[];
+      itemsInGroup: TimelineItem[];
       groupSortDate: string;
       previousItems: TimelineGridItem[];
       previousSections: TimelineSection[];
@@ -185,13 +171,13 @@ export function createTimeline(
   );
   let visibleItems: ItemRange = $state({ startIdx: 0, endIdx: 0 });
   let setAnimationsEnabled: ((enabled: boolean) => Promise<void>) | null = null;
-  const selectedAssets: Map<AssetId, number> = $state(new SvelteMap());
+  /** maps item key string to index in selection */
+  const selectedItems: Map<string, { item: TimelineItem; idx: number }> = $state(new SvelteMap());
   const totalNumAssets: number = $derived(
     sections.reduce((acc: number, section) => {
       return acc + section.data.numAssets;
     }, 0),
   );
-  const sectionStartIndices = $derived.by(() => computeSectionStartIndices(sections));
   /** Initially, values from TimelineOptions (e.g, headerHeight) are used to set the height of items like segment titles of which we don't know the real size of rendered text.
    * When setRealItemHeight is called, we correct that guess and use it for future items of the same type so that setRealItemHeight needs to be called and relayout everything less often. */
   const initialHeightGuess: Record<string, number | null> = {
@@ -366,14 +352,23 @@ export function createTimeline(
       if (segment.type === 'group') {
         let currentTop = Infinity;
         let currentBottom = -Infinity;
+        let currentLeft = 0;
+        let currentRight = viewport.width;
         for (let i = segment.itemRange.startIdx; i < segment.itemRange.endIdx; i += 1) {
           const item = sectionItems[i];
           currentTop = Math.min(item.top, currentTop);
           currentBottom = Math.max(item.top + item.height, currentBottom);
+          if (
+            item.type === 'asset' ||
+            item.type === 'photoStack' ||
+            (item.type === 'segmentTitle' && item.titleType === 'day')
+          ) {
+            currentLeft = Math.min(item.left, currentLeft);
+            currentRight = Math.max(item.left + item.width, currentRight);
+          }
         }
         segment.clickArea = {
-          top: currentTop,
-          height: currentBottom - currentTop,
+          gridItems: sectionItems.slice(segment.itemRange.startIdx, segment.itemRange.endIdx),
           groupId: segment.groupId,
         };
       }
@@ -418,34 +413,94 @@ export function createTimeline(
     }
     const sectionId = section.data.id;
     const segments = await requestSegments(sectionId);
-    sections[sectionIndex].data.segments = segments;
+
     sections[sectionIndex].segments = R.pipe(
       segments,
-      R.map((segment) => {
+      R.map((segment, segmentIndex) => {
+        // split up stacks with multiple selection images. stacks with multiple selections are shown
+        // as multiple items, one for each selection image
+        const itemWithStacksSplitUp: TimelineItem[] = [];
+        let itemIndex = 0;
+        for (const item of segment.items) {
+          if (item.itemType === 'asset') {
+            itemWithStacksSplitUp.push({
+              ...item,
+              key: `a-${item.id}`,
+              sortDate: item.takenDate,
+              pos: { sectionIndex, segmentIndex, itemIndex },
+            });
+            itemIndex += 1;
+          } else {
+            // item.itemType === 'photoSeries'
+            const series: AssetSeries = {
+              assets: item.assets,
+              seriesId: item.seriesId,
+              selectionIndices: item.selectionIndices,
+            };
+            // Say we have a series of assets - with selection o
+            // --o-o--o-
+            // it will get split as --o-    o--   o-
+            // So the first (from right to left) splits at each selectionIndex have to increment currentAssetIndex by 1,
+            // but the last one also includes the tail (off to the left)
+            for (const [idxOfIdx, selectionIdx] of item.selectionIndices.entries()) {
+              const isLast = idxOfIdx === item.selectionIndices.length - 1;
+              const isFirst = idxOfIdx === 0;
+              const splitStart = isFirst ? 0 : selectionIdx;
+              const splitEnd = isLast ? item.assets.length : item.selectionIndices[idxOfIdx + 1];
+              // sortDate is the date of newest asset in this split of the stack
+              const sortDate = item.assets[splitStart].takenDate;
+              itemWithStacksSplitUp.push({
+                key: `s-${series.seriesId}-${splitStart}-${splitEnd}`,
+                itemType: 'photoStack',
+                coverIndex: selectionIdx,
+                series,
+                pos: { sectionIndex, segmentIndex, itemIndex },
+                sortDate,
+                splitStart,
+                splitEnd,
+              });
+              itemIndex += 1;
+            }
+          }
+        }
         if (segment.type === 'dateRange') {
           return {
             type: 'dateRange' as const,
-            assets: segment.assets,
+            items: itemWithStacksSplitUp,
             sortDate: segment.sortDate,
             itemRange: null,
             start: dayjs.utc(segment.start),
             end: dayjs.utc(segment.end),
           };
         } else if (segment.type === 'userGroup') {
-          console.assert(segment.assets.length > 0);
-          if (segment.assets.length === 0) {
+          console.assert(segment.items.length > 0);
+          if (segment.items.length === 0) {
+            return null;
+          }
+          // get start and end dates from either assets or first/last assets in stack
+          const startDate = (() => {
+            const item = segment.items[0]; // checked to have at least 1 el above
+            const asset = item.itemType === 'asset' ? item : item.assets.at(0);
+            return asset?.takenDate;
+          })();
+          const endDate = (() => {
+            const item = segment.items.at(-1); // checked to have at least 1 el above
+            const asset = item?.itemType === 'asset' ? item : item?.assets.at(-1);
+            return asset?.takenDate;
+          })();
+          if (startDate === undefined || endDate === undefined) {
             return null;
           }
           return {
             type: 'group' as const,
             title: segment.name ?? 'Unnamed group',
             groupId: segment.id,
-            assets: segment.assets,
+            items: itemWithStacksSplitUp,
             sortDate: segment.sortDate,
             itemRange: null,
             clickArea: null,
-            start: dayjs.utc(segment.assets.at(0)!.takenDate),
-            end: dayjs.utc(segment.assets.at(-1)!.takenDate),
+            start: dayjs.utc(startDate),
+            end: dayjs.utc(endDate),
           };
         }
         return null;
@@ -454,28 +509,135 @@ export function createTimeline(
     );
   }
 
+  function isItemSelected(item: TimelineItem): boolean {
+    return selectedItems.has(item.key);
+  }
+
   /** Increasing number to track order in which assets are selected. Used for values of selectedAssets */
   let nextSelectionIndex = 0;
-  function setAssetSelected(assetId: AssetId, selected: boolean) {
-    if (selected) {
-      selectedAssets.set(assetId, nextSelectionIndex);
-      nextSelectionIndex += 1;
+  function setItemSelected(item: TimelineItem, selected: boolean) {
+    if (item.itemType === 'photoStack') {
+      // stack may be split into multiple grid items, and selecting one should select all of them
+      const section = sections[item.pos.sectionIndex];
+      if (section.segments === null) {
+        console.error('timeline: (de)selected items in section that is not loaded');
+        return;
+      }
+      const segment = section.segments[item.pos.segmentIndex];
+      const itemsOfSameSeries: (TimelineItem & { itemType: 'photoStack' })[] = [];
+      for (let i = item.pos.itemIndex; i < segment.items.length; i += 1) {
+        const it = segment.items[i];
+        if (it.itemType === 'photoStack' && it.series.seriesId === item.series.seriesId) {
+          itemsOfSameSeries.push(it);
+        } else {
+          break;
+        }
+      }
+      for (let i = item.pos.itemIndex - 1; 0 <= i; i -= 1) {
+        const it = segment.items[i];
+        if (it.itemType === 'photoStack' && it.series.seriesId === item.series.seriesId) {
+          itemsOfSameSeries.push(it);
+        } else {
+          break;
+        }
+      }
+
+      if (selected) {
+        for (const item of itemsOfSameSeries) {
+          selectedItems.set(item.key, { item, idx: nextSelectionIndex });
+          nextSelectionIndex += 1;
+        }
+      } else {
+        for (const item of itemsOfSameSeries) {
+          selectedItems.delete(item.key);
+        }
+      }
     } else {
-      selectedAssets.delete(assetId);
+      if (selected) {
+        selectedItems.set(item.key, { item, idx: nextSelectionIndex });
+        nextSelectionIndex += 1;
+      } else {
+        selectedItems.delete(item.key);
+      }
     }
   }
 
   function clearSelection() {
     nextSelectionIndex = 0;
-    selectedAssets.clear();
+    selectedItems.clear();
+  }
+
+  function getNextItemPosition(
+    pos: PositionInTimeline,
+    dir: 'left' | 'right',
+  ): PositionInTimeline | null {
+    const section = sections[pos.sectionIndex];
+    if (section.segments === null) {
+      console.error('timeline getNextItemPosition: section is not loaded');
+      return null;
+    }
+    const segment = section.segments[pos.segmentIndex];
+    if (dir === 'right') {
+      if (pos.itemIndex < segment.items.length - 1) {
+        return { ...pos, itemIndex: pos.itemIndex + 1 };
+      } else if (pos.segmentIndex < section.segments.length - 1) {
+        return { sectionIndex: pos.sectionIndex, segmentIndex: pos.segmentIndex + 1, itemIndex: 0 };
+      } else if (pos.sectionIndex < sections.length - 1) {
+        return { sectionIndex: pos.sectionIndex + 1, segmentIndex: 0, itemIndex: 0 };
+      } else {
+        return null;
+      }
+    } else {
+      if (0 < pos.itemIndex) {
+        return { ...pos, itemIndex: pos.itemIndex - 1 };
+      } else if (0 < pos.segmentIndex) {
+        const segs = section.segments;
+        const si = pos.segmentIndex - 1;
+        return {
+          sectionIndex: pos.sectionIndex,
+          segmentIndex: si,
+          itemIndex: segs[si].items.length - 1,
+        };
+      } else if (0 < pos.sectionIndex) {
+        const segs = section.segments;
+        return {
+          sectionIndex: pos.sectionIndex - 1,
+          segmentIndex: segs.length - 1,
+          itemIndex: segs[segs.length - 1].items.length - 1,
+        };
+      } else {
+        return null;
+      }
+    }
+  }
+
+  async function getItem(pos: PositionInTimeline): Promise<TimelineItem> {
+    const section = sections[pos.sectionIndex];
+    if (section.segments === null) {
+      await loadSection(pos.sectionIndex);
+    }
+    if (section.segments === null) {
+      throw new Error('failed to load section');
+    }
+    return section.segments[pos.segmentIndex].items[pos.itemIndex];
   }
 
   async function hideSelectedAssets() {
+    if (selectedItems.size === 0) {
+      return;
+    }
     if (setAnimationsEnabled) {
       await setAnimationsEnabled(true);
     }
-    await setAssetsHidden({ what: 'hide', assetIds: Array.from(selectedAssets.keys()) });
-    const untreatedAssets: Set<AssetId> = new Set(selectedAssets.keys());
+    const assetIds = R.pipe(
+      Array.from(selectedItems.values()),
+      R.uniqueBy(({ item }) => (item.itemType === 'asset' ? item : item.series)),
+      R.flatMap(({ item }) => (item.itemType === 'asset' ? [item] : item.series.assets)),
+      R.map((asset) => asset.id),
+    );
+    await setAssetsHidden({ what: 'hide', assetIds });
+
+    const untreatedItems = new Set(selectedItems.keys());
     const affectedSectionIdxs: number[] = [];
     for (let sectionIdx = 0; sectionIdx < sections.length; sectionIdx += 1) {
       const section = sections[sectionIdx];
@@ -486,30 +648,36 @@ export function createTimeline(
       const segmentsToRemove: Set<number> = new Set();
       let newNumAssets = 0;
       for (let segmentIdx = 0; segmentIdx < segments.length; segmentIdx += 1) {
-        if (untreatedAssets.size === 0) {
+        if (untreatedItems.size === 0) {
           break;
         }
         const segment = segments[segmentIdx];
-        const remainingAssets: AssetWithSpe[] = [];
-        for (const asset of segment.assets) {
-          if (selectedAssets.has(asset.id)) {
-            untreatedAssets.delete(asset.id);
+        const remainingItems: TimelineItem[] = [];
+        for (const item of segment.items) {
+          if (selectedItems.has(item.key)) {
+            untreatedItems.delete(item.key);
           } else {
-            remainingAssets.push(asset);
+            remainingItems.push(item);
           }
         }
         if (
-          remainingAssets.length != segment.assets.length &&
+          remainingItems.length != segment.items.length &&
           ((affectedSectionIdxs.length > 0 && affectedSectionIdxs.at(-1) != sectionIdx) ||
             affectedSectionIdxs.length == 0)
         ) {
           affectedSectionIdxs.push(sectionIdx);
         }
-        newNumAssets += remainingAssets.length;
-        if (remainingAssets.length === 0) {
+        newNumAssets += R.pipe(
+          remainingItems,
+          // don't count split up series multiple times
+          R.uniqueBy((it) => (it.itemType === 'asset' ? it : it.series)),
+          R.map((it) => (it.itemType === 'asset' ? 1 : it.series.assets.length)),
+          R.sum(),
+        );
+        if (remainingItems.length === 0) {
           segmentsToRemove.add(segmentIdx);
         } else {
-          segment.assets = remainingAssets;
+          segment.items = remainingItems;
         }
       }
       if (segmentsToRemove.size > 0) {
@@ -536,49 +704,15 @@ export function createTimeline(
         s.items = null;
       }
     }
-    visibleItems.endIdx -= selectedAssets.size; // not 100% sure on this
-    selectedAssets.clear();
+    visibleItems.endIdx -= selectedItems.size; // not 100% sure on this
+    selectedItems.clear();
     // reassign Items' asset index
-    items.filter((item) => item.type === 'asset').forEach((item, idx) => (item.assetIndex = idx));
     for (const sectionIdx of affectedSectionIdxs) {
       layoutSection(sectionIdx, 'noAdjustScroll');
     }
     if (setAnimationsEnabled) {
       setAnimationsEnabled(false);
     }
-  }
-
-  async function getOrLoadAssetAtIndex(index: number): Promise<AssetWithSpe | null> {
-    if (index >= totalNumAssets) {
-      console.error(`ask for getAssetAtIndex(${index}) but only ${totalNumAssets} in total`);
-      return null;
-    }
-    const sectionIndex = sections.findLastIndex((_section, idx) => {
-      return sectionStartIndices[idx] <= index;
-    });
-    console.assert(sectionIndex >= 0);
-    if (!sections[sectionIndex].segments) {
-      await loadSection(sectionIndex);
-    }
-    const segments = sections[sectionIndex].segments;
-    if (segments === null) {
-      console.error('getAssetAtIndex: segments still null after loading section');
-      return null;
-    }
-
-    console.assert(segments.length > 0);
-    let segmentIndex = 0;
-    let assetsUpToSegment = sectionStartIndices[sectionIndex];
-    for (let i = 0; i < segments.length; i += 1) {
-      if (assetsUpToSegment + segments[i].assets.length > index) {
-        break;
-      }
-      assetsUpToSegment += segments[i].assets.length;
-      segmentIndex += 1;
-    }
-
-    const indexInSegment = index - assetsUpToSegment;
-    return segments[segmentIndex].assets[indexInSegment];
   }
 
   function setActualItemHeight(itemIndex: number, newHeight: number) {
@@ -638,16 +772,6 @@ export function createTimeline(
       }
     } else if (item.type === 'segmentTitle' && item.titleType === 'day') {
       const heightDelta = newHeight - item.height;
-      // console.log(
-      //   'title',
-      //   itemIndex,
-      //   'height',
-      //   newHeight,
-      //   'delta',
-      //   heightDelta,
-      //   'row',
-      //   item.titleRowIndex,
-      // );
       if (heightDelta === 0) {
         return;
       }
@@ -699,37 +823,33 @@ export function createTimeline(
     }
   }
 
-  async function moveViewToAsset(assetIndex: number): Promise<TimelineGridItem | null> {
-    let sectionIndex = -1;
-    // find section containing asset
-    let cumulAssets = 0;
-    for (let i = 0; i < sections.length; i += 1) {
-      cumulAssets += sections[i].data.numAssets;
-      if (assetIndex < cumulAssets) {
-        sectionIndex = i;
-        break;
-      }
+  async function getGridItemAtPosition(pos: PositionInTimeline): Promise<TimelineGridItem | null> {
+    const section = sections[pos.sectionIndex];
+    if (section.segments === null) {
+      await loadSection(pos.sectionIndex);
     }
-    if (sectionIndex < 0) {
-      console.error('scrollToAssetIndex: did not find section containing asset at index');
-      return null;
+    if (section.segments === null) {
+      throw new Error('error loading section');
     }
-    const section = sections[sectionIndex];
-    // fetch section data from api if necessary
-    await loadSection(sectionIndex);
-    // compute layouts for segments in section, populating items array
-    layoutSection(sectionIndex, 'noAdjustScroll');
-    console.assert(section.items !== null, 'loaded section but items === null');
+    layoutSection(pos.sectionIndex, 'noAdjustScroll');
+    console.assert(section.items !== null);
     if (section.items === null) {
       return null;
     }
+
     // find item in items array
     let itemIndex = -1;
     for (let i = section.items.startIdx; i < section.items.endIdx; i += 1) {
       const item = items[i];
-      if (item.type === 'asset' && item.assetIndex === assetIndex) {
-        itemIndex = i;
-        break;
+      if (item.type === 'asset' || item.type === 'photoStack') {
+        if (
+          item.timelineItem.pos.sectionIndex === pos.sectionIndex &&
+          item.timelineItem.pos.segmentIndex === pos.segmentIndex &&
+          item.timelineItem.pos.itemIndex === pos.itemIndex
+        ) {
+          itemIndex = i;
+          break;
+        }
       }
     }
     console.assert(itemIndex >= 0, 'loaded and laid out section but did not find correct item');
@@ -740,66 +860,97 @@ export function createTimeline(
   }
 
   async function createGroupClicked() {
-    const previousSections = klona(sections);
-    const previousItems = klona(items);
-    // const previousSections = [];
-    // const previousItems = [];
-    const selected = new Set(selectedAssets.keys());
-    if (selected.size === 0) {
+    if (selectedItems.size === 0) {
       return;
     }
-    clearSelection();
-    const assetsInGroup: AssetWithSpe[] = [];
+    const previousSections = klona(sections);
+    const previousItems = klona(items);
+    if (selectedItems.size === 0) {
+      return;
+    }
+    const itemsInGroup: TimelineItem[] = [];
     const affectedSections: number[] = [];
     for (const [sectionIdx, section] of sections.entries()) {
       if (section.segments === null) {
         continue;
       }
       let thisSectionAffected = false;
-      const newSegments: Segment[] = [];
+      const newSegments: TimelineSegment[] = [];
       for (const segment of section.segments) {
         if (segment.type !== 'dateRange') {
           // TODO: add assets/move assets that are alread in group to other group
           newSegments.push(segment);
           continue;
         }
-        // arrays of contiguous assets, which may be separated by assets in group
-        const remainingAssets: AssetWithSpe[][] = [];
+        // arrays of contiguous items, which may be separated by items in group
+        const remainingItems: TimelineItem[][] = [];
         let currentlyInGroup = false;
-        for (const asset of segment.assets) {
-          if (selected.has(asset.id)) {
+        for (const item of segment.items) {
+          if (selectedItems.has(item.key)) {
             currentlyInGroup = true;
             thisSectionAffected = true;
-            assetsInGroup.push(asset);
+            itemsInGroup.push(item);
           } else {
-            if (currentlyInGroup || remainingAssets.length === 0) {
+            if (currentlyInGroup || remainingItems.length === 0) {
               currentlyInGroup = false;
-              remainingAssets.push([asset]);
+              remainingItems.push([item]);
             } else {
-              remainingAssets.at(-1)!.push(asset);
+              remainingItems.at(-1)!.push(item);
             }
           }
         }
-        if (remainingAssets.length === 1 && remainingAssets[0].length > 0) {
-          const newSegment: Segment = {
+        if (remainingItems.length === 1 && remainingItems[0].length > 0) {
+          const startDate = (() => {
+            const it = remainingItems[0][0];
+            if (it.itemType === 'asset') {
+              return it.takenDate;
+            } else {
+              return it.sortDate;
+            }
+          })();
+          const endDate = (() => {
+            const it = remainingItems[0].at(-1)!;
+            if (it.itemType === 'asset') {
+              return it.takenDate;
+            } else {
+              it.series.assets.at(-1)!.takenDate;
+            }
+          })();
+          const newSegment: TimelineSegment = {
             type: 'dateRange',
-            assets: remainingAssets[0],
-            sortDate: remainingAssets[0][0].takenDate,
+            items: remainingItems[0],
+            sortDate: startDate,
             itemRange: null,
-            start: dayjs.utc(remainingAssets[0][0].takenDate),
-            end: dayjs.utc(remainingAssets[0].at(-1)!.takenDate),
+            start: dayjs.utc(startDate),
+            end: dayjs.utc(endDate),
           };
           newSegments.push(newSegment);
         } else {
-          for (const assets of remainingAssets) {
-            console.assert(assets.length > 0);
-            const newSegment: Segment = {
+          for (const items of remainingItems) {
+            console.assert(items.length > 0);
+            const startDate = (() => {
+              const it = items[0];
+              if (it.itemType === 'asset') {
+                return it.takenDate;
+              } else {
+                return it.series.assets[0].takenDate;
+              }
+            })();
+            const endDate = (() => {
+              const it = items.at(-1)!;
+              if (it.itemType === 'asset') {
+                return it.takenDate;
+              } else {
+                it.series.assets.at(-1)!.takenDate;
+              }
+            })();
+            const newSegment: TimelineSegment = {
               type: 'dateRange',
-              assets,
-              sortDate: assets[0].takenDate,
+              items,
+              sortDate: items[0].itemType === 'asset' ? items[0].takenDate : items[0].sortDate,
               itemRange: null,
-              start: dayjs.utc(assets[0].takenDate),
-              end: dayjs.utc(assets.at(-1)!.takenDate),
+              start: dayjs.utc(startDate),
+              end: dayjs.utc(endDate),
             };
             newSegments.push(newSegment);
           }
@@ -810,7 +961,7 @@ export function createTimeline(
         affectedSections.push(sectionIdx);
       }
     }
-    const groupSortDate = assetsInGroup[0].takenDate;
+    const groupSortDate = itemsInGroup[0].sortDate; // most recent asset date in group
     if (!groupSortDate || affectedSections.length === 0) {
       return;
     }
@@ -827,15 +978,31 @@ export function createTimeline(
     console.assert(affectedSections.indexOf(insertInSectionIndex) >= 0);
     const section = sections[insertInSectionIndex];
     const insertBeforeSegmentIndex = section.segments!.findIndex(
-      (s) => s.assets.at(0)!.takenDate < groupSortDate,
+      (s) => s.items.at(0)!.sortDate < groupSortDate,
     );
-    const newSegment: Segment & { type: 'creatingGroup' } = $state({
+    const startDate = (() => {
+      const it = itemsInGroup[0];
+      if (it.itemType === 'asset') {
+        return it.takenDate;
+      } else {
+        return it.series.assets[0].takenDate;
+      }
+    })();
+    const endDate = (() => {
+      const it = itemsInGroup.at(-1)!;
+      if (it.itemType === 'asset') {
+        return it.takenDate;
+      } else {
+        it.series.assets.at(-1)!.takenDate;
+      }
+    })();
+    const newSegment: TimelineSegment & { type: 'creatingGroup' } = $state({
       type: 'creatingGroup',
-      assets: assetsInGroup,
+      items: itemsInGroup,
       sortDate: groupSortDate,
       itemRange: null,
-      start: dayjs.utc(assetsInGroup[0].takenDate),
-      end: dayjs.utc(assetsInGroup.at(-1).takenDate),
+      start: dayjs.utc(startDate),
+      end: dayjs.utc(endDate),
     });
     section.segments!.splice(insertBeforeSegmentIndex, 0, newSegment);
     if (setAnimationsEnabled) {
@@ -859,7 +1026,7 @@ export function createTimeline(
     }
     state = {
       state: 'creatingTimelineGroup',
-      assetsInGroup: assetsInGroup.map((a) => a.id),
+      itemsInGroup: itemsInGroup,
       groupSortDate,
       previousItems,
       previousSections,
@@ -885,8 +1052,15 @@ export function createTimeline(
     if (state.state !== 'creatingTimelineGroup') {
       return;
     }
+    clearSelection();
+    const assetsInGroup = R.pipe(
+      state.itemsInGroup,
+      R.uniqueBy((it) => (it.itemType === 'asset' ? it : it.series)),
+      R.flatMap((it) => (it.itemType === 'asset' ? [it] : it.series.assets)),
+      R.map((asset) => asset.id),
+    );
     const response = createTimelineGroupResponse.parse(
-      (await createTimelineGroup({ name: title, assets: state.assetsInGroup })).data,
+      (await createTimelineGroup({ name: title, assets: assetsInGroup })).data,
     );
     const { sectionIndex, segmentIndex } = (() => {
       for (let i = 0; i < sections.length; i += 1) {
@@ -910,7 +1084,7 @@ export function createTimeline(
     const oldSegment = sections[sectionIndex].segments![segmentIndex];
     sections[sectionIndex].segments![segmentIndex] = {
       type: 'group' as const,
-      assets: oldSegment.assets,
+      items: oldSegment.items,
       sortDate: response.displayDate,
       itemRange: null,
       clickArea: null,
@@ -931,13 +1105,14 @@ export function createTimeline(
       await setAnimationsEnabled(true);
     }
     const affectedSections: number[] = [];
-    let groupToAbsorb: (Segment & { type: 'creatingGroup' }) | null = null;
+    let groupToAbsorb: (TimelineSegment & { type: 'creatingGroup' }) | null = null;
+    let assetIdsInGroup: AssetId[] | null = null;
     const newSections = klona(sections);
     for (const [sectionIdx, section] of newSections.entries()) {
       if (section.segments === null) {
         continue;
       }
-      const remainingSegments: Segment[] = [];
+      const remainingSegments: TimelineSegment[] = [];
       for (const segment of section.segments) {
         if (segment.type === 'creatingGroup') {
           groupToAbsorb = segment;
@@ -949,19 +1124,25 @@ export function createTimeline(
       section.segments = remainingSegments;
       if (groupToAbsorb !== null) {
         // found it
-        section.data.numAssets -= groupToAbsorb.assets.length;
+        assetIdsInGroup = R.pipe(
+          groupToAbsorb.items,
+          R.uniqueBy((item) => (item.itemType === 'asset' ? item : item.series)),
+          R.flatMap((item) =>
+            item.itemType === 'asset' ? [item.id] : item.series.assets.map((a) => a.id),
+          ),
+        );
+        section.data.numAssets -= assetIdsInGroup.length; // added back if they're going to be added to the same section
         break;
       }
     }
-    console.assert(groupToAbsorb !== null);
-    if (groupToAbsorb === null) {
+    console.assert(groupToAbsorb !== null && assetIdsInGroup !== null);
+    if (groupToAbsorb === null || assetIdsInGroup === null) {
       return;
     }
 
-    const assetIds = groupToAbsorb!.assets.map((asset) => asset.id);
-    await addToTimelineGroup({ assets: assetIds, groupId });
+    // await addToTimelineGroup({ assets: assetIdsInGroup, groupId });
 
-    let mergeInto: (Segment & { type: 'group' }) | null = null;
+    let mergeInto: (TimelineSegment & { type: 'group' }) | null = null;
     outer: for (const [sectionIdx, section] of newSections.entries()) {
       if (section.segments === null) {
         continue;
@@ -969,7 +1150,7 @@ export function createTimeline(
       for (const segment of section.segments) {
         if (segment.type === 'group' && segment.groupId === groupId) {
           affectedSections.push(sectionIdx);
-          section.data.numAssets += groupToAbsorb!.assets.length;
+          section.data.numAssets += assetIdsInGroup.length;
           mergeInto = segment;
           break outer;
         }
@@ -979,8 +1160,8 @@ export function createTimeline(
     if (mergeInto === null) {
       return;
     }
-    mergeInto.assets.push(...groupToAbsorb.assets);
-    mergeInto.assets.sort((a, b) => b.takenDate.localeCompare(a.takenDate));
+    mergeInto.items.push(...groupToAbsorb.items);
+    mergeInto.items.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
     sections = newSections;
     layoutSection(affectedSections[0], 'noAdjustScroll');
     if (affectedSections[0] !== affectedSections[1]) {
@@ -989,6 +1170,7 @@ export function createTimeline(
     if (setAnimationsEnabled) {
       setAnimationsEnabled(false);
     }
+    clearSelection();
     state = { state: 'justLooking' };
   }
 
@@ -1018,11 +1200,23 @@ export function createTimeline(
     get visibleItems() {
       return visibleItems;
     },
-    get selectedAssets() {
-      return selectedAssets;
-    },
     get options() {
       return opts;
+    },
+    get numAssetsSelected() {
+      return R.pipe(
+        Array.from(selectedItems.values()),
+        R.uniqueBy(({ item }) => (item.itemType === 'asset' ? item : item.series)),
+        R.map(({ item }) => (item.itemType === 'asset' ? 1 : item.series.assets.length)),
+        R.sum(),
+      );
+    },
+    get selectedAssetIds() {
+      return R.pipe(
+        Array.from(selectedItems.values()),
+        R.uniqueBy(({ item }) => (item.itemType === 'asset' ? item : item.series)),
+        R.flatMap(({ item }) => (item.itemType === 'asset' ? [item.id] : item.series.assets.map((a) => a.id))),
+      );
     },
     set setAnimationsEnabled(v: ((enabled: boolean) => Promise<void>) | null) {
       setAnimationsEnabled = v;
@@ -1030,10 +1224,12 @@ export function createTimeline(
     initialize,
     resize,
     onScrollChange,
-    moveViewToAsset,
+    getGridItemAtPosition,
     setActualItemHeight,
-    getOrLoadAssetAtIndex,
-    setAssetSelected,
+    getNextItemPosition,
+    getItem,
+    setItemSelected,
+    isItemSelected,
     clearSelection,
     hideSelectedAssets,
   };
@@ -1052,17 +1248,4 @@ function estimateHeight(
   const height = rows * targetRowHeight;
 
   return height;
-}
-
-function computeSectionStartIndices(sections: TimelineSection[]): number[] {
-  if (sections.length == 1) {
-    return [0];
-  } else if (sections.length == 0) {
-    return [];
-  }
-  const idxs = [0];
-  for (let i = 1; i < sections.length; i += 1) {
-    idxs.push(idxs[i - 1] + sections[i - 1].data.numAssets);
-  }
-  return idxs;
 }

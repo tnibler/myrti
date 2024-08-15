@@ -8,6 +8,11 @@ CREATE TABLE DataDir (
   path TEXT NOT NULL UNIQUE
 ) STRICT;
 
+CREATE TABLE AssetSeries (
+  series_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  is_auto INTEGER NOT NULL CHECK (is_auto IN (0, 1))
+) STRICT;
+
 CREATE TABLE Asset (
   asset_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   -- 1=Image, 2=Video
@@ -31,13 +36,12 @@ CREATE TABLE Asset (
   rotation_correction INTEGER,
   thumb_hash BLOB,
 
-  stack_id INTEGER,
-  is_stack_selection INTEGER,
-  FOREIGN KEY (stack_id) REFERENCES PhotoStack(stack_id),
-  CHECK((stack_id IS NULL) = (is_stack_selection IS NULL) AND is_stack_selection IN (0, 1)),
+  series_id INTEGER,
+  is_series_selection INTEGER
+  CHECK ((series_id IS NULL) = (is_series_selection IS NULL) AND is_series_selection IN (0, 1, NULL)),
 
   -- Metadata
-  -- exiftool -j -g -c
+  -- exiftool -j -g
   exiftool_output BLOB NOT NULL,
   -- latitude and longitude are stored multipled by 10e8
   gps_latitude INTEGER,
@@ -54,6 +58,7 @@ CREATE TABLE Asset (
   audio_codec_name TEXT,
   has_dash INTEGER,
 
+  FOREIGN KEY (series_id) REFERENCES AssetSeries(series_id),
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(asset_root_dir_id),
   UNIQUE(root_dir_id, file_path),
 
@@ -162,7 +167,7 @@ CREATE TABLE Album (
 ) STRICT;
 
 -- -- surrogate key here because
--- -- https://dba.stackexchange.com/a/761
+-- -- https://dba.seriesexchange.com/a/761
 CREATE TABLE AlbumItem (
   album_item_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   album_id INTEGER NOT NULL,
@@ -182,11 +187,6 @@ CREATE TABLE AlbumItem (
 ) STRICT;
 
 CREATE INDEX album_id_index ON AlbumItem(album_id);
-
-CREATE TABLE PhotoStack (
-  stack_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  is_auto INTEGER NOT NULL CHECK (is_auto IN (0, 1))
-) STRICT;
 
 CREATE TABLE TimelineGroup (
   timeline_group_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -216,6 +216,7 @@ timeline_id,
   timeline_group_id,
   date_day,
   sort_date,
+  series_sort_date,
   segment_idx
 ) AS 
 WITH timeline AS (
@@ -224,7 +225,10 @@ WITH timeline AS (
   Asset.taken_date AS asset_taken_date,
   CASE WHEN TimelineGroup.timeline_group_id IS NULL THEN date(Asset.taken_date / 1000, 'unixepoch') ELSE NULL END AS asset_date_day,
   CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.timeline_group_id ELSE NULL END AS group_id,
-  CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.display_date ELSE Asset.taken_date END AS sort_date
+  CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.display_date ELSE Asset.taken_date END AS sort_date,
+  CASE WHEN Asset.series_id IS NULL THEN Asset.taken_date ELSE 
+      (SELECT MIN(a.taken_date) FROM Asset a WHERE a.series_id = Asset.series_id)
+  END AS series_sort_date
   FROM Asset
   LEFT JOIN TimelineGroupItem ON TimelineGroupItem.asset_id = Asset.asset_id
   LEFT JOIN TimelineGroup ON TimelineGroupItem.group_id = TimelineGroup.timeline_group_id
@@ -238,6 +242,7 @@ asset_taken_date,
 group_id AS timeline_group_id,
 asset_date_day AS date_day,
 sort_date,
+series_sort_date,
 DENSE_RANK() OVER 
 (
   ORDER BY 
@@ -246,7 +251,7 @@ DENSE_RANK() OVER
   CASE WHEN timeline.group_id IS NOT NULL THEN 0 ELSE timeline.asset_date_day END
 ) AS segment_idx_no_max_size
 FROM timeline
-ORDER BY sort_date DESC, timeline_group_id DESC, asset_taken_date DESC, asset_id DESC;
+ORDER BY sort_date DESC, series_sort_date DESC, timeline_group_id DESC, asset_taken_date DESC, asset_id DESC;
 
 -- =================== Configuration =======================
 
@@ -286,8 +291,9 @@ CREATE TABLE FailedShakaPackager (
   FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 );
 
-CREATE TABLE DeletedAutoPhotoStack (
+CREATE TABLE DeletedAutoAssetSeries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   asset_id INTEGER NOT NULL,
-  stack_id INTEGER NOT NULL, -- intentionally not a foreign key
-  FOREIGN KEY asset_id REFERENCES Asset(asset_id) ON DELETE CASCADE,
+  series_id INTEGER NOT NULL, -- intentionally not a foreign key
+  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id) ON DELETE CASCADE
 );

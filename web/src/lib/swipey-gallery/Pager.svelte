@@ -1,10 +1,11 @@
 <script lang="ts" context="module">
-  export type PagerProps = {
-    slideIndex: number;
-    numSlides: number;
+  import type { GallerySlide } from './gallery-types';
+  export type PagerProps<TPos> = {
     topOffset: number;
-    getSlide: (index: number) => Promise<SlideData>;
-    getThumbnailBounds: (index: number) => ThumbnailBounds;
+    getSlide: (pos: TPos) => Promise<GallerySlide<TPos>>;
+    getNextSlidePosition: (pos: TPos, dir: 'left' | 'right') => TPos | null;
+    currentPosition: TPos;
+    getThumbnailBounds: (pos: TPos) => ThumbnailBounds;
     closeGallery: () => void;
     onOpenTransitionFinished: () => void;
   };
@@ -31,12 +32,11 @@
   };
 </script>
 
-<script lang="ts">
+<script lang="ts" generics="TPos">
   import Slide from './Slide.svelte';
   import SlideHolder from './SlideHolder.svelte';
   import { onMount, setContext } from 'svelte';
   import { newGestureController } from './gestures';
-  import type { SlideData } from './slide-data';
   import { newAnimationControls, type AnimationControls } from './animations';
   import type { ThumbnailBounds } from './thumbnail-bounds';
   import type { OpenTransitionParams, SlideControls } from './Slide.svelte';
@@ -52,28 +52,26 @@
   import InfoPanel from './InfoPanel.svelte';
 
   let {
-    numSlides,
     getSlide,
-    slideIndex = $bindable(),
+    getNextSlidePosition,
     getThumbnailBounds,
     closeGallery,
     onOpenTransitionFinished,
     topOffset,
-  }: PagerProps = $props();
+    currentPosition = $bindable(),
+  }: PagerProps<TPos> = $props();
 
   let viewport = $state({ width: 0, height: 0 });
   const slideSpacing = 0.1;
   const slideWidth = $derived(viewport.width + viewport.width * slideSpacing);
 
-  /** Index of slide we started at, used to compute correct offset of the pager/slide elements */
-  const initialSlideIndex = slideIndex;
-  let previousIndex: number = $state(slideIndex);
-  let containerShift: number = $state(-1);
+  /** used for transform/offset calculations */
+  let currentShift = $state(0);
   let isSidePanelOpen: boolean = $state(false);
 
   type SlideHolderState = {
     id: number;
-    slideIndex: number | null;
+    slidePosition: TPos | null;
     openTransition: OpenTransitionParams | null;
     isActive: boolean;
     showContent: boolean;
@@ -83,21 +81,45 @@
   // holderOrder[0] is the index into holderStates for the SlideHolder to the left of the screen,
   // [1] the currently visible one and [2] the one off to the right
   let holderOrder = $state([0, 1, 2]);
-  let holderStates: SlideHolderState[] = $state([]);
-  const currentSlide: Promise<SlideData> | null = $derived.by(() => {
+  let holderStates: SlideHolderState[] = $state(
+    (() => {
+      const positions = [
+        getNextSlidePosition(currentPosition, 'left'),
+        currentPosition,
+        getNextSlidePosition(currentPosition, 'right'),
+      ];
+      const openTransition = {
+        onTransitionEnd: afterOpenTransition,
+        fromBounds: getThumbnailBounds(currentPosition),
+      };
+      // holderOrder is the identity mapping at the beginning, so id == index initially for the SlideHolders
+      return [0, 1, 2].map((id) => {
+        return {
+          // maybe hide left and right holders until open anim finished? see main-scroll.js:111
+          id: id,
+          slidePosition: positions[id],
+          openTransition: id === 1 ? openTransition : null,
+          isActive: id === 1,
+          showContent: id === 1,
+          isContentReady: false,
+        };
+      });
+    })(),
+  );
+  const currentSlide: Promise<GallerySlide<TPos>> | null = $derived.by(() => {
     if (holderOrder[1] === undefined || holderStates[holderOrder[1]] === undefined) {
       return null;
     }
-    const slideIdx = holderStates[holderOrder[1]].slideIndex;
-    if (slideIdx === null) {
+    const slidePos = holderStates[holderOrder[1]].slidePosition;
+    if (slidePos === null) {
       return null;
     }
-    return getSlide(slideIdx);
+    return getSlide(slidePos);
   });
-  let slideComponents: Slide[] = $state([]);
-  const xTransformSlideCenter = $derived(
-    -(slideIndex - initialSlideIndex) * slideWidth * (1 + slideSpacing),
-  );
+  const canMoveLeft = $derived(holderStates[holderOrder[0]].slidePosition !== null);
+  const canMoveRight = $derived(holderStates[holderOrder[2]].slidePosition !== null);
+  let slideHolders: SlideHolder[] = $state([]);
+  const xTransformSlideCenter = $derived(-currentShift * slideWidth * (1 + slideSpacing));
   let xTransformOffset = $state(0);
   let xTransform = $derived(xTransformSlideCenter + xTransformOffset);
   const transformString = $derived(`translate3d(${Math.round(xTransform)}px, 0px, 0px)`);
@@ -109,7 +131,7 @@
 
   const animations: AnimationControls = newAnimationControls();
   const slide: SlideControls | null = $derived(
-    holderOrder[1] < slideComponents.length ? slideComponents[holderOrder[1]].controls : null,
+    holderOrder[1] < slideHolders.length ? slideHolders[holderOrder[1]]?.slideControls : null,
   );
   const hideUiTimeoutDuration = 3000;
   let hideUiTimeout: ReturnType<typeof setTimeout> | null = setTimeout(
@@ -131,7 +153,9 @@
     },
     moveXBy: (delta) => {
       const SWIPE_END_FRICTION = 0.3;
-      if ((slideIndex == 0 && 0 < delta) || (slideIndex == numSlides - 1 && delta < 0)) {
+      const hittingLeftWall = 0 < delta && holderStates[holderOrder[0]].slidePosition === null;
+      const hittingRightWall = delta < 0 && holderStates[holderOrder[2]].slidePosition === null;
+      if (hittingLeftWall || hittingRightWall) {
         xTransformOffset += delta * SWIPE_END_FRICTION;
       } else {
         xTransformOffset += delta;
@@ -162,27 +186,6 @@
   let pagerWrapper: HTMLElement;
 
   onMount(() => {
-    const idxs = [
-      slideIndex === 0 ? null : slideIndex - 1,
-      slideIndex,
-      slideIndex === numSlides - 1 ? null : slideIndex + 1,
-    ];
-    const openTransition = {
-      onTransitionEnd: afterOpenTransition,
-      fromBounds: getThumbnailBounds(slideIndex),
-    };
-    // holderOrder is the identity mapping at the beginning, so id == index initially for the SlideHolders
-    holderStates = [0, 1, 2].map((id) => {
-      return {
-        // maybe hide left and right holders until open anim finished? see main-scroll.js:111
-        id: id,
-        slideIndex: idxs[id],
-        openTransition: id === 1 ? openTransition : null,
-        isActive: id === 1,
-        showContent: id === 1,
-        isContentReady: false,
-      };
-    });
     backgroundOpacity = 1;
     bindEvents();
     return () => {
@@ -241,17 +244,22 @@
   }
 
   function moveSlideAnimate(direction: 'left' | 'right' | 'backToCenter') {
-    let diff = 0;
-    if (direction === 'left') {
-      diff = -1;
-    } else if (direction === 'right') {
-      diff = 1;
+    const offLimitsLeft = direction === 'left' && !canMoveLeft;
+    const offLimitsRight = direction === 'right' && !canMoveRight;
+    if (offLimitsLeft || offLimitsRight) {
+      direction = 'backToCenter';
     }
-    const index = Math.min(Math.max(slideIndex + diff, 0), numSlides - 1);
-    if (index !== slideIndex) {
+    let shiftDiff = 0;
+    if (direction === 'left') {
+      shiftDiff = -1;
+    } else if (direction === 'right') {
+      shiftDiff = 1;
+    }
+    const index = currentShift + shiftDiff;
+    if (direction !== 'backToCenter') {
       holderStates[holderOrder[1]].isActive = false;
     }
-    const destX = -(index - initialSlideIndex) * slideWidth * (1 + slideSpacing);
+    const destX = -index * slideWidth * (1 + slideSpacing);
     animations.stopAnimationsFor('pager');
     animations.startSpringAnimation(
       {
@@ -266,9 +274,8 @@
         onFinish: () => {
           xTransformOffset = 0;
           if (direction !== 'backToCenter') {
-            previousIndex = slideIndex;
-            slideIndex = index;
-            reorderSlideHoldersAfterAnim();
+            currentShift = index;
+            reorderSlideHoldersAfterAnim(direction);
           }
         },
       },
@@ -276,46 +283,32 @@
     );
   }
 
-  export function moveSlide(direction: 'left' | 'right') {
+  /** @returns false if there is no more slide to move to, true otherwise */
+  export function moveSlide(direction: 'left' | 'right'): boolean {
+    const offLimitsLeft = direction === 'left' && !canMoveLeft;
+    const offLimitsRight = direction === 'right' && !canMoveRight;
+    if (offLimitsLeft || offLimitsRight) {
+      return false;
+    }
     animations.stopAllAnimations();
-    let diff = 0;
-    if (direction === 'left') {
-      diff = -1;
-    } else if (direction === 'right') {
-      diff = 1;
-    }
-    const newIndex = Math.min(Math.max(slideIndex + diff, 0), numSlides - 1);
-    if (newIndex !== slideIndex) {
-      holderStates[holderOrder[1]].isActive = false;
-    }
-    previousIndex = slideIndex;
-    slideIndex = newIndex;
+    holderStates[holderOrder[1]].isActive = false;
+    currentShift += direction === 'left' ? -1 : 1;
     xTransformOffset = 0;
-    reorderSlideHoldersAfterAnim();
+    reorderSlideHoldersAfterAnim(direction);
+    return true;
   }
 
-  function reorderSlideHoldersAfterAnim() {
+  function reorderSlideHoldersAfterAnim(didShift: 'left' | 'right') {
     animations.stopAnimationsFor('pan');
-    const diffMod3 = (slideIndex - previousIndex) % 3;
     const previousActiveHolder: SlideHolderState = holderStates[holderOrder[1]];
     let movedHolder: SlideHolderState;
-    // TODO Photoswipe resets transforms here if containerShiftIndex >= 50
-    const shiftedRight = diffMod3 === 1 || diffMod3 === -2;
-    const shiftedLeft = diffMod3 === 2 || diffMod3 === -1;
-    if (shiftedRight) {
-      containerShift += 1;
+    // TODO Photoswipe resets transforms here if currentShift >= 50
+    if (didShift === 'right') {
       holderOrder = [holderOrder[1], holderOrder[2], holderOrder[0]];
       movedHolder = holderStates[holderOrder[2]];
-    } else if (shiftedLeft) {
-      containerShift -= 1;
+    } else {
       holderOrder = [holderOrder[2], holderOrder[0], holderOrder[1]];
       movedHolder = holderStates[holderOrder[0]];
-    } else if (diffMod3 === 0) {
-      // nothing to do
-      return;
-    } else {
-      console.assert(false, 'unreachable!');
-      return;
     }
     const newActiveHolder = holderStates[holderOrder[1]];
     previousActiveHolder.isActive = false;
@@ -324,24 +317,20 @@
     // not setting previousActiveHolder.showContent = false, because it's not getting assigned a new slide
     // if the current slide is already loaded, movedHolder can start loading slide content right away.
     movedHolder.showContent = newActiveHolder.isContentReady;
-    const currentSlideIndex = newActiveHolder.slideIndex;
     console.assert(
-      currentSlideIndex !== null,
-      'currentSlideIndex is null after shuffling SlideHolders',
+      newActiveHolder.slidePosition !== null,
+      'newActiveHolder.slidePosition is null after shuffling SlideHolders',
     );
-    if (currentSlideIndex !== null && shiftedRight) {
-      const nextSlideIndex = currentSlideIndex == numSlides - 1 ? null : currentSlideIndex + 1;
-      movedHolder.slideIndex = nextSlideIndex;
-    } else if (currentSlideIndex !== null && shiftedLeft) {
-      const nextSlideIndex = currentSlideIndex === 0 ? null : currentSlideIndex - 1;
-      movedHolder.slideIndex = nextSlideIndex;
+    if (newActiveHolder.slidePosition !== null) {
+      currentPosition = newActiveHolder.slidePosition;
+      movedHolder.slidePosition = getNextSlidePosition(currentPosition, didShift);
+      movedHolder.openTransition = null;
+      movedHolder.isContentReady = false;
     }
-    movedHolder.openTransition = null;
-    movedHolder.isContentReady = false;
   }
 
   export async function close() {
-    const thumbnailBounds = getThumbnailBounds(slideIndex);
+    const thumbnailBounds = getThumbnailBounds(currentPosition);
     backgroundOpacityTransition = true;
     // requestAnimationFrame(() => {
     backgroundOpacity = 0;
@@ -405,8 +394,11 @@
     ></div>
     <div class="absolute top-0 left-0 w-full h-full" style="transform: {transformString};">
       {#each holderStates as slideHolder (slideHolder.id)}
+        <!-- currentShift - 1 because there is still one slideHolder to the left of the viewport when currentShift is 0 -->
         {@const x =
-          (containerShift + holderOrder.indexOf(slideHolder.id)) * (1 + slideSpacing) * slideWidth}
+          (currentShift - 1 + holderOrder.indexOf(slideHolder.id)) *
+          (1 + slideSpacing) *
+          slideWidth}
         <SlideHolder
           id={slideHolder.id}
           isActive={slideHolder.isActive}
@@ -414,8 +406,8 @@
           openTransition={slideHolder.openTransition}
           showContent={slideHolder.showContent}
           onContentReady={() => onSlideContentReady(slideHolder.id)}
-          slide={slideHolder.slideIndex !== null ? getSlide(slideHolder.slideIndex) : null}
-          bind:this={slideComponents[slideHolder.id]}
+          slide={slideHolder.slidePosition !== null ? getSlide(slideHolder.slidePosition) : null}
+          bind:this={slideHolders[slideHolder.id]}
         />
       {/each}
     </div>
@@ -473,14 +465,28 @@
           </button>
         </div>
         <div class="flex flex-row flex-grow justify-between {hasMouse ? '' : 'hidden'} ">
-          <button class="pl-5 pointer-events-auto" onclick={() => moveSlide('left')}>
-            <svg class="fill-white" id="arrow" viewBox="0 0 60 60" width="60" height="60"
-              ><path d="M29 43l-3 3-16-16 16-16 3 3-13 13 13 13z"></path></svg
+          <button
+            class="pl-5 pointer-events-auto"
+            onclick={() => moveSlide('left')}
+            disabled={!canMoveLeft}
+          >
+            <svg
+              class={canMoveLeft ? 'fill-white' : 'fill-white/30'}
+              viewBox="0 0 60 60"
+              width="60"
+              height="60"><path d="M29 43l-3 3-16-16 16-16 3 3-13 13 13 13z"></path></svg
             >
           </button>
-          <button class="pr-5 pointer-events-auto" onclick={() => moveSlide('right')}>
-            <svg class="fill-white -scale-x-[1]" viewBox="0 0 60 60" width="60" height="60"
-              ><use class="" xlink:href="#arrow"></use></svg
+          <button
+            class="pr-5 pointer-events-auto"
+            onclick={() => moveSlide('right')}
+            disabled={!canMoveRight}
+          >
+            <svg
+              class="{canMoveRight ? 'fill-white' : 'fill-white/30'} -scale-x-[1]"
+              viewBox="0 0 60 60"
+              width="60"
+              height="60"><path d="M29 43l-3 3-16-16 16-16 3 3-13 13 13 13z"></path></svg
             >
           </button>
         </div>
@@ -491,7 +497,9 @@
   <div class={'bg-white z-50 transition-all w-96 ' + (isSidePanelOpen ? 'mr-0' : 'mr-[-24rem]')}>
     {#await currentSlide then slide}
       {#if slide !== null}
-        <InfoPanel asset={slide.asset} />
+        <InfoPanel
+          asset={slide.slideType === 'singleAsset' ? slide.asset : slide.coverSlide.asset}
+        />
       {/if}
     {/await}
   </div>

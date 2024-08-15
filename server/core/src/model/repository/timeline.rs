@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use const_format::formatcp;
 use diesel::{
     deserialize::QueryableByName,
     query_builder::{QueryBuilder, QueryFragment},
@@ -6,11 +7,14 @@ use diesel::{
     sqlite::SqliteQueryBuilder,
     RunQueryDsl, SelectableHelper,
 };
-use eyre::{Context, Result};
+use eyre::{eyre, Context, Result};
 use is_sorted::IsSorted;
+use itertools::Itertools;
 use tracing::instrument;
 
-use crate::model::{util::datetime_from_db_repr, Asset, AssetId, TimelineGroup, TimelineGroupId};
+use crate::model::{
+    util::datetime_from_db_repr, Asset, AssetId, AssetSeriesId, TimelineGroup, TimelineGroupId,
+};
 
 use super::{db::DbConn, db_entity::DbAsset, timeline_group::get_timeline_group};
 
@@ -190,12 +194,13 @@ struct RowTimelineSection {
 
 #[tracing::instrument(skip(conn))]
 pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
-    // Right now a section always contains entire segments,
-    // even if
-    let rows: Vec<RowTimelineSection> = sql_query(r#"
-    WITH segment_size AS
+    const SQL_SEGMENT_IDX: &str = include_str!("timeline_segment_idx.sql");
+    const QUERY: &str = formatcp!(
+        r#"
+    WITH tl_segment_idx AS ({SQL_SEGMENT_IDX}),
+    segment_size AS
     (
-        SELECT *, COUNT(asset_id) AS segment_size FROM TimelineSegment GROUP BY segment_idx
+        SELECT *, COUNT(asset_id) AS segment_size FROM tl_segment_idx GROUP BY segment_idx
     ),
     cumsum_segment_size AS (
         SELECT *, SUM(segment_size) OVER (PARTITION BY 1 ORDER BY segment_idx ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cum_segment_size FROM segment_size
@@ -215,19 +220,21 @@ pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
     max_segment,
     asset_count,
     (
-        SELECT MAX(TimelineSegment.asset_taken_date)
-        FROM TimelineSegment
-        WHERE section_segments.min_segment = TimelineSegment.segment_idx
-        GROUP BY TimelineSegment.segment_idx
+        SELECT MAX(tl_segment_idx.taken_date)
+        FROM tl_segment_idx
+        WHERE section_segments.min_segment = tl_segment_idx.segment_idx
+        GROUP BY tl_segment_idx.segment_idx
     ) AS newest_asset_taken_date,
     (
-        SELECT MIN(TimelineSegment.asset_taken_date)
-        FROM TimelineSegment
-        WHERE section_segments.max_segment = TimelineSegment.segment_idx
-        GROUP BY TimelineSegment.segment_idx
+        SELECT MIN(tl_segment_idx.taken_date)
+        FROM tl_segment_idx
+        WHERE section_segments.max_segment = tl_segment_idx.segment_idx
+        GROUP BY tl_segment_idx.segment_idx
     ) AS oldest_asset_taken_date
     FROM section_segments;
-    "#).load(conn)?;
+    "#
+    );
+    let rows: Vec<RowTimelineSection> = sql_query(QUERY).load(conn)?;
     let sections = rows
         .into_iter()
         .map(|row| {
@@ -265,8 +272,23 @@ pub enum TimelineSegmentType {
 pub struct TimelineSegment {
     pub ty: TimelineSegmentType,
     pub sort_date: DateTime<Utc>,
-    pub assets: Vec<Asset>,
+    pub items: Vec<AssetsInTimeline>,
     pub id: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AssetsInTimeline {
+    Asset(Asset),
+    AssetSeries {
+        assets: Vec<Asset>,
+        series_id: AssetSeriesId,
+        series_date: DateTime<Utc>,
+        selection_indices: Vec<usize>,
+        /// Total size of the series, not always equal to `assets.len()`.
+        /// AssetSeries can theoretically be split up in the timeline, for instance if some
+        /// but not all Assets in it are part of a TimelineGroup.
+        total_series_size: usize,
+    },
 }
 
 #[derive(Debug, Clone, QueryableByName)]
@@ -276,21 +298,31 @@ struct RowTimelineSegmentInSection {
     pub asset: DbAsset,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::BigInt>)]
     pub timeline_group_id: Option<i64>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    pub date_day: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::BigInt>)]
+    pub series_id: Option<i64>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::BigInt>)]
+    pub series_date: Option<i64>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
+    pub series_len: Option<i32>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
+    pub is_series_selection: Option<i32>,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub sort_date: i64,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+    pub sort_date_day: Option<String>,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub segment_idx: i64,
 }
 
-#[instrument(skip(conn))]
+#[instrument(err, skip(conn))]
 pub fn get_segments_in_section(
     conn: &mut DbConn,
     segment_min: i64,
     segment_max: i64,
 ) -> Result<Vec<TimelineSegment>> {
+    const SQL_SEGMENT_IDX: &str = include_str!("timeline_segment_idx.sql");
     let mut qb = SqliteQueryBuilder::new();
+    qb.push_sql(formatcp!(r#"WITH tl_segment_idx AS ({SQL_SEGMENT_IDX})"#));
     qb.push_sql(
         r#"
     SELECT
@@ -300,15 +332,20 @@ pub fn get_segments_in_section(
     qb.push_sql(
         r#"
     ,
-    TimelineSegment.timeline_group_id as timeline_group_id,
-    TimelineSegment.date_day as date_day,
-    TimelineSegment.sort_date as sort_date,
-    TimelineSegment.segment_idx as segment_idx
+    tl_segment_idx.group_id as timeline_group_id,
+    tl_segment_idx.series_id as series_id,
+    tl_segment_idx.series_date as series_date,
+    tl_segment_idx.series_len as series_len,
+    Asset.is_series_selection as is_series_selection,
+    tl_segment_idx.sort_date as sort_date,
+    tl_segment_idx.sort_date_day as sort_date_day,
+    tl_segment_idx.segment_idx as segment_idx
     FROM
-    TimelineSegment INNER JOIN Asset ON Asset.asset_id=TimelineSegment.asset_id
+    tl_segment_idx INNER JOIN Asset ON Asset.asset_id = tl_segment_idx.asset_id
     WHERE
     ? <= segment_idx AND segment_idx <= ?
-    ORDER BY TimelineSegment.sort_date DESC, timeline_group_id DESC, Asset.taken_date DESC, TimelineSegment.asset_id DESC;
+    ORDER BY tl_segment_idx.sort_date DESC, tl_segment_idx.series_date DESC, tl_segment_idx.taken_date DESC,
+    tl_segment_idx.series_id, tl_segment_idx.group_id DESC, tl_segment_idx.asset_id;
     "#,
     );
     let query = sql_query(qb.finish())
@@ -317,109 +354,188 @@ pub fn get_segments_in_section(
     let rows: Vec<RowTimelineSegmentInSection> = query
         .load(conn)
         .wrap_err("error querying timeline segments in section")?;
-    let mut segments: Vec<TimelineSegment> = Vec::new();
-    for row in rows {
-        let asset: Asset = row.asset.try_into()?;
-        match segments.last_mut() {
-            None => {
-                assert!(row.segment_idx == segment_min);
-                let ty = match row.timeline_group_id {
-                    None => {
-                        assert!(row.date_day.is_some());
-                        TimelineSegmentType::DateRange {
-                            start: asset.base.taken_date,
-                            end: asset.base.taken_date,
+    let segments: Vec<TimelineSegment> = rows
+        .into_iter()
+        .group_by(|row| row.segment_idx)
+        .into_iter()
+        .map(|(segment_idx, segment_rows)| {
+            let mut first_row: Option<_> = None;
+            let mut items: Vec<AssetsInTimeline> = Vec::default();
+            for row in segment_rows {
+                if first_row.is_none() {
+                    first_row = Some(row.clone());
+                }
+                let asset: Asset = row.asset.try_into()?;
+                match (
+                    row.series_id,
+                    row.series_date,
+                    row.series_len,
+                    row.is_series_selection,
+                ) {
+                    (None, None, None, None) => {
+                        items.push(AssetsInTimeline::Asset(asset));
+                    }
+                    (
+                        Some(series_id),
+                        Some(series_date),
+                        Some(series_len),
+                        Some(is_series_selection),
+                    ) => {
+                        match items.last_mut() {
+                            Some(AssetsInTimeline::AssetSeries {
+                                assets: series_assets,
+                                series_id: prev_series_id,
+                                series_date: _,
+                                selection_indices,
+                                total_series_size: _,
+                            }) if series_id == prev_series_id.0 => {
+                                // still same series, add this asset to it
+                                if is_series_selection != 0 {
+                                    selection_indices.push(series_assets.len());
+                                }
+                                series_assets.push(asset);
+                            }
+                            _ => {
+                                // new series
+                                items.push(AssetsInTimeline::AssetSeries {
+                                    assets: vec![asset],
+                                    series_id: AssetSeriesId(series_id),
+                                    series_date: datetime_from_db_repr(series_date)?,
+                                    selection_indices: if is_series_selection != 0 {
+                                        vec![0]
+                                    } else {
+                                        vec![]
+                                    },
+                                    total_series_size: series_len
+                                        .try_into()
+                                        .expect("COUNT(...) is >= 0"),
+                                });
+                            }
                         }
                     }
-                    Some(group_id) => {
-                        assert!(row.date_day.is_none());
-                        let group = get_timeline_group(conn, TimelineGroupId(group_id))?;
-                        TimelineSegmentType::Group(TimelineGroupType::UserCreated(group))
+                    other => {
+                        return Err(eyre!(
+                            "illegal result row: series columns must be all null or all non-null: {:?}", other
+                        ));
                     }
-                };
-                let segment = TimelineSegment {
-                    ty,
-                    assets: vec![asset],
-                    sort_date: datetime_from_db_repr(row.sort_date)?,
-                    id: row.segment_idx,
-                };
-                segments.push(segment);
+                }
             }
-            Some(ref mut last_segment) if last_segment.id == row.segment_idx => {
-                match &mut last_segment.ty {
-                    TimelineSegmentType::Group(TimelineGroupType::UserCreated(group)) => {
-                        assert!(
-                            row.timeline_group_id
-                                .expect("column timeline_group_id must not be null")
-                                == group.id.0
-                        );
-                        // nothing to do
-                    }
-                    TimelineSegmentType::DateRange {
-                        start: _,
-                        ref mut end,
-                    } => {
-                        assert!(
-                            asset.base.taken_date <= *end,
-                            "next Asset in segment must have taken_date before the one after it"
-                        );
-                        *end = asset.base.taken_date;
-                    }
-                };
-                last_segment.assets.push(asset);
-            }
-            Some(_) => {
-                let ty = match row.timeline_group_id {
-                    None => {
-                        assert!(row.date_day.is_some());
-                        TimelineSegmentType::DateRange {
-                            start: asset.base.taken_date,
-                            end: asset.base.taken_date,
-                        }
-                    }
-                    Some(group_id) => {
-                        assert!(row.date_day.is_none());
-                        let group = get_timeline_group(conn, TimelineGroupId(group_id))?;
-                        TimelineSegmentType::Group(TimelineGroupType::UserCreated(group))
-                    }
-                };
-                let segment = TimelineSegment {
-                    ty,
-                    assets: vec![asset],
-                    sort_date: datetime_from_db_repr(row.sort_date)?,
-                    id: row.segment_idx,
-                };
-                segments.push(segment);
-            }
-        }
-    }
+            let first_row = first_row.expect(
+                "set to Some in first loop iteration, group_by does not produce empty lists",
+            );
+
+            let segment_type = match first_row.timeline_group_id {
+                None => TimelineSegmentType::DateRange {
+                    start: match items.first().expect("list can never by empty") {
+                        AssetsInTimeline::Asset(asset) => asset.base.taken_date,
+                        AssetsInTimeline::AssetSeries {
+                            assets: _,
+                            series_id: _,
+                            series_date,
+                            selection_indices: _,
+                            total_series_size: _,
+                        } => *series_date,
+                    },
+                    end: match items.last().expect("list can never by empty") {
+                        AssetsInTimeline::Asset(asset) => asset.base.taken_date,
+                        AssetsInTimeline::AssetSeries {
+                            assets: _,
+                            series_id: _,
+                            series_date,
+                            selection_indices: _,
+                            total_series_size: _,
+                        } => *series_date,
+                    },
+                },
+                Some(timeline_group_id) => {
+                    let group = get_timeline_group(conn, TimelineGroupId(timeline_group_id))?;
+                    TimelineSegmentType::Group(TimelineGroupType::UserCreated(group))
+                }
+            };
+            Ok(TimelineSegment {
+                ty: segment_type,
+                sort_date: datetime_from_db_repr(first_row.sort_date)?,
+                items,
+                id: segment_idx,
+            })
+        })
+        .try_collect()?;
     debug_assert!(
         segments
             .iter()
             .map(|segment| segment
-                .assets
+                .items
                 .iter()
                 .rev()
-                .is_sorted_by_key(|asset| asset.base.taken_date))
+                .is_sorted_by_key(|asset| match asset {
+                    AssetsInTimeline::Asset(asset) => asset.base.taken_date,
+                    // assets withinin series can have any taken_date, but the series_date should be in
+                    // sort order
+                    AssetsInTimeline::AssetSeries {
+                        assets: _,
+                        series_id: _,
+                        series_date,
+                        selection_indices: _,
+                        total_series_size: _,
+                    } => *series_date,
+                }))
             .all(|b| b),
-        "assets within TimelineSegment are not sorted by taken_date descending"
+        "assets within TimelineSegment are not sorted by taken_date/series_date descending"
     );
+    segments.iter().for_each(|segment| {
+        segment.items.iter().for_each(|asset| match asset {
+            AssetsInTimeline::Asset(_) => {}
+            AssetsInTimeline::AssetSeries {
+                assets,
+                series_id: _,
+                series_date: _,
+                selection_indices,
+                total_series_size: _,
+            } => {
+                debug_assert!(
+                    assets
+                        .iter()
+                        .rev()
+                        .is_sorted_by_key(|asset| asset.base.taken_date),
+                    "assets within AssetSeries are not sorted by taken_date descending"
+                );
+                debug_assert!(
+                    selection_indices.iter().all_unique(),
+                    "AssetSeries selection_indices has duplicates"
+                );
+                debug_assert!(
+                    selection_indices.iter().copied().all(|i| i < assets.len()),
+                    "AssetSeries selection_indices out of range"
+                );
+            }
+        });
+    });
     debug_assert!(
         segments
             .iter()
-            .map(|segment| !segment.assets.is_empty())
+            .map(|segment| !segment.items.is_empty())
             .all(|b| b),
         "TimelineSegment assets must not be empty"
     );
     debug_assert!(
         segments
             .iter()
-            .map(|segment| segment
-                .assets
+            .map(|segment| match segment
+                .items
                 .first()
                 .expect("segment assets must not be empty")
-                .base
-                .taken_date
+            {
+                AssetsInTimeline::Asset(asset) => asset,
+                AssetsInTimeline::AssetSeries {
+                    assets,
+                    series_id: _,
+                    series_date: _,
+                    selection_indices: _,
+                    total_series_size: _,
+                } => assets.first().expect("can not be empty"),
+            }
+            .base
+            .taken_date
                 == segment.sort_date)
             .all(|b| b),
         "TimelineSegment sort_date is not taken_date of first (most recent) asset"

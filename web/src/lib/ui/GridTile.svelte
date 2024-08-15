@@ -109,7 +109,7 @@
       class:rounded-xl={isSelected}
       class:scale-[0.85]={isSelected}
     ></div>
-    {#if asset.type === 'video'}
+    {#if asset.assetType === 'video'}
       {@const icon = asset.hasDash ? mdiPlayCircleOutline : mdiProgressWrench}
       <svg
         class="absolute right-0 mr-1 mt-1 md:mr-2 md:mt-2"

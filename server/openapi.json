@@ -796,7 +796,7 @@
           "id",
           "assetRootId",
           "pathInRoot",
-          "type",
+          "assetType",
           "width",
           "height",
           "addedAt",
@@ -810,6 +810,9 @@
           },
           "assetRootId": {
             "$ref": "#/components/schemas/AssetRootDirId"
+          },
+          "assetType": {
+            "$ref": "#/components/schemas/AssetType"
           },
           "height": {
             "type": "integer",
@@ -832,9 +835,6 @@
           "takenDate": {
             "type": "string",
             "format": "date-time"
-          },
-          "type": {
-            "$ref": "#/components/schemas/AssetType"
           },
           "width": {
             "type": "integer",

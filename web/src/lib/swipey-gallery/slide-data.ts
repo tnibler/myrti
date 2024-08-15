@@ -2,14 +2,14 @@ import type { AssetWithSpe, ImageRepresentation } from '@lib/apitypes';
 import type { Size } from './util_types';
 
 export type ImageSlideData = {
-  type: 'image';
+  assetType: 'image';
   src: string;
   placeholderSrc: string;
   size: Size;
 };
 
 export type VideoSlideData = {
-  type: 'video';
+  assetType: 'video';
   src: string;
   placeholderSrc: string;
   size: Size;
@@ -21,7 +21,7 @@ export type VideoSlideData = {
 export type SlideData = { asset: AssetWithSpe } & (ImageSlideData | VideoSlideData);
 
 export function slideForAsset(asset: AssetWithSpe): SlideData {
-  if (asset.type === 'image') {
+  if (asset.assetType === 'image') {
     const acceptedFormats = ['image/jpeg', 'image/avif', 'image/webp', 'image/png', 'image/gif'];
     let imageSrc = '/api/asset/original/' + asset.id;
     if (!acceptedFormats.some((f) => asset.mimeType === f)) {
@@ -32,7 +32,7 @@ export function slideForAsset(asset: AssetWithSpe): SlideData {
     }
     return {
       asset,
-      type: 'image',
+      assetType: 'image',
       size: {
         width: asset.width,
         height: asset.height,
@@ -52,7 +52,7 @@ export function slideForAsset(asset: AssetWithSpe): SlideData {
         };
     return {
       asset,
-      type: 'video',
+      assetType: 'video',
       src: '/api/asset/original/' + asset.id,
       placeholderSrc: '/api/asset/thumbnail/' + asset.id + '/large/avif',
       size: {

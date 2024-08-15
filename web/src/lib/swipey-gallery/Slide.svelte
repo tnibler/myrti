@@ -94,16 +94,16 @@
   );
   /** Wait this long after the real content is ready to hide the placeholder to reveal the <img> underneath.
 	Without this, there is a flicker on some devices/browsers. */
-  const PLACEHOLDER_HIDE_DELAY = data.type === 'image' ? 450 : 0;
+  const PLACEHOLDER_HIDE_DELAY = data.assetType === 'image' ? 450 : 0;
   let zoomWrapperDiv: HTMLDivElement | null = $state(null);
 
   // for some reason the slideImage/slideVideo bindings don't get unset when the bound component
   // is removed, so we do it manually here
   $effect(() => {
-    data.type;
+    data.assetType;
     untrack(() => {
-      slideImage = data.type === 'image' ? slideImage : null;
-      slideVideo = data.type === 'video' ? slideVideo : null;
+      slideImage = data.assetType === 'image' ? slideImage : null;
+      slideVideo = data.tssetType === 'video' ? slideVideo : null;
     });
   });
 
@@ -387,8 +387,8 @@
 	transform: translate3d({pan.x + centerX}px, {pan.y +
     centerY}px, 0) scale3d({cssTransformZoom}, {cssTransformZoom}, 1);"
 >
-  {#key data.type}
-    {#if data.type === 'image' && showContent}
+  {#key data.assetType}
+    {#if data.assetType === 'image' && showContent}
       <SlideImage
         bind:this={slideImage}
         size={{ width, height }}
@@ -396,7 +396,7 @@
         isVisible={isContentVisible}
         onContentReady={onSlideContentReady}
       />
-    {:else if data.type === 'video' && showContent}
+    {:else if data.assetType === 'video' && showContent}
       <SlideVideo
         bind:this={slideVideo}
         size={{ width, height }}

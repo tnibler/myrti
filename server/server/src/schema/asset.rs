@@ -22,7 +22,7 @@ pub struct Asset {
     pub id: AssetId,
     pub asset_root_id: AssetRootDirId,
     pub path_in_root: String,
-    #[serde(rename = "type")]
+    #[serde(rename = "assetType")]
     pub ty: AssetType,
     pub width: i32,
     pub height: i32,

@@ -23,13 +23,13 @@ const Asset = z
   .object({
     addedAt: z.string().datetime({ offset: true }),
     assetRootId: AssetRootDirId,
+    assetType: AssetType,
     height: z.number().int(),
     id: AssetId,
     mimeType: z.string(),
     pathInRoot: z.string(),
     rotationCorrection: z.number().int().nullish(),
     takenDate: z.string().datetime({ offset: true }),
-    type: AssetType,
     width: z.number().int(),
   })
   .passthrough();

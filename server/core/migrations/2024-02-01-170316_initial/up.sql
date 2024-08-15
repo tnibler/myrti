@@ -31,6 +31,11 @@ CREATE TABLE Asset (
   rotation_correction INTEGER,
   thumb_hash BLOB,
 
+  stack_id INTEGER,
+  is_stack_selection INTEGER,
+  FOREIGN KEY (stack_id) REFERENCES PhotoStack(stack_id),
+  CHECK((stack_id IS NULL) = (is_stack_selection IS NULL) AND is_stack_selection IN (0, 1)),
+
   -- Metadata
   -- exiftool -j -g -c
   exiftool_output BLOB NOT NULL,
@@ -178,6 +183,11 @@ CREATE TABLE AlbumItem (
 
 CREATE INDEX album_id_index ON AlbumItem(album_id);
 
+CREATE TABLE PhotoStack (
+  stack_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  is_auto INTEGER NOT NULL CHECK (is_auto IN (0, 1))
+) STRICT;
+
 CREATE TABLE TimelineGroup (
   timeline_group_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   name TEXT,
@@ -274,4 +284,10 @@ CREATE TABLE FailedShakaPackager (
   -- milliseconds since UNIX epoch
   date INTEGER NOT NULL,
   FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
+);
+
+CREATE TABLE DeletedAutoPhotoStack (
+  asset_id INTEGER NOT NULL,
+  stack_id INTEGER NOT NULL, -- intentionally not a foreign key
+  FOREIGN KEY asset_id REFERENCES Asset(asset_id) ON DELETE CASCADE,
 );

@@ -7,6 +7,7 @@ DROP TABLE AudioRepresentation;
 DROP TABLE ImageRepresentation;
 DROP TABLE Album;
 DROP TABLE AlbumItem;
+DROP TABLE PhotoStack;
 DROP TABLE TimelineGroup;
 DROP TABLE TimelineGroupEntry;
 
@@ -16,6 +17,7 @@ DROP TABLE AcceptableAudioCodec;
 DROP TABLE FailedThumbnailJob;
 DROP TABLE FailedFFmpeg;
 DROP TABLE FailedShakaPackager;
+DROP TABLE DeletedAutoPhotoStack
 
 DROP VIEW TimelineSegment;
 

@@ -24,12 +24,14 @@
     mdiCheckboxMarkedCircle,
     mdiCircleOutline,
   } from '@mdi/js';
+  import { LayersIcon } from 'lucide-svelte';
   import { fade } from 'svelte/transition';
 
   type GridTileProps = {
     asset: Asset;
     box: TileBox;
     selectState: SelectState;
+    showStackIcon: boolean | undefined;
     onSelectToggled: () => void;
     onAssetClick: () => void;
     imgEl: HTMLImageElement;
@@ -39,6 +41,7 @@
     asset,
     box,
     selectState,
+    showStackIcon,
     onSelectToggled,
     onAssetClick,
     imgEl = $bindable(),
@@ -120,6 +123,9 @@
       >
         <path d={icon} fill="#fff" />
       </svg>
+    {/if}
+    {#if showStackIcon}
+      <LayersIcon class="absolute right-0 mr-1 mt-1 md:mr-2 md:mt-2" size="24" color="white" />
     {/if}
     <div class="absolute z-20 h-full w-full">
       {#if selectState.state === 'select' || (selectState.state === 'default' && isMouseOver)}

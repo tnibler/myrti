@@ -1,12 +1,12 @@
-import type { AssetWithSpe } from '@api/myrti';
 import type { Dayjs } from 'dayjs';
-import type { ItemRange, TimelineGridItem, TimelineOptions, Segment } from './timeline.svelte';
+import type { TimelineGridItem, TimelineOptions } from './timeline.svelte';
 import createJustifiedLayout from 'justified-layout';
+import type { ItemRange, TimelineSegment } from './timeline-types';
 
 type Box = { top: number; left: number; width: number; height: number };
 
 export function layoutSegments(
-  segments: Segment[],
+  segments: TimelineSegment[],
   previousSectionEndDate: Dayjs | null,
   baseTop: number,
   baseAssetIndex: number,
@@ -24,9 +24,10 @@ export function layoutSegments(
       segmentItemRanges: [],
     };
   }
+  // First, merge any segments (too short to fill a line) and compute their layouts
   const mergedSegments: {
     segments: {
-      segment: Segment;
+      segment: TimelineSegment;
       /** Layout boxes for this segment's items starting from top=0, but including inter-segment margins */
       boxes: Box[];
     }[];
@@ -34,18 +35,22 @@ export function layoutSegments(
     height: number;
   }[] = [];
   type MergeCandidate = {
-    segments: Segment[];
+    segments: TimelineSegment[];
     width: number;
   };
+  /** save last segment if it might be merged with the next one */
   let candidateToMergeWith: MergeCandidate | null = null;
   const interMergedSegmentMargin = 20;
 
+  /** Utility function: next segment was not merged with previously saved merge candidate,
+   * so compute layout for saved candidate and add to result array */
   const layoutAndPushMergeCandidate = (candidateToMergeWith: MergeCandidate) => {
     const mergedRow = [];
     let startLeft = 0;
     for (const segment of candidateToMergeWith.segments) {
       const boxes: Box[] = [];
-      for (const asset of segment.assets) {
+      for (const item of segment.items) {
+        const asset = item.itemType === 'asset' ? item : item.series.assets[item.coverIndex];
         const assetSize =
           (asset.rotationCorrection ?? 0) % 180 === 0
             ? { width: asset.width, height: asset.height }
@@ -73,7 +78,9 @@ export function layoutSegments(
 
   for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
     const segment = segments[segmentIndex];
-    const assetSizes = segment.assets.map((asset) => {
+    // swap width/heigth if rotation correction applies
+    const assetSizes = segment.items.map((item) => {
+      const asset = item.itemType === 'asset' ? item : item.series.assets[item.coverIndex];
       if (asset.rotationCorrection && asset.rotationCorrection % 180 != 0) {
         return {
           width: asset.height,
@@ -92,19 +99,16 @@ export function layoutSegments(
     //  - current and previous are of same month and year
     const segmentWidth =
       assetSizes
+        // scale down to fit targetRowHeight
         .map((sz) => sz.width * (opts.targetRowHeight / sz.height))
+        // sum up to total width
         .reduce((acc, n) => acc + n, 0) +
+      // with spacing between boxes
       (assetSizes.length - 1) * opts.boxSpacing;
     const canMergeWithPrevious: boolean = (() => {
       if (segmentIndex === 0 || candidateToMergeWith === null) {
         return false;
       }
-      // if (
-      //   segment.type === 'group' &&
-      //   segment.start.startOf('month') !== segment.end.startOf('month')
-      // ) {
-      //   return false;
-      // }
       if (
         segment.type === 'creatingGroup' ||
         candidateToMergeWith?.segments.at(-1)?.type === 'creatingGroup'
@@ -165,7 +169,6 @@ export function layoutSegments(
   const minorTitleHeight = 10;
   let lastMajorTitleDate: Dayjs | null = previousSectionEndDate?.startOf('month') ?? null;
   let minorTitleRowIdx = 0;
-  let startAssetIndex = baseAssetIndex;
   for (const { segments, height } of mergedSegments) {
     let showMinorTitles = true;
     if (segments[0].segment.type === 'creatingGroup') {
@@ -221,21 +224,37 @@ export function layoutSegments(
       }
       items.push(
         ...boxes.map((box, idxInSegment) => {
-          const asset = segment.assets[idxInSegment];
-          const item: TimelineGridItem & { type: 'asset' } = {
-            type: 'asset',
-            top: box.top + startTop + minorTitleHeight,
-            left: box.left,
-            width: box.width,
-            height: box.height,
-            key: 'asset' + asset.id,
-            asset,
-            assetIndex: startAssetIndex + idxInSegment,
-          };
-          return item;
+          const item = segment.items[idxInSegment];
+          if (item.itemType === 'asset') {
+            const gridItem: TimelineGridItem & { type: 'asset' } = {
+              type: 'asset',
+              top: box.top + startTop + minorTitleHeight,
+              left: box.left,
+              width: box.width,
+              height: box.height,
+              key: 'asset' + item.id,
+              asset: item,
+              assetIndex: item.assetIndex,
+            };
+            return gridItem;
+          } else {
+            const coverAsset = item.series.assets[item.coverIndex];
+            const gridItem: TimelineGridItem & { type: 'photoStack' } = {
+              type: 'photoStack',
+              top: box.top + startTop + minorTitleHeight,
+              left: box.left,
+              width: box.width,
+              height: box.height,
+              key: 'asset' + coverAsset.id, // no thought behind this
+              series: item.series,
+              coverIndex: item.coverIndex,
+              numAssets: item.series.assets.length,
+              firstAssetIndex: item.firstAssetIndex,
+            };
+            return gridItem;
+          }
         }),
       );
-      startAssetIndex += segment.assets.length;
       const endItemIndex = items.length;
       segmentItemRanges.push({ startIdx: startItemIndex, endIdx: endItemIndex });
     }

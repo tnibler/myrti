@@ -242,6 +242,14 @@ export const getAssetDetailsResponse = zod.object({
   exiftoolOutput: zod.any(),
 });
 
+export const createSeriesBody = zod.object({
+  assetIds: zod.array(zod.string()),
+});
+
+export const createSeriesResponse = zod.object({
+  seriesId: zod.string(),
+});
+
 export const getTimelineSectionsResponse = zod.object({
   sections: zod.array(
     zod.object({
@@ -257,6 +265,9 @@ export const getTimelineSectionsResponse = zod.object({
 export const getTimelineSegmentsParams = zod.object({
   id: zod.string(),
 });
+
+export const getTimelineSegmentsResponseSegmentsItemItemsItemSelectionIndicesItemMin = 0;
+export const getTimelineSegmentsResponseSegmentsItemItemsItemTotalSizeMin = 0;
 
 export const getTimelineSegmentsResponse = zod.object({
   segments: zod.array(
@@ -275,7 +286,7 @@ export const getTimelineSegmentsResponse = zod.object({
       )
       .and(
         zod.object({
-          assets: zod.array(
+          items: zod.array(
             zod
               .object({
                 addedAt: zod.string().datetime(),
@@ -308,7 +319,61 @@ export const getTimelineSegmentsResponse = zod.object({
                     }),
                   ),
               )
-              .and(zod.object({})),
+              .and(zod.object({}))
+              .and(
+                zod.object({
+                  itemType: zod.enum(['asset']),
+                }),
+              )
+              .or(
+                zod.object({
+                  assets: zod.array(
+                    zod
+                      .object({
+                        addedAt: zod.string().datetime(),
+                        assetRootId: zod.string(),
+                        assetType: zod.enum(['image', 'video']),
+                        height: zod.number(),
+                        id: zod.string(),
+                        mimeType: zod.string(),
+                        pathInRoot: zod.string(),
+                        rotationCorrection: zod.number().nullish(),
+                        takenDate: zod.string().datetime(),
+                        width: zod.number(),
+                      })
+                      .and(
+                        zod
+                          .object({
+                            representations: zod.array(
+                              zod.object({
+                                format: zod.string(),
+                                height: zod.number(),
+                                id: zod.string(),
+                                size: zod.number(),
+                                width: zod.number(),
+                              }),
+                            ),
+                          })
+                          .or(
+                            zod.object({
+                              hasDash: zod.boolean(),
+                            }),
+                          ),
+                      )
+                      .and(zod.object({})),
+                  ),
+                  itemType: zod.enum(['photoSeries']),
+                  selectionIndices: zod.array(
+                    zod
+                      .number()
+                      .min(getTimelineSegmentsResponseSegmentsItemItemsItemSelectionIndicesItemMin),
+                  ),
+                  seriesId: zod.string(),
+                  totalSize: zod
+                    .number()
+                    .min(getTimelineSegmentsResponseSegmentsItemItemsItemTotalSizeMin),
+                }),
+              ),
           ),
           sortDate: zod.string().datetime(),
         }),

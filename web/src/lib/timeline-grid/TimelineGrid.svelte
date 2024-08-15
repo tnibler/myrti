@@ -55,6 +55,7 @@
     // null fields accumulate in thumbnailImgEls, so clear them periodically
     if (Object.keys(thumbnailImgEls).length > visibleItems.length * 5) {
       Object.keys(thumbnailImgEls)
+        .map(parseInt)
         .filter((k) => thumbnailImgEls[k] === null)
         .forEach((k) => delete thumbnailImgEls[k]);
     }
@@ -207,6 +208,26 @@
           }}
           selectState={getSelectState(item.asset.id)}
           bind:imgEl={thumbnailImgEls[item.assetIndex]}
+        />
+      {:else if item.type === 'photoStack'}
+        <GridTile
+          className={gridItemTransitionClass}
+          asset={item.series.assets[item.coverIndex]}
+          box={item}
+          showStackIcon
+          onAssetClick={() => {
+            onAssetClick(item.firstAssetIndex);
+          }}
+          onSelectToggled={() => {
+            // rough and ugly
+            const coverAssetId = item.series.assets[item.coverIndex].id;
+            const isSelected = timeline.selectedAssets.has(coverAssetId);
+            for (const asset of item.series.assets) {
+              timeline.setAssetSelected(asset.id, !isSelected);
+            }
+          }}
+          selectState={getSelectState(item.series.assets[item.coverIndex].id)}
+          bind:imgEl={thumbnailImgEls[item.firstAssetIndex]}
         />
       {:else if item.type === 'segmentTitle'}
         <SegmentTitle

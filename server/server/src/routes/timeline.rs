@@ -16,7 +16,7 @@ use crate::{
     schema::{
         asset::{AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
         timeline::{TimelineChunk, TimelineGroup, TimelineGroupType},
-        AssetId, TimelineGroupId,
+        AssetId, AssetSeriesId, TimelineGroupId,
     },
 };
 use core::{
@@ -26,7 +26,7 @@ use core::{
         repository::{
             self,
             db::DbPool,
-            timeline::{TimelineElement, TimelineSegmentType},
+            timeline::{AssetsInTimeline, TimelineElement, TimelineSegmentType},
         },
     },
 };
@@ -184,7 +184,21 @@ pub struct TimelineSegment {
     #[serde(flatten)]
     pub segment: SegmentType,
     pub sort_date: DateTime<Utc>,
-    pub assets: Vec<AssetWithSpe>,
+    pub items: Vec<TimelineItem>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase", tag = "itemType")]
+pub enum TimelineItem {
+    Asset(AssetWithSpe),
+    #[serde(rename_all = "camelCase")]
+    AssetSeries {
+        series_id: AssetSeriesId,
+        /// assets[0] is most recent, last is oldest asset
+        assets: Vec<AssetWithSpe>,
+        selection_indices: Vec<usize>,
+        total_size: usize,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, IntoParams)]
@@ -226,15 +240,37 @@ pub async fn get_timeline_segments(
     .await??
     .into_iter()
     .map(|segment| async move {
-        // convert model::Asset to schema::AssetWithSpe, populating the representations field
-        // with the list of available image representions if the original format is not in a
-        // (hardcoded) list of acceptable formats.
-        // This does some async stream stuff which is probably unnecessary and could just as
-        // well run sequentially, there was no thought put into performace at the time of writing.
-        let assets_with_reprs =
-            assets_with_alt_reprs_if_required(pool.clone(), segment.assets).await?;
+        let mut timeline_items = Vec::default();
+        for item in segment.items {
+            match item {
+                AssetsInTimeline::Asset(asset) => {
+                    let asset_with_reprs = asset_with_reprs(pool.clone(), asset).await?;
+                    timeline_items.push(TimelineItem::Asset(asset_with_reprs));
+                }
+                AssetsInTimeline::AssetSeries {
+                    assets,
+                    series_id,
+                    series_date: _,
+                    selection_indices,
+                    total_series_size,
+                } => {
+                    let assets_with_reprs: Vec<AssetWithSpe> = assets
+                        .into_iter()
+                        .map(|asset| asset_with_reprs(pool.clone(), asset))
+                        .collect::<FuturesOrdered<_>>()
+                        .try_collect()
+                        .await?;
+                    timeline_items.push(TimelineItem::AssetSeries {
+                        series_id: series_id.into(),
+                        assets: assets_with_reprs,
+                        selection_indices,
+                        total_size: total_series_size,
+                    });
+                }
+            }
+        }
         Ok(TimelineSegment {
-            assets: assets_with_reprs,
+            items: timeline_items,
             sort_date: segment.sort_date,
             segment: match segment.ty {
                 TimelineSegmentType::Group(
@@ -293,19 +329,6 @@ async fn asset_with_reprs(pool: DbPool, asset: model::Asset) -> eyre::Result<Ass
         asset: asset.into(),
         spe,
     })
-}
-
-#[tracing::instrument(skip(pool))]
-async fn assets_with_alt_reprs_if_required(
-    pool: DbPool,
-    assets: Vec<model::Asset>,
-) -> Result<Vec<AssetWithSpe>> {
-    assets
-        .into_iter()
-        .map(|asset| async { asset_with_reprs(pool.clone(), asset).await })
-        .collect::<FuturesOrdered<_>>()
-        .try_collect::<Vec<_>>()
-        .await
 }
 
 async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<AssetWithSpe> {

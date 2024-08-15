@@ -223,6 +223,7 @@ async fn main() -> Result<()> {
         .nest("/api/timeline", routes::timeline::router())
         .nest("/api/albums", routes::album::router())
         .nest("/api/assets", routes::asset::router())
+        .nest("/api/photoSeries", routes::photo_series::router())
         .nest("/api/assetRoots", routes::asset_roots::router())
         .nest("/api/dash", routes::dash::router())
         .nest("/api/timelinegroups", routes::timeline_group::router())

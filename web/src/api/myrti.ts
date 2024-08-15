@@ -22,7 +22,7 @@ export interface Video {
 }
 
 export type TimelineSegmentAllOf = {
-  assets: AssetWithSpe[];
+  items: TimelineItem[];
   sortDate: string;
 };
 
@@ -46,6 +46,40 @@ export interface TimelineSectionsResponse {
   sections: TimelineSection[];
 }
 
+export type TimelineItemOneOfFourItemType =
+  (typeof TimelineItemOneOfFourItemType)[keyof typeof TimelineItemOneOfFourItemType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const TimelineItemOneOfFourItemType = {
+  photoSeries: 'photoSeries',
+} as const;
+
+export type TimelineItemOneOfFour = {
+  /** assets[0] is most recent, last is oldest asset */
+  assets: AssetWithSpe[];
+  itemType: TimelineItemOneOfFourItemType;
+  selectionIndices: number[];
+  seriesId: AssetSeriesId;
+  /** @minimum 0 */
+  totalSize: number;
+};
+
+export type TimelineItem = TimelineItemOneOf | TimelineItemOneOfFour;
+
+export type TimelineItemOneOfAllOfItemType =
+  (typeof TimelineItemOneOfAllOfItemType)[keyof typeof TimelineItemOneOfAllOfItemType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const TimelineItemOneOfAllOfItemType = {
+  asset: 'asset',
+} as const;
+
+export type TimelineItemOneOfAllOf = {
+  itemType: TimelineItemOneOfAllOfItemType;
+};
+
+export type TimelineItemOneOf = AssetWithSpe & TimelineItemOneOfAllOf;
+
 export type TimelineGroupTypeOneOfThreeType =
   (typeof TimelineGroupTypeOneOfThreeType)[keyof typeof TimelineGroupTypeOneOfThreeType];
 
@@ -62,6 +96,8 @@ export type TimelineGroupTypeOneOfThree = {
   type: TimelineGroupTypeOneOfThreeType;
 };
 
+export type TimelineGroupType = TimelineGroupTypeOneOf | TimelineGroupTypeOneOfThree;
+
 export type TimelineGroupTypeOneOfType =
   (typeof TimelineGroupTypeOneOfType)[keyof typeof TimelineGroupTypeOneOfType];
 
@@ -75,9 +111,13 @@ export type TimelineGroupTypeOneOf = {
   type: TimelineGroupTypeOneOfType;
 };
 
-export type TimelineGroupType = TimelineGroupTypeOneOf | TimelineGroupTypeOneOfThree;
-
 export type TimelineGroupId = string;
+
+export type TimelineGroupAllOf = {
+  assets: AssetWithSpe[];
+};
+
+export type TimelineGroup = TimelineGroupType & TimelineGroupAllOf;
 
 /**
  * Response for a request for the next part of the timeline to display
@@ -127,8 +167,6 @@ export type SegmentTypeOneOfThree = {
   type: SegmentTypeOneOfThreeType;
 };
 
-export type SegmentType = SegmentTypeOneOf | SegmentTypeOneOfThree;
-
 export type SegmentTypeOneOfType = (typeof SegmentTypeOneOfType)[keyof typeof SegmentTypeOneOfType];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
@@ -141,6 +179,10 @@ export type SegmentTypeOneOf = {
   start: string;
   type: SegmentTypeOneOfType;
 };
+
+export type SegmentType = SegmentTypeOneOf | SegmentTypeOneOfThree;
+
+export type AssetSeriesId = string;
 
 export type ImageRepresentationId = string;
 
@@ -178,6 +220,15 @@ export interface CreateTimelineGroupResponse {
   timelineGroupId: TimelineGroupId;
 }
 
+export interface CreateTimelineGroupRequest {
+  assets: AssetId[];
+  name: string;
+}
+
+export interface CreateSeriesResponse {
+  seriesId: AssetSeriesId;
+}
+
 export interface CreateAlbumResponse {
   albumId: number;
 }
@@ -196,19 +247,12 @@ export type AssetSpe = Image | Video;
 
 export type AssetWithSpe = Asset & AssetSpe & AssetWithSpeAllOf;
 
-export type TimelineGroupAllOf = {
-  assets: AssetWithSpe[];
-};
-
-export type TimelineGroup = TimelineGroupType & TimelineGroupAllOf;
-
 export type AssetRootDirId = string;
 
 export type AssetId = string;
 
-export interface CreateTimelineGroupRequest {
-  assets: AssetId[];
-  name: string;
+export interface CreateSeriesRequest {
+  assetIds: AssetId[];
 }
 
 export interface CreateAlbumRequest {
@@ -419,6 +463,13 @@ export const getAssetDetails = <TData = AxiosResponse<AssetDetailsResponse>>(
   return axios.get(`/api/assets/${id}/details`, options);
 };
 
+export const createSeries = <TData = AxiosResponse<CreateSeriesResponse>>(
+  createSeriesRequest: CreateSeriesRequest,
+  options?: AxiosRequestConfig,
+): Promise<TData> => {
+  return axios.post(`/api/photoSeries`, createSeriesRequest, options);
+};
+
 export const getTimelineSections = <TData = AxiosResponse<TimelineSectionsResponse>>(
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
@@ -461,6 +512,7 @@ export type GetThumbnailResult = AxiosResponse<string>;
 export type GetTimelineResult = AxiosResponse<TimelineChunk>;
 export type GetAssetResult = AxiosResponse<Asset>;
 export type GetAssetDetailsResult = AxiosResponse<AssetDetailsResponse>;
+export type CreateSeriesResult = AxiosResponse<CreateSeriesResponse>;
 export type GetTimelineSectionsResult = AxiosResponse<TimelineSectionsResponse>;
 export type GetTimelineSegmentsResult = AxiosResponse<TimelineSegmentsResponse>;
 export type CreateTimelineGroupResult = AxiosResponse<CreateTimelineGroupResponse>;

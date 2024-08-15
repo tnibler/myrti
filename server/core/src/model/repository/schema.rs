@@ -36,6 +36,8 @@ diesel::table! {
         height -> Integer,
         rotation_correction -> Nullable<Integer>,
         thumb_hash -> Nullable<Blob>,
+        series_id -> Nullable<BigInt>,
+        is_series_selection -> Nullable<Integer>,
         exiftool_output -> Blob,
         gps_latitude -> Nullable<BigInt>,
         gps_longitude -> Nullable<BigInt>,
@@ -141,6 +143,21 @@ diesel::table! {
 }
 
 diesel::table! {
+    AssetSeries (series_id) {
+        series_id -> BigInt,
+        is_auto -> Integer,
+    }
+}
+
+diesel::table! {
+    DeletedAutoAssetSeries (id) {
+        id -> BigInt,
+        asset_id -> BigInt,
+        series_id -> BigInt,
+    }
+}
+
+diesel::table! {
     TimelineGroup (timeline_group_id) {
         timeline_group_id -> BigInt,
         name -> Nullable<Text>,
@@ -187,6 +204,7 @@ diesel::joinable!(AlbumItem -> Album (album_id));
 diesel::joinable!(AlbumItem -> Asset (asset_id));
 diesel::joinable!(AlbumThumbnail -> Album (album_id));
 diesel::joinable!(Asset -> AssetRootDir (root_dir_id));
+diesel::joinable!(Asset -> AssetSeries (series_id));
 diesel::joinable!(AssetThumbnail -> Asset (asset_id));
 diesel::joinable!(AudioRepresentation -> Asset (asset_id));
 diesel::joinable!(DuplicateAsset -> Asset (asset_id));
@@ -195,6 +213,7 @@ diesel::joinable!(ImageRepresentation -> Asset (asset_id));
 diesel::joinable!(TimelineGroupItem -> Asset (asset_id));
 diesel::joinable!(TimelineGroupItem -> TimelineGroup (group_id));
 diesel::joinable!(VideoRepresentation -> Asset (asset_id));
+diesel::joinable!(DeletedAutoAssetSeries -> Asset (asset_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     Album,
@@ -212,5 +231,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     ImageRepresentation,
     TimelineGroup,
     TimelineGroupItem,
+    AssetSeries,
     VideoRepresentation,
+    DeletedAutoAssetSeries
 );

@@ -165,7 +165,7 @@ export function createTimeline(
           .filter((s) => s.segments !== null && s.items != null)
           .map((s) =>
             s
-              .segments!.filter((seg) => seg.type === 'userGroup')
+              .segments!.filter((seg) => seg.type === 'group')
               .map((seg) => seg.clickArea)
               .filter((area) => area !== null),
           )
@@ -220,10 +220,8 @@ export function createTimeline(
 
     const _sections: TimelineSection[] = [];
     let nextSectionTop = 0;
-    let totalHeight = 0;
     for (const section of sectionData) {
       const height = estimateHeight(section, viewport.width, opts.targetRowHeight);
-      totalHeight += height;
       _sections.push({
         data: section,
         height,
@@ -354,7 +352,7 @@ export function createTimeline(
       // item indices relative to this section's startIdx
       segment.itemRange = segmentItemRanges[i];
       // set group's click area
-      if (segment.type === 'userGroup') {
+      if (segment.type === 'group') {
         let currentTop = Infinity;
         let currentBottom = -Infinity;
         for (let i = segment.itemRange.startIdx; i < segment.itemRange.endIdx; i += 1) {
@@ -365,7 +363,7 @@ export function createTimeline(
         segment.clickArea = {
           top: currentTop,
           height: currentBottom - currentTop,
-          groupId: segment.data.id,
+          groupId: segment.groupId,
         };
       }
     }

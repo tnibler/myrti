@@ -23,11 +23,11 @@ export type SlideData = { asset: AssetWithSpe } & (ImageSlideData | VideoSlideDa
 export function slideForAsset(asset: AssetWithSpe): SlideData {
   if (asset.assetType === 'image') {
     const acceptedFormats = ['image/jpeg', 'image/avif', 'image/webp', 'image/png', 'image/gif'];
-    let imageSrc = '/api/asset/original/' + asset.id;
+    let imageSrc = '/api/assets/original/' + asset.id;
     if (!acceptedFormats.some((f) => asset.mimeType === f)) {
       const reprs = asset.representations as ImageRepresentation[];
       if (reprs.length > 0) {
-        imageSrc = '/api/asset/repr/' + asset.id + '/' + reprs[0].id;
+        imageSrc = '/api/assets/repr/' + asset.id + '/' + reprs[0].id;
       }
     }
     return {
@@ -38,7 +38,7 @@ export function slideForAsset(asset: AssetWithSpe): SlideData {
         height: asset.height,
       },
       src: imageSrc,
-      placeholderSrc: '/api/asset/thumbnail/' + asset.id + '/large/avif',
+      placeholderSrc: '/api/assets/thumbnail/' + asset.id + '/large/avif',
     };
   } else {
     const videoSource = asset.hasDash
@@ -53,8 +53,8 @@ export function slideForAsset(asset: AssetWithSpe): SlideData {
     return {
       asset,
       assetType: 'video',
-      src: '/api/asset/original/' + asset.id,
-      placeholderSrc: '/api/asset/thumbnail/' + asset.id + '/large/avif',
+      src: '/api/assets/original/' + asset.id,
+      placeholderSrc: '/api/assets/thumbnail/' + asset.id + '/large/avif',
       size: {
         width: asset.width,
         height: asset.height,

@@ -41,7 +41,7 @@ pub struct CreateTimelineGroupResponse {
 
 #[utoipa::path(
     post,
-    path = "/api/timelinegroup",
+    path = "/api/timelinegroups",
     request_body = CreateTimelineGroupRequest,
     responses((status = 200, body=CreateTimelineGroupResponse)),
 )]
@@ -94,7 +94,7 @@ pub struct AddToTimelineGroupRequest {
 
 #[utoipa::path(
     put,
-    path = "/api/timelinegroup",
+    path = "/api/timelinegroups",
     request_body = AddToTimelineGroupRequest,
     responses((status = 200)),
 )]

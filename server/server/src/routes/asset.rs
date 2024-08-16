@@ -47,10 +47,10 @@ pub fn router() -> Router<SharedState> {
         .route("/:id/rotation", post(set_asset_rotation_correction))
 }
 
-#[utoipa::path(get, path = "/api/asset",
-responses(
-    (status = 200, body=[Asset])
-        ),
+#[utoipa::path(get, path = "/api/assets",
+    responses(
+        (status = 200, body=[Asset])
+    ),
 )]
 #[tracing::instrument(fields(request = true), skip(app_state))]
 async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<Vec<Asset>>> {
@@ -63,16 +63,15 @@ async fn get_all_assets(State(app_state): State<SharedState>) -> ApiResult<Json<
     Ok(Json(assets))
 }
 
-#[utoipa::path(get, path = "/api/asset/{id}",
-responses(
-    (status = 200, body = Asset),
-    (status = NOT_FOUND, description = "Asset not found")
-),
+#[utoipa::path(get, path = "/api/assets/{id}",
+    responses(
+        (status = 200, body = Asset),
+        (status = NOT_FOUND, description = "Asset not found")
+    ),
     params(
         ("id" = String, Path, description = "AssetId")
     )
-)
-]
+)]
 async fn get_asset(
     Path(_id): Path<String>,
     State(_app_state): State<SharedState>,
@@ -86,16 +85,15 @@ pub struct AssetDetailsResponse {
     pub exiftool_output: serde_json::Value,
 }
 
-#[utoipa::path(get, path = "/api/asset/{id}/details",
-responses(
-    (status = 200, body = AssetDetailsResponse),
-    (status = NOT_FOUND, description = "Asset not found")
-),
+#[utoipa::path(get, path = "/api/assets/{id}/details",
+    responses(
+        (status = 200, body = AssetDetailsResponse),
+        (status = NOT_FOUND, description = "Asset not found")
+    ),
     params(
         ("id" = String, Path, description = "AssetId")
     )
-)
-]
+)]
 async fn get_asset_details(
     Path(asset_id): Path<AssetId>,
     State(app_state): State<SharedState>,
@@ -136,10 +134,10 @@ pub enum ThumbnailFormat {
     Webp,
 }
 
-#[utoipa::path(get, path = "/api/asset/thumbnail/{id}/{size}/{format}",
-responses(
-    (status = 200, body=String, content_type = "application/octet")
-        ),
+#[utoipa::path(get, path = "/api/assets/thumbnail/{id}/{size}/{format}",
+    responses(
+        (status = 200, body=String, content_type = "application/octet")
+    ),
     params(
         ("id" = String, Path, description = "AssetId to get thumbnail for"),
         ("size" = ThumbnailSize, Path, description = "Thumbnail size"),
@@ -208,11 +206,11 @@ async fn get_thumbnail(
     return Ok((headers, body).into_response());
 }
 
-#[utoipa::path(get, path = "/api/asset/original/{id}",
-responses(
-    (status = 200, body=String, content_type = "application/octet"),
-    (status = NOT_FOUND, body=String, description = "Asset not found")
-        ),
+#[utoipa::path(get, path = "/api/assets/original/{id}",
+    responses(
+        (status = 200, body=String, content_type = "application/octet"),
+        (status = NOT_FOUND, body=String, description = "Asset not found")
+    ),
     params(
         ("id" = String, Path, description = "AssetId"),
     )
@@ -264,11 +262,11 @@ async fn get_asset_file(
     Ok((headers, body).into_response())
 }
 
-#[utoipa::path(get, path = "/api/asset/repr/{assetId}/{reprId}",
-responses(
-    (status = 200, body=String, content_type = "application/octet"),
-    (status = NOT_FOUND, body=String, description = "Asset or Representation not found")
-        ),
+#[utoipa::path(get, path = "/api/assets/repr/{assetId}/{reprId}",
+    responses(
+        (status = 200, body=String, content_type = "application/octet"),
+        (status = NOT_FOUND, body=String, description = "Asset or Representation not found")
+    ),
     params(
         ("assetId" = String, Path, description = "AssetId"),
         ("reprId" = String, Path, description = "ImageRepresentationId"),
@@ -346,7 +344,7 @@ pub struct HideAssetsRequest {
 
 #[utoipa::path(
     post,
-    path = "/api/asset/hidden",
+    path = "/api/assets/hidden",
     request_body=HideAssetsRequest,
     responses((status=200)),
 )]
@@ -377,7 +375,7 @@ pub struct SetAssetRotationRequest {
 
 #[utoipa::path(
     post,
-    path = "/api/asset/rotation",
+    path = "/api/assets/rotation",
     request_body=SetAssetRotationRequest,
     responses((status=200))
 )]

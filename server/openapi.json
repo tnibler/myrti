@@ -190,7 +190,7 @@
         }
       }
     },
-    "/api/asset": {
+    "/api/assets": {
       "get": {
         "tags": [
           "crate::routes::asset"
@@ -213,7 +213,7 @@
         }
       }
     },
-    "/api/asset/hidden": {
+    "/api/assets/hidden": {
       "post": {
         "tags": [
           "crate::routes::asset"
@@ -236,7 +236,7 @@
         }
       }
     },
-    "/api/asset/original/{id}": {
+    "/api/assets/original/{id}": {
       "get": {
         "tags": [
           "crate::routes::asset"
@@ -277,7 +277,7 @@
         }
       }
     },
-    "/api/asset/repr/{assetId}/{reprId}": {
+    "/api/assets/repr/{assetId}/{reprId}": {
       "get": {
         "tags": [
           "crate::routes::asset"
@@ -327,7 +327,7 @@
         }
       }
     },
-    "/api/asset/rotation": {
+    "/api/assets/rotation": {
       "post": {
         "tags": [
           "crate::routes::asset"
@@ -350,7 +350,7 @@
         }
       }
     },
-    "/api/asset/thumbnail/{id}/{size}/{format}": {
+    "/api/assets/thumbnail/{id}/{size}/{format}": {
       "get": {
         "tags": [
           "crate::routes::asset"
@@ -399,7 +399,7 @@
         }
       }
     },
-    "/api/asset/timeline": {
+    "/api/assets/timeline": {
       "get": {
         "tags": [
           "crate::routes::timeline"
@@ -452,7 +452,7 @@
         }
       }
     },
-    "/api/asset/{id}": {
+    "/api/assets/{id}": {
       "get": {
         "tags": [
           "crate::routes::asset"

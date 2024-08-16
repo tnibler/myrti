@@ -47,7 +47,7 @@ pub struct TimelineRequest {
 
 #[utoipa::path(
     get,
-    path = "/api/asset/timeline",
+    path = "/api/assets/timeline",
     params(TimelineRequest),
     responses(
     (status = 200, body=TimelineChunk)

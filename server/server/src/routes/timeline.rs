@@ -202,7 +202,10 @@ pub struct TimelineSegmentsResponse {
     get,
     path = "/api/timeline/sections/{id}",
     responses(
-    (status = 200, body=TimelineSegmentsResponse)
+        (status = 200, body=TimelineSegmentsResponse)
+    ),
+    params(
+        ("id"=String, description="Section id")
     )
 )]
 #[tracing::instrument(fields(request = true), skip(app_state))]

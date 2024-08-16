@@ -130,7 +130,10 @@ pub struct AlbumDetailsResponse {
 #[utoipa::path(
     get,
     path = "/api/albums/{id}",
-    responses((status = 200, body=AlbumDetailsResponse))
+    responses((status = 200, body=AlbumDetailsResponse)),
+    params(
+        ("id"=String, description="Album id")
+    )
 )]
 #[tracing::instrument(fields(request = true), err, skip(app_state))]
 pub async fn get_album_details(
@@ -192,7 +195,10 @@ pub struct AppendAssetsRequest {
     put,
     path = "/api/albums/{id}/assets",
     request_body = AppendAssetsRequest,
-    responses((status = 200, body=AppendAssetsResponse))
+    responses((status = 200, body=AppendAssetsResponse)),
+    params(
+        ("id"=String, description="Album id")
+    )
 )]
 #[tracing::instrument(fields(request = true), skip(app_state))]
 pub async fn append_assets_to_album(
@@ -280,7 +286,10 @@ pub struct DeleteAlbumItemRequest {
     post,
     path = "/api/albums/{id}/deleteItems",
     request_body = DeleteAlbumItemRequest,
-    responses((status = 200, body=()))
+    responses((status = 200, body=())),
+    params(
+        ("id"=String, description="Album id")
+    )
 )]
 #[tracing::instrument(fields(request = true), skip(app_state))]
 pub async fn delete_album_items(

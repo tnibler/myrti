@@ -1,4 +1,4 @@
-import type { AssetWithSpe, ImageRepresentation } from '@lib/apitypes';
+import type { AssetWithSpe, ImageRepresentation } from '@api/myrti';
 import type { Size } from './util_types';
 
 export type ImageSlideData = {

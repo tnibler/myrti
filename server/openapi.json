@@ -66,6 +66,17 @@
           "crate::routes::album"
         ],
         "operationId": "getAlbumDetails",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Album id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -86,6 +97,17 @@
           "crate::routes::album"
         ],
         "operationId": "appendAssetsToAlbum",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Album id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -116,6 +138,17 @@
           "crate::routes::album"
         ],
         "operationId": "deleteAlbumItems",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Album id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -486,7 +519,7 @@
         }
       }
     },
-    "/api/asset/{id}/details": {
+    "/api/assets/{id}/details": {
       "get": {
         "tags": [
           "crate::routes::asset"
@@ -550,6 +583,7 @@
           {
             "name": "id",
             "in": "path",
+            "description": "Section id",
             "required": true,
             "schema": {
               "type": "string"
@@ -570,7 +604,7 @@
         }
       }
     },
-    "/api/timelinegroup": {
+    "/api/timelinegroups": {
       "post": {
         "tags": [
           "crate::routes::timeline_group"

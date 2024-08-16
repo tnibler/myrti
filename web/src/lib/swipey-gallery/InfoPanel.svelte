@@ -1,16 +1,18 @@
 <script lang="ts">
-  import { api } from '@lib/apiclient';
-  import type { AssetWithSpe } from '@lib/apitypes';
+  import type { AssetWithSpe } from '@api/myrti';
   import { dayjs } from '@lib/dayjs';
+  import { getAssetDetails } from '../../api/myrti';
+  import { getAssetDetailsResponse } from '../../api/myrti.zod';
 
   type Props = {
     asset: AssetWithSpe;
   };
 
   const { asset }: Props = $props();
-  const assetMetadata = api.getAssetDetails({ params: { id: asset.id } }).then((resp) => {
+  const assetMetadata = getAssetDetails(asset.id).then((resp) => {
+    const result = getAssetDetailsResponse.parse(resp.data);
     const entries: [string, unknown][] = [];
-    for (const [group, groupEntry] of Object.entries(resp.exiftoolOutput)) {
+    for (const [group, groupEntry] of Object.entries(result.exiftoolOutput)) {
       if (groupEntry !== null && typeof groupEntry === 'object' && !Array.isArray(groupEntry)) {
         entries.push(...Object.entries(groupEntry));
       } else {

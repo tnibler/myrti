@@ -4,12 +4,24 @@ import type {
   AssetWithSpe,
   TimelineSection as ApiTimelineSection,
   TimelineSegment as ApiTimelineSegment,
-} from '@lib/apitypes';
+} from '@api/myrti';
 import { dayjs, type Dayjs } from '@lib/dayjs';
 import { klona } from 'klona/json';
 import { SvelteMap } from 'svelte/reactivity';
 import { layoutSegments } from './layout';
 import * as R from 'remeda';
+import {
+  addToTimelineGroup,
+  createTimelineGroup,
+  getTimelineSections,
+  getTimelineSegments,
+  setAssetsHidden,
+} from '../../api/myrti';
+import {
+  createTimelineGroupResponse,
+  getTimelineSectionsResponse,
+  getTimelineSegmentsResponse,
+} from '../../api/myrti.zod';
 
 export type TimelineGridItem = { key: string; top: number; height: number } & (
   | {
@@ -149,7 +161,6 @@ export function createTimeline(
     ifScrollTopGt: number;
     behavior: 'smooth' | 'instant';
   }) => void,
-  api: Api,
 ): ITimelineGrid {
   let isInitialized = false;
   let viewport: Viewport = { width: 0, height: 0 };
@@ -194,7 +205,7 @@ export function createTimeline(
       return inflight;
     } else {
       const insertPromise = (async () => {
-        const r = await api.getTimelineSegments({ params: { id: sectionId } });
+        const r = getTimelineSegmentsResponse.parse((await getTimelineSegments(sectionId)).data);
         return r.segments;
       })();
       inflightSegmentRequests.set(sectionId, insertPromise);
@@ -215,7 +226,7 @@ export function createTimeline(
   }
 
   async function loadSectionPlaceholders() {
-    const sectionsResponse = await api.getTimelineSections();
+    const sectionsResponse = getTimelineSectionsResponse.parse((await getTimelineSections()).data);
     const sectionData: ApiTimelineSection[] = sectionsResponse.sections;
 
     const _sections: TimelineSection[] = [];
@@ -463,7 +474,7 @@ export function createTimeline(
     if (setAnimationsEnabled) {
       await setAnimationsEnabled(true);
     }
-    await api.setAssetsHidden({ what: 'hide', assetIds: Array.from(selectedAssets.keys()) });
+    await setAssetsHidden({ what: 'hide', assetIds: Array.from(selectedAssets.keys()) });
     const untreatedAssets: Set<AssetId> = new Set(selectedAssets.keys());
     const affectedSectionIdxs: number[] = [];
     for (let sectionIdx = 0; sectionIdx < sections.length; sectionIdx += 1) {
@@ -874,7 +885,9 @@ export function createTimeline(
     if (state.state !== 'creatingTimelineGroup') {
       return;
     }
-    const response = await api.createTimelineGroup({ name: title, assets: state.assetsInGroup });
+    const response = createTimelineGroupResponse.parse(
+      (await createTimelineGroup({ name: title, assets: state.assetsInGroup })).data,
+    );
     const { sectionIndex, segmentIndex } = (() => {
       for (let i = 0; i < sections.length; i += 1) {
         const segments = sections[i].segments;
@@ -946,7 +959,7 @@ export function createTimeline(
     }
 
     const assetIds = groupToAbsorb!.assets.map((asset) => asset.id);
-    await api.addToTimelineGroup({ assets: assetIds, groupId });
+    await addToTimelineGroup({ assets: assetIds, groupId });
 
     let mergeInto: (Segment & { type: 'group' }) | null = null;
     outer: for (const [sectionIdx, section] of newSections.entries()) {

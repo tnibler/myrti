@@ -1,9 +1,9 @@
 <script lang="ts">
   import { mdiPlus } from '@mdi/js';
   import Button from './ui/Button.svelte';
-  import { onMount } from 'svelte';
-  import { api } from './apiclient';
   import { intl } from '@lib/i18next';
+  import { getAllAlbums, type Album } from '../api/myrti';
+  import { getAllAlbumsResponse } from '../api/myrti.zod';
 
   type Submit =
     | {
@@ -28,8 +28,8 @@
   let createButtonVisible = $state(true);
 
   export function open() {
-    api.getAllAlbums().then((result) => {
-      albums = result;
+    getAllAlbums().then((result) => {
+      albums = getAllAlbumsResponse.parse(result.data);
     });
     showCreateAlbumForm = false;
     createButtonVisible = true;

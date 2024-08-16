@@ -15,7 +15,7 @@
 </script>
 
 <script lang="ts">
-  import type { Asset } from '@lib/apitypes';
+  import type { Asset } from '@api/myrti';
   import {
     mdiProgressWrench,
     mdiPlayCircleOutline,

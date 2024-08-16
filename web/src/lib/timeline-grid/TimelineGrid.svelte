@@ -2,7 +2,7 @@
   import Gallery from '@lib/swipey-gallery/Gallery.svelte';
   import type { ThumbnailBounds } from '@lib/swipey-gallery/thumbnail-bounds';
   import { slideForAsset, type SlideData } from '@lib/swipey-gallery/slide-data';
-  import type { AssetId } from '@lib/apitypes';
+  import type { AssetId } from '@api/myrti';
   import type { ITimelineGrid } from '@lib/timeline-grid/timeline.svelte';
   import type { ActionReturn } from 'svelte/action';
   import GridTile from '@lib/ui/GridTile.svelte';

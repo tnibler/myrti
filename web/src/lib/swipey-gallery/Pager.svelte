@@ -49,8 +49,6 @@
     ZoomInIcon,
     ZoomOutIcon,
   } from 'lucide-svelte';
-  import dayjs from 'dayjs';
-  import type { AssetWithSpe } from '@lib/apitypes';
   import InfoPanel from './InfoPanel.svelte';
 
   let {

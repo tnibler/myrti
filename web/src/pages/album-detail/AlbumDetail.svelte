@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { api } from '@lib/apiclient';
-  import type { AlbumItem, AlbumItemId, AssetWithSpe } from '@lib/apitypes';
+  import type { AlbumItem, AlbumItemId, AssetWithSpe } from '@api/myrti';
   import Gallery from '@lib/swipey-gallery/Gallery.svelte';
   import { type SlideData, slideForAsset } from '@lib/swipey-gallery/slide-data';
   import type { ThumbnailBounds } from '@lib/swipey-gallery/thumbnail-bounds';
@@ -11,6 +10,8 @@
   import { SvelteSet } from 'svelte/reactivity';
   import AppBar from './AppBar.svelte';
   import * as R from 'remeda';
+  import { deleteAlbumItems, getAlbumDetails } from '../../api/myrti';
+  import { getAlbumDetailsResponse } from '../../api/myrti.zod';
 
   type Props = {
     albumId: string;
@@ -91,7 +92,7 @@
   });
 
   async function fetchAlbumDetails() {
-    const details = await api.getAlbumDetails({ params: { id: albumId } });
+    const details = getAlbumDetailsResponse.parse((await getAlbumDetails(albumId)).data);
     items = details.items;
     albumName = details.name ?? null;
     albumDesc = details.description ?? null;
@@ -180,10 +181,7 @@
   }
 
   async function onRemoveFromAlbumClicked() {
-    await api.deleteAlbumItems(
-      { itemIds: Array.from(selectedItemIds) },
-      { params: { id: albumId } },
-    );
+    await deleteAlbumItems(albumId, { itemIds: Array.from(selectedItemIds) });
 
     items = items.filter((item) => !selectedItemIds.has(item.itemId));
     selectedItemIds.clear();

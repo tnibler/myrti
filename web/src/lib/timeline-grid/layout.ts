@@ -1,4 +1,4 @@
-import type { AssetWithSpe } from '@lib/apitypes';
+import type { AssetWithSpe } from '@api/myrti';
 import type { Dayjs } from 'dayjs';
 import type { ItemRange, TimelineGridItem, TimelineOptions, Segment } from './timeline.svelte';
 import createJustifiedLayout from 'justified-layout';

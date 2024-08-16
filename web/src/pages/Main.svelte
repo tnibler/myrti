@@ -2,13 +2,13 @@
   import AddToAlbumDialog from '@lib/AddToAlbumDialog.svelte';
   import MainLayout from '@lib/MainLayout.svelte';
   import TimelineSelectAppBar from '@lib/TimelineSelectAppBar.svelte';
-  import { api } from '@lib/apiclient';
   import {
     type TimelineOptions,
     type ITimelineGrid,
     createTimeline,
   } from '@lib/timeline-grid/timeline.svelte';
   import TimelineGrid from '@lib/timeline-grid/TimelineGrid.svelte';
+  import { appendAssetsToAlbum, createAlbum } from '@api/myrti';
 
   const layoutConfig: TimelineOptions = {
     targetRowHeight: 120,
@@ -18,7 +18,7 @@
     loadWithinMargin: 300,
   };
 
-  const timeline: ITimelineGrid = $state(createTimeline(layoutConfig, onAjustTimelineScrollY, api));
+  const timeline: ITimelineGrid = $state(createTimeline(layoutConfig, onAjustTimelineScrollY));
   const inSelectionMode = $derived(timeline.selectedAssets.size > 0);
   let timelineScrollWrapper: HTMLElement | null = $state(null);
 
@@ -37,13 +37,13 @@
   ) {
     const assetIds = Array.from(timeline.selectedAssets.keys());
     if (submitted.action === 'createNew') {
-      await api.createAlbum({
+      await createAlbum({
         assets: assetIds,
         name: submitted.albumName,
         description: null,
       });
     } else if (submitted.action === 'addTo') {
-      await api.appendAssetsToAlbum({ assetIds }, { params: { id: submitted.albumId } });
+      await appendAssetsToAlbum(submitted.albumId, { assetIds });
     }
     addToAlbumDialog?.close();
     timeline.clearSelection();

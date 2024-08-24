@@ -52,24 +52,15 @@
     }, 200);
   });
 
-  $effect(() => {
-    // null fields accumulate in thumbnailImgEls, so clear them periodically
-    if (Object.keys(thumbnailImgEls).length > visibleItems.length * 5) {
-      Object.keys(thumbnailImgEls)
-        .map(parseInt)
-        .filter((k) => thumbnailImgEls[k] === null)
-        .forEach((k) => delete thumbnailImgEls[k]);
-    }
-  });
-
   const intersectionObserver = new IntersectionObserver(handleSectionIntersect, {
     // I don't know how rootMargin works; using scrollWrapper, its child <section> or document does not work correctly, so we just make the intersection test divs larger to achieve the same effect
     rootMargin: '0px',
   });
 
-  export async function scrollToAssetIndex(index: number) {
+  export async function scrollToTimelineItem(pos: PositionInTimeline) {
     const marginTop = 100;
-    const item = await timeline.moveViewToAsset(index);
+    const item = await timeline.getGridItemAtPosition(pos);
+    console.log(item);
     if (
       item !== null &&
       (item.top < scrollWrapper.scrollTop ||
@@ -214,6 +205,7 @@
 
   async function getSlide(pos: PositionInTimeline): Promise<GallerySlide<PositionInTimeline>> {
     const item = await timeline.getItem(pos);
+    await scrollToTimelineItem(pos);
     if (item.itemType === 'asset') {
       const slide = slideForAsset(item);
       return { ...slide, pos, slideType: 'singleAsset' };

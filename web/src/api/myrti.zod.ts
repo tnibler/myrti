@@ -39,7 +39,6 @@ export const getAlbumDetailsResponse = zod.object({
           .object({
             addedAt: zod.string().datetime(),
             assetRootId: zod.string(),
-            assetType: zod.enum(['image', 'video']),
             height: zod.number(),
             id: zod.string(),
             mimeType: zod.string(),
@@ -61,10 +60,21 @@ export const getAlbumDetailsResponse = zod.object({
                   }),
                 ),
               })
-              .or(
+              .and(
                 zod.object({
-                  hasDash: zod.boolean(),
+                  assetType: zod.enum(['image']),
                 }),
+              )
+              .or(
+                zod
+                  .object({
+                    hasDash: zod.boolean(),
+                  })
+                  .and(
+                    zod.object({
+                      assetType: zod.enum(['video']),
+                    }),
+                  ),
               ),
           )
           .and(zod.object({})),
@@ -116,7 +126,6 @@ export const getAlbumThumbnailParams = zod.object({
 export const getAllAssetsResponseItem = zod.object({
   addedAt: zod.string().datetime(),
   assetRootId: zod.string(),
-  assetType: zod.enum(['image', 'video']),
   height: zod.number(),
   id: zod.string(),
   mimeType: zod.string(),
@@ -182,7 +191,6 @@ export const getTimelineResponse = zod.object({
               .object({
                 addedAt: zod.string().datetime(),
                 assetRootId: zod.string(),
-                assetType: zod.enum(['image', 'video']),
                 height: zod.number(),
                 id: zod.string(),
                 mimeType: zod.string(),
@@ -204,10 +212,21 @@ export const getTimelineResponse = zod.object({
                       }),
                     ),
                   })
-                  .or(
+                  .and(
                     zod.object({
-                      hasDash: zod.boolean(),
+                      assetType: zod.enum(['image']),
                     }),
+                  )
+                  .or(
+                    zod
+                      .object({
+                        hasDash: zod.boolean(),
+                      })
+                      .and(
+                        zod.object({
+                          assetType: zod.enum(['video']),
+                        }),
+                      ),
                   ),
               )
               .and(zod.object({})),
@@ -224,7 +243,6 @@ export const getAssetParams = zod.object({
 export const getAssetResponse = zod.object({
   addedAt: zod.string().datetime(),
   assetRootId: zod.string(),
-  assetType: zod.enum(['image', 'video']),
   height: zod.number(),
   id: zod.string(),
   mimeType: zod.string(),
@@ -291,7 +309,6 @@ export const getTimelineSegmentsResponse = zod.object({
               .object({
                 addedAt: zod.string().datetime(),
                 assetRootId: zod.string(),
-                assetType: zod.enum(['image', 'video']),
                 height: zod.number(),
                 id: zod.string(),
                 mimeType: zod.string(),
@@ -313,10 +330,21 @@ export const getTimelineSegmentsResponse = zod.object({
                       }),
                     ),
                   })
-                  .or(
+                  .and(
                     zod.object({
-                      hasDash: zod.boolean(),
+                      assetType: zod.enum(['image']),
                     }),
+                  )
+                  .or(
+                    zod
+                      .object({
+                        hasDash: zod.boolean(),
+                      })
+                      .and(
+                        zod.object({
+                          assetType: zod.enum(['video']),
+                        }),
+                      ),
                   ),
               )
               .and(zod.object({}))
@@ -332,7 +360,6 @@ export const getTimelineSegmentsResponse = zod.object({
                       .object({
                         addedAt: zod.string().datetime(),
                         assetRootId: zod.string(),
-                        assetType: zod.enum(['image', 'video']),
                         height: zod.number(),
                         id: zod.string(),
                         mimeType: zod.string(),
@@ -354,15 +381,26 @@ export const getTimelineSegmentsResponse = zod.object({
                               }),
                             ),
                           })
-                          .or(
+                          .and(
                             zod.object({
-                              hasDash: zod.boolean(),
+                              assetType: zod.enum(['image']),
                             }),
+                          )
+                          .or(
+                            zod
+                              .object({
+                                hasDash: zod.boolean(),
+                              })
+                              .and(
+                                zod.object({
+                                  assetType: zod.enum(['video']),
+                                }),
+                              ),
                           ),
                       )
                       .and(zod.object({})),
                   ),
-                  itemType: zod.enum(['photoSeries']),
+                  itemType: zod.enum(['assetSeries']),
                   selectionIndices: zod.array(
                     zod
                       .number()

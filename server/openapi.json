@@ -861,7 +861,6 @@
           "id",
           "assetRootId",
           "pathInRoot",
-          "assetType",
           "width",
           "height",
           "addedAt",
@@ -875,9 +874,6 @@
           },
           "assetRootId": {
             "$ref": "#/components/schemas/AssetRootDirId"
-          },
-          "assetType": {
-            "$ref": "#/components/schemas/AssetType"
           },
           "height": {
             "type": "integer",
@@ -922,15 +918,57 @@
       "AssetRootDirId": {
         "type": "string"
       },
+      "AssetSeriesId": {
+        "type": "string"
+      },
       "AssetSpe": {
         "oneOf": [
           {
-            "$ref": "#/components/schemas/Image"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Image"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "assetType"
+                ],
+                "properties": {
+                  "assetType": {
+                    "type": "string",
+                    "enum": [
+                      "image"
+                    ]
+                  }
+                }
+              }
+            ]
           },
           {
-            "$ref": "#/components/schemas/Video"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Video"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "assetType"
+                ],
+                "properties": {
+                  "assetType": {
+                    "type": "string",
+                    "enum": [
+                      "video"
+                    ]
+                  }
+                }
+              }
+            ]
           }
-        ]
+        ],
+        "discriminator": {
+          "propertyName": "assetType"
+        }
       },
       "AssetType": {
         "type": "string",
@@ -1129,9 +1167,6 @@
         }
       },
       "ImageRepresentationId": {
-        "type": "string"
-      },
-      "AssetSeriesId": {
         "type": "string"
       },
       "SegmentType": {
@@ -1360,7 +1395,7 @@
               "itemType": {
                 "type": "string",
                 "enum": [
-                  "photoSeries"
+                  "assetSeries"
                 ]
               },
               "selectionIndices": {

@@ -51,7 +51,7 @@ export type TimelineItemOneOfFourItemType =
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const TimelineItemOneOfFourItemType = {
-  photoSeries: 'photoSeries',
+  assetSeries: 'assetSeries',
 } as const;
 
 export type TimelineItemOneOfFour = {
@@ -167,6 +167,8 @@ export type SegmentTypeOneOfThree = {
   type: SegmentTypeOneOfThreeType;
 };
 
+export type SegmentType = SegmentTypeOneOf | SegmentTypeOneOfThree;
+
 export type SegmentTypeOneOfType = (typeof SegmentTypeOneOfType)[keyof typeof SegmentTypeOneOfType];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
@@ -179,10 +181,6 @@ export type SegmentTypeOneOf = {
   start: string;
   type: SegmentTypeOneOfType;
 };
-
-export type SegmentType = SegmentTypeOneOf | SegmentTypeOneOfThree;
-
-export type AssetSeriesId = string;
 
 export type ImageRepresentationId = string;
 
@@ -220,20 +218,28 @@ export interface CreateTimelineGroupResponse {
   timelineGroupId: TimelineGroupId;
 }
 
-export interface CreateTimelineGroupRequest {
-  assets: AssetId[];
-  name: string;
-}
-
 export interface CreateSeriesResponse {
   seriesId: AssetSeriesId;
+}
+
+export interface CreateSeriesRequest {
+  assetIds: AssetId[];
 }
 
 export interface CreateAlbumResponse {
   albumId: number;
 }
 
+export interface CreateAlbumRequest {
+  assets: AssetId[];
+  /** @nullable */
+  description?: string | null;
+  name: string;
+}
+
 export type AssetWithSpeAllOf = { [key: string]: unknown };
+
+export type AssetWithSpe = Asset & AssetSpe & AssetWithSpeAllOf;
 
 export type AssetType = (typeof AssetType)[keyof typeof AssetType];
 
@@ -243,22 +249,44 @@ export const AssetType = {
   video: 'video',
 } as const;
 
-export type AssetSpe = Image | Video;
+export type AssetSpe = AssetSpeOneOf | AssetSpeOneOfFour;
 
-export type AssetWithSpe = Asset & AssetSpe & AssetWithSpeAllOf;
+export type AssetSpeOneOfFourAllOfAssetType =
+  (typeof AssetSpeOneOfFourAllOfAssetType)[keyof typeof AssetSpeOneOfFourAllOfAssetType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AssetSpeOneOfFourAllOfAssetType = {
+  video: 'video',
+} as const;
+
+export type AssetSpeOneOfFourAllOf = {
+  assetType: AssetSpeOneOfFourAllOfAssetType;
+};
+
+export type AssetSpeOneOfFour = Video & AssetSpeOneOfFourAllOf;
+
+export type AssetSpeOneOfAllOfAssetType =
+  (typeof AssetSpeOneOfAllOfAssetType)[keyof typeof AssetSpeOneOfAllOfAssetType];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const AssetSpeOneOfAllOfAssetType = {
+  image: 'image',
+} as const;
+
+export type AssetSpeOneOfAllOf = {
+  assetType: AssetSpeOneOfAllOfAssetType;
+};
+
+export type AssetSpeOneOf = Image & AssetSpeOneOfAllOf;
+
+export type AssetSeriesId = string;
 
 export type AssetRootDirId = string;
 
 export type AssetId = string;
 
-export interface CreateSeriesRequest {
-  assetIds: AssetId[];
-}
-
-export interface CreateAlbumRequest {
+export interface CreateTimelineGroupRequest {
   assets: AssetId[];
-  /** @nullable */
-  description?: string | null;
   name: string;
 }
 
@@ -269,7 +297,6 @@ export interface AssetDetailsResponse {
 export interface Asset {
   addedAt: string;
   assetRootId: AssetRootDirId;
-  assetType: AssetType;
   height: number;
   id: AssetId;
   mimeType: string;

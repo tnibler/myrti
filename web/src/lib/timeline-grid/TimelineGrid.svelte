@@ -301,7 +301,6 @@
 
 <Gallery
   bind:this={gallery}
-  numSlides={timeline.totalNumAssets}
   {getThumbnailBounds}
   {getSlide}
   {scrollWrapper}

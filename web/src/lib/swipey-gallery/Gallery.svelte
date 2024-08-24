@@ -8,7 +8,6 @@
   };
 
   let {
-    numSlides,
     getSlide,
     getNextSlidePosition,
     getThumbnailBounds,
@@ -23,17 +22,9 @@
   function onKeyDown(e: KeyboardEvent) {
     if (isOpen !== false) {
       if (e.key === 'ArrowLeft') {
-        const newPos = getNextSlidePosition(isOpen.currentPosition, 'left');
-        if (newPos !== null) {
-          // isOpen.currentPosition = newPos;
-          pager?.moveSlide('left');
-        }
+        pager?.moveSlide('left');
       } else if (e.key === 'ArrowRight') {
-        const newPos = getNextSlidePosition(isOpen.currentPosition, 'right');
-        if (newPos !== null) {
-          // isOpen.currentPosition = newPos;
-          pager?.moveSlide('right');
-        }
+        pager?.moveSlide('right');
       } else if (e.key === 'Escape') {
         close();
       }
@@ -91,7 +82,6 @@
 
 {#if isOpen !== false}
   <Pager
-    {numSlides}
     {getSlide}
     {getThumbnailBounds}
     {onOpenTransitionFinished}

@@ -527,10 +527,11 @@ export function createTimeline(
         return { ...pos, itemIndex: pos.itemIndex - 1 };
       } else if (0 < pos.segmentIndex) {
         const segs = section.segments;
+        const si = pos.segmentIndex - 1;
         return {
           sectionIndex: pos.sectionIndex,
-          segmentIndex: pos.segmentIndex - 1,
-          itemIndex: segs[segs.length - 1].items.length - 1,
+          segmentIndex: si,
+          itemIndex: segs[si].items.length - 1,
         };
       } else if (0 < pos.sectionIndex) {
         const segs = section.segments;
@@ -546,7 +547,6 @@ export function createTimeline(
   }
 
   async function getItem(pos: PositionInTimeline): Promise<TimelineItem> {
-    console.log('getItem', $state.snapshot(pos))
     const section = sections[pos.sectionIndex];
     if (section.segments === null) {
       await loadSection(pos.sectionIndex);

@@ -88,7 +88,7 @@ export interface ITimelineGrid {
   readonly visibleItems: ItemRange;
   readonly options: TimelineOptions;
   /** Maps currently selected assetIds to a number that are in order of selection (but not contiguous) */
-  readonly selectedAssets: Map<AssetId, number>;
+  readonly selectedItems: Map<TimelineItem, number>;
   readonly addToGroupClickAreas: AddToGroupClickArea[];
   // /** Assets are highlighted when something is selected and shift is pressed to preview
   //  * possible range selection. */
@@ -107,7 +107,7 @@ export interface ITimelineGrid {
   getItem: (pos: PositionInTimeline) => Promise<TimelineItem>;
   /** previous/newer item */
   clearSelection: () => void;
-  setAssetSelected: (assetId: string, selected: boolean) => void;
+  setItemSelected: (item: TimelineItem, selected: boolean) => void;
   // /** @param clickedAssetIndex asset clicked to perform range selection */
   // setRangeSelected: (clickedAssetIndex: number, selected: boolean) => void;
   // /** Asset is hoevered while shift is pressed, selection range should be highlighted */
@@ -170,7 +170,7 @@ export function createTimeline(
   );
   let visibleItems: ItemRange = $state({ startIdx: 0, endIdx: 0 });
   let setAnimationsEnabled: ((enabled: boolean) => Promise<void>) | null = null;
-  const selectedAssets: Map<AssetId, number> = $state(new SvelteMap());
+  const selectedItems: Map<TimelineItem, number> = $state(new SvelteMap());
   const totalNumAssets: number = $derived(
     sections.reduce((acc: number, section) => {
       return acc + section.data.numAssets;
@@ -488,18 +488,56 @@ export function createTimeline(
 
   /** Increasing number to track order in which assets are selected. Used for values of selectedAssets */
   let nextSelectionIndex = 0;
-  function setAssetSelected(assetId: AssetId, selected: boolean) {
-    if (selected) {
-      selectedAssets.set(assetId, nextSelectionIndex);
-      nextSelectionIndex += 1;
+  function setItemSelected(item: TimelineItem, selected: boolean) {
+    if (item.itemType === 'photoStack') {
+      // stack may be split into multiple grid items, and selecting one should select all of them
+      const section = sections[item.pos.sectionIndex];
+      if (section.segments === null) {
+        console.error('timeline: (de)selected items in section that is not loaded');
+        return;
+      }
+      const segment = section.segments[item.pos.segmentIndex];
+      const itemsOfSameSeries: (TimelineItem & { itemType: 'photoStack' })[] = [];
+      for (let i = item.pos.itemIndex; i < segment.items.length; i += 1) {
+        const it = segment.items[i];
+        if (it.itemType === 'photoStack' && it.series.seriesId === item.series.seriesId) {
+          itemsOfSameSeries.push(it);
+        } else {
+          break;
+        }
+      }
+      for (let i = item.pos.itemIndex - 1; 0 <= i; i -= 1) {
+        const it = segment.items[i];
+        if (it.itemType === 'photoStack' && it.series.seriesId === item.series.seriesId) {
+          itemsOfSameSeries.push(it);
+        } else {
+          break;
+        }
+      }
+
+      if (selected) {
+        for (const item of itemsOfSameSeries) {
+          selectedItems.set(item, nextSelectionIndex);
+          nextSelectionIndex += 1;
+        }
+      } else {
+        for (const item of itemsOfSameSeries) {
+          selectedItems.delete(item);
+        }
+      }
     } else {
-      selectedAssets.delete(assetId);
+      if (selected) {
+        selectedItems.set(item, nextSelectionIndex);
+        nextSelectionIndex += 1;
+      } else {
+        selectedItems.delete(item);
+      }
     }
   }
 
   function clearSelection() {
     nextSelectionIndex = 0;
-    selectedAssets.clear();
+    selectedItems.clear();
   }
 
   function getNextItemPosition(
@@ -558,11 +596,21 @@ export function createTimeline(
   }
 
   async function hideSelectedAssets() {
+    if (selectedItems.size === 0) {
+      return;
+    }
     if (setAnimationsEnabled) {
       await setAnimationsEnabled(true);
     }
-    await setAssetsHidden({ what: 'hide', assetIds: Array.from(selectedAssets.keys()) });
-    const untreatedAssets: Set<AssetId> = new Set(selectedAssets.keys());
+    const assetIds = R.pipe(
+      Array.from(selectedItems.keys()),
+      R.uniqueBy((it) => (it.itemType === 'asset' ? it : it.series)),
+      R.flatMap((it) => (it.itemType === 'asset' ? [it] : it.series.assets)),
+      R.map((asset) => asset.id),
+    );
+    await setAssetsHidden({ what: 'hide', assetIds });
+
+    const untreatedItems = new Set(selectedItems.keys());
     const affectedSectionIdxs: number[] = [];
     for (let sectionIdx = 0; sectionIdx < sections.length; sectionIdx += 1) {
       const section = sections[sectionIdx];
@@ -573,30 +621,36 @@ export function createTimeline(
       const segmentsToRemove: Set<number> = new Set();
       let newNumAssets = 0;
       for (let segmentIdx = 0; segmentIdx < segments.length; segmentIdx += 1) {
-        if (untreatedAssets.size === 0) {
+        if (untreatedItems.size === 0) {
           break;
         }
         const segment = segments[segmentIdx];
-        const remainingAssets: AssetWithSpe[] = [];
-        for (const asset of segment.assets) {
-          if (selectedAssets.has(asset.id)) {
-            untreatedAssets.delete(asset.id);
+        const remainingItems: TimelineItem[] = [];
+        for (const item of segment.items) {
+          if (selectedItems.has(item)) {
+            untreatedItems.delete(item);
           } else {
-            remainingAssets.push(asset);
+            remainingItems.push(item);
           }
         }
         if (
-          remainingAssets.length != segment.assets.length &&
+          remainingItems.length != segment.items.length &&
           ((affectedSectionIdxs.length > 0 && affectedSectionIdxs.at(-1) != sectionIdx) ||
             affectedSectionIdxs.length == 0)
         ) {
           affectedSectionIdxs.push(sectionIdx);
         }
-        newNumAssets += remainingAssets.length;
-        if (remainingAssets.length === 0) {
+        newNumAssets += R.pipe(
+          remainingItems,
+          // don't count split up series multiple times
+          R.uniqueBy((it) => (it.itemType === 'asset' ? it : it.series)),
+          R.map((it) => (it.itemType === 'asset' ? 1 : it.series.assets.length)),
+          R.sum(),
+        );
+        if (remainingItems.length === 0) {
           segmentsToRemove.add(segmentIdx);
         } else {
-          segment.assets = remainingAssets;
+          segment.items = remainingItems;
         }
       }
       if (segmentsToRemove.size > 0) {
@@ -623,10 +677,9 @@ export function createTimeline(
         s.items = null;
       }
     }
-    visibleItems.endIdx -= selectedAssets.size; // not 100% sure on this
-    selectedAssets.clear();
+    visibleItems.endIdx -= selectedItems.size; // not 100% sure on this
+    selectedItems.clear();
     // reassign Items' asset index
-    items.filter((item) => item.type === 'asset').forEach((item, idx) => (item.assetIndex = idx));
     for (const sectionIdx of affectedSectionIdxs) {
       layoutSection(sectionIdx, 'noAdjustScroll');
     }
@@ -1072,8 +1125,8 @@ export function createTimeline(
     get visibleItems() {
       return visibleItems;
     },
-    get selectedAssets() {
-      return selectedAssets;
+    get selectedItems() {
+      return selectedItems;
     },
     get options() {
       return opts;
@@ -1088,7 +1141,7 @@ export function createTimeline(
     setActualItemHeight,
     getNextItemPosition,
     getItem,
-    setAssetSelected,
+    setItemSelected,
     clearSelection,
     hideSelectedAssets,
   };

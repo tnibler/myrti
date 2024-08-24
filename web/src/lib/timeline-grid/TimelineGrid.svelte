@@ -149,9 +149,9 @@
     return items;
   });
 
-  function getSelectState(assetId: AssetId): SelectState {
-    if (timeline.state === 'justLooking' && timeline.selectedAssets.size > 0) {
-      const isSelected = timeline.selectedAssets.has(assetId);
+  function getSelectState(item: TimelineItem): SelectState {
+    if (timeline.state === 'justLooking' && timeline.selectedItems.size > 0) {
+      const isSelected = timeline.selectedItems.has(item);
       return { state: 'select', isSelected };
     } else if (timeline.state === 'justLooking') {
       return { state: 'default' };
@@ -160,9 +160,9 @@
     }
   }
 
-  function toggleAssetSelected(assetId: AssetId) {
-    const isSelected = timeline.selectedAssets.has(assetId);
-    timeline.setAssetSelected(assetId, !isSelected);
+  function toggleItemSelected(item: TimelineItem) {
+    const isSelected = timeline.selectedItems.has(item);
+    timeline.setItemSelected(item, !isSelected);
   }
 
   function onAssetClick(item: TimelineItem & ({ itemType: 'asset' } | { itemType: 'photoStack' })) {
@@ -256,9 +256,9 @@
             onAssetClick(item.timelineItem);
           }}
           onSelectToggled={() => {
-            toggleAssetSelected(item.asset.id);
+            toggleItemSelected(item.timelineItem);
           }}
-          selectState={getSelectState(item.asset.id)}
+          selectState={getSelectState(item.timelineItem)}
           imgElAction={getThumbnailImgElBindAction(item.timelineItem.pos)}
         />
       {:else if item.type === 'photoStack'}
@@ -271,14 +271,9 @@
             onAssetClick(item.timelineItem);
           }}
           onSelectToggled={() => {
-            // rough and ugly
-            const coverAssetId = item.series.assets[item.coverIndex].id;
-            const isSelected = timeline.selectedAssets.has(coverAssetId);
-            for (const asset of item.series.assets) {
-              timeline.setAssetSelected(asset.id, !isSelected);
-            }
+            toggleItemSelected(item.timelineItem);
           }}
-          selectState={getSelectState(item.series.assets[item.coverIndex].id)}
+          selectState={getSelectState(item.timelineItem)}
           imgElAction={getThumbnailImgElBindAction(item.timelineItem.pos)}
         />
       {:else if item.type === 'segmentTitle'}

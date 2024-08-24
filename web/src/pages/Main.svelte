@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as R from 'remeda';
   import AddToAlbumDialog from '@lib/AddToAlbumDialog.svelte';
   import MainLayout from '@lib/MainLayout.svelte';
   import TimelineSelectAppBar from '@lib/TimelineSelectAppBar.svelte';
@@ -19,7 +20,7 @@
   };
 
   const timeline: ITimelineGrid = $state(createTimeline(layoutConfig, onAjustTimelineScrollY));
-  const inSelectionMode = $derived(timeline.selectedAssets.size > 0);
+  const inSelectionMode = $derived(timeline.selectedItems.size > 0);
   let timelineScrollWrapper: HTMLElement | null = $state(null);
 
   let addToAlbumDialog: AddToAlbumDialog | null = $state(null);
@@ -68,6 +69,15 @@
     await timeline.hideSelectedAssets();
     timeline.clearSelection();
   }
+
+  const numAssetsSelected: number = $derived(
+    R.pipe(
+      Array.from(timeline.selectedItems.keys()),
+      R.uniqueBy((it) => (it.itemType === 'asset' ? it : it.series)),
+      R.map((it) => (it.itemType === 'asset' ? 1 : it.series.assets.length)),
+      R.sum(),
+    ),
+  );
 </script>
 
 {#snippet timelineGrid()}
@@ -76,7 +86,7 @@
 
 {#snippet timelineSelectAppBar()}
   <TimelineSelectAppBar
-    numAssetsSelected={timeline.selectedAssets.size}
+    {numAssetsSelected}
     onCancelSelectClicked={() => timeline.clearSelection()}
     {onAddToAlbumClicked}
     {onAddToGroupClicked}

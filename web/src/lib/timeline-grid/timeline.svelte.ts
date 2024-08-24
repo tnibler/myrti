@@ -38,19 +38,17 @@ export type TimelineGridItem = { key: string; top: number; height: number } & (
       type: 'asset';
       left: number;
       width: number;
-      /** Index within all assets in timeline (counting each asset in a stack as well) */
-      assetIndex: number;
       asset: AssetWithSpe;
+      timelineItem: TimelineItem;
     }
   | {
       type: 'photoStack';
       left: number;
       width: number;
-      /** Index of series.assets[0] within all assets in timeline (counting each asset in a stack as well) */
-      firstAssetIndex: number;
       series: AssetSeries;
       coverIndex: number;
       numAssets: number;
+      timelineItem: TimelineItem;
     }
   | {
       type: 'segmentTitle';
@@ -69,6 +67,13 @@ export type TimelineGridItem = { key: string; top: number; height: number } & (
       type: 'createGroupTitleInput';
     }
 );
+
+/** Backlink from TimelineItem to its segment/section */
+export type PositionInTimeline = {
+  sectionIndex: number;
+  segmentIndex: number;
+  itemIndex: number;
+};
 
 export type Viewport = { width: number; height: number };
 
@@ -95,7 +100,12 @@ export interface ITimelineGrid {
   onScrollChange: (top: number) => void;
   moveViewToAsset: (assetIndex: number) => Promise<TimelineGridItem | null>;
   setActualItemHeight: (itemIndex: number, newHeight: number) => void;
-  getOrLoadAssetAtIndex: (index: number) => Promise<AssetWithSpe | null>;
+  getNextItemPosition: (
+    pos: PositionInTimeline,
+    dir: 'left' | 'right',
+  ) => PositionInTimeline | null;
+  getItem: (pos: PositionInTimeline) => Promise<TimelineItem>;
+  /** previous/newer item */
   clearSelection: () => void;
   setAssetSelected: (assetId: string, selected: boolean) => void;
   // /** @param clickedAssetIndex asset clicked to perform range selection */
@@ -166,7 +176,6 @@ export function createTimeline(
       return acc + section.data.numAssets;
     }, 0),
   );
-  const sectionStartIndices = $derived.by(() => computeSectionStartIndices(sections));
   /** Initially, values from TimelineOptions (e.g, headerHeight) are used to set the height of items like segment titles of which we don't know the real size of rendered text.
    * When setRealItemHeight is called, we correct that guess and use it for future items of the same type so that setRealItemHeight needs to be called and relayout everything less often. */
   const initialHeightGuess: Record<string, number | null> = {
@@ -394,37 +403,20 @@ export function createTimeline(
     const sectionId = section.data.id;
     const segments = await requestSegments(sectionId);
 
-    let firstAssetInSectionIndex = 0;
-    for (let i = 0; i < sectionIndex; i += 1) {
-      firstAssetInSectionIndex += sections[i].data.numAssets;
-    }
-    /** index of first asset in every segment */
-    const firstAssetInSegmentIndices: number[] = R.reduce(
-      R.dropLast(segments, 1),
-      (is, segment) => [
-        ...is,
-        // first asset index of previous segment
-        is.at(-1)! +
-          // number of assets in this segment
-          R.sum(segment.items.map((it) => (it.itemType === 'asset' ? 1 : it.assets.length))),
-      ],
-      [firstAssetInSectionIndex],
-    );
-    console.assert(firstAssetInSegmentIndices.length === segments.length);
     sections[sectionIndex].segments = R.pipe(
-      R.zip(segments, firstAssetInSegmentIndices),
-      R.map(([segment, firstAssetInSegmentIndex]) => {
+      segments,
+      R.map((segment, segmentIndex) => {
         // split up stacks with multiple selection images. stacks with multiple selections are shown
         // as multiple items, one for each selection image
         const itemWithStacksSplitUp: TimelineItem[] = [];
-        let currentAssetIndex = firstAssetInSegmentIndex;
+        let itemIndex = 0;
         for (const item of segment.items) {
           if (item.itemType === 'asset') {
             itemWithStacksSplitUp.push({
-              assetIndex: currentAssetIndex,
               ...item,
+              pos: { sectionIndex, segmentIndex, itemIndex },
             });
-            currentAssetIndex += 1;
+            itemIndex += 1;
           } else {
             // item.itemType === 'photoSeries'
             const series: AssetSeries = {
@@ -437,28 +429,15 @@ export function createTimeline(
             // it will get split as --o-    o--   o-
             // So the first (from right to left) splits at each selectionIndex have to increment currentAssetIndex by 1,
             // but the last one also includes the tail (off to the left)
-            const previousValueOfCurrentAssetIndex = currentAssetIndex;
-            for (const [idxOfSelIdx, selectionIdx] of item.selectionIndices.entries()) {
+            for (const selectionIdx of item.selectionIndices) {
               itemWithStacksSplitUp.push({
                 itemType: 'photoStack',
                 coverIndex: selectionIdx,
                 series,
-                firstAssetIndex: currentAssetIndex,
+                pos: { sectionIndex, segmentIndex, itemIndex },
               });
-              const isFirstSplit = idxOfSelIdx === 0;
-              const isLastSplit = idxOfSelIdx === item.selectionIndices.length - 1;
-              if (isFirstSplit) {
-                currentAssetIndex += selectionIdx;
-              }
-              if (isLastSplit) {
-                currentAssetIndex += item.assets.length - selectionIdx;
-              } else {
-                currentAssetIndex += item.selectionIndices[idxOfSelIdx + 1] - selectionIdx;
-              }
+              itemIndex += 1;
             }
-            console.assert(
-              currentAssetIndex === previousValueOfCurrentAssetIndex + item.assets.length,
-            );
           }
         }
         if (segment.type === 'dateRange') {
@@ -521,6 +500,61 @@ export function createTimeline(
   function clearSelection() {
     nextSelectionIndex = 0;
     selectedAssets.clear();
+  }
+
+  function getNextItemPosition(
+    pos: PositionInTimeline,
+    dir: 'left' | 'right',
+  ): PositionInTimeline | null {
+    const section = sections[pos.sectionIndex];
+    if (section.segments === null) {
+      console.error('timeline getNextItemPosition: section is not loaded');
+      return null;
+    }
+    const segment = section.segments[pos.segmentIndex];
+    if (dir === 'right') {
+      if (pos.itemIndex < segment.items.length - 1) {
+        return { ...pos, itemIndex: pos.itemIndex + 1 };
+      } else if (pos.segmentIndex < section.segments.length - 1) {
+        return { sectionIndex: pos.sectionIndex, segmentIndex: pos.segmentIndex + 1, itemIndex: 0 };
+      } else if (pos.sectionIndex < sections.length - 1) {
+        return { sectionIndex: pos.sectionIndex + 1, segmentIndex: 0, itemIndex: 0 };
+      } else {
+        return null;
+      }
+    } else {
+      if (0 < pos.itemIndex) {
+        return { ...pos, itemIndex: pos.itemIndex - 1 };
+      } else if (0 < pos.segmentIndex) {
+        const segs = section.segments;
+        return {
+          sectionIndex: pos.sectionIndex,
+          segmentIndex: pos.segmentIndex - 1,
+          itemIndex: segs[segs.length - 1].items.length - 1,
+        };
+      } else if (0 < pos.sectionIndex) {
+        const segs = section.segments;
+        return {
+          sectionIndex: pos.sectionIndex - 1,
+          segmentIndex: segs.length - 1,
+          itemIndex: segs[segs.length - 1].items.length - 1,
+        };
+      } else {
+        return null;
+      }
+    }
+  }
+
+  async function getItem(pos: PositionInTimeline): Promise<TimelineItem> {
+    console.log('getItem', $state.snapshot(pos))
+    const section = sections[pos.sectionIndex];
+    if (section.segments === null) {
+      await loadSection(pos.sectionIndex);
+    }
+    if (section.segments === null) {
+      throw new Error('failed to load section');
+    }
+    return section.segments[pos.segmentIndex].items[pos.itemIndex];
   }
 
   async function hideSelectedAssets() {
@@ -599,47 +633,6 @@ export function createTimeline(
     if (setAnimationsEnabled) {
       setAnimationsEnabled(false);
     }
-  }
-
-  // TODO: asset index becomes item index, a stack gets passed to gallery as one item which it renders however it wants
-  async function getOrLoadAssetAtIndex(index: number): Promise<AssetWithSpe | null> {
-    console.log(index);
-    if (index >= totalNumAssets) {
-      console.error(`ask for getAssetAtIndex(${index}) but only ${totalNumAssets} in total`);
-      return null;
-    }
-    const sectionIndex = sections.findLastIndex((_section, idx) => {
-      return sectionStartIndices[idx] <= index;
-    });
-    console.assert(sectionIndex >= 0);
-    if (!sections[sectionIndex].segments) {
-      await loadSection(sectionIndex);
-    }
-    const segments = sections[sectionIndex].segments;
-    if (segments === null) {
-      console.error('getAssetAtIndex: segments still null after loading section');
-      return null;
-    }
-
-    console.assert(segments.length > 0);
-    for (const segment of segments) {
-      for (const item of segment.items) {
-        if (item.itemType === 'asset' && item.assetIndex === index) {
-          return item;
-        } else if (item.itemType === 'photoStack' && item.firstAssetIndex === index) {
-          return item.series.assets[item.coverIndex];
-        } else if (
-          // temporary, so you can still scroll through images in stack
-          item.itemType === 'photoStack' &&
-          item.firstAssetIndex < index &&
-          index < item.firstAssetIndex + item.series.assets.length - item.coverIndex
-        ) {
-          return item.series.assets[index - item.firstAssetIndex];
-        }
-      }
-    }
-
-    return null;
   }
 
   function setActualItemHeight(itemIndex: number, newHeight: number) {
@@ -1093,7 +1086,8 @@ export function createTimeline(
     onScrollChange,
     moveViewToAsset,
     setActualItemHeight,
-    getOrLoadAssetAtIndex,
+    getNextItemPosition,
+    getItem,
     setAssetSelected,
     clearSelection,
     hideSelectedAssets,
@@ -1113,17 +1107,4 @@ function estimateHeight(
   const height = rows * targetRowHeight;
 
   return height;
-}
-
-function computeSectionStartIndices(sections: TimelineSection[]): number[] {
-  if (sections.length == 1) {
-    return [0];
-  } else if (sections.length == 0) {
-    return [];
-  }
-  const idxs = [0];
-  for (let i = 1; i < sections.length; i += 1) {
-    idxs.push(idxs[i - 1] + sections[i - 1].data.numAssets);
-  }
-  return idxs;
 }

@@ -1,8 +1,7 @@
 <script lang="ts">
   import type { Size } from './util_types';
-  import type { VideoSlideData } from './slide-data';
   import './slide.css';
-  import { onMount } from 'svelte';
+  import type { VideoSlideData } from './gallery-types';
 
   type SlideVideoProps = {
     /** size of the DOM element */
@@ -18,7 +17,7 @@
 
   let isCloseTransitionRunning = $state(false);
   let videoEl: HTMLVideoElement | undefined = $state();
-  let enableVideoSrcOrig = $state(false);
+  let enableVideoSrcOrig: { src: string; mimeType: string } | null = $state(null);
 
   $effect(() => {
     if (!videoEl) {
@@ -31,11 +30,10 @@
     }
   });
   $effect(() => {
-    slideData.src;
     if (slideData.videoSource === 'dash') {
       shakaInitPlayer(slideData.mpdManifestUrl);
     } else {
-      enableVideoSrcOrig = true;
+      enableVideoSrcOrig = slideData;
     }
     setTimeout(() => {
       if (videoEl) {
@@ -93,10 +91,10 @@
   class:slide-transition-opacity={!isCloseTransitionRunning}
   class:hidden={!isVisible}
 >
-  {#if enableVideoSrcOrig}
+  {#if enableVideoSrcOrig !== null}
     <source
-      src={slideData.src}
-      type={slideData.mimeType}
+      src={enableVideoSrcOrig.src}
+      type={enableVideoSrcOrig.mimeType}
       onerror={(e) => {
         console.log('TODO handle video codec errors', e);
         onContentReady();

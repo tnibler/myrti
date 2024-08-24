@@ -1,12 +1,12 @@
 <script lang="ts">
+  import type { GallerySlideData } from './gallery-types';
   import Slide, { type OpenTransitionParams, type SlideControls } from './Slide.svelte';
-  import type { SlideData } from './slide-data';
 
   type SlideHolderProps = {
     isActive: boolean;
     xTransform: number;
     id: number;
-    slide: Promise<SlideData> | null;
+    slide: Promise<GallerySlideData> | null;
     onContentReady: (() => void) | undefined;
     showContent: boolean;
     slideControls: SlideControls;

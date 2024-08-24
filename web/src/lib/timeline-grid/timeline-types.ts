@@ -38,13 +38,18 @@ export type TimelineSegment = {
   | { type: 'creatingGroup' }
 );
 
+/** Backlink from TimelineItem to its segment/section */
+export type PositionInTimeline = {
+  sectionIndex: number;
+  segmentIndex: number;
+  itemIndex: number;
+};
+
 /** One asset or a photo series shown in the timeline, basically whatever is displayed as a small image */
-export type TimelineItem =
+export type TimelineItem = { pos: PositionInTimeline } & (
   | ({
       /** A single asset */
       itemType: 'asset';
-      /** Index within all assets in timeline (counting each asset in a stack as well) */
-      assetIndex: number;
     } & AssetWithSpe)
   | {
       /** Complete or split up stack. If a stack has multiple images marked as good, the stack is split up at each marked image. */
@@ -53,9 +58,8 @@ export type TimelineItem =
       /** `series.assets[coverIndex]` is the cover image shown in the timelinew
        * for this (portion of a) stack */
       coverIndex: number;
-      /** Index of series.assets[0] within all assets in timeline (counting each asset in a stack as well) */
-      firstAssetIndex: number;
-    };
+    }
+);
 
 export type AssetSeries = {
   seriesId: string;

@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Size } from './util_types';
-  import type { ImageSlideData } from './slide-data';
+  import type { ImageSlideData } from './gallery-types';
   import './slide.css';
   import { onMount } from 'svelte';
 
@@ -76,7 +76,7 @@
   }
 </script>
 
-<!-- svelte-ignore a11y-missing-attribute -->
+<!-- svelte-ignore a11y_missing_attribute -->
 <img
   class="slide-image"
   bind:this={imgEl}

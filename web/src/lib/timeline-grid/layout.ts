@@ -234,7 +234,7 @@ export function layoutSegments(
               height: box.height,
               key: 'asset' + item.id,
               asset: item,
-              assetIndex: item.assetIndex,
+              timelineItem: item,
             };
             return gridItem;
           } else {
@@ -249,7 +249,7 @@ export function layoutSegments(
               series: item.series,
               coverIndex: item.coverIndex,
               numAssets: item.series.assets.length,
-              firstAssetIndex: item.firstAssetIndex,
+              timelineItem: item,
             };
             return gridItem;
           }

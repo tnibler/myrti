@@ -1,14 +1,15 @@
 <script lang="ts">
   import Gallery from '@lib/swipey-gallery/Gallery.svelte';
   import type { ThumbnailBounds } from '@lib/swipey-gallery/thumbnail-bounds';
-  import { slideForAsset, type SlideData } from '@lib/swipey-gallery/slide-data';
-  import type { AssetId } from '@api/myrti';
+  import type { AssetId, AssetWithSpe } from '@api/myrti';
   import type { ITimelineGrid } from '@lib/timeline-grid/timeline.svelte';
   import type { ActionReturn } from 'svelte/action';
   import GridTile from '@lib/ui/GridTile.svelte';
   import SegmentTitle from './SegmentTitle.svelte';
   import type { SelectState } from '@lib/ui/GridTile.svelte';
   import CreateGroupInput from './CreateGroupInput.svelte';
+  import type { PositionInTimeline, TimelineItem } from './timeline-types';
+  import type { GallerySlide, SingleAssetSlide } from '@lib/swipey-gallery/gallery-types';
 
   type TimelineGridProps = {
     timeline: ITimelineGrid;
@@ -16,7 +17,7 @@
   };
 
   let viewport = $state({ width: 0, height: 0 });
-  let gallery: Gallery;
+  let gallery: Gallery<PositionInTimeline>;
 
   let { timeline, scrollWrapper = $bindable() }: TimelineGridProps = $props();
   let thumbnailImgEls: Record<number, HTMLImageElement> = $state({});
@@ -148,12 +149,13 @@
     timeline.setAssetSelected(assetId, !isSelected);
   }
 
-  function onAssetClick(assetIdx: number) {
+  function onAssetClick(item: TimelineItem & ({ itemType: 'asset' } | { itemType: 'photoStack' })) {
     didMoveScrollToCurrentGalleryAsset = false;
-    gallery.open(assetIdx);
+    gallery.open(item.pos);
   }
 
-  function getThumbnailBounds(assetIndex: number): ThumbnailBounds {
+  function getThumbnailBounds(pos: PositionInTimeline): ThumbnailBounds {
+    return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     const img = thumbnailImgEls[assetIndex];
     if (!img) {
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
@@ -168,13 +170,48 @@
     };
   }
 
-  async function getSlide(assetIndex: number): Promise<SlideData | null> {
-    const asset = await timeline.getOrLoadAssetAtIndex(assetIndex);
-    if (asset === null) {
-      return null;
+  function slideForAsset(asset: AssetWithSpe): SingleAssetSlide {
+    if (asset.assetType === 'image') {
+      return {
+        assetType: 'image',
+        asset,
+        size: { width: asset.width, height: asset.height },
+        src: '/api/assets/original/' + asset.id,
+        placeholderSrc: '/api/assets/thumbnail/' + asset.id + '/large/avif',
+      };
+    } else {
+      const videoSource = asset.hasDash
+        ? { videoSource: 'dash' as const, mpdManifestUrl: '/api/dash/' + asset.id + '/stream.mpd' }
+        : {
+            videoSource: 'original' as const,
+            mimeType: asset.mimeType,
+            src: '/api/assets/original/' + asset.id,
+          };
+      return {
+        assetType: 'video',
+        asset,
+        size: { width: asset.width, height: asset.height },
+        placeholderSrc: '/api/assets/thumbnail/' + asset.id + '/large/avif',
+        ...videoSource,
+      };
     }
-    await scrollToAssetIndex(assetIndex);
-    return slideForAsset(asset);
+  }
+
+  async function getSlide(pos: PositionInTimeline): Promise<GallerySlide<PositionInTimeline>> {
+    const item = await timeline.getItem(pos);
+    if (item.itemType === 'asset') {
+      const slide = slideForAsset(item);
+      return { ...slide, pos, slideType: 'singleAsset' };
+    } else {
+      const coverSlide = slideForAsset(item.series.assets[item.coverIndex]);
+      return {
+        slideType: 'assetSeries',
+        coverSlide,
+        series: item.series,
+        coverIndex: item.coverIndex,
+        pos,
+      };
+    }
   }
 </script>
 
@@ -201,7 +238,7 @@
           asset={item.asset}
           box={item}
           onAssetClick={() => {
-            onAssetClick(item.assetIndex);
+            onAssetClick(item.timelineItem);
           }}
           onSelectToggled={() => {
             toggleAssetSelected(item.asset.id);
@@ -216,7 +253,7 @@
           box={item}
           showStackIcon
           onAssetClick={() => {
-            onAssetClick(item.firstAssetIndex);
+            onAssetClick(item.timelineItem);
           }}
           onSelectToggled={() => {
             // rough and ugly
@@ -269,6 +306,7 @@
   {getSlide}
   {scrollWrapper}
   {restoreScrollOnGalleryClose}
+  getNextSlidePosition={timeline.getNextItemPosition}
 />
 
 <style>

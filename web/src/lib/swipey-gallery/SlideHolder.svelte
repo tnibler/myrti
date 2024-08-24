@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { GallerySlideData } from './gallery-types';
-  import Slide, { type OpenTransitionParams, type SlideControls } from './Slide.svelte';
+  import Slide, { type OpenTransitionParams } from './Slide.svelte';
 
   type SlideHolderProps = {
     isActive: boolean;
@@ -9,7 +9,6 @@
     slide: Promise<GallerySlideData> | null;
     onContentReady: (() => void) | undefined;
     showContent: boolean;
-    slideControls: SlideControls;
     openTransition: OpenTransitionParams | null;
   };
   let {
@@ -22,7 +21,7 @@
     openTransition,
   }: SlideHolderProps = $props();
   let slideComponent: Slide | null = $state(null);
-  export const controls: SlideControls | null = $derived(slideComponent?.controls);
+  export const slideControls = $derived(slideComponent?.controls);
   const transformStr: string = $derived(`translate3d(${Math.round(xTransform)}px, 0px, 0px)`);
 </script>
 

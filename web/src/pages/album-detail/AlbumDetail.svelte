@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { AlbumItem, AlbumItemId, AssetWithSpe } from '@api/myrti';
   import Gallery from '@lib/swipey-gallery/Gallery.svelte';
-  import { type SlideData, slideForAsset } from '@lib/swipey-gallery/slide-data';
   import type { ThumbnailBounds } from '@lib/swipey-gallery/thumbnail-bounds';
   import type { TileBox } from '@lib/ui/GridTile.svelte';
   import GridTile from '@lib/ui/GridTile.svelte';

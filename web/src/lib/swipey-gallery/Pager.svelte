@@ -118,7 +118,7 @@
   });
   const canMoveLeft = $derived(holderStates[holderOrder[0]].slidePosition !== null);
   const canMoveRight = $derived(holderStates[holderOrder[2]].slidePosition !== null);
-  let slideComponents: Slide[] = $state([]);
+  let slideHolders: SlideHolder[] = $state([]);
   const xTransformSlideCenter = $derived(-currentShift * slideWidth * (1 + slideSpacing));
   let xTransformOffset = $state(0);
   let xTransform = $derived(xTransformSlideCenter + xTransformOffset);
@@ -131,7 +131,7 @@
 
   const animations: AnimationControls = newAnimationControls();
   const slide: SlideControls | null = $derived(
-    holderOrder[1] < slideComponents.length ? slideComponents[holderOrder[1]].controls : null,
+    holderOrder[1] < slideHolders.length ? slideHolders[holderOrder[1]]?.slideControls : null,
   );
   const hideUiTimeoutDuration = 3000;
   let hideUiTimeout: ReturnType<typeof setTimeout> | null = setTimeout(
@@ -407,7 +407,7 @@
           showContent={slideHolder.showContent}
           onContentReady={() => onSlideContentReady(slideHolder.id)}
           slide={slideHolder.slidePosition !== null ? getSlide(slideHolder.slidePosition) : null}
-          bind:this={slideComponents[slideHolder.id]}
+          bind:this={slideHolders[slideHolder.id]}
         />
       {/each}
     </div>

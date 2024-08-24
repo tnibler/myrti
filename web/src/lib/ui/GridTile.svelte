@@ -15,7 +15,7 @@
 </script>
 
 <script lang="ts">
-  import type { Asset } from '@api/myrti';
+  import type { AssetWithSpe } from '@api/myrti';
   import {
     mdiProgressWrench,
     mdiPlayCircleOutline,
@@ -25,16 +25,17 @@
     mdiCircleOutline,
   } from '@mdi/js';
   import { LayersIcon } from 'lucide-svelte';
+  import type { Action } from 'svelte/action';
   import { fade } from 'svelte/transition';
 
   type GridTileProps = {
-    asset: Asset;
+    asset: AssetWithSpe;
     box: TileBox;
     selectState: SelectState;
     showStackIcon: boolean | undefined;
     onSelectToggled: () => void;
     onAssetClick: () => void;
-    imgEl: HTMLImageElement;
+    imgElAction: Action<HTMLImageElement>;
     className: string | undefined;
   };
   let {
@@ -44,7 +45,7 @@
     showStackIcon,
     onSelectToggled,
     onAssetClick,
-    imgEl = $bindable(),
+    imgElAction,
     className,
   }: GridTileProps = $props();
   let isMouseOver = $state(false);
@@ -93,7 +94,7 @@
   <div class="h-full w-full bg-blue-100">
     <!-- svelte-ignore a11y_missing_attribute -->
     <img
-      bind:this={imgEl}
+      use:imgElAction
       src="/api/assets/thumbnail/{asset.id}/large/avif"
       class="absolute bg-black transition-transform"
       class:rounded-xl={isSelected}

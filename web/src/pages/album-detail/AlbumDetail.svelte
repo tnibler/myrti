@@ -11,6 +11,9 @@
   import * as R from 'remeda';
   import { deleteAlbumItems, getAlbumDetails } from '../../api/myrti';
   import { getAlbumDetailsResponse } from '../../api/myrti.zod';
+  import type { GallerySlide } from '@lib/swipey-gallery/gallery-types';
+  import { slideForAsset } from '@lib/swipey-gallery/asset-slide';
+  import type { ActionReturn } from 'svelte/action';
 
   type Props = {
     albumId: string;
@@ -141,18 +144,18 @@
   }
 
   let scrollContainer: HTMLElement | null = $state(null);
-  let gallery: Gallery;
+  let gallery: Gallery<number>;
   /** maps asset index to thumbnail image element */
-  let thumbnailImgEls: Record<number, HTMLImageElement> = $state({});
+  let thumbnailImgEls: Map<number, HTMLImageElement> = new Map();
   const selectedItemIds: Set<AlbumItemId> = $state(new SvelteSet());
   const inSelectMode: boolean = $derived(selectedItemIds.size > 0);
 
-  async function getSlide(index: number): Promise<SlideData | null> {
-    return slideForAsset(assets[index]);
+  async function getSlide(index: number): Promise<GallerySlide<number>> {
+    return { pos: index, slideType: 'singleAsset', ...slideForAsset(assets[index]) };
   }
 
   function getThumbnailBounds(assetIndex: number): ThumbnailBounds {
-    const imgEl = thumbnailImgEls[assetIndex];
+    const imgEl = thumbnailImgEls.get(assetIndex);
     if (!imgEl) {
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     }
@@ -189,6 +192,28 @@
   function onCancelSelectClicked() {
     selectedItemIds.clear();
   }
+
+  /** Roundabout way to bind the <img> of a GridTile to an entry in a Map */
+  function getThumbnailImgElBindAction(assetIndex: number): (el: HTMLImageElement) => ActionReturn {
+    // objects can't easily be used as keys in js, so construct a string key instead
+    return (el) => {
+      thumbnailImgEls.set(assetIndex, el);
+      return {
+        destroy: () => {
+          thumbnailImgEls.delete(assetIndex);
+        },
+      };
+    };
+  }
+
+  function getNextSlidePosition(pos: number, direction: 'left' | 'right'): number | null {
+    if (0 < pos && direction === 'left') {
+      return pos - 1;
+    } else if (pos < assets.length - 1 && direction == 'right') {
+      return pos + 1;
+    }
+    return null;
+  }
 </script>
 
 <div class="flex flex-col h-dvh">
@@ -221,7 +246,7 @@
                     selectState={inSelectMode //
                       ? { state: 'select', isSelected: selectedItemIds.has(tile.item.itemId) }
                       : { state: 'default' }}
-                    bind:imgEl={thumbnailImgEls[tile.assetIndex]}
+                    imgElAction={getThumbnailImgElBindAction(tile.assetIndex)}
                     className={'timeline-item-transition'}
                   />
                 {/each}
@@ -242,4 +267,5 @@
   numSlides={assets.length}
   {getSlide}
   {getThumbnailBounds}
+  {getNextSlidePosition}
 />

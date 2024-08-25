@@ -52,6 +52,9 @@ struct Cli {
     /// Pause image/video processing on startup (for development)
     #[arg(long, default_value_t = false)]
     pause_processing: bool,
+    /// Pause video processing on startup (for development)
+    #[arg(long, default_value_t = false)]
+    pause_video_processing: bool,
 
     #[cfg(feature = "opentelemetry")]
     #[arg(long)]
@@ -200,6 +203,12 @@ async fn main() -> Result<()> {
         scheduler
             .send
             .send(SchedulerMessage::PauseAllProcessing)
+            .await
+            .expect("scheduler must be alive")
+    } else if args.pause_video_processing {
+        scheduler
+            .send
+            .send(SchedulerMessage::PauseVideoPackaging)
             .await
             .expect("scheduler must be alive")
     }

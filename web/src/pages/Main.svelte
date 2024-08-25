@@ -1,5 +1,4 @@
 <script lang="ts">
-  import * as R from 'remeda';
   import AddToAlbumDialog from '@lib/AddToAlbumDialog.svelte';
   import MainLayout from '@lib/MainLayout.svelte';
   import TimelineSelectAppBar from '@lib/TimelineSelectAppBar.svelte';
@@ -36,7 +35,7 @@
   async function onCreateAlbumSubmit(
     submitted: { action: 'createNew'; albumName: string } | { action: 'addTo'; albumId: string },
   ) {
-    const assetIds = Array.from(timeline.selectedAssets.keys());
+    const assetIds = Array.from(timeline.selectedAssetIds);
     if (submitted.action === 'createNew') {
       await createAlbum({
         assets: assetIds,
@@ -70,14 +69,7 @@
     timeline.clearSelection();
   }
 
-  const numAssetsSelected: number = $derived(
-    R.pipe(
-      Array.from(timeline.selectedItems.keys()),
-      R.uniqueBy((it) => (it.itemType === 'asset' ? it : it.series)),
-      R.map((it) => (it.itemType === 'asset' ? 1 : it.series.assets.length)),
-      R.sum(),
-    ),
-  );
+  const numAssetsSelected: number = $derived(timeline.numAssetsSelected);
 </script>
 
 {#snippet timelineGrid()}

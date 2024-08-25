@@ -108,6 +108,7 @@ export interface ITimelineGrid {
   setItemSelected: (item: TimelineItem, selected: boolean) => void;
   isItemSelected: (item: TimelineItem) => boolean;
   readonly numAssetsSelected: number;
+  readonly selectedAssetIds: AssetId[];
   // /** @param clickedAssetIndex asset clicked to perform range selection */
   // setRangeSelected: (clickedAssetIndex: number, selected: boolean) => void;
   // /** Asset is hoevered while shift is pressed, selection range should be highlighted */
@@ -1208,6 +1209,13 @@ export function createTimeline(
         R.uniqueBy(({ item }) => (item.itemType === 'asset' ? item : item.series)),
         R.map(({ item }) => (item.itemType === 'asset' ? 1 : item.series.assets.length)),
         R.sum(),
+      );
+    },
+    get selectedAssetIds() {
+      return R.pipe(
+        Array.from(selectedItems.values()),
+        R.uniqueBy(({ item }) => (item.itemType === 'asset' ? item : item.series)),
+        R.flatMap(({ item }) => (item.itemType === 'asset' ? [item.id] : item.series.assets.map((a) => a.id))),
       );
     },
     set setAnimationsEnabled(v: ((enabled: boolean) => Promise<void>) | null) {

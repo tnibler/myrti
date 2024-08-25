@@ -382,7 +382,7 @@
   style:top={`${topOffset}px`}
 >
   <div
-    class="grow relative"
+    class="grow relative z-[1000]"
     bind:this={pagerWrapper}
     bind:clientHeight={viewport.height}
     bind:clientWidth={viewport.width}

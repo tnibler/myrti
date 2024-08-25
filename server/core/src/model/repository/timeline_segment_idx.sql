@@ -3,7 +3,7 @@ WITH
 series AS (
 	SELECT 
 		AssetSeries.*, 
-		MIN(Asset.taken_date) AS series_date,
+		MAX(Asset.taken_date) AS series_date, -- most recent date becomes this series' sort date
 		COUNT(Asset.asset_id) AS series_len
 	FROM Asset INNER JOIN AssetSeries
 	ON Asset.series_id = AssetSeries.series_id 

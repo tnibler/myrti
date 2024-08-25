@@ -60,7 +60,6 @@
   export async function scrollToTimelineItem(pos: PositionInTimeline) {
     const marginTop = 100;
     const item = await timeline.getGridItemAtPosition(pos);
-    console.log(item);
     if (
       item !== null &&
       (item.top < scrollWrapper.scrollTop ||
@@ -141,8 +140,8 @@
   });
 
   function getSelectState(item: TimelineItem): SelectState {
-    if (timeline.state === 'justLooking' && timeline.selectedItems.size > 0) {
-      const isSelected = timeline.selectedItems.has(item);
+    if (timeline.state === 'justLooking' && timeline.numAssetsSelected > 0) {
+      const isSelected = timeline.isItemSelected(item);
       return { state: 'select', isSelected };
     } else if (timeline.state === 'justLooking') {
       return { state: 'default' };
@@ -152,7 +151,7 @@
   }
 
   function toggleItemSelected(item: TimelineItem) {
-    const isSelected = timeline.selectedItems.has(item);
+    const isSelected = timeline.isItemSelected(item);
     timeline.setItemSelected(item, !isSelected);
   }
 
@@ -220,6 +219,35 @@
       };
     }
   }
+
+  /** bound rectangles of grid items in timeline.addToGroupClickAreas */
+  const clickAreaRects = $derived(
+    timeline.addToGroupClickAreas.map((clickArea) => {
+      let currentTop = Infinity;
+      let currentBottom = -Infinity;
+      let currentLeft = viewport.width;
+      let currentRight = 0;
+      for (const item of clickArea.gridItems) {
+        currentTop = Math.min(item.top, currentTop);
+        currentBottom = Math.max(item.top + item.height, currentBottom);
+        if (
+          item.type === 'asset' ||
+          item.type === 'photoStack' ||
+          (item.type === 'segmentTitle' && item.titleType === 'day')
+        ) {
+          currentLeft = Math.min(item.left, currentLeft);
+          currentRight = Math.max(item.left + item.width, currentRight);
+        }
+      }
+      return {
+        groupId: clickArea.groupId,
+        top: currentTop,
+        left: currentLeft,
+        width: currentRight - currentLeft,
+        height: currentBottom - currentTop,
+      };
+    }),
+  );
 </script>
 
 <div class="scroll-wrapper" bind:this={scrollWrapper} bind:clientHeight={viewport.height}>
@@ -288,15 +316,14 @@
         />
       {/if}
     {/each}
-    {#each timeline.addToGroupClickAreas as area}
-      <div
-        role="button"
-        class="absolute cursor-pointer hover:bg-black/10 border-black/20 hover:border-black/40 border-2 rounded-lg"
-        style="top: {area.top}px;  height: {area.height}px; left: 0px; width: 100%;"
+    {#each clickAreaRects as area}
+      <button
+        class="absolute z-20 hover:bg-black/10 border-black/20 hover:border-black/40 border-2 rounded-lg"
+        style="top: {area.top}px;  height: {area.height}px; left: {area.left}px; width: {area.width}px;"
         onclick={() => {
           timeline.addSelectedToExistingGroup(area.groupId);
         }}
-      ></div>
+      ></button>
     {/each}
   </section>
 </div>

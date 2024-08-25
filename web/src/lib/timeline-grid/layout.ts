@@ -2,6 +2,7 @@ import type { Dayjs } from 'dayjs';
 import type { TimelineGridItem, TimelineOptions } from './timeline.svelte';
 import createJustifiedLayout from 'justified-layout';
 import type { ItemRange, TimelineSegment } from './timeline-types';
+import * as R from 'remeda';
 
 type Box = { top: number; left: number; width: number; height: number };
 
@@ -40,7 +41,7 @@ export function layoutSegments(
   };
   /** save last segment if it might be merged with the next one */
   let candidateToMergeWith: MergeCandidate | null = null;
-  const interMergedSegmentMargin = 20;
+  const interMergedSegmentMargin = 30;
 
   /** Utility function: next segment was not merged with previously saved merge candidate,
    * so compute layout for saved candidate and add to result array */
@@ -187,7 +188,7 @@ export function layoutSegments(
       showMinorTitles = false;
     } else {
       const firstSegment = segments[0].segment;
-      const firstSegmentMonth = firstSegment.start.startOf('month');
+      const firstSegmentMonth = firstSegment.end.startOf('month');
       if (lastMajorTitleDate === null || !lastMajorTitleDate.isSame(firstSegmentMonth)) {
         const majorTitle: TimelineGridItem = {
           type: 'segmentTitle',
@@ -204,7 +205,7 @@ export function layoutSegments(
     }
     for (const { segment, boxes } of segments) {
       const startItemIndex = items.length;
-      let minorTitleHeight = 0;
+      let offsetByTitleHeight = 0;
       if (showMinorTitles) {
         const minorTitle: TimelineGridItem = {
           type: 'segmentTitle',
@@ -219,7 +220,7 @@ export function layoutSegments(
             'titleMinor' +
             (segment.type === 'group' ? 'group' + segment.groupId : segment.start.format()),
         };
-        minorTitleHeight = minorTitle.height;
+        offsetByTitleHeight = minorTitle.height;
         items.push(minorTitle);
       }
       items.push(
@@ -241,7 +242,7 @@ export function layoutSegments(
             const coverAsset = item.series.assets[item.coverIndex];
             const gridItem: TimelineGridItem & { type: 'photoStack' } = {
               type: 'photoStack',
-              top: box.top + startTop + minorTitleHeight,
+              top: box.top + startTop + offsetByTitleHeight,
               left: box.left,
               width: box.width,
               height: box.height,
@@ -261,10 +262,12 @@ export function layoutSegments(
     minorTitleRowIdx += 1;
     startTop += minorTitleHeight + height;
   }
-  const uniqueKeys = new Set(items.map((i) => i.key)).size;
+  const allKeys = items.map((i) => i.key);
+  const uniqueKeys = new Set(allKeys).size;
   console.assert(
     uniqueKeys === items.length,
-    `Non-unique item keys: ${items.length} but ${uniqueKeys} keys`,
+    `Non-unique item keys: ${items.length} but ${uniqueKeys} keys. Duplicates: `,
+    R.difference(allKeys, R.unique(allKeys)),
   );
   console.assert(segmentItemRanges.length === segments.length);
   console.assert(segmentItemRanges.at(-1)!.endIdx === items.length);

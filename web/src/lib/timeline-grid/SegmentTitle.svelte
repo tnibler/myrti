@@ -10,7 +10,7 @@
   let wantMinHeight = $derived(timelineItem.height);
   let actualHeight = $state(0);
   $effect(() => {
-    if (actualHeight >= wantMinHeight) {
+    if (actualHeight > wantMinHeight) {
       onHeightTooSmall(actualHeight);
     }
   });

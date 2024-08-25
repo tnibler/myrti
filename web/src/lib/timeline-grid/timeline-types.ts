@@ -1,5 +1,6 @@
 import type { AssetWithSpe, TimelineSection as ApiTimelineSection } from '@api/myrti';
 import type { Dayjs } from '@lib/dayjs';
+import type { TimelineGridItem } from './timeline.svelte';
 
 export type ItemRange = { startIdx: number; endIdx: number };
 
@@ -46,7 +47,11 @@ export type PositionInTimeline = {
 };
 
 /** One asset or a photo series shown in the timeline, basically whatever is displayed as a small image */
-export type TimelineItem = { pos: PositionInTimeline } & (
+export type TimelineItem = {
+  pos: PositionInTimeline;
+  key: string;
+  sortDate: string;
+} & (
   | ({
       /** A single asset */
       itemType: 'asset';
@@ -58,6 +63,9 @@ export type TimelineItem = { pos: PositionInTimeline } & (
       /** `series.assets[coverIndex]` is the cover image shown in the timelinew
        * for this (portion of a) stack */
       coverIndex: number;
+      /** This piece of the series "contains" series.assets[splitStart..splitEnd] */
+      splitStart: number;
+      splitEnd: number;
     }
 );
 
@@ -69,7 +77,6 @@ export type AssetSeries = {
 
 /** When creating a new group, existing groups become clickable to add the current selection to them */
 export type AddToGroupClickArea = {
-  top: number;
-  height: number;
+  gridItems: TimelineGridItem[];
   groupId: string;
 };

@@ -20,7 +20,7 @@
   };
 
   const timeline: ITimelineGrid = $state(createTimeline(layoutConfig, onAjustTimelineScrollY));
-  const inSelectionMode = $derived(timeline.selectedItems.size > 0);
+  const inSelectionMode = $derived(timeline.numAssetsSelected > 0);
   let timelineScrollWrapper: HTMLElement | null = $state(null);
 
   let addToAlbumDialog: AddToAlbumDialog | null = $state(null);

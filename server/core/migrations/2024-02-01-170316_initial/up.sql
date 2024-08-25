@@ -47,6 +47,16 @@ CREATE TABLE Asset (
   gps_latitude INTEGER,
   gps_longitude INTEGER,
 
+  -- 0: not a motion photo
+  -- 1: motion photo with embedded video inside
+  -- 2: this is the photo part of a motion photo split into 2 files/assets
+  -- 3: this is the video part of a motion photo split into 2 files assets
+  motion_photo INTEGER NOT NULL,
+  -- asset_id of photo/video asset belonging to this motion photo
+  motion_photo_assoc_asset_id INTEGER CHECK ((motion_photo = 2 OR motion_photo = 3) = (motion_photo_assoc_asset_id IS NOT NULL)),
+  motion_photo_pts_us INTEGER CHECK ((motion_photo IS NULL) = (motion_photo_pts_us IS NOT NULL)),
+  motion_photo_video_file_id INTEGER CHECK ((motion_photo = 1) = (motion_photo_video_file_id IS NOT NULL)),
+
   -- columns for images only
   image_format_name TEXT,
 
@@ -61,6 +71,8 @@ CREATE TABLE Asset (
   FOREIGN KEY (series_id) REFERENCES AssetSeries(series_id),
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(asset_root_dir_id),
   UNIQUE(root_dir_id, file_path),
+  FOREIGN KEY (motion_photo_assoc_asset_id) REFERENCES Asset(asset_id),
+  FOREIGN KEY (motion_photo_video_file_id) REFERENCES MotionPhotoVideoFile(file_id),
 
   -- timezone_offset NULL is only valid for timezone_info=UtcCertain, and NoTimestamp I guess?
   CHECK (timezone_info IN (1, 2, 3, 4, 5, 6) AND (timezone_info IN (2, 6) OR timezone_offset IS NOT NULL)),
@@ -154,6 +166,13 @@ CREATE TABLE AlbumThumbnail (
   FOREIGN KEY (album_id) REFERENCES Album(album_id),
   UNIQUE (album_id, format_name, width, height),
   UNIQUE (file_key)
+) STRICT;
+
+CREATE TABLE MotionPhotoVideoFile (
+  file_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  asset_id INTEGER NOT NULL,
+  file_key TEXT NOT NULL,
+  FOREIGN KEY(asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 
 CREATE TABLE Album (

@@ -18,6 +18,6 @@ DROP TABLE FailedThumbnailJob;
 DROP TABLE FailedFFmpeg;
 DROP TABLE FailedShakaPackager;
 DROP TABLE DeletedAutoAssetSeries;
+DROP TABLE MotionPhotoVideoFile;
 
 DROP VIEW TimelineSegment;
-

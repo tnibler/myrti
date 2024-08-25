@@ -120,6 +120,12 @@ pub struct DbInsertAsset<'a> {
     pub exiftool_output: Cow<'a, [u8]>,
     pub gps_latitude: Option<i64>,
     pub gps_longitude: Option<i64>,
+
+    pub motion_photo: i32,
+    pub motion_photo_assoc_asset_id: Option<i64>,
+    pub motion_photo_pts_us: Option<i64>,
+    pub motion_photo_video_file_id: Option<i64>,
+
     pub image_format_name: Option<Cow<'a, str>>,
     pub ffprobe_output: Option<Cow<'a, [u8]>>,
     pub video_codec_name: Option<Cow<'a, str>>,

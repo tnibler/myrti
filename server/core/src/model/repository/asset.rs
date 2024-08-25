@@ -232,6 +232,12 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
         exiftool_output: Cow::Borrowed(&create_asset.base.exiftool_output),
         gps_latitude: create_asset.base.gps_coordinates.map(|c| c.lat),
         gps_longitude: create_asset.base.gps_coordinates.map(|c| c.lon),
+
+        motion_photo: 0,
+        motion_photo_assoc_asset_id: None,
+        motion_photo_pts_us: None,
+        motion_photo_video_file_id: None,
+
         image_format_name: match &create_asset.spe {
             CreateAssetSpe::Image(img) => Some(img.image_format_name.as_str().into()),
             CreateAssetSpe::Video(_) => None,

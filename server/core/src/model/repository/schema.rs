@@ -41,6 +41,12 @@ diesel::table! {
         exiftool_output -> Blob,
         gps_latitude -> Nullable<BigInt>,
         gps_longitude -> Nullable<BigInt>,
+
+        motion_photo -> Integer,
+        motion_photo_assoc_asset_id -> Nullable<BigInt>,
+        motion_photo_pts_us -> Nullable<BigInt>,
+        motion_photo_video_file_id -> Nullable<BigInt>,
+
         image_format_name -> Nullable<Text>,
         ffprobe_output -> Nullable<Binary>,
         video_codec_name -> Nullable<Text>,
@@ -143,6 +149,14 @@ diesel::table! {
 }
 
 diesel::table! {
+    MotionPhotoVideoFile (file_id) {
+        file_id -> BigInt,
+        asset_id -> BigInt,
+        file_key -> Text,
+    }
+}
+
+diesel::table! {
     AssetSeries (series_id) {
         series_id -> BigInt,
         is_auto -> Integer,
@@ -214,6 +228,7 @@ diesel::joinable!(TimelineGroupItem -> Asset (asset_id));
 diesel::joinable!(TimelineGroupItem -> TimelineGroup (group_id));
 diesel::joinable!(VideoRepresentation -> Asset (asset_id));
 diesel::joinable!(DeletedAutoAssetSeries -> Asset (asset_id));
+diesel::joinable!(MotionPhotoVideoFile -> Asset (asset_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     Album,
@@ -233,5 +248,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     TimelineGroupItem,
     AssetSeries,
     VideoRepresentation,
-    DeletedAutoAssetSeries
+    DeletedAutoAssetSeries,
+    MotionPhotoVideoFile,
 );

@@ -4,7 +4,7 @@ use nix::{
 };
 use tokio::sync::{mpsc, oneshot};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProcessControl {
     Suspend,
     Resume,
@@ -21,6 +21,12 @@ pub enum ProcessResult {
 
 pub type ProcessControlReceiver = mpsc::Receiver<ProcessControl>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProcessState {
+    Running,
+    Stopped,
+}
+
 /// Run process, waiting for messages while waiting for it to finish.
 /// Returns process output even if stdout/stderr are piped to null, in which case they will be
 /// empty strings.
@@ -34,6 +40,8 @@ pub async fn run_process(
     let (send, mut recv) = oneshot::channel();
     tokio::task::spawn(async move { send.send(child.wait_with_output().await) });
     let mut killed_by_signal = false;
+    let mut state = ProcessState::Running;
+    let pid = Pid::from_raw(pid.try_into().expect("pid_t is a signed 32-bit int"));
     loop {
         tokio::select! {
             // Err variant is produced when sender is dropped, which we can ignore
@@ -60,14 +68,15 @@ pub async fn run_process(
                             continue;
                         }
                         tracing::info!("sending signal");
-                        let (signal, will_kill) = match msg {
-                            ProcessControl::Suspend => (Signal::SIGTSTP, false),
-                            ProcessControl::Resume => (Signal::SIGCONT, false),
-                            ProcessControl::Quit => (Signal::SIGQUIT, true), // wait for it to exit on quit
-                            ProcessControl::Kill => (Signal::SIGKILL, true),
+                        let (signals, will_kill) = match msg {
+                            ProcessControl::Suspend => ([Signal::SIGTSTP].as_slice(), false),
+                            ProcessControl::Resume => ([Signal::SIGCONT].as_slice(), false),
+                            ProcessControl::Quit if state == ProcessState::Stopped => ([Signal::SIGCONT, Signal::SIGTERM].as_slice(), true), // wait for it to exit on quit
+                            ProcessControl::Quit => ([Signal::SIGQUIT].as_slice(), true), // wait for it to exit on quit
+                            ProcessControl::Kill => ([Signal::SIGKILL].as_slice(), true),
                         };
-                        let pid = Pid::from_raw(pid.try_into().expect("pid_t is a signed 32-bit int"));
-                        match kill(pid, signal) {
+                        for signal in signals {
+                        match kill(pid, *signal) {
                             Err(err) => {
                                 tracing::error!("Error sending signal {:?} to process with PID {}", signal, pid);
                                 if will_kill {
@@ -77,6 +86,12 @@ pub async fn run_process(
                             Ok(()) =>  {
                                 killed_by_signal = will_kill;
                             }
+                        }
+                        }
+                        if msg == ProcessControl::Suspend { 
+                            state = ProcessState::Stopped;
+                        } else if msg == ProcessControl::Resume {
+                            state = ProcessState::Running;
                         }
                     },
                     None => {

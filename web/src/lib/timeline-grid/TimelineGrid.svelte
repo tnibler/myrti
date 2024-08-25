@@ -1,6 +1,7 @@
 <script lang="ts">
   import Gallery from '@lib/swipey-gallery/Gallery.svelte';
   import type { ThumbnailBounds } from '@lib/swipey-gallery/thumbnail-bounds';
+  import { slideForAsset } from '@lib/swipey-gallery/asset-slide';
   import type { AssetId, AssetWithSpe } from '@api/myrti';
   import type { ITimelineGrid } from '@lib/timeline-grid/timeline.svelte';
   import type { ActionReturn } from 'svelte/action';
@@ -9,7 +10,7 @@
   import type { SelectState } from '@lib/ui/GridTile.svelte';
   import CreateGroupInput from './CreateGroupInput.svelte';
   import type { PositionInTimeline, TimelineItem } from './timeline-types';
-  import type { GallerySlide, SingleAssetSlide } from '@lib/swipey-gallery/gallery-types';
+  import type { GallerySlide } from '@lib/swipey-gallery/gallery-types';
 
   type TimelineGridProps = {
     timeline: ITimelineGrid;
@@ -173,33 +174,6 @@
         height: img.height,
       },
     };
-  }
-
-  function slideForAsset(asset: AssetWithSpe): SingleAssetSlide {
-    if (asset.assetType === 'image') {
-      return {
-        assetType: 'image',
-        asset,
-        size: { width: asset.width, height: asset.height },
-        src: '/api/assets/original/' + asset.id,
-        placeholderSrc: '/api/assets/thumbnail/' + asset.id + '/large/avif',
-      };
-    } else {
-      const videoSource = asset.hasDash
-        ? { videoSource: 'dash' as const, mpdManifestUrl: '/api/dash/' + asset.id + '/stream.mpd' }
-        : {
-            videoSource: 'original' as const,
-            mimeType: asset.mimeType,
-            src: '/api/assets/original/' + asset.id,
-          };
-      return {
-        assetType: 'video',
-        asset,
-        size: { width: asset.width, height: asset.height },
-        placeholderSrc: '/api/assets/thumbnail/' + asset.id + '/large/avif',
-        ...videoSource,
-      };
-    }
   }
 
   async function getSlide(pos: PositionInTimeline): Promise<GallerySlide<PositionInTimeline>> {

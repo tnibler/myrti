@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use core::{
+use myrti_core::{
     core::{scheduler::SchedulerHandle, storage::Storage},
     model::repository::db::DbPool,
 };

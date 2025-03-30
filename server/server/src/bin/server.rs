@@ -25,7 +25,7 @@ use tracing::info;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{prelude::*, EnvFilter};
 
-use core::{
+use myrti_core::{
     config::Config,
     core::{
         scheduler::{SchedulerHandle, SchedulerMessage},
@@ -153,10 +153,10 @@ async fn main() -> Result<()> {
         tracing.init();
     }
 
-    core::global_init();
+    myrti_core::global_init();
     // TODO make all paths in config absolute relative to config_dir if they're not already
     let config_path = PathBuf::from(args.config);
-    let config = core::config::read_config(&config_path).await.unwrap();
+    let config = myrti_core::config::read_config(&config_path).await.unwrap();
     // all paths in config are relative to this
     let config_dir = config_path
         .parent()
@@ -164,7 +164,7 @@ async fn main() -> Result<()> {
 
     if !args.skip_startup_check {
         tracing::info!("Running self check");
-        core::startup_self_check::run_self_check(config.bin_paths.as_ref())
+        myrti_core::startup_self_check::run_self_check(config.bin_paths.as_ref())
             .await
             .expect("Self check failed");
         tracing::info!("Self check successful");

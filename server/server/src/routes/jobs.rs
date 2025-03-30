@@ -1,4 +1,4 @@
-use core::core::scheduler::SchedulerMessage;
+use myrti_core::core::scheduler::SchedulerMessage;
 
 use axum::{extract::State, routing::post, Router};
 use eyre::Context;

@@ -10,7 +10,7 @@ use eyre::{eyre, Context, Result};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use core::{
+use myrti_core::{
     catalog::storage_key,
     core::storage::{StorageProvider, StorageReadError},
     deadpool_diesel, interact,

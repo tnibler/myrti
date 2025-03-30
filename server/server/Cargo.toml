@@ -18,7 +18,7 @@ opentelemetry = [
 
 [dependencies]
 # geocode = { path = "../geocode" }
-core = { path = "../core" }
+myrti_core = { path = "../myrti_core" }
 
 async-trait = "0.1.73"
 axum = { version = "0.7.5", features = ["tracing", "macros", "json", "tokio", "query" ] }

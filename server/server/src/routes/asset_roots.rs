@@ -4,8 +4,8 @@ use axum::{
     Json, Router,
 };
 
-use core::model::{self, repository};
-use core::{deadpool_diesel, interact};
+use myrti_core::model::{self, repository};
+use myrti_core::{deadpool_diesel, interact};
 
 use crate::{
     app_state::SharedState,

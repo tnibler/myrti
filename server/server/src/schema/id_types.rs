@@ -2,7 +2,7 @@ use eyre::eyre;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use core::model;
+use myrti_core::model;
 
 macro_rules! impl_api_id {
     ($ident:ident) => {

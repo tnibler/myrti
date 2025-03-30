@@ -1,4 +1,4 @@
-use core::{
+use myrti_core::{
     core::scheduler::{SchedulerMessage, UserRequest},
     model::{self},
 };

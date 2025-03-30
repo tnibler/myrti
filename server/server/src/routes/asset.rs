@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
 use utoipa::ToSchema;
 
-use core::{
+use myrti_core::{
     catalog::storage_key,
     core::storage::{StorageProvider, StorageReadError},
     deadpool_diesel, interact,
@@ -100,7 +100,7 @@ async fn get_asset_details(
 ) -> ApiResult<Json<AssetDetailsResponse>> {
     let asset_id: model::AssetId = asset_id.try_into()?;
     let conn = app_state.pool.get().await?;
-    let exiftool_output = interact!(conn, move |conn| {
+    let exiftool_output: Vec<u8> = interact!(conn, move |conn| {
         repository::asset::get_asset_exiftool_output(conn, asset_id)
     })
     .await??;

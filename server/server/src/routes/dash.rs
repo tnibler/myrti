@@ -10,7 +10,7 @@ use serde::Deserialize;
 use tower::ServiceExt;
 use tracing::Instrument;
 
-use core::{catalog::storage_key, core::storage::StorageProvider, model};
+use myrti_core::{catalog::storage_key, core::storage::StorageProvider, model};
 
 use crate::{app_state::SharedState, http_error::ApiResult, schema::AssetId};
 

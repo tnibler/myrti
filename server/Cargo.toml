@@ -2,7 +2,7 @@
 resolver = "2"
 
 members = [
-  "core",
+  "myrti_core",
   # "geocode",
   "server",
 ]

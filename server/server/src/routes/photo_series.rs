@@ -1,10 +1,9 @@
-use core::{
-    interact,
+use myrti_core::{
+    deadpool_diesel, interact,
     model::{self, repository},
 };
 
 use axum::{extract::State, routing::post, Json, Router};
-use core::deadpool_diesel;
 use eyre::{eyre, Context, Result};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

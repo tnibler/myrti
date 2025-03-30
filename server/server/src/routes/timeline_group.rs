@@ -1,4 +1,4 @@
-use core::{
+use myrti_core::{
     deadpool_diesel, interact,
     model::{self, repository},
 };

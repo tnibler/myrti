@@ -36,6 +36,7 @@ fn main() {
             wrapper_cc.flag(flag);
         }
     }
+    wrapper_cc.opt_level(2);
     wrapper_cc.compile("vips_wrapper");
 
     let bindings = bindgen::Builder::default()

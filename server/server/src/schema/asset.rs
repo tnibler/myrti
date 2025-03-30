@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use core::model;
+use myrti_core::model;
 use std::borrow::Cow;
 
 use crate::mime_type::guess_mime_type;

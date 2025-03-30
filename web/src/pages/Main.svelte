@@ -11,7 +11,7 @@
   import { appendAssetsToAlbum, createAlbum } from '@api/myrti';
 
   const layoutConfig: TimelineOptions = {
-    targetRowHeight: 120,
+    targetRowHeight: 160,
     headerHeight: 50,
     segmentMargin: 20,
     boxSpacing: 4,

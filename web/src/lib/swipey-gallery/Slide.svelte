@@ -83,17 +83,12 @@
     return 'grab';
   });
 
-  enum PlaceholderTransition {
-    No,
-    Running,
-    Finished,
-  }
-  let placeholderTransitionState = $state(PlaceholderTransition.No as PlaceholderTransition);
+  type PlaceholderTransition = 'No' | 'Running' | 'Finished';
+
+  let placeholderTransitionState = $state('No' as PlaceholderTransition);
   let contentHasLoaded = $state(false);
   let isContentVisible = $state(false);
-  let placeholderVisible = $derived(
-    !isContentVisible || placeholderTransitionState === PlaceholderTransition.Running,
-  );
+  let placeholderVisible = $derived(!isContentVisible || placeholderTransitionState === 'Running');
   /** Wait this long after the real content is ready to hide the placeholder to reveal the <img> underneath.
 	Without this, there is a flicker on some devices/browsers. */
   const PLACEHOLDER_HIDE_DELAY = slideToDisplay.assetType === 'image' ? 450 : 0;
@@ -112,11 +107,7 @@
   $effect(() => {
     // small delay between image being loaded and allowed to be shown and actually doing it
     // for flicker reasons. Not perfect but pretty good
-    if (
-      !isContentVisible &&
-      contentHasLoaded &&
-      placeholderTransitionState !== PlaceholderTransition.Running
-    ) {
+    if (!isContentVisible && contentHasLoaded && placeholderTransitionState !== 'Running') {
       isContentVisible = true;
     }
   });
@@ -226,11 +217,7 @@
   });
 
   $effect(() => {
-    if (
-      openTransition != null &&
-      placeholderEl &&
-      placeholderTransitionState === PlaceholderTransition.No
-    ) {
+    if (openTransition != null && placeholderEl && placeholderTransitionState === 'No') {
       addOpenTransition(placeholderEl, openTransition);
     }
   });
@@ -252,14 +239,14 @@
   function addOpenTransition(el: HTMLImageElement, t: OpenTransitionParams) {
     const transform = getTransformToFitThumbnail(t.fromBounds);
     el.style.transform = transform;
-    placeholderTransitionState = PlaceholderTransition.Running;
+    placeholderTransitionState = 'Running';
 
     requestAnimationFrame(() => {
       const listener = (e: TransitionEvent) => {
         if (e.target === el) {
           el.removeEventListener('transitionend', listener, false);
           el.removeEventListener('transitioncancel', listener, false);
-          placeholderTransitionState = PlaceholderTransition.Finished;
+          placeholderTransitionState = 'Finished';
           t.onTransitionEnd();
         }
       };
@@ -310,7 +297,7 @@
       };
       placeholderEl.addEventListener('transitionend', listener, false);
       placeholderEl.addEventListener('transitioncancel', listener, false);
-      placeholderTransitionState = PlaceholderTransition.Running;
+      placeholderTransitionState = 'Running';
 
       requestAnimationFrame(() => {
         if (!placeholderEl) {
@@ -419,8 +406,7 @@
       style:width="{width}px"
       style:height="{height}px"
       style:user-select="none"
-      class:slide-transition-transform={placeholderTransitionState ===
-        PlaceholderTransition.Running}
+      class:slide-transition-transform={placeholderTransitionState === 'Running'}
     />
   {/if}
 </div>

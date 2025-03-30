@@ -21,7 +21,11 @@
     openTransition,
   }: SlideHolderProps = $props();
   let slideComponent: Slide | null = $state(null);
-  export const slideControls = $derived(slideComponent?.controls);
+
+  export function slideControls() {
+    return slideComponent?.controls;
+  }
+  // export const slideControls = $derived(slideComponent?.controls);
   const transformStr: string = $derived(`translate3d(${Math.round(xTransform)}px, 0px, 0px)`);
 </script>
 

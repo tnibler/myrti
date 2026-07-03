@@ -220,13 +220,13 @@ pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
     max_segment,
     asset_count,
     (
-        SELECT MAX(tl_segment_idx.taken_date)
+        SELECT MAX(tl_segment_idx.sort_date)
         FROM tl_segment_idx
         WHERE section_segments.min_segment = tl_segment_idx.segment_idx
         GROUP BY tl_segment_idx.segment_idx
     ) AS newest_asset_taken_date,
     (
-        SELECT MIN(tl_segment_idx.taken_date)
+        SELECT MIN(tl_segment_idx.sort_date)
         FROM tl_segment_idx
         WHERE section_segments.max_segment = tl_segment_idx.segment_idx
         GROUP BY tl_segment_idx.segment_idx

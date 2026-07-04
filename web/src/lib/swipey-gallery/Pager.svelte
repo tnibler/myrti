@@ -263,7 +263,7 @@
     animations.stopAnimationsFor('pager');
     animations.startSpringAnimation(
       {
-        start: 0,
+        start: xTransformOffset,
         end: destX - xTransformSlideCenter,
         velocity: 0,
         frequency: 30,

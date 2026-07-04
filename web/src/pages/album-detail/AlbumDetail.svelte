@@ -13,7 +13,6 @@
   import { getAlbumDetailsResponse } from '../../api/myrti.zod';
   import type { GallerySlide } from '@lib/swipey-gallery/gallery-types';
   import { slideForAsset } from '@lib/swipey-gallery/asset-slide';
-  import type { ActionReturn } from 'svelte/action';
 
   type Props = {
     albumId: string;
@@ -146,7 +145,6 @@
   let scrollContainer: HTMLElement | null = $state(null);
   let gallery: Gallery<number>;
   /** maps asset index to thumbnail image element */
-  let thumbnailImgEls: Map<number, HTMLImageElement> = new Map();
   const selectedItemIds: Set<AlbumItemId> = $state(new SvelteSet());
   const inSelectMode: boolean = $derived(selectedItemIds.size > 0);
 
@@ -155,8 +153,8 @@
   }
 
   function getThumbnailBounds(assetIndex: number): ThumbnailBounds {
-    const imgEl = thumbnailImgEls.get(assetIndex);
-    if (!imgEl) {
+    const imgEl = document.getElementById(`thumb${assetIndex}`);
+    if (!imgEl || !(imgEl instanceof HTMLImageElement)) {
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     }
     return {
@@ -191,19 +189,6 @@
 
   function onCancelSelectClicked() {
     selectedItemIds.clear();
-  }
-
-  /** Roundabout way to bind the <img> of a GridTile to an entry in a Map */
-  function getThumbnailImgElBindAction(assetIndex: number): (el: HTMLImageElement) => ActionReturn {
-    // objects can't easily be used as keys in js, so construct a string key instead
-    return (el) => {
-      thumbnailImgEls.set(assetIndex, el);
-      return {
-        destroy: () => {
-          thumbnailImgEls.delete(assetIndex);
-        },
-      };
-    };
   }
 
   function getNextSlidePosition(pos: number, direction: 'left' | 'right'): number | null {
@@ -246,7 +231,7 @@
                     selectState={inSelectMode //
                       ? { state: 'select', isSelected: selectedItemIds.has(tile.item.itemId) }
                       : { state: 'default' }}
-                    imgElAction={getThumbnailImgElBindAction(tile.assetIndex)}
+                    imgElId={`thumb${tile.assetIndex}`}
                     className={'timeline-item-transition'}
                   />
                 {/each}

@@ -35,7 +35,7 @@
     showStackIcon: boolean | undefined;
     onSelectToggled: () => void;
     onAssetClick: () => void;
-    imgElAction: Action<HTMLImageElement>;
+    imgElId: string;
     className: string | undefined;
   };
   let {
@@ -45,8 +45,8 @@
     showStackIcon,
     onSelectToggled,
     onAssetClick,
-    imgElAction,
     className,
+    imgElId,
   }: GridTileProps = $props();
   let isMouseOver = $state(false);
   const isSelected = $derived(selectState.state === 'select' && selectState.isSelected);
@@ -94,7 +94,7 @@
   <div class="h-full w-full bg-blue-100">
     <!-- svelte-ignore a11y_missing_attribute -->
     <img
-      use:imgElAction
+      id={imgElId}
       src="/api/assets/thumbnail/{asset.id}/large/avif"
       class="absolute bg-black transition-transform"
       class:rounded-xl={isSelected}

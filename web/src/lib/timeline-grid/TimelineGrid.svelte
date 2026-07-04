@@ -21,7 +21,6 @@
   let gallery: Gallery<PositionInTimeline>;
 
   let { timeline, scrollWrapper = $bindable() }: TimelineGridProps = $props();
-  const thumbnailImgEls: Map<string, HTMLImageElement> = new Map();
   let gridItemTransitionClass: string | undefined = $state();
   let animationsDisabledToStart = true;
   let didMoveScrollToCurrentGalleryAsset = $state(false);
@@ -109,22 +108,6 @@
     };
   }
 
-  /** Roundabout way to bind the <img> of a GridTile to an entry in a Map */
-  function getThumbnailImgElBindAction(
-    key: PositionInTimeline,
-  ): (el: HTMLImageElement) => ActionReturn {
-    // objects can't easily be used as keys in js, so construct a string key instead
-    const k = `${key.sectionIndex}-${key.segmentIndex}-${key.itemIndex}`;
-    return (el) => {
-      thumbnailImgEls.set(k, el);
-      return {
-        destroy: () => {
-          thumbnailImgEls.delete(k);
-        },
-      };
-    };
-  }
-
   const visibleItems = $derived.by(() => {
     const items = timeline.items
       .slice(timeline.visibleItems.startIdx, timeline.visibleItems.endIdx)
@@ -162,16 +145,18 @@
   }
 
   function getThumbnailBounds(pos: PositionInTimeline): ThumbnailBounds {
-    const img = thumbnailImgEls.get(`${pos.sectionIndex}-${pos.segmentIndex}-${pos.itemIndex}`);
-    if (!img) {
+    const imgEl = document.getElementById(
+      `thumb${pos.sectionIndex}-${pos.segmentIndex}-${pos.itemIndex}`,
+    );
+    if (!imgEl || !(imgEl instanceof HTMLImageElement)) {
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     }
     return {
       rect: {
-        x: img.x,
-        y: img.y,
-        width: img.width,
-        height: img.height,
+        x: imgEl.x,
+        y: imgEl.y,
+        width: imgEl.width,
+        height: imgEl.height,
       },
     };
   }
@@ -252,8 +237,8 @@
           onSelectToggled={() => {
             toggleItemSelected(item.timelineItem);
           }}
+          imgElId={`thumb${item.timelineItem.pos.sectionIndex}-${item.timelineItem.pos.segmentIndex}-${item.timelineItem.pos.itemIndex}`}
           selectState={getSelectState(item.timelineItem)}
-          imgElAction={getThumbnailImgElBindAction(item.timelineItem.pos)}
         />
       {:else if item.type === 'photoStack'}
         <GridTile
@@ -267,8 +252,8 @@
           onSelectToggled={() => {
             toggleItemSelected(item.timelineItem);
           }}
+          imgElId={`thumb${item.timelineItem.pos.sectionIndex}-${item.timelineItem.pos.segmentIndex}-${item.timelineItem.pos.itemIndex}`}
           selectState={getSelectState(item.timelineItem)}
-          imgElAction={getThumbnailImgElBindAction(item.timelineItem.pos)}
         />
       {:else if item.type === 'segmentTitle'}
         <SegmentTitle

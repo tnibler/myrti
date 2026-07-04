@@ -150,7 +150,7 @@ export function createTimeline(
 ): ITimelineGrid {
   let isInitialized = false;
   let viewport: Viewport = { width: 0, height: 0 };
-  let state: TimelineState = $state({ state: 'justLooking' });
+  let state: TimelineState = $state({ state: 'justLooking' } as TimelineState);
   let items: TimelineGridItem[] = $state([]);
   let sections: TimelineSection[] = $state([]);
   const timelineHeight: number = $derived(
@@ -347,6 +347,7 @@ export function createTimeline(
     for (let i = 0; i < segments.length; i += 1) {
       const segment = segments[i];
       // item indices relative to this section's startIdx
+      console.assert(segmentItemRanges[i] !== null);
       segment.itemRange = segmentItemRanges[i];
       // set group's click area
       if (segment.type === 'group') {
@@ -391,8 +392,8 @@ export function createTimeline(
       if (s.items) {
         s.items.startIdx += sectionItems.length;
         s.items.endIdx += sectionItems.length;
-        for (let i = s.items.startIdx; i < s.items.endIdx; i += 1) {
-          items[i].top += heightDelta;
+        for (let j = s.items.startIdx; j < s.items.endIdx; j += 1) {
+          items[j].top += heightDelta;
         }
       }
     }
@@ -599,7 +600,12 @@ export function createTimeline(
           itemIndex: segs[si].items.length - 1,
         };
       } else if (0 < pos.sectionIndex) {
-        const segs = section.segments;
+        const prevSection = sections[pos.sectionIndex - 1];
+        const segs = prevSection.segments;
+        if (segs === null) {
+          console.error('timeline getNextItemPosition: previous section is not loaded');
+          return null;
+        }
         return {
           sectionIndex: pos.sectionIndex - 1,
           segmentIndex: segs.length - 1,
@@ -639,11 +645,15 @@ export function createTimeline(
 
     const untreatedItems = new Set(selectedItems.keys());
     const affectedSectionIdxs: number[] = [];
+    let itemShiftAmount = 0;
     for (let sectionIdx = 0; sectionIdx < sections.length; sectionIdx += 1) {
       const section = sections[sectionIdx];
       const segments = section.segments;
       if (!segments) {
         continue;
+      }
+      if (section.items !== null) {
+        section.items.startIdx -= itemShiftAmount;
       }
       const segmentsToRemove: Set<number> = new Set();
       let newNumAssets = 0;
@@ -656,6 +666,13 @@ export function createTimeline(
         for (const item of segment.items) {
           if (selectedItems.has(item.key)) {
             untreatedItems.delete(item.key);
+            if (section.items !== null) {
+              // Section needs to be laid out again, remove grid items if not done already
+              const numItems = section.items.endIdx - section.items.startIdx;
+              items.splice(section.items.startIdx, numItems);
+              section.items = null;
+              itemShiftAmount += numItems;
+            }
           } else {
             remainingItems.push(item);
           }
@@ -678,6 +695,9 @@ export function createTimeline(
           segmentsToRemove.add(segmentIdx);
         } else {
           segment.items = remainingItems;
+          for (let [idx, item] of segment.items.entries()) {
+            item.pos.itemIndex = idx;
+          }
         }
       }
       if (segmentsToRemove.size > 0) {
@@ -687,21 +707,8 @@ export function createTimeline(
         // since sections on their own are not displayed or anything
       }
       section.data.numAssets = newNumAssets;
-    }
-
-    let itemShiftAmount = 0;
-    for (let i = 0; i < sections.length; i++) {
-      const s = sections[i];
-      if (s.items === null) {
-        continue;
-      }
-      s.items.startIdx -= itemShiftAmount;
-      s.items.endIdx -= itemShiftAmount;
-      if (affectedSectionIdxs.indexOf(i) >= 0) {
-        const numItems = s.items.endIdx - s.items.startIdx;
-        itemShiftAmount += numItems;
-        items.splice(s.items.startIdx, numItems);
-        s.items = null;
+      if (section.items !== null) {
+        section.items.endIdx -= itemShiftAmount;
       }
     }
     visibleItems.endIdx -= selectedItems.size; // not 100% sure on this
@@ -838,7 +845,6 @@ export function createTimeline(
     }
 
     // find item in items array
-    let itemIndex = -1;
     for (let i = section.items.startIdx; i < section.items.endIdx; i += 1) {
       const item = items[i];
       if (item.type === 'asset' || item.type === 'photoStack') {
@@ -847,16 +853,12 @@ export function createTimeline(
           item.timelineItem.pos.segmentIndex === pos.segmentIndex &&
           item.timelineItem.pos.itemIndex === pos.itemIndex
         ) {
-          itemIndex = i;
-          break;
+          return items[i];
         }
       }
     }
-    console.assert(itemIndex >= 0, 'loaded and laid out section but did not find correct item');
-    if (itemIndex < 0) {
-      return null;
-    }
-    return items[itemIndex];
+    console.error('loaded and laid out section but did not find correct item');
+    return null;
   }
 
   async function createGroupClicked() {
@@ -1215,7 +1217,9 @@ export function createTimeline(
       return R.pipe(
         Array.from(selectedItems.values()),
         R.uniqueBy(({ item }) => (item.itemType === 'asset' ? item : item.series)),
-        R.flatMap(({ item }) => (item.itemType === 'asset' ? [item.id] : item.series.assets.map((a) => a.id))),
+        R.flatMap(({ item }) =>
+          item.itemType === 'asset' ? [item.id] : item.series.assets.map((a) => a.id),
+        ),
       );
     },
     set setAnimationsEnabled(v: ((enabled: boolean) => Promise<void>) | null) {

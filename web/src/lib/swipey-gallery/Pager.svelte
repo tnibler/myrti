@@ -131,7 +131,7 @@
 
   const animations: AnimationControls = newAnimationControls();
   const slide: SlideControls | null = $derived(
-    holderOrder[1] < slideHolders.length ? slideHolders[holderOrder[1]]?.slideControls : null,
+    holderOrder[1] < slideHolders.length ? slideHolders[holderOrder[1]]?.slideControls() : null,
   );
   const hideUiTimeoutDuration = 3000;
   let hideUiTimeout: ReturnType<typeof setTimeout> | null = setTimeout(

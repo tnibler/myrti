@@ -186,6 +186,23 @@ export function layoutSegments(
       items.push(titleInput);
       startTop += titleInput.height;
       showMinorTitles = false;
+    } else if (segments.length === 1 && segments[0].segment.type === 'group') {
+      const group = segments[0].segment;
+      const majorTitle: TimelineGridItem = {
+        type: 'segmentTitle',
+        titleType: 'major',
+        top: startTop,
+        height: opts.headerHeight,
+        title:
+          group.title +
+          (group.end.startOf('month') == group.start.startOf('month')
+            ? ` (${group.end.format('MMMM YYYY')})`
+            : ` (${group.end.format('MMMM YYYY')} - ${group.start.format('MMMM YYYY')})`),
+        key: 'titleMajorGroup' + group.groupId,
+      };
+      items.push(majorTitle);
+      startTop += majorTitle.height;
+      showMinorTitles = false;
     } else {
       const firstSegment = segments[0].segment;
       const firstSegmentMonth = firstSegment.end.startOf('month');
@@ -196,15 +213,16 @@ export function layoutSegments(
           top: startTop,
           height: opts.headerHeight,
           title: segments[0].segment.start.format('MMMM YYYY'),
-          key: 'titleMajor' + firstSegmentMonth.format('YYYY-MM'), // broken because of duplicate months
+          key: 'titleMajor' + firstSegmentMonth.format('YYYY-MM'),
         };
         items.push(majorTitle);
         startTop += majorTitle.height;
         lastMajorTitleDate = firstSegmentMonth;
       }
     }
+
     for (const { segment, boxes } of segments) {
-      const startItemIndex = items.length;
+      const startItemIndex = items.length + baseAssetIndex;
       let offsetByTitleHeight = 0;
       if (showMinorTitles) {
         const minorTitle: TimelineGridItem = {

@@ -51,37 +51,11 @@ export type ZoomUpdate = {
   newZoomLevel: number;
 };
 
-export function zoomTo(
-  toZoomLevel: number,
-  zoomPoint: Point,
-  currentZoomLevel: number,
+export function updateZoom(
+  state: ZoomState,
   slide: SlideState,
-): ZoomUpdate {
-  const newSlidePan = {
-    x: computePanForChangedZoomLevel(
-      'x',
-      toZoomLevel,
-      slide.currentZoomLevel,
-      zoomPoint,
-      zoomPoint,
-      slide.pan,
-    ),
-    y: computePanForChangedZoomLevel(
-      'y',
-      toZoomLevel,
-      slide.currentZoomLevel,
-      zoomPoint,
-      zoomPoint,
-      slide.pan,
-    ),
-  };
-  return {
-    newSlidePan,
-    newZoomLevel: zoomLevel,
-  };
-}
-
-export function updateZoom(state: ZoomState, slide: SlideState): ZoomUpdate | null {
+  viewportSize: Size,
+): ZoomUpdate | null {
   if (
     !state.doZoom ||
     (pointsEqual(state.p1, state.p1.prev) && pointsEqual(state.p2, state.p2.prev))
@@ -92,8 +66,18 @@ export function updateZoom(state: ZoomState, slide: SlideState): ZoomUpdate | nu
   const p2 = state.p2;
   const minZoomLevel = slide.zoomLevels.min;
   const maxZoomLevel = slide.zoomLevels.max;
-  const zoomPoint = centerPoint(p1, p2);
-  const zoomStartPoint = centerPoint(p1.start, p2.start);
+
+  // translate points from screen coords to pan with origin at center. bit ugly to do that here of all places
+  const zoomPoint_ = centerPoint(p1, p2);
+  const zoomPoint = {
+    x: zoomPoint_.x - viewportSize.width / 2,
+    y: zoomPoint_.y - viewportSize.height / 2,
+  };
+  const zoomStartPoint_ = centerPoint(p1.start, p2.start);
+  const zoomStartPoint = {
+    x: zoomStartPoint_.x - viewportSize.width / 2,
+    y: zoomStartPoint_.y - viewportSize.height / 2,
+  };
   // zoom level without any correction/clamping/friction
   const rawZoomLevel = (state.startZoomLevel * distance(p1, p2)) / distance(p1.start, p2.start);
   let zoomLevel = rawZoomLevel;

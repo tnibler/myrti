@@ -226,7 +226,7 @@ export function newGestureController(
         state = {
           gesture: 'zoom',
           startZoomLevel: currentSlide.currentZoomLevel,
-          zoomStartPan: currentSlide.pan,
+          zoomStartPan: currentSlide.pan, // origin at slide center
           doZoom: true,
           ...state,
         };
@@ -312,9 +312,12 @@ export function newGestureController(
         }
       }
     } else if ('gesture' in state && state.gesture === 'zoom') {
-      const zoomUpdate = updateZoom(state, slideControls);
+      const zoomUpdate = updateZoom(state, slideControls, gallery.pager.viewportSize);
       if (zoomUpdate !== null) {
-        slideControls.pan = zoomUpdate.newSlidePan;
+        slideControls.pan = {
+          x: zoomUpdate.newSlidePan.x,
+          y: zoomUpdate.newSlidePan.y,
+        };
         slideControls.setZoomLevel(zoomUpdate.newZoomLevel);
       }
     }

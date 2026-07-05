@@ -45,6 +45,7 @@ pub fn router() -> Router<SharedState> {
             get(get_image_asset_representation),
         )
         .route("/:id/rotation", post(set_asset_rotation_correction))
+        .route("/:id/seriesSelection", post(set_asset_is_series_selection))
 }
 
 #[utoipa::path(get, path = "/api/assets",
@@ -375,7 +376,10 @@ pub struct SetAssetRotationRequest {
 
 #[utoipa::path(
     post,
-    path = "/api/assets/rotation",
+    path = "/api/assets/{id}/rotation",
+    params(
+        ("id" = String, Path, description = "AssetId")
+    ),
     request_body=SetAssetRotationRequest,
     responses((status=200))
 )]
@@ -396,4 +400,42 @@ async fn set_asset_rotation_correction(
             Ok(())
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAssetSeriesSelectionRequest {
+    pub is_series_selection: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAssetIsSeriesSelectionResponse {
+    asset_ids: Vec<i64>,
+    selection_indices: Vec<usize>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/assets/{id}/seriesSelection",
+    params(
+        ("id" = String, Path, description = "AssetId")
+    ),
+    request_body=SetAssetSeriesSelectionRequest,
+    responses(
+        (status = 200, body=SetAssetIsSeriesSelectionResponse)
+    ),
+)]
+async fn set_asset_is_series_selection(
+    State(app_state): State<SharedState>,
+    Path(asset_id): Path<AssetId>,
+    Json(req): Json<SetAssetSeriesSelectionRequest>,
+) -> ApiResult<()> {
+    let asset_id: model::AssetId = asset_id.try_into()?;
+    let conn = app_state.pool.get().await?;
+    interact!(conn, move |conn| {
+        repository::asset::set_asset_is_series_selection(conn, asset_id, req.is_series_selection)
+    })
+    .await??;
+    Ok(())
 }

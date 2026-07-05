@@ -1,6 +1,6 @@
 use eyre::{eyre, Context, Result};
 
-use crate::model::{AssetId, AssetSeriesId};
+use crate::model::{AssetId, AssetSeries, AssetSeriesId};
 
 use super::{db::DbConn, schema};
 
@@ -48,5 +48,49 @@ pub fn create_series(conn: &mut DbConn, asset_ids: &[AssetId]) -> Result<AssetSe
             .wrap_err("error setting first asset to selection true")?;
         assert!(affected_rows == 1);
         Ok(AssetSeriesId(series_id))
+    })
+}
+
+#[tracing::instrument(skip(conn))]
+pub fn get_series_for_asset(conn: &mut DbConn, asset_id: AssetId) -> Result<Option<AssetSeries>> {
+    use diesel::prelude::*;
+    use schema::Asset;
+    conn.transaction(|conn| {
+        let (asset1, asset2) = diesel::alias!(Asset as asset1, Asset as asset2);
+        // diesel::joinable!(asset1 -> asset2 (series_id));
+        let rows: Vec<(i64, Option<i32>)> = asset1
+            .filter(
+                asset1
+                    .field(Asset::asset_id)
+                    .eq(asset_id.0)
+                    .and(asset1.field(Asset::series_id).is_not_null()),
+            )
+            .inner_join(
+                asset2.on(asset1
+                    .field(Asset::series_id)
+                    .eq(asset2.field(Asset::series_id))),
+            )
+            .order_by(asset2.field(Asset::taken_date).desc())
+            .select(asset2.fields((Asset::asset_id, Asset::is_series_selection)))
+            .load(conn)?;
+        if rows.is_empty() {
+            return Err(eyre!("Asset is not part of a series"));
+        }
+        let selection_indices: Vec<usize> = rows
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, (_asset_id, is_selection))| {
+                let is_selection = is_selection.expect("was filtered not null") != 0;
+                is_selection.then_some(idx)
+            })
+            .collect();
+        let asset_ids = rows
+            .into_iter()
+            .map(|(asset_id, _)| AssetId(asset_id))
+            .collect();
+        Ok(Some(crate::model::AssetSeries {
+            asset_ids,
+            selection_indices,
+        }))
     })
 }

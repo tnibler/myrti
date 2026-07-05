@@ -18,7 +18,7 @@
 
 <div
   bind:clientHeight={actualHeight}
-  class={'absolute overflow-hidden whitespace-nowrap overflow-ellipsis' +
+  class={'absolute overflow-hidden whitespace-nowrap text-ellipsis' +
     ' ' +
     className +
     ' ' +

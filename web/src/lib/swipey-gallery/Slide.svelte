@@ -1,62 +1,51 @@
-<script lang="ts" context="module">
-  export type OpenTransitionParams = {
-    fromBounds: ThumbnailBounds;
-    onTransitionEnd: () => void;
-  };
-
-  export type SlideState = {
-    readonly canBePanned: boolean;
-    readonly pan: Point;
-    readonly panBounds: PanBounds;
-    readonly currentZoomLevel: number;
-    readonly zoomLevels: ZoomLevels;
-    readonly canBeZoomed: boolean;
-    readonly isAtMinZoom: boolean;
-    readonly isAtMaxZoom: boolean;
-    readonly size: Size;
-  };
-
-  export type SlideControls = SlideState & {
-    pan: Point;
-    applyCurrentZoomPan: () => void;
-    setZoomLevel: (z: number) => void;
-    toggleZoom: (p: Point) => void;
-    zoomIn: () => void;
-    zoomOut: () => void;
-    closeTransition: (toBounds: ThumbnailBounds, onTransitionEnd: () => void) => void;
-    onGrabbingStateChange: (isDragging: boolean) => void;
-  };
-</script>
-
 <script lang="ts">
   import { getContext, untrack } from 'svelte';
   import type { Point, Size } from './util_types';
   import { type ZoomLevels, computeZoomLevels, computePanForChangedZoomLevel } from './zoom';
-  import { clampPanToBounds, computePanBounds, type PanBounds } from './pan-bounds';
-  import type { ThumbnailBounds } from './thumbnail-bounds';
+  import { clampPanToBounds, computePanBounds } from './pan-bounds';
+  import type { ThumbnailBounds, SlideControls } from './types.ts';
   import { fade } from 'svelte/transition';
   import SlideImage from './SlideImage.svelte';
   import SlideVideo from './SlideVideo.svelte';
   import './slide.css';
   import type { GalleryControls } from './Pager.svelte';
-  import type { GallerySlideData, SingleAssetSlide } from './gallery-types';
+  import type { GallerySlideData, ImageSlideData, SingleAssetSlide } from './gallery-types';
+  import { mdiStar } from '@mdi/js';
+  import type { Asset, AssetWithSpe } from '@api/myrti';
+  import { slideForAsset } from './asset-slide';
+
+  export type OpenTransitionParams = {
+    fromBounds: ThumbnailBounds;
+    onTransitionEnd: () => void;
+  };
 
   type SlideProps = {
     data: GallerySlideData;
     isActive: boolean;
     openTransition: OpenTransitionParams | null;
     showContent: boolean;
+    showUi: boolean;
     onContentReady: (() => void) | undefined;
   };
-  let { data, isActive, openTransition, showContent, onContentReady }: SlideProps = $props();
+  let { data, isActive, openTransition, showContent, showUi, onContentReady }: SlideProps =
+    $props();
 
   let gallery: GalleryControls = getContext('gallery');
   let pan: Point = $state({ x: 0, y: 0 });
   let panAreaSize: Size = $derived(gallery.pager.viewportSize); // TODO missing padding like photoswipe
   const centerX = $derived(panAreaSize.width / 2);
   const centerY = $derived(panAreaSize.height / 2);
-  // temporary until functionality to show all assets in series is built
-  const slideToDisplay = $derived(data.slideType === 'singleAsset' ? data : data.coverSlide);
+
+  let selectedSeriesIndex: number | null = $state(
+    data.slideType === 'singleAsset' ? null : data.coverIndex,
+  );
+  const slideToDisplay = $derived(
+    data.slideType === 'singleAsset'
+      ? data
+      : selectedSeriesIndex !== null
+        ? slideForAsset(data.series.assets[selectedSeriesIndex])
+        : data.coverSlide,
+  );
   let zoomLevels: ZoomLevels = $derived(
     computeZoomLevels({
       maxSize: slideToDisplay.size,
@@ -402,7 +391,7 @@
       class="placeholder max-w-none"
       bind:this={placeholderEl}
       out:fade={{ duration: 100, delay: PLACEHOLDER_HIDE_DELAY }}
-      src={data.placeholderSrc}
+      src={data.slideType === 'singleAsset' ? data.placeholderSrc : data.coverSlide.placeholderSrc}
       style:width="{width}px"
       style:height="{height}px"
       style:user-select="none"
@@ -410,6 +399,57 @@
     />
   {/if}
 </div>
+{#if data?.slideType === 'assetSeries' && showUi}
+  {@const slide = data}
+  <div
+    class="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto
+          "
+  >
+    <div
+      class="rounded-xl bg-black/70 backdrop-blur px-2 py-4 flex flex-row h-48 max-w-7xl overflow-x-auto overflow-y-hidden"
+    >
+      {#each slide.series.assets as asset, indexInSeries (asset.id)}
+        {@const isSelection =
+          slide.series.selectionIndices.map((i) => slide.series.assets[i].id).indexOf(asset.id) !==
+          -1}
+        <div class="group relative h-full shrink-0 mx-3">
+          <div class="absolute top-1 right-1">
+            <!-- <input type="checkbox" class="absolute right-10 mr-1 mt-1 md:mr-2 md:mt-2"/> -->
+            <input
+              type="checkbox"
+              class="hidden peer"
+              id={`seriesCheck${asset.id}`}
+              checked={isSelection}
+              onchange={(e) => {
+                slide.series.selectionIndices.push(1);
+              }}
+            />
+            <label for={`seriesCheck${asset.id}`}>
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                class="rounded-md bg-black/70 backdrop-blur p-1
+                        hidden hover:fill-white group-has-checked:fill-white group-has-checked:block group-hover:block pointer-events-auto"
+              >
+                <path d={mdiStar} />
+              </svg>
+            </label>
+          </div>
+          <a href="#" onclick={(_e) => (selectedSeriesIndex = indexInSeries)}>
+            <img
+              src="/api/assets/thumbnail/{asset.id}/small/avif"
+              class={'bg-black transition-transform max-h-full max-w-full object-cover rounded-sm ' +
+                (selectedSeriesIndex === indexInSeries ? 'border-solid border-3 border-white' : '')}
+              style:max-width="none"
+              style:rotate={asset.rotationCorrection ? asset.rotationCorrection + 'deg' : null}
+            />
+          </a>
+        </div>
+      {/each}
+    </div>
+  </div>
+{/if}
 
 <style>
   .zoom-wrapper {

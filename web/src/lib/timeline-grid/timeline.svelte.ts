@@ -13,12 +13,14 @@ import { layoutSegments } from './layout';
 import * as R from 'remeda';
 import {
   addToTimelineGroup,
+  createSeries,
   createTimelineGroup,
   getTimelineSections,
   getTimelineSegments,
   setAssetsHidden,
 } from '../../api/myrti';
 import {
+  createSeriesResponse,
   createTimelineGroupResponse,
   getTimelineSectionsResponse,
   getTimelineSegmentsResponse,
@@ -116,6 +118,7 @@ export interface ITimelineGrid {
   hideSelectedAssets: () => Promise<void>;
 
   createGroupClicked: () => Promise<void>;
+  createStackClicked: () => Promise<void>;
   cancelCreateGroup: () => Promise<void>;
   confirmCreateGroup: (title: string) => Promise<void>;
   addSelectedToExistingGroup: (groupId: string) => Promise<void>;
@@ -867,9 +870,6 @@ export function createTimeline(
     }
     const previousSections = klona(sections);
     const previousItems = klona(items);
-    if (selectedItems.size === 0) {
-      return;
-    }
     const itemsInGroup: TimelineItem[] = [];
     const affectedSections: number[] = [];
     for (const [sectionIdx, section] of sections.entries()) {
@@ -1176,11 +1176,32 @@ export function createTimeline(
     state = { state: 'justLooking' };
   }
 
+  async function createStackClicked() {
+    if (selectedItems.size === 0) {
+      return;
+    }
+
+    for (const item of selectedItems.values()) {
+      // TODO: should probably just merge stacks?
+      console.assert(item.item.itemType === 'asset');
+      if (item.item.itemType !== 'asset') {
+        return;
+      }
+    }
+    const assetIds = R.pipe(
+      selectedItems.values().toArray(),
+      R.flatMap((item) => (item.item.itemType === 'asset' ? [item.item.id] : [])),
+    );
+    createSeriesResponse.parse((await createSeries({ assetIds })).data);
+    clearSelection();
+  }
+
   return {
     createGroupClicked,
     cancelCreateGroup,
     confirmCreateGroup,
     addSelectedToExistingGroup,
+    createStackClicked,
     get state() {
       return state.state;
     },

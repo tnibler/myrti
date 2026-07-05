@@ -16,7 +16,7 @@ mod test;
 pub mod timeline;
 pub mod timeline_group;
 
-#[macro_export()]
+#[macro_export]
 macro_rules! interact {
     ($conn:ident, $block:expr) => {
         tracing::Instrument::in_current_span(<_ as futures::TryFutureExt>::map_err(

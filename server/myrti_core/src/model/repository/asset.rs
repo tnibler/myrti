@@ -6,7 +6,7 @@ use color_eyre::eyre;
 use diesel::dsl::sql;
 use diesel::sql_types::Bool;
 use diesel::{insert_into, prelude::*};
-use eyre::{Context, Result};
+use eyre::{eyre, Context, Result};
 use tracing::instrument;
 
 use crate::model::{
@@ -470,4 +470,28 @@ pub fn set_asset_rotation_correction(
         .execute(conn)
         .wrap_err("error updating column Asset.rotation_correction")?;
     Ok(())
+}
+
+#[instrument(skip(conn))]
+pub fn set_asset_is_series_selection(
+    conn: &mut DbConn,
+    asset_id: AssetId,
+    is_selection: bool,
+) -> Result<()> {
+    use schema::Asset;
+    let n_affected = diesel::update(
+        Asset::table.filter(
+            Asset::asset_id
+                .eq(asset_id.0)
+                .and(Asset::is_series_selection.is_not_null()),
+        ),
+    )
+    .set(Asset::is_series_selection.eq(Some(is_selection as i32)))
+    .execute(conn)
+    .wrap_err("error updating column Asset.is_series_selection")?;
+    if n_affected == 1 {
+        Ok(())
+    } else {
+        Err(eyre!("Could not update Asset.is_series_selection: asset id {asset_id} is not part of any series"))
+    }
 }

@@ -85,7 +85,7 @@
         clearTimeout(disableGridItemAnimationTimeout);
         disableGridItemAnimationTimeout = null;
       }
-      await new Promise<void>((resolve) => {
+      await new Promise((resolve) => {
         setTimeout(() => {
           gridItemTransitionClass = 'timeline-item-transition';
           resolve();
@@ -231,6 +231,7 @@
           className={gridItemTransitionClass}
           asset={item.asset}
           box={item}
+          showStackIcon={false}
           onAssetClick={() => {
             onAssetClick(item.timelineItem);
           }}
@@ -245,7 +246,7 @@
           className={gridItemTransitionClass}
           asset={item.series.assets[item.coverIndex]}
           box={item}
-          showStackIcon
+          showStackIcon={true}
           onAssetClick={() => {
             onAssetClick(item.timelineItem);
           }}

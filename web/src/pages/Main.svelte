@@ -32,6 +32,10 @@
     timeline.createGroupClicked();
   }
 
+  function onCreateStackClicked() {
+    timeline.createStackClicked();
+  }
+
   async function onCreateAlbumSubmit(
     submitted: { action: 'createNew'; albumName: string } | { action: 'addTo'; albumId: string },
   ) {
@@ -82,6 +86,7 @@
     onCancelSelectClicked={() => timeline.clearSelection()}
     {onAddToAlbumClicked}
     {onAddToGroupClicked}
+    {onCreateStackClicked}
     onHideClicked={onHideAssetsClicked}
   />
 {/snippet}

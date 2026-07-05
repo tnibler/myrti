@@ -1,4 +1,4 @@
-<script lang="ts" context="module">
+<script lang="ts" module>
   import type { GallerySlide } from './gallery-types';
   export type PagerProps<TPos> = {
     topOffset: number;
@@ -33,13 +33,12 @@
 </script>
 
 <script lang="ts" generics="TPos">
-  import Slide from './Slide.svelte';
   import SlideHolder from './SlideHolder.svelte';
   import { onMount, setContext } from 'svelte';
   import { newGestureController } from './gestures';
   import { newAnimationControls, type AnimationControls } from './animations';
-  import type { ThumbnailBounds } from './thumbnail-bounds';
-  import type { OpenTransitionParams, SlideControls } from './Slide.svelte';
+  import type { ThumbnailBounds, SlideControls } from './types.ts';
+  import type { OpenTransitionParams } from './Slide.svelte';
   import { fade } from 'svelte/transition';
   import {
     EyeOffIcon,
@@ -50,6 +49,7 @@
     ZoomOutIcon,
   } from 'lucide-svelte';
   import InfoPanel from './InfoPanel.svelte';
+  import { mdiStar } from '@mdi/js';
 
   let {
     getSlide,
@@ -133,7 +133,7 @@
   const slide: SlideControls | null = $derived(
     holderOrder[1] < slideHolders.length ? slideHolders[holderOrder[1]]?.slideControls() : null,
   );
-  const hideUiTimeoutDuration = 3000;
+  const hideUiTimeoutDuration = 60000;
   let hideUiTimeout: ReturnType<typeof setTimeout> | null = setTimeout(
     onHideUiTimeout,
     hideUiTimeoutDuration,
@@ -330,12 +330,12 @@
   }
 
   export async function close() {
+    console.log('close');
+    uiVisible = false;
     const thumbnailBounds = getThumbnailBounds(currentPosition);
     backgroundOpacityTransition = true;
-    // requestAnimationFrame(() => {
     backgroundOpacity = 0;
-    // });
-    const p = new Promise<void>((resolve) => {
+    const p = new Promise((resolve) => {
       if (slide) {
         slide.closeTransition(thumbnailBounds, () => {
           resolve();
@@ -405,6 +405,7 @@
           xTransform={x}
           openTransition={slideHolder.openTransition}
           showContent={slideHolder.showContent}
+          showUi={uiVisible}
           onContentReady={() => onSlideContentReady(slideHolder.id)}
           slide={slideHolder.slidePosition !== null ? getSlide(slideHolder.slidePosition) : null}
           bind:this={slideHolders[slideHolder.id]}
@@ -425,7 +426,7 @@
         }}
       >
         <div
-          class="flex flex-row flex-shrink justify-end items-center
+          class="flex flex-row shrink-0 justify-end items-center
     h-16 px-2 gap-4 bg-gradient-to-b from-black/50 pointer-events-auto"
         >
           <button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
@@ -464,7 +465,7 @@
             <XIcon color="white" />
           </button>
         </div>
-        <div class="flex flex-row flex-grow justify-between {hasMouse ? '' : 'hidden'} ">
+        <div class="flex flex-row grow-1 justify-between {hasMouse ? '' : 'hidden'} ">
           <button
             class="pl-5 pointer-events-auto"
             onclick={() => moveSlide('left')}

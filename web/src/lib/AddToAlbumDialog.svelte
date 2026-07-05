@@ -101,7 +101,7 @@
           <button class="py-4 px-6 hover:bg-gray-200" onclick={() => onAlbumClicked(album.id)}>
             <div class="flex flex-row items-center justify-start gap-6">
               <!-- svelte-ignore a11y-missing-attribute -->
-              <img class="w-16 aspect-square rounded-sm bg-gray-400" />
+              <img class="w-16 aspect-square rounded-xs bg-gray-400" />
               {album.name}
             </div>
           </button>

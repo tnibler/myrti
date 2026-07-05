@@ -1,7 +1,7 @@
 <script lang="ts">
   import { mdiClose } from '@mdi/js';
   import IconButton from './ui/IconButton.svelte';
-  import { BookImageIcon, EyeOffIcon, ImagesIcon } from 'lucide-svelte';
+  import { BookImageIcon, EyeOffIcon, ImagesIcon, LayersIcon } from 'lucide-svelte';
   import { intl } from '@lib/i18next';
 
   type Props = {
@@ -9,6 +9,7 @@
     onCancelSelectClicked: () => void;
     onAddToAlbumClicked: () => void;
     onAddToGroupClicked: () => void;
+    onCreateStackClicked: () => void;
     onHideClicked: () => void;
   };
   let {
@@ -16,6 +17,7 @@
     onCancelSelectClicked,
     onAddToAlbumClicked,
     onAddToGroupClicked,
+    onCreateStackClicked,
     onHideClicked,
   }: Props = $props();
 </script>
@@ -48,6 +50,12 @@
         onAddToGroupClicked();
       }}
       text={intl('add_to_group')}><ImagesIcon /></IconButton
+    >
+    <IconButton
+      onclick={() => {
+        onCreateStackClicked();
+      }}
+      text={intl('create_stack')}><LayersIcon /></IconButton
     >
     <IconButton
       onclick={() => {

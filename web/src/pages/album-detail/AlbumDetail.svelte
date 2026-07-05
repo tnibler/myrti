@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { AlbumItem, AlbumItemId, AssetWithSpe } from '@api/myrti';
   import Gallery from '@lib/swipey-gallery/Gallery.svelte';
-  import type { ThumbnailBounds } from '@lib/swipey-gallery/thumbnail-bounds';
+  import type { ThumbnailBounds } from '@lib/swipey-gallery/types.ts';
   import type { TileBox } from '@lib/ui/GridTile.svelte';
   import GridTile from '@lib/ui/GridTile.svelte';
   import createJustifiedLayout from 'justified-layout';
@@ -233,6 +233,7 @@
                       : { state: 'default' }}
                     imgElId={`thumb${tile.assetIndex}`}
                     className={'timeline-item-transition'}
+                    showStackIcon={false}
                   />
                 {/each}
               </div>

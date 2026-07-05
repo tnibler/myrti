@@ -9,6 +9,7 @@
     slide: Promise<GallerySlideData> | null;
     onContentReady: (() => void) | undefined;
     showContent: boolean;
+    showUi: boolean;
     openTransition: OpenTransitionParams | null;
   };
   let {
@@ -18,6 +19,7 @@
     slide,
     onContentReady,
     showContent,
+    showUi,
     openTransition,
   }: SlideHolderProps = $props();
   let slideComponent: Slide | null = $state(null);
@@ -38,6 +40,7 @@
         {openTransition}
         {onContentReady}
         {showContent}
+        {showUi}
         bind:this={slideComponent}
       />
     {/if}

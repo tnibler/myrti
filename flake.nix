@@ -135,7 +135,7 @@
         };
       };
 
-      devShells.rust = craneLib.devShell {
+      devShells.default = craneLib.devShell {
         # Inherit inputs from checks.
         checks = self.checks.${system};
 
@@ -145,19 +145,17 @@
 
         # Extra inputs can be added here; cargo and rustc are provided by default.
         packages = with pkgs; [
+          pnpm
           cargo-hakari
           rust-analyzer
+          nodejs
+          svelte-language-server
+          typescript-language-server
+          vscode-langservers-extracted
+          prettier
         ];
 
         LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-      };
-
-      devShells.web = pkgs.mkShell {
-        packages = with pkgs; [
-          nodejs_23
-          svelte-language-server
-          typescript-language-server
-        ];
       };
     });
 }

@@ -415,12 +415,12 @@ export function createTimeline(
     }
   }
 
-  async function loadSection(sectionIndex: number) {
+  async function loadSection(sectionIndex: number, reload: 'reload' | undefined = undefined) {
     console.log('loadSection', sectionIndex);
     const section = sections[sectionIndex];
-    // if (section.segments != null) {
-    //   return;
-    // }
+    if (section.segments != null && reload === undefined) {
+      return;
+    }
     const sectionId = section.data.id;
     const segments = await requestSegments(sectionId);
 
@@ -878,7 +878,8 @@ export function createTimeline(
     if (section.segments === null) {
       throw new Error('error loading section');
     }
-    layoutSection(pos.sectionIndex, 'noAdjustScroll');
+    // FIXME: why was this called here. it mutates $state which can't happen anymore in a getter
+    // layoutSection(pos.sectionIndex, 'noAdjustScroll');
     console.assert(section.items !== null);
     if (section.items === null) {
       return null;
@@ -1250,13 +1251,12 @@ export function createTimeline(
                 console.error('TODO: asset series/stack changed, not handled yet');
                 return;
               }
-              // sections[sectionIdx].segments = null;
               console.log('reload section', sectionIdx);
-              await loadSection(sectionIdx);
+              await loadSection(sectionIdx, 'reload');
               layoutSection(sectionIdx, 'adjustScroll');
               console.log('relayout section');
               // Stacks that are split up in timeline grid still share the same instance, so mutate just one of them
-              // item.series.selectionIndices = newSeries.selectionIndices;
+              item.series.selectionIndices = newSeries.selectionIndices;
               break;
             }
           }

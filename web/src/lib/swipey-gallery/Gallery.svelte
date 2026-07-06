@@ -1,21 +1,15 @@
-<script lang="ts" generics="TPos">
+<script lang="ts">
   import { onMount } from 'svelte';
   import Pager, { type PagerProps } from './Pager.svelte';
 
-  type GalleryProps<TPos> = PagerProps<TPos> & {
+  type GalleryProps = PagerProps & {
     scrollWrapper: HTMLElement;
     restoreScrollOnClose: boolean;
   };
 
-  let {
-    getSlide,
-    getNextSlidePosition,
-    getThumbnailBounds,
-    scrollWrapper = $bindable(),
-    restoreScrollOnClose,
-  }: GalleryProps<TPos> = $props();
-  let isOpen: false | { currentPosition: TPos } = $state(false);
-  let pager: Pager<TPos> | null = $state(null);
+  let { scrollWrapper = $bindable(), restoreScrollOnClose, ...pagerProps }: GalleryProps = $props();
+  let isOpen: boolean = $state(false);
+  let pager: Pager | null = $state(null);
   let pagerY = 0;
   let topOffset = $state(0);
 
@@ -35,13 +29,7 @@
 
   function onOpenTransitionFinished() {}
 
-  export function setPosition(pos: TPos) {
-    if (isOpen !== false) {
-      isOpen.currentPosition = pos;
-    }
-  }
-
-  export function open(pos: TPos) {
+  export function open() {
     requestAnimationFrame(() => {
       pagerY = scrollWrapper.scrollTop;
       scrollWrapper.classList.add('modalOpen');
@@ -49,7 +37,7 @@
       scrollWrapper.scrollTo(0, pagerY);
     });
     topOffset = scrollWrapper.scrollTop;
-    isOpen = { currentPosition: pos };
+    isOpen = true;
     document.addEventListener('keydown', onKeyDown);
   }
 
@@ -82,14 +70,11 @@
 
 {#if isOpen !== false}
   <Pager
-    {getSlide}
-    {getThumbnailBounds}
-    {onOpenTransitionFinished}
-    {getNextSlidePosition}
-    bind:currentPosition={isOpen.currentPosition}
-    closeGallery={close}
     bind:this={pager}
+    {...pagerProps}
     {topOffset}
+    {onOpenTransitionFinished}
+    closeGallery={close}
   />
 {/if}
 

@@ -82,12 +82,5 @@ export type AddToGroupClickArea = {
 };
 
 export type OpenedSlide =
-  | {
-      type: 'singleAsset';
-      item: TimelineItem & { itemType: 'asset' };
-    }
-  | {
-      type: 'photoStack';
-      item: TimelineItem & { itemType: 'photoStack' };
-      seriesIndex: number;
-    };
+  | (TimelineItem & { itemType: 'asset' })
+  | (TimelineItem & { itemType: 'photoStack'; seriesIndex: number });

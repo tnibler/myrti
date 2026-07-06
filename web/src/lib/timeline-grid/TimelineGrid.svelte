@@ -9,7 +9,8 @@
   import type { SelectState } from '@lib/ui/GridTile.svelte';
   import CreateGroupInput from './CreateGroupInput.svelte';
   import type { OpenedSlide, PositionInTimeline, TimelineItem } from './timeline-types';
-  import type { GallerySlide } from '@lib/swipey-gallery/gallery-types';
+  import type { GallerySlide, GallerySlideData } from '@lib/swipey-gallery/gallery-types';
+  import { tick } from 'svelte';
 
   type TimelineGridProps = {
     timeline: ITimelineGrid;
@@ -17,13 +18,38 @@
   };
 
   let viewport = $state({ width: 0, height: 0 });
-  let gallery: Gallery<OpenedSlide>;
+  let gallery: Gallery;
 
   let { timeline, scrollWrapper = $bindable() }: TimelineGridProps = $props();
   let gridItemTransitionClass: string | undefined = $state();
   let animationsDisabledToStart = true;
   let didMoveScrollToCurrentGalleryAsset = $state(false);
   let restoreScrollOnGalleryClose = $derived(!didMoveScrollToCurrentGalleryAsset);
+
+  let currentSlide: GallerySlide<PositionInTimeline> | null = $state(null);
+  const pagerSlides: {
+    left: GallerySlide<PositionInTimeline> | null;
+    current: GallerySlide<PositionInTimeline>;
+    right: GallerySlide<PositionInTimeline> | null;
+  } | null = $derived.by(() => {
+    if (currentSlide === null) {
+      return null;
+    }
+    const assetId =
+      currentSlide.slideType === 'singleAsset'
+        ? currentSlide.asset.id
+        : currentSlide.series.assets[currentSlide.coverIndex].id;
+    const currentPos = timeline.getItemForAsset(assetId).pos;
+    const leftPos = timeline.getNextItemPosition(currentPos, 'left');
+    const rightPos = timeline.getNextItemPosition(currentPos, 'right');
+    timeline.items;
+    return {
+      left: leftPos !== null ? getSlide(timeline.getItemMustBeLoaded(leftPos)) : null,
+      current: currentSlide,
+      right: rightPos !== null ? getSlide(timeline.getItemMustBeLoaded(rightPos)) : null,
+    };
+  });
+  $inspect(pagerSlides);
 
   $effect(() => {
     setTimeout(() => {
@@ -84,7 +110,7 @@
         clearTimeout(disableGridItemAnimationTimeout);
         disableGridItemAnimationTimeout = null;
       }
-      await new Promise((resolve) => {
+      await new Promise<void>((resolve) => {
         setTimeout(() => {
           gridItemTransitionClass = 'timeline-item-transition';
           resolve();
@@ -94,7 +120,6 @@
   }
 
   function handleSectionIntersect(entries: IntersectionObserverEntry[]) {
-    entries;
     timeline.onScrollChange(scrollWrapper.scrollTop);
   }
 
@@ -140,15 +165,25 @@
 
   function onAssetClick(item: TimelineItem & ({ itemType: 'asset' } | { itemType: 'photoStack' })) {
     didMoveScrollToCurrentGalleryAsset = false;
-    if (item.itemType === 'asset') {
-      gallery.open({ type: 'singleAsset', item: item });
+    currentSlide = getSlide(timeline.getItemMustBeLoaded(item.pos));
+    tick().then(() => {
+      gallery.open();
+    });
+  }
+
+  function onSlideNavigated(dir: 'left' | 'right') {
+    if (currentSlide === null || pagerSlides === null) {
+      throw new Error('what');
+    }
+    if (dir === 'left') {
+      currentSlide = pagerSlides.left;
     } else {
-      gallery.open({ type: 'photoStack', item: item, seriesIndex: item.coverIndex });
+      currentSlide = pagerSlides.right;
     }
   }
 
-  function getThumbnailBounds(sl: OpenedSlide): ThumbnailBounds {
-    const pos = sl.item.pos;
+  function getThumbnailBounds(): ThumbnailBounds {
+    const pos = currentSlide.pos;
     const imgEl = document.getElementById(
       `thumb${pos.sectionIndex}-${pos.segmentIndex}-${pos.itemIndex}`,
     );
@@ -165,18 +200,11 @@
     };
   }
 
-  async function getSlide(which: OpenedSlide): Promise<GallerySlide<OpenedSlide>> {
-    const item = await (async () => {
-      if (which.item.itemType === 'asset') {
-        return timeline.getItemForAsset(which.item.id);
-      } else {
-        return timeline.getItemForAsset(which.item.series.assets[which.item.coverIndex].id);
-      }
-    })();
-    await scrollToTimelineItem(item.pos);
+  function getSlide(item: TimelineItem): GallerySlide<PositionInTimeline> {
+    // scrollToTimelineItem(item.pos);
     if (item.itemType === 'asset') {
       const slide = slideForAsset(item);
-      return { ...slide, pos: which, slideType: 'singleAsset' };
+      return { ...slide, slideType: 'singleAsset', pos: item.pos };
     } else {
       const coverSlide = slideForAsset(item.series.assets[item.coverIndex]);
       return {
@@ -184,28 +212,8 @@
         coverSlide,
         series: item.series,
         coverIndex: item.coverIndex,
-        pos: which,
+        pos: item.pos,
       };
-    }
-  }
-
-  function getNextSlidePosition(sl: OpenedSlide, dir: 'left' | 'right'): OpenedSlide {
-    const item = (() => {
-      if (sl.item.itemType === 'asset') {
-        return timeline.getItemForAsset(sl.item.id);
-      } else {
-        return timeline.getItemForAsset(sl.item.series.assets[sl.item.coverIndex].id);
-      }
-    })();
-    // console.log('current pos', $state.snapshot(item.pos), $state.snapshot(sl));
-    const nextPos = timeline.getNextItemPosition(item.pos, dir);
-    // console.log('next pos', $state.snapshot(nextPos));
-    const next = timeline.getItemMustBeLoaded(nextPos);
-    // console.log($state.snapshot(next));
-    if (next.itemType === 'asset') {
-      return { type: 'singleAsset', item: next };
-    } else {
-      return { type: 'photoStack', item: next, seriesIndex: next.coverIndex };
     }
   }
 
@@ -318,14 +326,16 @@
   </section>
 </div>
 
-<Gallery
-  bind:this={gallery}
-  {getThumbnailBounds}
-  {getSlide}
-  {scrollWrapper}
-  {restoreScrollOnGalleryClose}
-  {getNextSlidePosition}
-/>
+{#if pagerSlides !== null}
+  <Gallery
+    bind:this={gallery}
+    slides={pagerSlides}
+    {onSlideNavigated}
+    {getThumbnailBounds}
+    {scrollWrapper}
+    {restoreScrollOnGalleryClose}
+  />
+{/if}
 
 <style>
   #grid {

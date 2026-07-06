@@ -1,11 +1,16 @@
 <script lang="ts" module>
-  import type { GallerySlide } from './gallery-types';
-  export type PagerProps<TPos> = {
+  import type { GallerySlide, GallerySlideData } from './gallery-types';
+  export type PagerProps = {
     topOffset: number;
-    getSlide: (pos: TPos) => Promise<GallerySlide<TPos>>;
-    getNextSlidePosition: (pos: TPos, dir: 'left' | 'right') => TPos | null;
-    currentPosition: TPos;
-    getThumbnailBounds: (pos: TPos) => ThumbnailBounds;
+
+    slides: {
+      left: GallerySlideData | null;
+      current: GallerySlideData;
+      right: GallerySlideData | null;
+    };
+    onSlideNavigated: (dir: 'left' | 'right') => void;
+
+    getThumbnailBounds: () => ThumbnailBounds;
     closeGallery: () => void;
     onOpenTransitionFinished: () => void;
   };
@@ -32,14 +37,15 @@
   };
 </script>
 
-<script lang="ts" generics="TPos">
+<script lang="ts">
   import SlideHolder from './SlideHolder.svelte';
-  import { onMount, setContext } from 'svelte';
+  import { onMount, setContext, untrack } from 'svelte';
   import { newGestureController } from './gestures';
   import { newAnimationControls, type AnimationControls } from './animations';
   import type { ThumbnailBounds, SlideControls } from './types.ts';
   import type { OpenTransitionParams } from './Slide.svelte';
   import { fade } from 'svelte/transition';
+  import * as R from 'remeda';
   import {
     EyeOffIcon,
     InfoIcon,
@@ -51,14 +57,13 @@
   import InfoPanel from './InfoPanel.svelte';
 
   let {
-    getSlide,
-    getNextSlidePosition,
+    slides,
+    onSlideNavigated,
     getThumbnailBounds,
     closeGallery,
     onOpenTransitionFinished,
     topOffset,
-    currentPosition = $bindable(),
-  }: PagerProps<TPos> = $props();
+  }: PagerProps = $props();
 
   let viewport = $state({ width: 0, height: 0 });
   const slideSpacing = 0.1;
@@ -70,7 +75,7 @@
 
   type SlideHolderState = {
     id: number;
-    slidePosition: TPos | null;
+    slide: GallerySlideData | null;
     openTransition: OpenTransitionParams | null;
     isActive: boolean;
     showContent: boolean;
@@ -82,21 +87,16 @@
   let holderOrder = $state([0, 1, 2]);
   let holderStates: SlideHolderState[] = $state(
     (() => {
-      const positions = [
-        getNextSlidePosition(currentPosition, 'left'),
-        currentPosition,
-        getNextSlidePosition(currentPosition, 'right'),
-      ];
       const openTransition = {
         onTransitionEnd: afterOpenTransition,
-        fromBounds: getThumbnailBounds(currentPosition),
+        fromBounds: getThumbnailBounds(),
       };
       // holderOrder is the identity mapping at the beginning, so id == index initially for the SlideHolders
       return [0, 1, 2].map((id) => {
         return {
           // maybe hide left and right holders until open anim finished? see main-scroll.js:111
           id: id,
-          slidePosition: positions[id],
+          slide: slides[['left' as const, 'current' as const, 'right' as const][id]],
           openTransition: id === 1 ? openTransition : null,
           isActive: id === 1,
           showContent: id === 1,
@@ -105,18 +105,11 @@
       });
     })(),
   );
-  const currentSlide: Promise<GallerySlide<TPos>> | null = $derived.by(() => {
-    if (holderOrder[1] === undefined || holderStates[holderOrder[1]] === undefined) {
-      return null;
-    }
-    const slidePos = holderStates[holderOrder[1]].slidePosition;
-    if (slidePos === null) {
-      return null;
-    }
-    return getSlide(slidePos);
+  const currentSlide: GallerySlideData | null = $derived.by(() => {
+    return slides.current;
   });
-  const canMoveLeft = $derived(holderStates[holderOrder[0]].slidePosition !== null);
-  const canMoveRight = $derived(holderStates[holderOrder[2]].slidePosition !== null);
+  const canMoveLeft = $derived(holderStates[holderOrder[0]].slide !== null);
+  const canMoveRight = $derived(holderStates[holderOrder[2]].slide !== null);
   let slideHolders: SlideHolder[] = $state([]);
   const xTransformSlideCenter = $derived(-currentShift * slideWidth * (1 + slideSpacing));
   let xTransformOffset = $state(0);
@@ -317,27 +310,30 @@
     // if the current slide is already loaded, movedHolder can start loading slide content right away.
     movedHolder.showContent = newActiveHolder.isContentReady;
     console.assert(
-      newActiveHolder.slidePosition !== null,
+      newActiveHolder.slide !== null,
       'newActiveHolder.slidePosition is null after shuffling SlideHolders',
     );
-    if (newActiveHolder.slidePosition !== null) {
-      currentPosition = newActiveHolder.slidePosition;
-      movedHolder.slidePosition = getNextSlidePosition(currentPosition, didShift);
-      movedHolder.openTransition = null;
-      movedHolder.isContentReady = false;
-    }
+    onSlideNavigated(didShift);
   }
 
-  // FIXME: changing stacks selection slides doesn't change in pager until they are reloaded/reordered.
-  // Either manually call this or better make left/right slides properly reactive so they change according to the timeline and current slide
-  export function reloadNextSlides() {
-    holderStates[holderOrder[0]].slidePosition = getNextSlidePosition(currentPosition, 'left');
-    holderStates[holderOrder[2]].slidePosition = getNextSlidePosition(currentPosition, 'right');
-  }
+  $effect(() => {
+    const leftHolder = holderStates[holderOrder[0]];
+    if (!R.isDeepEqual(leftHolder.slide, slides.left)) {
+      leftHolder.slide = slides.left;
+      leftHolder.openTransition = null;
+      leftHolder.isContentReady = false;
+    }
+    const rightHolder = holderStates[holderOrder[2]];
+    if (!R.isDeepEqual(rightHolder.slide, slides.right)) {
+      rightHolder.slide = slides.right;
+      rightHolder.openTransition = null;
+      rightHolder.isContentReady = false;
+    }
+  });
 
   export async function close() {
     uiVisible = false;
-    const thumbnailBounds = getThumbnailBounds(currentPosition);
+    const thumbnailBounds = getThumbnailBounds();
     backgroundOpacityTransition = true;
     backgroundOpacity = 0;
     const p = new Promise((resolve) => {
@@ -412,7 +408,7 @@
           showContent={slideHolder.showContent}
           showUi={uiVisible}
           onContentReady={() => onSlideContentReady(slideHolder.id)}
-          slide={slideHolder.slidePosition !== null ? getSlide(slideHolder.slidePosition) : null}
+          slide={(async () => slideHolder.slide)()}
           bind:this={slideHolders[slideHolder.id]}
         />
       {/each}

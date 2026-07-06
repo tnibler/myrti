@@ -9,10 +9,10 @@
   import SlideVideo from './SlideVideo.svelte';
   import './slide.css';
   import type { GalleryControls } from './Pager.svelte';
-  import type { GallerySlideData, ImageSlideData, SingleAssetSlide } from './gallery-types';
+  import type { GallerySlideData, SingleAssetSlide } from './gallery-types';
   import { mdiStar } from '@mdi/js';
-  import type { Asset, AssetWithSpe } from '@api/myrti';
   import { slideForAsset } from './asset-slide';
+  import { getGalleryContext, type GalleryContext } from './context';
 
   export type OpenTransitionParams = {
     fromBounds: ThumbnailBounds;
@@ -29,6 +29,8 @@
   };
   let { data, isActive, openTransition, showContent, showUi, onContentReady }: SlideProps =
     $props();
+
+  const galleryContext: GalleryContext = getGalleryContext();
 
   let gallery: GalleryControls = getContext('gallery');
   let pan: Point = $state({ x: 0, y: 0 });
@@ -206,6 +208,7 @@
   });
 
   $effect(() => {
+    console.log(openTransition);
     if (openTransition != null && placeholderEl && placeholderTransitionState === 'No') {
       addOpenTransition(placeholderEl, openTransition);
     }
@@ -351,6 +354,10 @@
       userHasZoomed = true;
     }
   }
+
+  async function onSeriesSelectionChanged(assetId: string, isSeriesSelection: boolean) {
+    await galleryContext.setAssetSeriesSelection(assetId, isSeriesSelection);
+  }
 </script>
 
 <div
@@ -421,7 +428,7 @@
               id={`seriesCheck${asset.id}`}
               checked={isSelection}
               onchange={(e) => {
-                slide.series.selectionIndices.push(1);
+                onSeriesSelectionChanged(asset.id, e.target.checked);
               }}
             />
             <label for={`seriesCheck${asset.id}`}>

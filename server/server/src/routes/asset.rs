@@ -28,7 +28,7 @@ use crate::{
     app_state::SharedState,
     http_error::{ApiResult, HttpError},
     mime_type::{guess_mime_type, guess_mime_type_path},
-    schema::{asset::Asset, AssetId, ImageRepresentationId},
+    schema::{asset::Asset, AssetId, AssetSeriesId, ImageRepresentationId},
 };
 
 pub fn router() -> Router<SharedState> {
@@ -411,7 +411,8 @@ pub struct SetAssetSeriesSelectionRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SetAssetIsSeriesSelectionResponse {
-    asset_ids: Vec<i64>,
+    series_id: AssetSeriesId,
+    asset_ids: Vec<AssetId>,
     selection_indices: Vec<usize>,
 }
 
@@ -430,12 +431,18 @@ async fn set_asset_is_series_selection(
     State(app_state): State<SharedState>,
     Path(asset_id): Path<AssetId>,
     Json(req): Json<SetAssetSeriesSelectionRequest>,
-) -> ApiResult<()> {
+) -> ApiResult<Json<SetAssetIsSeriesSelectionResponse>> {
     let asset_id: model::AssetId = asset_id.try_into()?;
     let conn = app_state.pool.get().await?;
-    interact!(conn, move |conn| {
-        repository::asset::set_asset_is_series_selection(conn, asset_id, req.is_series_selection)
+    let series = interact!(conn, move |conn| {
+        repository::asset::set_asset_is_series_selection(conn, asset_id, req.is_series_selection)?;
+        repository::asset_series::get_series_for_asset(conn, asset_id)
     })
     .await??;
-    Ok(())
+    let series = series.ok_or(eyre!("Asset is not part of a series"))?;
+    Ok(Json(SetAssetIsSeriesSelectionResponse {
+        series_id: series.series_id.into(),
+        asset_ids: series.asset_ids.into_iter().map(AssetId::from).collect(),
+        selection_indices: series.selection_indices,
+    }))
 }

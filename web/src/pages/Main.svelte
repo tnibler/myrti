@@ -9,6 +9,7 @@
   } from '@lib/timeline-grid/timeline.svelte';
   import TimelineGrid from '@lib/timeline-grid/TimelineGrid.svelte';
   import { appendAssetsToAlbum, createAlbum } from '@api/myrti';
+  import { setGalleryContext, type GalleryContext } from '@lib/swipey-gallery/context';
 
   const layoutConfig: TimelineOptions = {
     targetRowHeight: 160,
@@ -21,6 +22,14 @@
   const timeline: ITimelineGrid = $state(createTimeline(layoutConfig, onAjustTimelineScrollY));
   const inSelectionMode = $derived(timeline.numAssetsSelected > 0);
   let timelineScrollWrapper: HTMLElement | null = $state(null);
+
+  const galleryContext: GalleryContext = $state({
+    setAssetHidden: async (assetId) => {},
+    setAssetSeriesSelection: async (assetId, isSeriesSelection) => {
+      await timeline.setAssetSeriesSelection(assetId, isSeriesSelection);
+    },
+  });
+  setGalleryContext(galleryContext);
 
   let addToAlbumDialog: AddToAlbumDialog | null = $state(null);
 

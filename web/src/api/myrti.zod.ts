@@ -285,6 +285,7 @@ export const setAssetIsSeriesSelectionResponse = zod.object({
   selectionIndices: zod.array(
     zod.number().min(setAssetIsSeriesSelectionResponseSelectionIndicesItemMin),
   ),
+  seriesId: zod.string(),
 });
 
 export const createSeriesBody = zod.object({

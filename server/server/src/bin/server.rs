@@ -185,12 +185,14 @@ async fn main() -> Result<()> {
     } else {
         config_dir.join(&config.data_dir.path)
     };
-    let storage_path = data_dir_path.clone();
     info!("Starting up...");
+    if !std::fs::exists(&data_dir_path)? {
+        std::fs::create_dir(&data_dir_path)
+            .with_context(|| format!("error creating data directory at {}", &data_dir_path))?;
+    }
     let pool = db_setup(&data_dir_path).await.unwrap();
     store_asset_roots_from_config(config_dir, &config, &pool).await?;
-    std::fs::create_dir_all(&storage_path).unwrap();
-    let storage: Storage = LocalFileStorage::new(storage_path).into();
+    let storage: Storage = LocalFileStorage::new(data_dir_path).into();
     let (scheduler_did_shutdown_send, scheduler_did_shutdown_recv) = oneshot::channel();
     let scheduler = SchedulerHandle::new(
         pool.clone(),

@@ -49,7 +49,6 @@
     ZoomOutIcon,
   } from 'lucide-svelte';
   import InfoPanel from './InfoPanel.svelte';
-  import { mdiStar } from '@mdi/js';
 
   let {
     getSlide,
@@ -330,7 +329,6 @@
   }
 
   export async function close() {
-    console.log('close');
     uiVisible = false;
     const thumbnailBounds = getThumbnailBounds(currentPosition);
     backgroundOpacityTransition = true;
@@ -406,6 +404,7 @@
           openTransition={slideHolder.openTransition}
           showContent={slideHolder.showContent}
           showUi={uiVisible}
+          {callbacks}
           onContentReady={() => onSlideContentReady(slideHolder.id)}
           slide={slideHolder.slidePosition !== null ? getSlide(slideHolder.slidePosition) : null}
           bind:this={slideHolders[slideHolder.id]}

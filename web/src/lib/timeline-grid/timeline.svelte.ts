@@ -12,12 +12,12 @@ import { SvelteMap } from 'svelte/reactivity';
 import { layoutSegments } from './layout';
 import * as R from 'remeda';
 import {
-  addToTimelineGroup,
   createSeries,
   createTimelineGroup,
   getTimelineSections,
   getTimelineSegments,
   setAssetsHidden,
+  setAssetIsSeriesSelection,
 } from '../../api/myrti';
 import {
   createSeriesResponse,
@@ -122,6 +122,7 @@ export interface ITimelineGrid {
   cancelCreateGroup: () => Promise<void>;
   confirmCreateGroup: (title: string) => Promise<void>;
   addSelectedToExistingGroup: (groupId: string) => Promise<void>;
+  setAssetSeriesSelection: (assetId: string, isSeriesSelection: boolean) => Promise<void>;
 }
 
 export type TimelineOptions = {
@@ -155,6 +156,8 @@ export function createTimeline(
   let viewport: Viewport = { width: 0, height: 0 };
   let state: TimelineState = $state({ state: 'justLooking' } as TimelineState);
   let items: TimelineGridItem[] = $state([]);
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  const itemsByAssetId: Map<string, TimelineGridItem & { type: 'asset' }> = new Map();
   let sections: TimelineSection[] = $state([]);
   const timelineHeight: number = $derived(
     sections.map((s) => s.height).reduce((acc, n) => acc + n, 0),
@@ -698,7 +701,7 @@ export function createTimeline(
           segmentsToRemove.add(segmentIdx);
         } else {
           segment.items = remainingItems;
-          for (let [idx, item] of segment.items.entries()) {
+          for (const [idx, item] of segment.items.entries()) {
             item.pos.itemIndex = idx;
           }
         }
@@ -1196,12 +1199,43 @@ export function createTimeline(
     clearSelection();
   }
 
+  async function setAssetSeriesSelection(assetId: string, isSeriesSelection: boolean) {
+    const response = await setAssetIsSeriesSelection(assetId, { isSeriesSelection });
+    const newSeries = response.data;
+    for (const [sectionIdx, section] of sections.entries()) {
+      if (section.segments !== null) {
+        for (const segment of section.segments) {
+          for (const item of segment.items) {
+            if (item.itemType === 'photoStack' && item.series.seriesId === newSeries.seriesId) {
+              if (
+                !R.isDeepEqual(
+                  newSeries.assetIds,
+                  item.series.assets.map((a) => a.id),
+                )
+              ) {
+                console.error('TODO: asset series/stack changed, not handled yet');
+                return;
+              }
+              sections[sectionIdx].segments = null;
+              await loadSection(sectionIdx);
+              layoutSection(sectionIdx, 'adjustScroll');
+              // Stacks that are split up in timeline grid still share the same instance, so mutate just one of them
+              // item.series.selectionIndices = newSeries.selectionIndices;
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
   return {
     createGroupClicked,
     cancelCreateGroup,
     confirmCreateGroup,
     addSelectedToExistingGroup,
     createStackClicked,
+    setAssetSeriesSelection,
     get state() {
       return state.state;
     },

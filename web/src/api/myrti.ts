@@ -235,6 +235,7 @@ export type SegmentType = SegmentTypeOneOf | SegmentTypeOneOfThree;
 export interface SetAssetIsSeriesSelectionResponse {
   assetIds: number[];
   selectionIndices: number[];
+  seriesId: AssetSeriesId;
 }
 
 export interface SetAssetRotationRequest {

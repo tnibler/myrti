@@ -360,29 +360,6 @@
         }
       }
     },
-    "/api/assets/rotation": {
-      "post": {
-        "tags": [
-          "crate::routes::asset"
-        ],
-        "operationId": "setAssetRotationCorrection",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetAssetRotationRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        }
-      }
-    },
     "/api/assets/thumbnail/{id}/{size}/{format}": {
       "get": {
         "tags": [
@@ -549,6 +526,81 @@
           },
           "404": {
             "description": "Asset not found"
+          }
+        }
+      }
+    },
+    "/api/assets/{id}/rotation": {
+      "post": {
+        "tags": [
+          "crate::routes::asset"
+        ],
+        "operationId": "setAssetRotationCorrection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "AssetId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAssetRotationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/assets/{id}/seriesSelection": {
+      "post": {
+        "tags": [
+          "crate::routes::asset"
+        ],
+        "operationId": "setAssetIsSeriesSelection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "AssetId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAssetSeriesSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetAssetIsSeriesSelectionResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -1222,6 +1274,33 @@
           "propertyName": "type"
         }
       },
+      "SetAssetIsSeriesSelectionResponse": {
+        "type": "object",
+        "required": [
+          "seriesId",
+          "assetIds",
+          "selectionIndices"
+        ],
+        "properties": {
+          "assetIds": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          "selectionIndices": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "seriesId": {
+            "$ref": "#/components/schemas/AssetSeriesId"
+          }
+        }
+      },
       "SetAssetRotationRequest": {
         "type": "object",
         "properties": {
@@ -1229,6 +1308,17 @@
             "type": "integer",
             "format": "int32",
             "nullable": true
+          }
+        }
+      },
+      "SetAssetSeriesSelectionRequest": {
+        "type": "object",
+        "required": [
+          "isSeriesSelection"
+        ],
+        "properties": {
+          "isSeriesSelection": {
+            "type": "boolean"
           }
         }
       },

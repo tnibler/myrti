@@ -58,7 +58,7 @@ pub fn get_series_for_asset(conn: &mut DbConn, asset_id: AssetId) -> Result<Opti
     conn.transaction(|conn| {
         let (asset1, asset2) = diesel::alias!(Asset as asset1, Asset as asset2);
         // diesel::joinable!(asset1 -> asset2 (series_id));
-        let rows: Vec<(i64, Option<i32>)> = asset1
+        let rows: Vec<(i64, Option<i32>, Option<i64>)> = asset1
             .filter(
                 asset1
                     .field(Asset::asset_id)
@@ -71,24 +71,31 @@ pub fn get_series_for_asset(conn: &mut DbConn, asset_id: AssetId) -> Result<Opti
                     .eq(asset2.field(Asset::series_id))),
             )
             .order_by(asset2.field(Asset::taken_date).desc())
-            .select(asset2.fields((Asset::asset_id, Asset::is_series_selection)))
+            .select(asset2.fields((
+                Asset::asset_id,
+                Asset::is_series_selection,
+                Asset::series_id,
+            )))
             .load(conn)?;
-        if rows.is_empty() {
+        let series_id = if let Some(row) = rows.first() {
+            AssetSeriesId(row.2.expect("was filtered not null"))
+        } else {
             return Err(eyre!("Asset is not part of a series"));
-        }
+        };
         let selection_indices: Vec<usize> = rows
             .iter()
             .enumerate()
-            .filter_map(|(idx, (_asset_id, is_selection))| {
+            .filter_map(|(idx, (_asset_id, is_selection, _series_id))| {
                 let is_selection = is_selection.expect("was filtered not null") != 0;
                 is_selection.then_some(idx)
             })
             .collect();
         let asset_ids = rows
             .into_iter()
-            .map(|(asset_id, _)| AssetId(asset_id))
+            .map(|(asset_id, _, _)| AssetId(asset_id))
             .collect();
         Ok(Some(crate::model::AssetSeries {
+            series_id,
             asset_ids,
             selection_indices,
         }))

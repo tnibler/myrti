@@ -1,15 +1,14 @@
 <script lang="ts">
   import Gallery from '@lib/swipey-gallery/Gallery.svelte';
-  import type { ThumbnailBounds } from '@lib/swipey-gallery/thumbnail-bounds';
+  import type { ThumbnailBounds } from '@lib/swipey-gallery/types';
   import { slideForAsset } from '@lib/swipey-gallery/asset-slide';
-  import type { AssetId, AssetWithSpe } from '@api/myrti';
   import type { ITimelineGrid } from '@lib/timeline-grid/timeline.svelte';
   import type { ActionReturn } from 'svelte/action';
   import GridTile from '@lib/ui/GridTile.svelte';
   import SegmentTitle from './SegmentTitle.svelte';
   import type { SelectState } from '@lib/ui/GridTile.svelte';
   import CreateGroupInput from './CreateGroupInput.svelte';
-  import type { PositionInTimeline, TimelineItem } from './timeline-types';
+  import type { OpenedSlide, PositionInTimeline, TimelineItem } from './timeline-types';
   import type { GallerySlide } from '@lib/swipey-gallery/gallery-types';
 
   type TimelineGridProps = {
@@ -18,7 +17,7 @@
   };
 
   let viewport = $state({ width: 0, height: 0 });
-  let gallery: Gallery<PositionInTimeline>;
+  let gallery: Gallery<OpenedSlide>;
 
   let { timeline, scrollWrapper = $bindable() }: TimelineGridProps = $props();
   let gridItemTransitionClass: string | undefined = $state();
@@ -141,10 +140,15 @@
 
   function onAssetClick(item: TimelineItem & ({ itemType: 'asset' } | { itemType: 'photoStack' })) {
     didMoveScrollToCurrentGalleryAsset = false;
-    gallery.open(item.pos);
+    if (item.itemType === 'asset') {
+      gallery.open({ type: 'singleAsset', item: item });
+    } else {
+      gallery.open({ type: 'photoStack', item: item, seriesIndex: item.coverIndex });
+    }
   }
 
-  function getThumbnailBounds(pos: PositionInTimeline): ThumbnailBounds {
+  function getThumbnailBounds(sl: OpenedSlide): ThumbnailBounds {
+    const pos = sl.item.pos;
     const imgEl = document.getElementById(
       `thumb${pos.sectionIndex}-${pos.segmentIndex}-${pos.itemIndex}`,
     );
@@ -161,12 +165,18 @@
     };
   }
 
-  async function getSlide(pos: PositionInTimeline): Promise<GallerySlide<PositionInTimeline>> {
-    const item = await timeline.getItem(pos);
-    await scrollToTimelineItem(pos);
+  async function getSlide(which: OpenedSlide): Promise<GallerySlide<OpenedSlide>> {
+    const item = await (async () => {
+      if (which.item.itemType === 'asset') {
+        return timeline.getItemForAsset(which.item.id);
+      } else {
+        return timeline.getItemForAsset(which.item.series.assets[which.item.coverIndex].id);
+      }
+    })();
+    await scrollToTimelineItem(item.pos);
     if (item.itemType === 'asset') {
       const slide = slideForAsset(item);
-      return { ...slide, pos, slideType: 'singleAsset' };
+      return { ...slide, pos: which, slideType: 'singleAsset' };
     } else {
       const coverSlide = slideForAsset(item.series.assets[item.coverIndex]);
       return {
@@ -174,8 +184,28 @@
         coverSlide,
         series: item.series,
         coverIndex: item.coverIndex,
-        pos,
+        pos: which,
       };
+    }
+  }
+
+  function getNextSlidePosition(sl: OpenedSlide, dir: 'left' | 'right'): OpenedSlide {
+    const item = (() => {
+      if (sl.item.itemType === 'asset') {
+        return timeline.getItemForAsset(sl.item.id);
+      } else {
+        return timeline.getItemForAsset(sl.item.series.assets[sl.item.coverIndex].id);
+      }
+    })();
+    // console.log('current pos', $state.snapshot(item.pos), $state.snapshot(sl));
+    const nextPos = timeline.getNextItemPosition(item.pos, dir);
+    // console.log('next pos', $state.snapshot(nextPos));
+    const next = timeline.getItemMustBeLoaded(nextPos);
+    // console.log($state.snapshot(next));
+    if (next.itemType === 'asset') {
+      return { type: 'singleAsset', item: next };
+    } else {
+      return { type: 'photoStack', item: next, seriesIndex: next.coverIndex };
     }
   }
 
@@ -294,7 +324,7 @@
   {getSlide}
   {scrollWrapper}
   {restoreScrollOnGalleryClose}
-  getNextSlidePosition={timeline.getNextItemPosition}
+  {getNextSlidePosition}
 />
 
 <style>

@@ -80,3 +80,14 @@ export type AddToGroupClickArea = {
   gridItems: TimelineGridItem[];
   groupId: string;
 };
+
+export type OpenedSlide =
+  | {
+      type: 'singleAsset';
+      item: TimelineItem & { itemType: 'asset' };
+    }
+  | {
+      type: 'photoStack';
+      item: TimelineItem & { itemType: 'photoStack' };
+      seriesIndex: number;
+    };

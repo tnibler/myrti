@@ -208,7 +208,6 @@
   });
 
   $effect(() => {
-    console.log(openTransition);
     if (openTransition != null && placeholderEl && placeholderTransitionState === 'No') {
       addOpenTransition(placeholderEl, openTransition);
     }

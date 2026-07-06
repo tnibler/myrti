@@ -328,6 +328,13 @@
     }
   }
 
+  // FIXME: changing stacks selection slides doesn't change in pager until they are reloaded/reordered.
+  // Either manually call this or better make left/right slides properly reactive so they change according to the timeline and current slide
+  export function reloadNextSlides() {
+    holderStates[holderOrder[0]].slidePosition = getNextSlidePosition(currentPosition, 'left');
+    holderStates[holderOrder[2]].slidePosition = getNextSlidePosition(currentPosition, 'right');
+  }
+
   export async function close() {
     uiVisible = false;
     const thumbnailBounds = getThumbnailBounds(currentPosition);
@@ -404,7 +411,6 @@
           openTransition={slideHolder.openTransition}
           showContent={slideHolder.showContent}
           showUi={uiVisible}
-          {callbacks}
           onContentReady={() => onSlideContentReady(slideHolder.id)}
           slide={slideHolder.slidePosition !== null ? getSlide(slideHolder.slidePosition) : null}
           bind:this={slideHolders[slideHolder.id]}

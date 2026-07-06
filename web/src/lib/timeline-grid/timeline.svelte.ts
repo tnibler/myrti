@@ -105,6 +105,8 @@ export interface ITimelineGrid {
     dir: 'left' | 'right',
   ) => PositionInTimeline | null;
   getItem: (pos: PositionInTimeline) => Promise<TimelineItem>;
+  getItemMustBeLoaded: (pos: PositionInTimeline) => TimelineItem;
+  getItemForAsset: (assetId: AssetId) => TimelineItem;
   /** previous/newer item */
   clearSelection: () => void;
   setItemSelected: (item: TimelineItem, selected: boolean) => void;
@@ -414,10 +416,11 @@ export function createTimeline(
   }
 
   async function loadSection(sectionIndex: number) {
+    console.log('loadSection', sectionIndex);
     const section = sections[sectionIndex];
-    if (section.segments != null) {
-      return;
-    }
+    // if (section.segments != null) {
+    //   return;
+    // }
     const sectionId = section.data.id;
     const segments = await requestSegments(sectionId);
 
@@ -578,6 +581,7 @@ export function createTimeline(
     pos: PositionInTimeline,
     dir: 'left' | 'right',
   ): PositionInTimeline | null {
+    // console.log('getNextItemPosition', $state.snapshot(pos), dir);
     const section = sections[pos.sectionIndex];
     if (section.segments === null) {
       console.error('timeline getNextItemPosition: section is not loaded');
@@ -621,6 +625,36 @@ export function createTimeline(
         return null;
       }
     }
+  }
+
+  function getItemForAsset(assetId: AssetId): TimelineItem {
+    for (const section of sections) {
+      if (section.segments !== null) {
+        for (const segment of section.segments) {
+          for (const item of segment.items) {
+            if (item.itemType === 'asset' && item.id === assetId) {
+              return item;
+            } else if (
+              item.itemType === 'photoStack' &&
+              item.series.assets.find(
+                (a, i) => item.splitStart <= i && i < item.splitEnd && a.id === assetId,
+              )
+            ) {
+              return item;
+            }
+          }
+        }
+      }
+    }
+    throw new Error('TODO did not find item in loaded section');
+  }
+
+  function getItemMustBeLoaded(pos: PositionInTimeline): TimelineItem {
+    const section = sections[pos.sectionIndex];
+    if (section.segments === null) {
+      throw new Error('TODO');
+    }
+    return section.segments[pos.segmentIndex].items[pos.itemIndex];
   }
 
   async function getItem(pos: PositionInTimeline): Promise<TimelineItem> {
@@ -998,7 +1032,7 @@ export function createTimeline(
       if (it.itemType === 'asset') {
         return it.takenDate;
       } else {
-        it.series.assets.at(-1)!.takenDate;
+        return it.series.assets.at(-1)!.takenDate;
       }
     })();
     const newSegment: TimelineSegment & { type: 'creatingGroup' } = $state({
@@ -1216,9 +1250,11 @@ export function createTimeline(
                 console.error('TODO: asset series/stack changed, not handled yet');
                 return;
               }
-              sections[sectionIdx].segments = null;
+              // sections[sectionIdx].segments = null;
+              console.log('reload section', sectionIdx);
               await loadSection(sectionIdx);
               layoutSection(sectionIdx, 'adjustScroll');
+              console.log('relayout section');
               // Stacks that are split up in timeline grid still share the same instance, so mutate just one of them
               // item.series.selectionIndices = newSeries.selectionIndices;
               break;
@@ -1287,6 +1323,8 @@ export function createTimeline(
     setActualItemHeight,
     getNextItemPosition,
     getItem,
+    getItemMustBeLoaded,
+    getItemForAsset,
     setItemSelected,
     isItemSelected,
     clearSelection,

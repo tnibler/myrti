@@ -1,51 +1,21 @@
 <script lang="ts">
-  import type { GallerySlideData } from './gallery-types';
-  import Slide, { type OpenTransitionParams } from './Slide.svelte';
+  import Slide, { type SlideProps } from './Slide.svelte';
 
   type SlideHolderProps = {
-    isActive: boolean;
     xTransform: number;
     id: number;
-    slide: Promise<GallerySlideData> | null;
-    onContentReady: (() => void) | undefined;
-    showContent: boolean;
-    showUi: boolean;
-    openTransition: OpenTransitionParams | null;
-  };
-  let {
-    isActive,
-    xTransform,
-    id,
-    slide,
-    onContentReady,
-    showContent,
-    showUi,
-    openTransition,
-  }: SlideHolderProps = $props();
+  } & SlideProps;
+  let { xTransform, id, ...slideProps }: SlideHolderProps & SlideProps = $props();
   let slideComponent: Slide | null = $state(null);
 
   export function slideControls() {
     return slideComponent?.controls;
   }
-  // export const slideControls = $derived(slideComponent?.controls);
   const transformStr: string = $derived(`translate3d(${Math.round(xTransform)}px, 0px, 0px)`);
-  $inspect(isActive, slide);
 </script>
 
 <div id="id-{id}" class="item" style="transform: {transformStr};">
-  <!-- {#await slide then awaitedSlide} -->
-  <!-- {#if awaitedSlide !== null} -->
-  <Slide
-    data={slide}
-    {isActive}
-    {openTransition}
-    {onContentReady}
-    {showContent}
-    {showUi}
-    bind:this={slideComponent}
-  />
-  <!-- {/if} -->
-  <!-- {/await} -->
+  <Slide bind:this={slideComponent} {...slideProps} />
 </div>
 
 <style>

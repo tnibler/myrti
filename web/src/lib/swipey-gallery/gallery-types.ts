@@ -2,6 +2,7 @@ import type { AssetId, AssetSeriesId, AssetWithSpe } from '@api/myrti';
 import type { AssetSeries } from '@lib/timeline-grid/timeline-types';
 import type { Size } from './util_types';
 import type { Readable } from 'svelte/store';
+import type { AssetSeriesRef } from '@lib/timeline-grid/timeline.svelte';
 
 export type GallerySlide<Pos> = {
   pos: Pos;
@@ -61,8 +62,6 @@ export type SlideRef =
     };
 
 export interface GalleryDataSource {
-  asset(id: AssetId): Readable<AssetWithSpe | null>;
-  assetSeries(id: AssetSeriesId): Readable<AssetSeries | null>;
-
-  nextSlide(s: SlideRef, dir: 'left' | 'right'): Readable<SlideRef | null>;
+  getAsset(id: AssetId): AssetWithSpe | null;
+  getAssetSeries(id: AssetSeriesId): AssetSeriesRef | null;
 }

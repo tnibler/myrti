@@ -8,13 +8,8 @@
   import SegmentTitle from './SegmentTitle.svelte';
   import type { SelectState } from '@lib/ui/GridTile.svelte';
   import CreateGroupInput from './CreateGroupInput.svelte';
-  import type { OpenedSlide, PositionInTimeline, TimelineItem } from './timeline-types';
-  import type {
-    GallerySlide,
-    GallerySlideData,
-    SingleAssetSlide,
-    SlideRef,
-  } from '@lib/swipey-gallery/gallery-types';
+  import type { PositionInTimeline, TimelineItem } from './timeline-types';
+  import type { GallerySlideData, SlideRef } from '@lib/swipey-gallery/gallery-types';
   import { tick } from 'svelte';
 
   type TimelineGridProps = {
@@ -29,13 +24,13 @@
   let gridItemTransitionClass: string | undefined = $state();
   let animationsDisabledToStart = true;
   let didMoveScrollToCurrentGalleryAsset = $state(false);
-  let restoreScrollOnGalleryClose = $derived(!didMoveScrollToCurrentGalleryAsset);
+  let restoreScrollOnClose = $derived(!didMoveScrollToCurrentGalleryAsset);
 
   let currentSlide: SlideRef | null = $state(null);
   const pagerSlides: {
-    left: GallerySlideData | null;
-    current: GallerySlideData;
-    right: GallerySlideData | null;
+    left: SlideRef | null;
+    current: SlideRef;
+    right: SlideRef | null;
   } | null = $derived.by(() => {
     if (currentSlide === null) {
       return null;
@@ -49,15 +44,9 @@
     const rightPos = timeline.getNextItemPosition(currentItem.pos, 'right');
     timeline.items;
     return {
-      get left() {
-        return leftPos !== null ? getSlide(timeline.getItemMustBeLoaded(leftPos)) : null;
-      },
-      get current() {
-        return getSlide(currentItem);
-      },
-      get right() {
-        return rightPos !== null ? getSlide(timeline.getItemMustBeLoaded(rightPos)) : null;
-      },
+      left: leftPos !== null ? getSlideRef(timeline.getItemMustBeLoaded(leftPos)) : null,
+      current: currentSlide,
+      right: rightPos !== null ? getSlideRef(timeline.getItemMustBeLoaded(rightPos)) : null,
     };
   });
   // $inspect(pagerSlides);
@@ -187,39 +176,9 @@
       throw new Error('what');
     }
     if (dir === 'left') {
-      if (pagerSlides.left === null) {
-        currentSlide = null;
-      } else {
-        if (pagerSlides.left.slideType === 'singleAsset') {
-          currentSlide = {
-            slideType: pagerSlides.left.slideType,
-            assetId: pagerSlides.left.asset.id,
-          };
-        } else {
-          currentSlide = {
-            slideType: pagerSlides.left.slideType,
-            assetSeriesId: pagerSlides.left.series.seriesId,
-            coverIndex: pagerSlides.left.coverIndex,
-          };
-        }
-      }
+      currentSlide = pagerSlides.left;
     } else {
-      if (pagerSlides.right === null) {
-        currentSlide = null;
-      } else {
-        if (pagerSlides.right.slideType === 'singleAsset') {
-          currentSlide = {
-            slideType: pagerSlides.right.slideType,
-            assetId: pagerSlides.right.asset.id,
-          };
-        } else {
-          currentSlide = {
-            slideType: pagerSlides.right.slideType,
-            assetSeriesId: pagerSlides.right.series.seriesId,
-            coverIndex: pagerSlides.right.coverIndex,
-          };
-        }
-      }
+      currentSlide = pagerSlides.right;
     }
   }
 
@@ -394,10 +353,11 @@
   <Gallery
     bind:this={gallery}
     slides={pagerSlides}
+    dataSource={timeline}
     {onSlideNavigated}
     {getThumbnailBounds}
     {scrollWrapper}
-    {restoreScrollOnGalleryClose}
+    {restoreScrollOnClose}
   />
 {/if}
 

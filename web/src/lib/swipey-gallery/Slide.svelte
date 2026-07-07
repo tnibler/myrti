@@ -9,26 +9,35 @@
   import SlideVideo from './SlideVideo.svelte';
   import './slide.css';
   import type { GalleryControls } from './Pager.svelte';
-  import type { GallerySlideData, SingleAssetSlide } from './gallery-types';
+  import type { GalleryDataSource, SingleAssetSlide, SlideRef } from './gallery-types';
   import { mdiStar } from '@mdi/js';
   import { slideForAsset } from './asset-slide';
   import { getGalleryContext, type GalleryContext } from './context';
+  import * as R from 'remeda';
 
   export type OpenTransitionParams = {
     fromBounds: ThumbnailBounds;
     onTransitionEnd: () => void;
   };
 
-  type SlideProps = {
-    data: GallerySlideData;
+  export type SlideProps = {
+    slide: SlideRef;
     isActive: boolean;
     openTransition: OpenTransitionParams | null;
     showContent: boolean;
     showUi: boolean;
     onContentReady: (() => void) | undefined;
+    dataSource: GalleryDataSource;
   };
-  let { data, isActive, openTransition, showContent, showUi, onContentReady }: SlideProps =
-    $props();
+  let {
+    slide,
+    isActive,
+    openTransition,
+    showContent,
+    showUi,
+    onContentReady,
+    dataSource,
+  }: SlideProps = $props();
 
   const galleryContext: GalleryContext = getGalleryContext();
 
@@ -39,25 +48,29 @@
   const centerY = $derived(panAreaSize.height / 2);
 
   let selectedSeriesIndex: number | null = $state(
-    data.slideType === 'singleAsset' ? null : data.coverIndex,
+    slide.slideType === 'singleAsset' ? null : slide.coverIndex,
   );
-  let prevSlide = data;
+  let prevSlide: SlideRef | null = null;
   $effect(() => {
-    if (prevSlide !== data) {
-      prevSlide = data;
+    if (!R.isDeepEqual(prevSlide, slide)) {
+      prevSlide = slide;
     }
-    selectedSeriesIndex = data.slideType === 'singleAsset' ? null : data.coverIndex;
+    selectedSeriesIndex = slide.slideType === 'singleAsset' ? null : slide.coverIndex;
   });
-  $inspect(data, selectedSeriesIndex);
 
-  const slideToDisplay = $derived(
-    data.slideType === 'singleAsset'
-      ? data
-      : selectedSeriesIndex !== null
-        ? slideForAsset(data.series.assets[selectedSeriesIndex])
-        : data.coverSlide,
-  );
+  const slideToDisplay = $derived.by(() => {
+    if (slide.slideType === 'singleAsset') {
+      const asset = dataSource.getAsset(slide.assetId);
+      return { slideType: slide.slideType, ...slideForAsset(asset) };
+    } else {
+      const series = dataSource.getAssetSeries(slide.assetSeriesId);
+      const indexInSeries = selectedSeriesIndex ?? slide.coverIndex;
+      const asset = dataSource.getAsset(series.assetIds[indexInSeries]);
+      return { slideType: slide.slideType, series, indexInSeries, ...slideForAsset(asset) };
+    }
+  });
 
+  // TODO: do all these geometry computations at once only when viewport size is actually set
   let zoomLevels: ZoomLevels = $derived(
     computeZoomLevels({
       maxSize: slideToDisplay.size,
@@ -112,6 +125,7 @@
       isContentVisible = true;
     }
   });
+  $inspect(zoomLevels);
 
   $effect(() => {
     // handle viewport size changes and zoom slide to at least fill viewport
@@ -241,9 +255,11 @@
     const transform = getTransformToFitThumbnail(t.fromBounds);
     el.style.transform = transform;
     placeholderTransitionState = 'Running';
+    console.log(transform);
 
     requestAnimationFrame(() => {
       const listener = (e: TransitionEvent) => {
+        console.log('aaaaa', e.target, el);
         if (e.target === el) {
           el.removeEventListener('transitionend', listener, false);
           el.removeEventListener('transitioncancel', listener, false);
@@ -407,7 +423,9 @@
       class="placeholder max-w-none"
       bind:this={placeholderEl}
       out:fade={{ duration: 100, delay: PLACEHOLDER_HIDE_DELAY }}
-      src={data.slideType === 'singleAsset' ? data.placeholderSrc : data.coverSlide.placeholderSrc}
+      src={slideToDisplay.slideType === 'singleAsset'
+        ? slideToDisplay.placeholderSrc
+        : slideToDisplay.placeholderSrc}
       style:width="{width}px"
       style:height="{height}px"
       style:user-select="none"
@@ -415,7 +433,7 @@
     />
   {/if}
 </div>
-{#if data?.slideType === 'assetSeries' && showUi}
+{#if slideToDisplay.slideType === 'assetSeries' && showUi}
   <div
     class="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto
           "
@@ -423,27 +441,31 @@
     <div
       class="rounded-xl bg-black/70 backdrop-blur px-2 py-4 flex flex-row h-48 max-w-7xl overflow-x-auto overflow-y-hidden"
     >
-      {#each data.series.assets as asset, indexInSeries (asset.id)}
-        {@const isSelection = data.series.selectionIndices.indexOf(indexInSeries) !== -1}
+      {#each slideToDisplay.series.assetIds as assetId, indexInSeries (assetId)}
+        {@const asset = dataSource.getAsset(assetId)}
+        {@const isSelection = slideToDisplay.series.selectionIndices.indexOf(indexInSeries) !== -1}
         <div class="group relative h-full shrink-0 mx-3">
           <div class="absolute top-1 right-1">
-            <!-- <input type="checkbox" class="absolute right-10 mr-1 mt-1 md:mr-2 md:mt-2"/> -->
             <input
               type="checkbox"
-              class="hidden peer"
-              id={`seriesCheck${asset.id}`}
+              class="sr-only"
+              id={`seriesCheck${assetId}`}
               checked={isSelection}
               onchange={(e) => {
-                onSeriesSelectionChanged(asset.id, e.target.checked);
+                e.stopImmediatePropagation();
+                e.stopPropagation();
+                onSeriesSelectionChanged(assetId, e.target.checked);
               }}
             />
-            <label for={`seriesCheck${asset.id}`}>
+            <label for={`seriesCheck${assetId}`}>
               <svg
+                onpointerdowncapture={(e) => e.stopPropagation()}
+                onpointerupcapture={(e) => e.stopPropagation()}
                 width="24"
                 height="24"
                 viewBox="0 0 24 24"
                 class="rounded-md bg-black/70 backdrop-blur p-1
-                        hidden hover:fill-white group-has-checked:fill-white group-has-checked:block group-hover:block pointer-events-auto"
+                        opacity-0 hover:fill-white group-has-checked:fill-white group-has-checked:opacity-100 group-hover:opacity-100 group-has-focus:opacity-100 pointer-events-auto"
               >
                 <path d={mdiStar} />
               </svg>

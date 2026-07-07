@@ -1,14 +1,15 @@
 <script lang="ts" module>
-  import type { GallerySlide, GallerySlideData } from './gallery-types';
+  import type { GalleryDataSource, GallerySlideData, SlideRef } from './gallery-types';
   export type PagerProps = {
     topOffset: number;
 
     slides: {
-      left: GallerySlideData | null;
-      current: GallerySlideData;
-      right: GallerySlideData | null;
+      left: SlideRef | null;
+      current: SlideRef;
+      right: SlideRef | null;
     };
     onSlideNavigated: (dir: 'left' | 'right') => void;
+    dataSource: GalleryDataSource;
 
     getThumbnailBounds: () => ThumbnailBounds;
     closeGallery: () => void;
@@ -61,6 +62,7 @@
     onSlideNavigated,
     getThumbnailBounds,
     closeGallery,
+    dataSource,
     onOpenTransitionFinished,
     topOffset,
   }: PagerProps = $props();
@@ -75,7 +77,7 @@
 
   type SlideHolderState = {
     id: number;
-    slide: GallerySlideData | null;
+    slide: SlideRef | null;
     openTransition: OpenTransitionParams | null;
     isActive: boolean;
     showContent: boolean;
@@ -142,8 +144,8 @@
     },
     moveXBy: (delta) => {
       const SWIPE_END_FRICTION = 0.3;
-      const hittingLeftWall = 0 < delta && holderStates[holderOrder[0]].slidePosition === null;
-      const hittingRightWall = delta < 0 && holderStates[holderOrder[2]].slidePosition === null;
+      const hittingLeftWall = 0 < delta && holderStates[holderOrder[0]].slide === null;
+      const hittingRightWall = delta < 0 && holderStates[holderOrder[2]].slide === null;
       if (hittingLeftWall || hittingRightWall) {
         xTransformOffset += delta * SWIPE_END_FRICTION;
       } else {
@@ -403,26 +405,29 @@
       style:opacity={backgroundOpacity}
       class:transition-opacity={backgroundOpacityTransition}
     ></div>
-    <div class="absolute top-0 left-0 w-full h-full" style="transform: {transformString};">
-      {#each holderStates as slideHolder (slideHolder.id)}
-        <!-- currentShift - 1 because there is still one slideHolder to the left of the viewport when currentShift is 0 -->
-        {@const x =
-          (currentShift - 1 + holderOrder.indexOf(slideHolder.id)) *
-          (1 + slideSpacing) *
-          slideWidth}
-        <SlideHolder
-          id={slideHolder.id}
-          isActive={slideHolder.isActive}
-          xTransform={x}
-          openTransition={slideHolder.openTransition}
-          showContent={slideHolder.showContent}
-          showUi={uiVisible}
-          onContentReady={() => onSlideContentReady(slideHolder.id)}
-          slide={slideHolder.slide}
-          bind:this={slideHolders[slideHolder.id]}
-        />
-      {/each}
-    </div>
+    {#if viewport.height > 0.0 && viewport.width > 0.0}
+      <div class="absolute top-0 left-0 w-full h-full" style="transform: {transformString};">
+        {#each holderStates as slideHolder (slideHolder.id)}
+          <!-- currentShift - 1 because there is still one slideHolder to the left of the viewport when currentShift is 0 -->
+          {@const x =
+            (currentShift - 1 + holderOrder.indexOf(slideHolder.id)) *
+            (1 + slideSpacing) *
+            slideWidth}
+          <SlideHolder
+            id={slideHolder.id}
+            isActive={slideHolder.isActive}
+            xTransform={x}
+            {dataSource}
+            openTransition={slideHolder.openTransition}
+            showContent={slideHolder.showContent}
+            showUi={uiVisible}
+            onContentReady={() => onSlideContentReady(slideHolder.id)}
+            slide={slideHolder.slide}
+            bind:this={slideHolders[slideHolder.id]}
+          />
+        {/each}
+      </div>
+    {/if}
     {#if uiVisible}
       <!-- Note: idk what capture really means at time of writing. The intent is for the pointerdown/up/.. listeners in bindEvent()
         to not be triggered when ui elements in this div are clicked. -->

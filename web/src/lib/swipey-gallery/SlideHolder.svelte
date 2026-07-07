@@ -29,22 +29,23 @@
   }
   // export const slideControls = $derived(slideComponent?.controls);
   const transformStr: string = $derived(`translate3d(${Math.round(xTransform)}px, 0px, 0px)`);
+  $inspect(isActive, slide);
 </script>
 
 <div id="id-{id}" class="item" style="transform: {transformStr};">
-  {#await slide then awaitedSlide}
-    {#if awaitedSlide !== null}
-      <Slide
-        data={awaitedSlide}
-        {isActive}
-        {openTransition}
-        {onContentReady}
-        {showContent}
-        {showUi}
-        bind:this={slideComponent}
-      />
-    {/if}
-  {/await}
+  <!-- {#await slide then awaitedSlide} -->
+  <!-- {#if awaitedSlide !== null} -->
+  <Slide
+    data={slide}
+    {isActive}
+    {openTransition}
+    {onContentReady}
+    {showContent}
+    {showUi}
+    bind:this={slideComponent}
+  />
+  <!-- {/if} -->
+  <!-- {/await} -->
 </div>
 
 <style>

@@ -1,6 +1,7 @@
-import type { AssetWithSpe } from '@api/myrti';
+import type { AssetId, AssetSeriesId, AssetWithSpe } from '@api/myrti';
 import type { AssetSeries } from '@lib/timeline-grid/timeline-types';
 import type { Size } from './util_types';
+import type { Readable } from 'svelte/store';
 
 export type GallerySlide<Pos> = {
   pos: Pos;
@@ -47,3 +48,21 @@ export type VideoSlideData = {
 );
 
 export type SingleAssetSlide = ImageSlideData | VideoSlideData;
+
+export type SlideRef =
+  | {
+      slideType: 'singleAsset';
+      assetId: AssetId;
+    }
+  | {
+      slideType: 'assetSeries';
+      assetSeriesId: AssetSeriesId;
+      coverIndex: number;
+    };
+
+export interface GalleryDataSource {
+  asset(id: AssetId): Readable<AssetWithSpe | null>;
+  assetSeries(id: AssetSeriesId): Readable<AssetSeries | null>;
+
+  nextSlide(s: SlideRef, dir: 'left' | 'right'): Readable<SlideRef | null>;
+}

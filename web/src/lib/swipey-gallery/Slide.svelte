@@ -41,6 +41,15 @@
   let selectedSeriesIndex: number | null = $state(
     data.slideType === 'singleAsset' ? null : data.coverIndex,
   );
+  let prevSlide = data;
+  $effect(() => {
+    if (prevSlide !== data) {
+      prevSlide = data;
+    }
+    selectedSeriesIndex = data.slideType === 'singleAsset' ? null : data.coverIndex;
+  });
+  $inspect(data, selectedSeriesIndex);
+
   const slideToDisplay = $derived(
     data.slideType === 'singleAsset'
       ? data
@@ -48,6 +57,7 @@
         ? slideForAsset(data.series.assets[selectedSeriesIndex])
         : data.coverSlide,
   );
+
   let zoomLevels: ZoomLevels = $derived(
     computeZoomLevels({
       maxSize: slideToDisplay.size,
@@ -406,7 +416,6 @@
   {/if}
 </div>
 {#if data?.slideType === 'assetSeries' && showUi}
-  {@const slide = data}
   <div
     class="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto
           "
@@ -414,10 +423,8 @@
     <div
       class="rounded-xl bg-black/70 backdrop-blur px-2 py-4 flex flex-row h-48 max-w-7xl overflow-x-auto overflow-y-hidden"
     >
-      {#each slide.series.assets as asset, indexInSeries (asset.id)}
-        {@const isSelection =
-          slide.series.selectionIndices.map((i) => slide.series.assets[i].id).indexOf(asset.id) !==
-          -1}
+      {#each data.series.assets as asset, indexInSeries (asset.id)}
+        {@const isSelection = data.series.selectionIndices.indexOf(indexInSeries) !== -1}
         <div class="group relative h-full shrink-0 mx-3">
           <div class="absolute top-1 right-1">
             <!-- <input type="checkbox" class="absolute right-10 mr-1 mt-1 md:mr-2 md:mt-2"/> -->

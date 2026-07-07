@@ -105,9 +105,6 @@
       });
     })(),
   );
-  const currentSlide: GallerySlideData | null = $derived.by(() => {
-    return slides.current;
-  });
   const canMoveLeft = $derived(holderStates[holderOrder[0]].slide !== null);
   const canMoveRight = $derived(holderStates[holderOrder[2]].slide !== null);
   let slideHolders: SlideHolder[] = $state([]);
@@ -316,6 +313,7 @@
     onSlideNavigated(didShift);
   }
 
+  // TODO: handle changes in series while keeping current index in seres
   $effect(() => {
     const leftHolder = holderStates[holderOrder[0]];
     if (!R.isDeepEqual(leftHolder.slide, slides.left)) {
@@ -323,8 +321,20 @@
       leftHolder.openTransition = null;
       leftHolder.isContentReady = false;
     }
+  });
+  $effect(() => {
+    const currentHolder = holderStates[holderOrder[1]];
+    if (!R.isDeepEqual(currentHolder.slide, slides.current)) {
+      console.log('update current');
+      currentHolder.slide = slides.current;
+      currentHolder.openTransition = null;
+      currentHolder.isContentReady = false;
+    }
+  });
+  $effect(() => {
     const rightHolder = holderStates[holderOrder[2]];
     if (!R.isDeepEqual(rightHolder.slide, slides.right)) {
+      console.log('update right');
       rightHolder.slide = slides.right;
       rightHolder.openTransition = null;
       rightHolder.isContentReady = false;
@@ -408,7 +418,7 @@
           showContent={slideHolder.showContent}
           showUi={uiVisible}
           onContentReady={() => onSlideContentReady(slideHolder.id)}
-          slide={(async () => slideHolder.slide)()}
+          slide={slideHolder.slide}
           bind:this={slideHolders[slideHolder.id]}
         />
       {/each}
@@ -496,15 +506,15 @@
     {/if}
   </div>
 
-  <div class={'bg-white z-50 transition-all w-96 ' + (isSidePanelOpen ? 'mr-0' : 'mr-[-24rem]')}>
-    {#await currentSlide then slide}
-      {#if slide !== null}
-        <InfoPanel
-          asset={slide.slideType === 'singleAsset' ? slide.asset : slide.coverSlide.asset}
-        />
-      {/if}
-    {/await}
-  </div>
+  <!-- <div class={'bg-white z-50 transition-all w-96 ' + (isSidePanelOpen ? 'mr-0' : 'mr-[-24rem]')}> -->
+  <!--   {#await currentSlide then slide} -->
+  <!--     {#if slide !== null} -->
+  <!--       <InfoPanel -->
+  <!--         asset={slide.slideType === 'singleAsset' ? slide.asset : slide.coverSlide.asset} -->
+  <!--       /> -->
+  <!--     {/if} -->
+  <!--   {/await} -->
+  <!-- </div> -->
 </div>
 
 <style>

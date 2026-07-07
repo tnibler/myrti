@@ -1,8 +1,9 @@
 import type { Dayjs } from 'dayjs';
-import type { TimelineGridItem, TimelineOptions } from './timeline.svelte';
+import type { AssetSeriesRef, TimelineGridItem, TimelineOptions } from './timeline.svelte';
 import createJustifiedLayout from 'justified-layout';
-import type { ItemRange, TimelineSegment } from './timeline-types';
+import type { AssetSeries, ItemRange, TimelineSegment } from './timeline-types';
 import * as R from 'remeda';
+import type { AssetId, AssetSeriesId, AssetWithSpe } from '@api/myrti';
 
 type Box = { top: number; left: number; width: number; height: number };
 
@@ -13,6 +14,8 @@ export function layoutSegments(
   baseAssetIndex: number,
   containerWidth: number,
   opts: TimelineOptions,
+  getAsset: (id: AssetId) => AssetWithSpe,
+  getAssetSeries: (id: AssetSeriesId) => AssetSeriesRef,
 ): {
   items: TimelineGridItem[];
   totalHeight: number;
@@ -51,7 +54,10 @@ export function layoutSegments(
     for (const segment of candidateToMergeWith.segments) {
       const boxes: Box[] = [];
       for (const item of segment.items) {
-        const asset = item.itemType === 'asset' ? item : item.series.assets[item.coverIndex];
+        const asset =
+          item.itemType === 'asset'
+            ? getAsset(item.assetId)
+            : getAsset(getAssetSeries(item.seriesId).assetIds[item.coverIndex]);
         const assetSize =
           (asset.rotationCorrection ?? 0) % 180 === 0
             ? { width: asset.width, height: asset.height }
@@ -81,7 +87,11 @@ export function layoutSegments(
     const segment = segments[segmentIndex];
     // swap width/heigth if rotation correction applies
     const assetSizes = segment.items.map((item) => {
-      const asset = item.itemType === 'asset' ? item : item.series.assets[item.coverIndex];
+      const assetId =
+        item.itemType === 'asset'
+          ? item.assetId
+          : getAssetSeries(item.seriesId).assetIds[item.coverIndex];
+      const asset = getAsset(assetId);
       if (asset.rotationCorrection && asset.rotationCorrection % 180 != 0) {
         return {
           width: asset.height,
@@ -251,23 +261,24 @@ export function layoutSegments(
               left: box.left,
               width: box.width,
               height: box.height,
-              key: 'asset' + item.id,
-              asset: item,
+              key: 'asset' + item.assetId,
+              assetId: item.assetId,
               timelineItem: item,
             };
             return gridItem;
           } else {
-            const coverAsset = item.series.assets[item.coverIndex];
+            const series = getAssetSeries(item.seriesId);
+            const coverAssetId = series.assetIds[item.coverIndex];
             const gridItem: TimelineGridItem & { type: 'photoStack' } = {
               type: 'photoStack',
               top: box.top + startTop + offsetByTitleHeight,
               left: box.left,
               width: box.width,
               height: box.height,
-              key: 'asset' + coverAsset.id, // no thought behind this
-              series: item.series,
+              key: 'asset' + coverAssetId, // no thought behind this
+              seriesId: item.seriesId,
               coverIndex: item.coverIndex,
-              numAssets: item.series.assets.length,
+              numAssets: series.assetIds.length,
               timelineItem: item,
             };
             return gridItem;

@@ -9,7 +9,12 @@
   import type { SelectState } from '@lib/ui/GridTile.svelte';
   import CreateGroupInput from './CreateGroupInput.svelte';
   import type { OpenedSlide, PositionInTimeline, TimelineItem } from './timeline-types';
-  import type { GallerySlide, GallerySlideData } from '@lib/swipey-gallery/gallery-types';
+  import type {
+    GallerySlide,
+    GallerySlideData,
+    SingleAssetSlide,
+    SlideRef,
+  } from '@lib/swipey-gallery/gallery-types';
   import { tick } from 'svelte';
 
   type TimelineGridProps = {
@@ -26,30 +31,36 @@
   let didMoveScrollToCurrentGalleryAsset = $state(false);
   let restoreScrollOnGalleryClose = $derived(!didMoveScrollToCurrentGalleryAsset);
 
-  let currentSlide: GallerySlide<PositionInTimeline> | null = $state(null);
+  let currentSlide: SlideRef | null = $state(null);
   const pagerSlides: {
-    left: GallerySlide<PositionInTimeline> | null;
-    current: GallerySlide<PositionInTimeline>;
-    right: GallerySlide<PositionInTimeline> | null;
+    left: GallerySlideData | null;
+    current: GallerySlideData;
+    right: GallerySlideData | null;
   } | null = $derived.by(() => {
     if (currentSlide === null) {
       return null;
     }
     const assetId =
       currentSlide.slideType === 'singleAsset'
-        ? currentSlide.asset.id
-        : currentSlide.series.assets[currentSlide.coverIndex].id;
-    const currentPos = timeline.getItemForAsset(assetId).pos;
-    const leftPos = timeline.getNextItemPosition(currentPos, 'left');
-    const rightPos = timeline.getNextItemPosition(currentPos, 'right');
+        ? currentSlide.assetId
+        : timeline.getAssetSeries(currentSlide.assetSeriesId).assetIds[currentSlide.coverIndex];
+    const currentItem = timeline.getItemForAsset(assetId);
+    const leftPos = timeline.getNextItemPosition(currentItem.pos, 'left');
+    const rightPos = timeline.getNextItemPosition(currentItem.pos, 'right');
     timeline.items;
     return {
-      left: leftPos !== null ? getSlide(timeline.getItemMustBeLoaded(leftPos)) : null,
-      current: currentSlide,
-      right: rightPos !== null ? getSlide(timeline.getItemMustBeLoaded(rightPos)) : null,
+      get left() {
+        return leftPos !== null ? getSlide(timeline.getItemMustBeLoaded(leftPos)) : null;
+      },
+      get current() {
+        return getSlide(currentItem);
+      },
+      get right() {
+        return rightPos !== null ? getSlide(timeline.getItemMustBeLoaded(rightPos)) : null;
+      },
     };
   });
-  $inspect(pagerSlides);
+  // $inspect(pagerSlides);
 
   $effect(() => {
     setTimeout(() => {
@@ -165,7 +176,7 @@
 
   function onAssetClick(item: TimelineItem & ({ itemType: 'asset' } | { itemType: 'photoStack' })) {
     didMoveScrollToCurrentGalleryAsset = false;
-    currentSlide = getSlide(timeline.getItemMustBeLoaded(item.pos));
+    currentSlide = getSlideRef(timeline.getItemMustBeLoaded(item.pos));
     tick().then(() => {
       gallery.open();
     });
@@ -176,13 +187,44 @@
       throw new Error('what');
     }
     if (dir === 'left') {
-      currentSlide = pagerSlides.left;
+      if (pagerSlides.left === null) {
+        currentSlide = null;
+      } else {
+        if (pagerSlides.left.slideType === 'singleAsset') {
+          currentSlide = {
+            slideType: pagerSlides.left.slideType,
+            assetId: pagerSlides.left.asset.id,
+          };
+        } else {
+          currentSlide = {
+            slideType: pagerSlides.left.slideType,
+            assetSeriesId: pagerSlides.left.series.seriesId,
+            coverIndex: pagerSlides.left.coverIndex,
+          };
+        }
+      }
     } else {
-      currentSlide = pagerSlides.right;
+      if (pagerSlides.right === null) {
+        currentSlide = null;
+      } else {
+        if (pagerSlides.right.slideType === 'singleAsset') {
+          currentSlide = {
+            slideType: pagerSlides.right.slideType,
+            assetId: pagerSlides.right.asset.id,
+          };
+        } else {
+          currentSlide = {
+            slideType: pagerSlides.right.slideType,
+            assetSeriesId: pagerSlides.right.series.seriesId,
+            coverIndex: pagerSlides.right.coverIndex,
+          };
+        }
+      }
     }
   }
 
   function getThumbnailBounds(): ThumbnailBounds {
+    return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     const pos = currentSlide.pos;
     const imgEl = document.getElementById(
       `thumb${pos.sectionIndex}-${pos.segmentIndex}-${pos.itemIndex}`,
@@ -200,19 +242,39 @@
     };
   }
 
-  function getSlide(item: TimelineItem): GallerySlide<PositionInTimeline> {
-    // scrollToTimelineItem(item.pos);
+  function getSlideRef(item: TimelineItem): SlideRef {
     if (item.itemType === 'asset') {
-      const slide = slideForAsset(item);
-      return { ...slide, slideType: 'singleAsset', pos: item.pos };
+      const asset = timeline.getAsset(item.assetId);
+      return { slideType: 'singleAsset', assetId: asset.id };
     } else {
-      const coverSlide = slideForAsset(item.series.assets[item.coverIndex]);
       return {
         slideType: 'assetSeries',
-        coverSlide,
-        series: item.series,
+        assetSeriesId: item.seriesId,
         coverIndex: item.coverIndex,
-        pos: item.pos,
+      };
+    }
+  }
+
+  function getSlide(item: TimelineItem): GallerySlideData {
+    // scrollToTimelineItem(item.pos);
+    if (item.itemType === 'asset') {
+      const asset = timeline.getAsset(item.assetId);
+      const slide = slideForAsset(asset);
+      return { slideType: 'singleAsset', ...slide };
+    } else {
+      const series = timeline.getAssetSeries(item.seriesId);
+      const asset = timeline.getAsset(series.assetIds[item.coverIndex]);
+      return {
+        slideType: 'assetSeries',
+        get series() {
+          return {
+            assets: series.assetIds.map((id) => timeline.getAsset(id)),
+            seriesId: series.id,
+            ...series,
+          };
+        },
+        coverSlide: slideForAsset(asset),
+        coverIndex: item.coverIndex,
       };
     }
   }
@@ -267,7 +329,7 @@
       {#if item.type === 'asset'}
         <GridTile
           className={gridItemTransitionClass}
-          asset={item.asset}
+          asset={timeline.getAsset(item.assetId)}
           box={item}
           showStackIcon={false}
           onAssetClick={() => {
@@ -282,7 +344,9 @@
       {:else if item.type === 'photoStack'}
         <GridTile
           className={gridItemTransitionClass}
-          asset={item.series.assets[item.coverIndex]}
+          asset={timeline.getAsset(
+            timeline.getAssetSeries(item.seriesId).assetIds[item.coverIndex],
+          )}
           box={item}
           showStackIcon={true}
           onAssetClick={() => {

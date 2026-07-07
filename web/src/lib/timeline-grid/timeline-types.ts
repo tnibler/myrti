@@ -1,4 +1,9 @@
-import type { AssetWithSpe, TimelineSection as ApiTimelineSection } from '@api/myrti';
+import type {
+  AssetWithSpe,
+  TimelineSection as ApiTimelineSection,
+  AssetId,
+  AssetSeriesId,
+} from '@api/myrti';
 import type { Dayjs } from '@lib/dayjs';
 import type { TimelineGridItem } from './timeline.svelte';
 
@@ -52,14 +57,15 @@ export type TimelineItem = {
   key: string;
   sortDate: string;
 } & (
-  | ({
+  | {
       /** A single asset */
       itemType: 'asset';
-    } & AssetWithSpe)
+      assetId: AssetId;
+    }
   | {
       /** Complete or split up stack. If a stack has multiple images marked as good, the stack is split up at each marked image. */
       itemType: 'photoStack';
-      series: AssetSeries;
+      seriesId: AssetSeriesId;
       /** `series.assets[coverIndex]` is the cover image shown in the timelinew
        * for this (portion of a) stack */
       coverIndex: number;

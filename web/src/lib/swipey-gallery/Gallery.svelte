@@ -2,7 +2,10 @@
   import { onMount } from 'svelte';
   import Pager, { type PagerProps } from './Pager.svelte';
 
-  type GalleryProps = PagerProps & {
+  type GalleryProps = Omit<
+    PagerProps,
+    'topOffset' | 'closeGallery' | 'onOpenTransitionFinished'
+  > & {
     scrollWrapper: HTMLElement;
     restoreScrollOnClose: boolean;
   };

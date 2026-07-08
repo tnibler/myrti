@@ -1,7 +1,6 @@
 <script lang="ts">
   import Gallery from '@lib/swipey-gallery/Gallery.svelte';
   import type { ThumbnailBounds } from '@lib/swipey-gallery/types';
-  import { slideForAsset } from '@lib/swipey-gallery/asset-slide';
   import type { ITimelineGrid } from '@lib/timeline-grid/timeline.svelte';
   import type { ActionReturn } from 'svelte/action';
   import GridTile from '@lib/ui/GridTile.svelte';
@@ -9,7 +8,7 @@
   import type { SelectState } from '@lib/ui/GridTile.svelte';
   import CreateGroupInput from './CreateGroupInput.svelte';
   import type { PositionInTimeline, TimelineItem } from './timeline-types';
-  import type { GallerySlideData, SlideRef } from '@lib/swipey-gallery/gallery-types';
+  import type { SlideRef } from '@lib/swipey-gallery/gallery-types';
   import { tick } from 'svelte';
 
   type TimelineGridProps = {
@@ -42,14 +41,12 @@
     const currentItem = timeline.getItemForAsset(assetId);
     const leftPos = timeline.getNextItemPosition(currentItem.pos, 'left');
     const rightPos = timeline.getNextItemPosition(currentItem.pos, 'right');
-    timeline.items;
     return {
       left: leftPos !== null ? getSlideRef(timeline.getItemMustBeLoaded(leftPos)) : null,
       current: currentSlide,
       right: rightPos !== null ? getSlideRef(timeline.getItemMustBeLoaded(rightPos)) : null,
     };
   });
-  // $inspect(pagerSlides);
 
   $effect(() => {
     setTimeout(() => {
@@ -165,7 +162,7 @@
 
   function onAssetClick(item: TimelineItem & ({ itemType: 'asset' } | { itemType: 'photoStack' })) {
     didMoveScrollToCurrentGalleryAsset = false;
-    currentSlide = getSlideRef(timeline.getItemMustBeLoaded(item.pos));
+    currentSlide = getSlideRef(item);
     tick().then(() => {
       gallery.open();
     });
@@ -183,8 +180,15 @@
   }
 
   function getThumbnailBounds(): ThumbnailBounds {
-    return { rect: { x: 0, y: 0, width: 0, height: 0 } };
-    const pos = currentSlide.pos;
+    if (currentSlide === null) {
+      return { rect: { x: 0, y: 0, width: 0, height: 0 } };
+    }
+    const assetId =
+      currentSlide.slideType === 'singleAsset'
+        ? currentSlide.assetId
+        : timeline.getAssetSeries(currentSlide.assetSeriesId).assetIds[currentSlide.coverIndex];
+    const currentItem = timeline.getItemForAsset(assetId);
+    const pos = currentItem.pos;
     const imgEl = document.getElementById(
       `thumb${pos.sectionIndex}-${pos.segmentIndex}-${pos.itemIndex}`,
     );
@@ -209,30 +213,6 @@
       return {
         slideType: 'assetSeries',
         assetSeriesId: item.seriesId,
-        coverIndex: item.coverIndex,
-      };
-    }
-  }
-
-  function getSlide(item: TimelineItem): GallerySlideData {
-    // scrollToTimelineItem(item.pos);
-    if (item.itemType === 'asset') {
-      const asset = timeline.getAsset(item.assetId);
-      const slide = slideForAsset(asset);
-      return { slideType: 'singleAsset', ...slide };
-    } else {
-      const series = timeline.getAssetSeries(item.seriesId);
-      const asset = timeline.getAsset(series.assetIds[item.coverIndex]);
-      return {
-        slideType: 'assetSeries',
-        get series() {
-          return {
-            assets: series.assetIds.map((id) => timeline.getAsset(id)),
-            seriesId: series.id,
-            ...series,
-          };
-        },
-        coverSlide: slideForAsset(asset),
         coverIndex: item.coverIndex,
       };
     }
@@ -337,7 +317,7 @@
         />
       {/if}
     {/each}
-    {#each clickAreaRects as area}
+    {#each clickAreaRects as area (area.groupId)}
       <button
         class="absolute z-20 hover:bg-black/10 border-black/20 hover:border-black/40 border-2 rounded-lg"
         style="top: {area.top}px;  height: {area.height}px; left: {area.left}px; width: {area.width}px;"

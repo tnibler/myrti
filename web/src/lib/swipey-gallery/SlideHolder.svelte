@@ -1,21 +1,23 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import Slide, { type SlideProps } from './Slide.svelte';
 
   type SlideHolderProps = {
     xTransform: number;
     id: number;
-  } & SlideProps;
-  let { xTransform, id, ...slideProps }: SlideHolderProps & SlideProps = $props();
-  let slideComponent: Slide | null = $state(null);
-
-  export function slideControls() {
-    return slideComponent?.controls;
-  }
+    children: Snippet;
+  };
+  let { xTransform, id, children }: SlideHolderProps = $props();
+  // let slideComponent: Slide | null = $state(null);
+  // export function slideControls() {
+  //   return slideComponent?.controls;
+  // }
   const transformStr: string = $derived(`translate3d(${Math.round(xTransform)}px, 0px, 0px)`);
 </script>
 
 <div id="id-{id}" class="item" style="transform: {transformStr};">
-  <Slide bind:this={slideComponent} {...slideProps} />
+  {@render children()}
+  <!-- <Slide bind:this={slideComponent} {...slideProps} /> -->
 </div>
 
 <style>

@@ -40,7 +40,7 @@
 
 <script lang="ts">
   import SlideHolder from './SlideHolder.svelte';
-  import { onMount, setContext, untrack } from 'svelte';
+  import { onMount } from 'svelte';
   import { newGestureController } from './gestures';
   import { newAnimationControls, type AnimationControls } from './animations';
   import type { ThumbnailBounds, SlideControls } from './types.ts';
@@ -56,6 +56,7 @@
     ZoomOutIcon,
   } from 'lucide-svelte';
   import InfoPanel from './InfoPanel.svelte';
+  import Slide from './Slide.svelte';
 
   let {
     slides,
@@ -109,7 +110,6 @@
   );
   const canMoveLeft = $derived(holderStates[holderOrder[0]].slide !== null);
   const canMoveRight = $derived(holderStates[holderOrder[2]].slide !== null);
-  let slideHolders: SlideHolder[] = $state([]);
   const xTransformSlideCenter = $derived(-currentShift * slideWidth * (1 + slideSpacing));
   let xTransformOffset = $state(0);
   let xTransform = $derived(xTransformSlideCenter + xTransformOffset);
@@ -121,9 +121,8 @@
   let hasMouse = $state(false);
 
   const animations: AnimationControls = newAnimationControls();
-  const slide: SlideControls | null = $derived(
-    holderOrder[1] < slideHolders.length ? slideHolders[holderOrder[1]]?.slideControls() : null,
-  );
+  const slideComponents: Slide[] = $state([]);
+  const slide = $derived(slideComponents[holderOrder[1]]?.controls);
   const hideUiTimeoutDuration = 60000;
   let hideUiTimeout: ReturnType<typeof setTimeout> | null = setTimeout(
     onHideUiTimeout,
@@ -172,7 +171,6 @@
       backgroundOpacity = 1 - ratio;
     },
   };
-  setContext('gallery', gallery);
 
   let pagerWrapper: HTMLElement;
 
@@ -327,7 +325,6 @@
   $effect(() => {
     const currentHolder = holderStates[holderOrder[1]];
     if (!R.isDeepEqual(currentHolder.slide, slides.current)) {
-      console.log('update current');
       currentHolder.slide = slides.current;
       currentHolder.openTransition = null;
       currentHolder.isContentReady = false;
@@ -336,7 +333,6 @@
   $effect(() => {
     const rightHolder = holderStates[holderOrder[2]];
     if (!R.isDeepEqual(rightHolder.slide, slides.right)) {
-      console.log('update right');
       rightHolder.slide = slides.right;
       rightHolder.openTransition = null;
       rightHolder.isContentReady = false;
@@ -413,18 +409,21 @@
             (currentShift - 1 + holderOrder.indexOf(slideHolder.id)) *
             (1 + slideSpacing) *
             slideWidth}
-          <SlideHolder
-            id={slideHolder.id}
-            isActive={slideHolder.isActive}
-            xTransform={x}
-            {dataSource}
-            openTransition={slideHolder.openTransition}
-            showContent={slideHolder.showContent}
-            showUi={uiVisible}
-            onContentReady={() => onSlideContentReady(slideHolder.id)}
-            slide={slideHolder.slide}
-            bind:this={slideHolders[slideHolder.id]}
-          />
+          <SlideHolder id={slideHolder.id} xTransform={x}>
+            {#if slideHolder.slide !== null}
+              <Slide
+                bind:this={slideComponents[slideHolder.id]}
+                isActive={slideHolder.isActive}
+                viewportSize={viewport}
+                {dataSource}
+                openTransition={slideHolder.openTransition}
+                showContent={slideHolder.showContent}
+                showUi={uiVisible}
+                slide={slideHolder.slide}
+                onContentReady={() => onSlideContentReady(slideHolder.id)}
+              />
+            {/if}
+          </SlideHolder>
         {/each}
       </div>
     {/if}
@@ -511,15 +510,18 @@
     {/if}
   </div>
 
-  <!-- <div class={'bg-white z-50 transition-all w-96 ' + (isSidePanelOpen ? 'mr-0' : 'mr-[-24rem]')}> -->
-  <!--   {#await currentSlide then slide} -->
-  <!--     {#if slide !== null} -->
-  <!--       <InfoPanel -->
-  <!--         asset={slide.slideType === 'singleAsset' ? slide.asset : slide.coverSlide.asset} -->
-  <!--       /> -->
-  <!--     {/if} -->
-  <!--   {/await} -->
-  <!-- </div> -->
+  <div class={'bg-white z-50 transition-all w-96 ' + (isSidePanelOpen ? 'mr-0' : 'mr-[-24rem]')}>
+    {#if slides.current !== null}
+      {@const slide = slides.current}
+      <InfoPanel
+        asset={slide.slideType === 'singleAsset'
+          ? dataSource.getAsset(slide.assetId)
+          : dataSource.getAsset(
+              dataSource.getAssetSeries(slide.assetSeriesId).assetIds[slide.coverIndex],
+            )}
+      />
+    {/if}
+  </div>
 </div>
 
 <style>

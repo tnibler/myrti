@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getContext, untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import type { Point, Size } from './util_types';
   import { type ZoomLevels, computeZoomLevels, computePanForChangedZoomLevel } from './zoom';
   import { clampPanToBounds, computePanBounds } from './pan-bounds';
@@ -8,7 +8,6 @@
   import SlideImage from './SlideImage.svelte';
   import SlideVideo from './SlideVideo.svelte';
   import './slide.css';
-  import type { GalleryControls } from './Pager.svelte';
   import type { GalleryDataSource, SingleAssetSlide, SlideRef } from './gallery-types';
   import { mdiStar } from '@mdi/js';
   import { slideForAsset } from './asset-slide';
@@ -28,6 +27,7 @@
     showUi: boolean;
     onContentReady: (() => void) | undefined;
     dataSource: GalleryDataSource;
+    viewportSize: Size;
   };
   let {
     slide,
@@ -37,13 +37,13 @@
     showUi,
     onContentReady,
     dataSource,
+    viewportSize,
   }: SlideProps = $props();
 
   const galleryContext: GalleryContext = getGalleryContext();
 
-  let gallery: GalleryControls = getContext('gallery');
   let pan: Point = $state({ x: 0, y: 0 });
-  let panAreaSize: Size = $derived(gallery.pager.viewportSize); // TODO missing padding like photoswipe
+  let panAreaSize: Size = $derived(viewportSize); // TODO missing padding like photoswipe
   const centerX = $derived(panAreaSize.width / 2);
   const centerY = $derived(panAreaSize.height / 2);
 
@@ -125,7 +125,6 @@
       isContentVisible = true;
     }
   });
-  $inspect(zoomLevels);
 
   $effect(() => {
     // handle viewport size changes and zoom slide to at least fill viewport
@@ -255,11 +254,9 @@
     const transform = getTransformToFitThumbnail(t.fromBounds);
     el.style.transform = transform;
     placeholderTransitionState = 'Running';
-    console.log(transform);
 
     requestAnimationFrame(() => {
       const listener = (e: TransitionEvent) => {
-        console.log('aaaaa', e.target, el);
         if (e.target === el) {
           el.removeEventListener('transitionend', listener, false);
           el.removeEventListener('transitioncancel', listener, false);
@@ -285,12 +282,18 @@
     }
     const scaleX = bounds.rect.width / width;
     const scaleY = bounds.rect.height / height;
-    const vp = gallery.pager.viewportSize;
     const translateY =
-      -vp.height / 2 + bounds.rect.height / 2 + bounds.rect.y + panBounds.center.y - pan.y;
+      -viewportSize.height / 2 +
+      bounds.rect.height / 2 +
+      bounds.rect.y +
+      panBounds.center.y -
+      pan.y;
 
     const translateX =
-      -vp.width / 2 + bounds.rect.width / 2 + bounds.rect.x + (panBounds.center.x - pan.x);
+      -viewportSize.width / 2 +
+      bounds.rect.width / 2 +
+      bounds.rect.x +
+      (panBounds.center.x - pan.x);
 
     return `translate3d(${translateX}px, ${translateY}px, 0) scale3d(${scaleX}, ${scaleY}, 1)`;
   }

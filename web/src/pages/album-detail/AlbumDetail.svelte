@@ -127,6 +127,7 @@
       throw new Error('Function not implemented.');
     },
   };
+  const galleryOpen = $derived(currentSlide !== null);
 
   function onSlideNavigated(dir: 'left' | 'right') {
     if (currentSlide === null || pagerSlides === null) {

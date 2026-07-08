@@ -26,8 +26,6 @@
   let didMoveScrollToCurrentGalleryAsset = $state(false);
   let restoreScrollOnClose = $derived(!didMoveScrollToCurrentGalleryAsset);
 
-  // let galleryOpen = $state(false);
-  let galleryOpen = $derived(openedAssetId !== null);
   let currentSlide: SlideRef | null = $derived.by(() => {
     if (openedAssetId === null) {
       return null;
@@ -45,6 +43,7 @@
       };
     }
   });
+  let galleryOpen = $derived(openedAssetId !== null && currentSlide !== null);
   const pagerSlides: {
     left: SlideRef | null;
     current: SlideRef;
@@ -102,28 +101,6 @@
   const intersectionObserver = new IntersectionObserver(handleSectionIntersect, {
     // I don't know how rootMargin works; using scrollWrapper, its child <section> or document does not work correctly, so we just make the intersection test divs larger to achieve the same effect
     rootMargin: '0px',
-  });
-
-  let savedOpenedAssetId: string | null = $state(null);
-  $effect(() => {
-    // if (openedAssetId !== savedOpenedAssetId) {
-    //   if (openedAssetId === null && savedOpenedAssetId !== null) {
-    //     galleryOpen = false;
-    //   } else if (openedAssetId !== null) {
-    //     galleryOpen = true;
-    //   } else if (openedAssetId === null) {
-    //     galleryOpen = false;
-    //     $path = '/';
-    //   }
-    //   savedOpenedAssetId = openedAssetId;
-    // }
-  });
-  $inspect(openedAssetId);
-
-  $effect(() => {
-    if (!galleryOpen && openedAssetId !== null) {
-      $path = '/';
-    }
   });
 
   export async function scrollToTimelineItem(pos: PositionInTimeline) {
@@ -211,6 +188,10 @@
     didMoveScrollToCurrentGalleryAsset = false;
     if (item.itemType === 'asset') {
       $path = `/timeline/${item.assetId}`;
+    } else {
+      const series = timeline.getAssetSeries(item.seriesId);
+      const id = series.assetIds[item.coverIndex];
+      $path = `/timeline/${id}`;
     }
     // currentSlide = getSlideRef(item);
     // galleryOpen = true;
@@ -220,22 +201,28 @@
     if (currentSlide === null || pagerSlides === null) {
       throw new Error('what');
     }
-    if (dir === 'left') {
-      currentSlide = pagerSlides.left;
-    } else {
-      currentSlide = pagerSlides.right;
+    const toSlide = dir === 'left' ? pagerSlides.left : pagerSlides.right;
+    if (!toSlide) {
+      return;
     }
-    openedAssetId = currentSlide?.assetId;
+
+    if (toSlide.slideType === 'singleAsset') {
+      $path = `/timeline/${toSlide.assetId}`;
+    } else {
+      const series = timeline.getAssetSeries(toSlide.assetSeriesId);
+      const id = series.assetIds[toSlide.coverIndex];
+      $path = `/timeline/${id}`;
+    }
   }
 
-  function getThumbnailBounds(): ThumbnailBounds {
-    if (currentSlide === null) {
+  function getThumbnailBounds(sl: SlideRef | null): ThumbnailBounds {
+    if (!sl) {
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     }
     const assetId =
-      currentSlide.slideType === 'singleAsset'
-        ? currentSlide.assetId
-        : timeline.getAssetSeries(currentSlide.assetSeriesId).assetIds[currentSlide.coverIndex];
+      sl.slideType === 'singleAsset'
+        ? sl.assetId
+        : timeline.getAssetSeries(sl.assetSeriesId).assetIds[sl.coverIndex];
     const currentItem = timeline.getItemForAsset(assetId);
     const pos = currentItem.pos;
     const imgEl = document.getElementById(
@@ -378,18 +365,19 @@
   </section>
 </div>
 
-{#if pagerSlides !== null}
-  <Gallery
-    bind:this={gallery}
-    bind:isOpen={galleryOpen}
-    slides={pagerSlides}
-    dataSource={timeline}
-    {onSlideNavigated}
-    {getThumbnailBounds}
-    {scrollWrapper}
-    {restoreScrollOnClose}
-  />
-{/if}
+<Gallery
+  bind:this={gallery}
+  isOpen={galleryOpen}
+  slides={pagerSlides}
+  dataSource={timeline}
+  {onSlideNavigated}
+  {getThumbnailBounds}
+  {scrollWrapper}
+  {restoreScrollOnClose}
+  closeGallery={() => {
+    $path = '/';
+  }}
+/>
 
 <style>
   #grid {

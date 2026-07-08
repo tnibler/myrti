@@ -6,8 +6,8 @@
   import AlbumDetail from './pages/album-detail/AlbumDetail.svelte';
 </script>
 
-{#if $path === '/'}
-  <Main />
+{#if resolve($path, '/') || resolve($path, '/timeline/:id')}
+  <Main openedAssetId={$params['id'] ?? null} />
 {:else if $path === '/albums'}
   {#snippet listAlbums()}
     <ListAlbums />

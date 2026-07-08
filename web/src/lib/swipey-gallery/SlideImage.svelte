@@ -30,6 +30,9 @@
       const url = URL.createObjectURL(blob);
       if (imgEl) {
         imgEl.src = url;
+        imgEl.decode().then(() => {
+          onContentReady();
+        });
       }
     } catch (e) {
       if (e instanceof DOMException && e.name == 'AbortError') {
@@ -80,7 +83,6 @@
 <img
   class="slide-image"
   bind:this={imgEl}
-  onload={onContentReady}
   decoding="async"
   style:width="{size.width}px"
   style:height="{size.height}px"

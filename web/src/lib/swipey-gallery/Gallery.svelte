@@ -9,12 +9,14 @@
     scrollWrapper: HTMLElement;
     restoreScrollOnClose: boolean;
     isOpen: boolean;
+    closeGallery: () => void;
   };
 
   let {
     scrollWrapper = $bindable(),
-    isOpen = $bindable(),
+    isOpen,
     restoreScrollOnClose,
+    closeGallery,
     ...pagerProps
   }: GalleryProps = $props();
   let actuallyOpen: 'open' | 'closed' | 'closing' = $state('closed');
@@ -29,7 +31,8 @@
       } else if (e.key === 'ArrowRight') {
         pager?.moveSlide('right');
       } else if (e.key === 'Escape') {
-        close();
+        closeGallery();
+        // isOpen = false;
       }
     }
   }
@@ -38,21 +41,17 @@
 
   function onOpenTransitionFinished() {}
 
-  $inspect(isOpen, actuallyOpen);
   $effect(() => {
     if (actuallyOpen === 'open' && !isOpen) {
       actuallyOpen = 'closing';
+      closeAnim();
     } else if (actuallyOpen === 'closed' && isOpen) {
       actuallyOpen = 'open';
+      open();
     } else if (actuallyOpen === 'open' && isOpen) {
       return;
     } else if (actuallyOpen === 'closed' && !isOpen) {
       return;
-    }
-    if (isOpen) {
-      open();
-    } else {
-      close();
     }
   });
 
@@ -63,16 +62,14 @@
       topOffset = 0;
       scrollWrapper.scrollTo(0, pagerY);
     });
-    // isOpen = true;
     actuallyOpen = 'open';
     topOffset = scrollWrapper.scrollTop;
     document.addEventListener('keydown', onKeyDown);
   }
 
-  function close() {
+  function closeAnim() {
     document.removeEventListener('keydown', onKeyDown);
     pager?.close().then(() => {
-      // isOpen = false;
       actuallyOpen = 'closed';
       scrollWrapper.classList.remove('modalOpen');
       scrollWrapper.style.height = '100%';
@@ -98,15 +95,7 @@
 </script>
 
 {#if actuallyOpen !== 'closed'}
-  <Pager
-    bind:this={pager}
-    {...pagerProps}
-    {topOffset}
-    {onOpenTransitionFinished}
-    closeGallery={() => {
-      isOpen = false;
-    }}
-  />
+  <Pager bind:this={pager} {...pagerProps} {topOffset} {onOpenTransitionFinished} {closeGallery} />
 {/if}
 
 <style>

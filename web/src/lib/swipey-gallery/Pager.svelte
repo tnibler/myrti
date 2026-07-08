@@ -7,7 +7,7 @@
       left: SlideRef | null;
       current: SlideRef;
       right: SlideRef | null;
-    };
+    } | null;
     onSlideNavigated: (dir: 'left' | 'right') => void;
     dataSource: GalleryDataSource;
 
@@ -89,17 +89,21 @@
   let holderOrder = $state([0, 1, 2]);
   let holderStates: SlideHolderState[] = $state(
     (() => {
-      const openTransition = {
-        onTransitionEnd: afterOpenTransition,
-        fromBounds: getThumbnailBounds(),
-      };
       // holderOrder is the identity mapping at the beginning, so id == index initially for the SlideHolders
       return [0, 1, 2].map((id) => {
+        const sl = slides[['left' as const, 'current' as const, 'right' as const][id]];
+        const openTransition =
+          id === 1
+            ? {
+                onTransitionEnd: afterOpenTransition,
+                fromBounds: getThumbnailBounds(sl),
+              }
+            : null;
         return {
           // maybe hide left and right holders until open anim finished? see main-scroll.js:111
           id: id,
-          slide: slides[['left' as const, 'current' as const, 'right' as const][id]],
-          openTransition: id === 1 ? openTransition : null,
+          slide: sl,
+          openTransition,
           isActive: id === 1,
           showContent: id === 1,
           isContentReady: false,
@@ -127,6 +131,13 @@
     onHideUiTimeout,
     hideUiTimeoutDuration,
   );
+  let savedSlide: SlideRef | null = null;
+  $effect(() => {
+    if (slides?.current && !R.isDeepEqual(slides.current, savedSlide)) {
+      savedSlide = slides.current;
+    }
+  });
+
   const pagerControls: PagerControls = {
     get viewportSize() {
       return viewport;
@@ -314,6 +325,9 @@
 
   // TODO: handle changes in series while keeping current index in series
   $effect(() => {
+    if (!slides) {
+      return;
+    }
     const leftHolder = holderStates[holderOrder[0]];
     if (!R.isDeepEqual(leftHolder.slide, slides.left)) {
       leftHolder.slide = slides.left;
@@ -322,6 +336,9 @@
     }
   });
   $effect(() => {
+    if (!slides) {
+      return;
+    }
     const currentHolder = holderStates[holderOrder[1]];
     if (!R.isDeepEqual(currentHolder.slide, slides.current)) {
       currentHolder.slide = slides.current;
@@ -330,6 +347,9 @@
     }
   });
   $effect(() => {
+    if (!slides) {
+      return;
+    }
     const rightHolder = holderStates[holderOrder[2]];
     if (!R.isDeepEqual(rightHolder.slide, slides.right)) {
       rightHolder.slide = slides.right;
@@ -340,21 +360,18 @@
 
   export async function close() {
     uiVisible = false;
-    const thumbnailBounds = getThumbnailBounds();
+    const thumbnailBounds = getThumbnailBounds(savedSlide);
     backgroundOpacityTransition = true;
     backgroundOpacity = 0;
-    const p = new Promise((resolve) => {
+    return new Promise<void>((resolve) => {
       if (slide) {
         slide.closeTransition(thumbnailBounds, () => {
           resolve();
         });
       } else {
-        // think this branchis hit after udating url to /
-        // save slide we're animation from instead
         resolve();
       }
     });
-    return p;
   }
 
   function onSlideContentReady(slideHolderId: number) {
@@ -416,17 +433,19 @@
             style="transform: translate3d({Math.round(x)}px, 0px, 0px);"
           >
             {#if slideHolder.slide !== null}
-              <Slide
-                bind:this={slideComponents[slideHolder.id]}
-                isActive={slideHolder.isActive}
-                viewportSize={viewport}
-                {dataSource}
-                openTransition={slideHolder.openTransition}
-                showContent={slideHolder.showContent}
-                showUi={uiVisible}
-                slide={slideHolder.slide}
-                onContentReady={() => onSlideContentReady(slideHolder.id)}
-              />
+              {#key [slideHolder.slide.assetId, slideHolder.slide.assetSeriesId, slideHolder.slide.coverIndex]}
+                <Slide
+                  bind:this={slideComponents[slideHolder.id]}
+                  isActive={slideHolder.isActive}
+                  viewportSize={viewport}
+                  {dataSource}
+                  openTransition={slideHolder.openTransition}
+                  showContent={slideHolder.showContent}
+                  showUi={uiVisible}
+                  slide={slideHolder.slide}
+                  onContentReady={() => onSlideContentReady(slideHolder.id)}
+                />
+              {/key}
             {/if}
           </div>
         {/each}
@@ -516,16 +535,16 @@
   </div>
 
   <div class={'bg-white z-50 transition-all w-96 ' + (isSidePanelOpen ? 'mr-0' : 'mr-[-24rem]')}>
-    {#if slides.current !== null}
-      {@const slide = slides.current}
-      <InfoPanel
-        asset={slide.slideType === 'singleAsset'
-          ? dataSource.getAsset(slide.assetId)
-          : dataSource.getAsset(
-              dataSource.getAssetSeries(slide.assetSeriesId).assetIds[slide.coverIndex],
-            )}
-      />
-    {/if}
+    <!-- {#if slides.current !== null} -->
+    <!--   {@const slide = slides.current} -->
+    <!--   <InfoPanel -->
+    <!--     asset={slide.slideType === 'singleAsset' -->
+    <!--       ? dataSource.getAsset(slide.assetId) -->
+    <!--       : dataSource.getAsset( -->
+    <!--           dataSource.getAssetSeries(slide.assetSeriesId).assetIds[slide.coverIndex], -->
+    <!--         )} -->
+    <!--   /> -->
+    <!-- {/if} -->
   </div>
 </div>
 

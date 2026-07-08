@@ -50,10 +50,10 @@
   let selectedSeriesIndex: number | null = $state(
     slide.slideType === 'singleAsset' ? null : slide.coverIndex,
   );
-  let prevSlide: SlideRef | null = null;
+  let savedSlide: SlideRef | null = null;
   $effect(() => {
-    if (!R.isDeepEqual(prevSlide, slide)) {
-      prevSlide = slide;
+    if (!R.isDeepEqual(savedSlide, slide)) {
+      savedSlide = slide;
     }
     selectedSeriesIndex = slide.slideType === 'singleAsset' ? null : slide.coverIndex;
   });
@@ -69,6 +69,7 @@
       return { slideType: slide.slideType, series, indexInSeries, ...slideForAsset(asset) };
     }
   });
+  let savedSlideToDisplay: typeof slideToDisplay | null = null;
 
   let zoomLevels: ZoomLevels = $derived(
     computeZoomLevels({
@@ -104,7 +105,7 @@
   let placeholderVisible = $derived(!isContentVisible || placeholderTransitionState === 'Running');
   /** Wait this long after the real content is ready to hide the placeholder to reveal the <img> underneath.
 	Without this, there is a flicker on some devices/browsers. */
-  const PLACEHOLDER_HIDE_DELAY = $derived(slideToDisplay.assetType === 'image' ? 450 : 0);
+  const PLACEHOLDER_HIDE_DELAY = $derived(slideToDisplay.assetType === 'image' ? 0 : 0);
   let zoomWrapperDiv: HTMLDivElement | null = $state(null);
 
   // for some reason the slideImage/slideVideo bindings don't get unset when the bound component
@@ -222,7 +223,21 @@
   });
 
   $effect(() => {
-    slideToDisplay;
+    if (!isActive && slideToDisplay) {
+      untrack(() => {
+        initializeForNewSlide(slideToDisplay, panAreaSize);
+      });
+    }
+  });
+
+  $effect(() => {
+    if (!slideToDisplay) {
+      return;
+    }
+    if (savedSlideToDisplay && R.isDeepEqual(slideToDisplay.size, savedSlideToDisplay.size)) {
+      return;
+    }
+    savedSlideToDisplay = slideToDisplay;
     // reinitialize zoom/pan transition states everytime slide is displayed
     untrack(() => {
       initializeForNewSlide(slideToDisplay, panAreaSize);
@@ -473,7 +488,13 @@
               </svg>
             </label>
           </div>
-          <a href="#" onclick={(_e) => (selectedSeriesIndex = indexInSeries)}>
+          <a
+            href="javascript:;"
+            onclick={(e) => {
+              e.stopPropagation();
+              selectedSeriesIndex = indexInSeries;
+            }}
+          >
             <img
               src="/api/assets/thumbnail/{asset.id}/small/avif"
               class={'bg-black transition-transform max-h-full max-w-full object-cover rounded-sm ' +

@@ -1,12 +1,7 @@
 import type { AssetId, AssetSeriesId, AssetWithSpe } from '@api/myrti';
 import type { AssetSeries } from '@lib/timeline-grid/timeline-types';
 import type { Size } from './util_types';
-import type { Readable } from 'svelte/store';
 import type { AssetSeriesRef } from '@lib/timeline-grid/timeline.svelte';
-
-export type GallerySlide<Pos> = {
-  pos: Pos;
-} & GallerySlideData;
 
 export type GallerySlideData =
   | ({

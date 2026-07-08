@@ -70,7 +70,6 @@
     }
   });
 
-  // TODO: do all these geometry computations at once only when viewport size is actually set
   let zoomLevels: ZoomLevels = $derived(
     computeZoomLevels({
       maxSize: slideToDisplay.size,
@@ -105,7 +104,7 @@
   let placeholderVisible = $derived(!isContentVisible || placeholderTransitionState === 'Running');
   /** Wait this long after the real content is ready to hide the placeholder to reveal the <img> underneath.
 	Without this, there is a flicker on some devices/browsers. */
-  const PLACEHOLDER_HIDE_DELAY = slideToDisplay.assetType === 'image' ? 450 : 0;
+  const PLACEHOLDER_HIDE_DELAY = $derived(slideToDisplay.assetType === 'image' ? 450 : 0);
   let zoomWrapperDiv: HTMLDivElement | null = $state(null);
 
   // for some reason the slideImage/slideVideo bindings don't get unset when the bound component

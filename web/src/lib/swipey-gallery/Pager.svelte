@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import type { GalleryDataSource, GallerySlideData, SlideRef } from './gallery-types';
+  import type { GalleryDataSource, SlideRef } from './gallery-types';
   export type PagerProps = {
     topOffset: number;
 
@@ -39,7 +39,6 @@
 </script>
 
 <script lang="ts">
-  import SlideHolder from './SlideHolder.svelte';
   import { onMount } from 'svelte';
   import { newGestureController } from './gestures';
   import { newAnimationControls, type AnimationControls } from './animations';
@@ -313,7 +312,7 @@
     onSlideNavigated(didShift);
   }
 
-  // TODO: handle changes in series while keeping current index in seres
+  // TODO: handle changes in series while keeping current index in series
   $effect(() => {
     const leftHolder = holderStates[holderOrder[0]];
     if (!R.isDeepEqual(leftHolder.slide, slides.left)) {
@@ -409,7 +408,11 @@
             (currentShift - 1 + holderOrder.indexOf(slideHolder.id)) *
             (1 + slideSpacing) *
             slideWidth}
-          <SlideHolder id={slideHolder.id} xTransform={x}>
+          <div
+            id="id-{slideHolder.id}"
+            class="slide-holder"
+            style="transform: translate3d({Math.round(x)}px, 0px, 0px);"
+          >
             {#if slideHolder.slide !== null}
               <Slide
                 bind:this={slideComponents[slideHolder.id]}
@@ -423,7 +426,7 @@
                 onContentReady={() => onSlideContentReady(slideHolder.id)}
               />
             {/if}
-          </SlideHolder>
+          </div>
         {/each}
       </div>
     {/if}
@@ -525,7 +528,16 @@
 </div>
 
 <style>
-  .slide-container {
-    user-select: none;
+  .slide-holder {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+
+    display: block;
+    z-index: 1;
+    overflow: hidden;
+    box-sizing: border-box;
   }
 </style>

@@ -1,18 +1,18 @@
 <script lang="ts">
-  import type { AlbumItem, AlbumItemId, AssetWithSpe } from '@api/myrti';
+  import type { AlbumItem, AlbumItemId, AssetId, AssetSeriesId, AssetWithSpe } from '@api/myrti';
   import Gallery from '@lib/swipey-gallery/Gallery.svelte';
   import type { ThumbnailBounds } from '@lib/swipey-gallery/types.ts';
   import type { TileBox } from '@lib/ui/GridTile.svelte';
   import GridTile from '@lib/ui/GridTile.svelte';
   import createJustifiedLayout from 'justified-layout';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import AppBar from './AppBar.svelte';
   import * as R from 'remeda';
   import { deleteAlbumItems, getAlbumDetails } from '../../api/myrti';
   import { getAlbumDetailsResponse } from '../../api/myrti.zod';
-  import type { GallerySlide } from '@lib/swipey-gallery/gallery-types';
-  import { slideForAsset } from '@lib/swipey-gallery/asset-slide';
+  import type { GalleryDataSource, SlideRef } from '@lib/swipey-gallery/gallery-types';
+  import { setGalleryContext } from '@lib/swipey-gallery/context';
 
   type Props = {
     albumId: string;
@@ -59,6 +59,15 @@
     return items.filter((item) => item.itemType === 'asset').map((item) => item.asset);
   });
 
+  setGalleryContext({
+    setAssetSeriesSelection: (assetId, isSeriesSelection) => {
+      throw new Error('not implemented');
+    },
+    setAssetHidden: function (assetId: string): Promise<void> {
+      throw new Error(' not implemented.');
+    },
+  });
+
   type SectionLayout =
     | {
         type: 'text';
@@ -87,6 +96,53 @@
     }
     return l;
   });
+
+  let currentSlide: (SlideRef & { indexInAlbum: number }) | null = $state(null);
+  const pagerSlides: {
+    left: SlideRef | null;
+    current: SlideRef;
+    right: SlideRef | null;
+  } | null = $derived.by(() => {
+    if (currentSlide === null) {
+      return null;
+    }
+    if (currentSlide.slideType !== 'singleAsset') {
+      throw new Error('TODO unimplemented');
+    }
+    return {
+      left:
+        currentSlide.indexInAlbum > 0
+          ? { slideType: 'singleAsset', assetId: assets[currentSlide.indexInAlbum - 1].id }
+          : null,
+      current: currentSlide,
+      right:
+        currentSlide.indexInAlbum < assets.length - 1
+          ? { slideType: 'singleAsset', assetId: assets[currentSlide.indexInAlbum + 1].id }
+          : null,
+    };
+  });
+  const dataSource: GalleryDataSource = {
+    getAsset: (id: AssetId) => assets.find((a) => a.id == id) ?? null,
+    getAssetSeries: (id: AssetSeriesId) => {
+      throw new Error('Function not implemented.');
+    },
+  };
+
+  function onSlideNavigated(dir: 'left' | 'right') {
+    if (currentSlide === null || pagerSlides === null) {
+      return;
+    }
+    if (dir === 'left' && 0 < currentSlide.indexInAlbum && pagerSlides.left !== null) {
+      currentSlide = { indexInAlbum: currentSlide.indexInAlbum - 1, ...pagerSlides.left };
+    }
+    if (
+      dir === 'right' &&
+      currentSlide.indexInAlbum < assets.length - 1 &&
+      pagerSlides.right !== null
+    ) {
+      currentSlide = { indexInAlbum: currentSlide.indexInAlbum + 1, ...pagerSlides.right };
+    }
+  }
 
   onMount(() => {
     fetchAlbumDetails();
@@ -143,17 +199,16 @@
   }
 
   let scrollContainer: HTMLElement | null = $state(null);
-  let gallery: Gallery<number>;
+  let gallery: Gallery;
   /** maps asset index to thumbnail image element */
   const selectedItemIds: Set<AlbumItemId> = $state(new SvelteSet());
   const inSelectMode: boolean = $derived(selectedItemIds.size > 0);
 
-  async function getSlide(index: number): Promise<GallerySlide<number>> {
-    return { pos: index, slideType: 'singleAsset', ...slideForAsset(assets[index]) };
-  }
-
-  function getThumbnailBounds(assetIndex: number): ThumbnailBounds {
-    const imgEl = document.getElementById(`thumb${assetIndex}`);
+  function getThumbnailBounds(): ThumbnailBounds {
+    if (currentSlide === null) {
+      return { rect: { x: 0, y: 0, width: 0, height: 0 } };
+    }
+    const imgEl = document.getElementById(`thumb${currentSlide.indexInAlbum}`);
     if (!imgEl || !(imgEl instanceof HTMLImageElement)) {
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     }
@@ -168,7 +223,10 @@
   }
 
   function onAssetClick(index: number) {
-    gallery.open(index);
+    currentSlide = { slideType: 'singleAsset', assetId: assets[index].id, indexInAlbum: index };
+    tick().then(() => {
+      gallery.open();
+    });
   }
 
   function toggleSelected(itemId: AlbumItemId) {
@@ -189,15 +247,6 @@
 
   function onCancelSelectClicked() {
     selectedItemIds.clear();
-  }
-
-  function getNextSlidePosition(pos: number, direction: 'left' | 'right'): number | null {
-    if (0 < pos && direction === 'left') {
-      return pos - 1;
-    } else if (pos < assets.length - 1 && direction == 'right') {
-      return pos + 1;
-    }
-    return null;
   }
 </script>
 
@@ -247,11 +296,13 @@
   </div>
 </div>
 
-<Gallery
-  bind:this={gallery}
-  scrollWrapper={scrollContainer}
-  numSlides={assets.length}
-  {getSlide}
-  {getThumbnailBounds}
-  {getNextSlidePosition}
-/>
+{#if pagerSlides !== null}
+  <Gallery
+    bind:this={gallery}
+    scrollWrapper={scrollContainer}
+    slides={pagerSlides}
+    {getThumbnailBounds}
+    {dataSource}
+    {onSlideNavigated}
+  />
+{/if}

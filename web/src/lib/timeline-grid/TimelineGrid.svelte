@@ -9,23 +9,42 @@
   import CreateGroupInput from './CreateGroupInput.svelte';
   import type { PositionInTimeline, TimelineItem } from './timeline-types';
   import type { SlideRef } from '@lib/swipey-gallery/gallery-types';
-  import { tick } from 'svelte';
+  import { path } from 'elegua';
 
   type TimelineGridProps = {
     timeline: ITimelineGrid;
     scrollWrapper: HTMLElement;
+    openedAssetId: string | null;
   };
 
   let viewport = $state({ width: 0, height: 0 });
   let gallery: Gallery;
 
-  let { timeline, scrollWrapper = $bindable() }: TimelineGridProps = $props();
+  let { timeline, scrollWrapper = $bindable(), openedAssetId }: TimelineGridProps = $props();
   let gridItemTransitionClass: string | undefined = $state();
   let animationsDisabledToStart = true;
   let didMoveScrollToCurrentGalleryAsset = $state(false);
   let restoreScrollOnClose = $derived(!didMoveScrollToCurrentGalleryAsset);
 
-  let currentSlide: SlideRef | null = $state(null);
+  // let galleryOpen = $state(false);
+  let galleryOpen = $derived(openedAssetId !== null);
+  let currentSlide: SlideRef | null = $derived.by(() => {
+    if (openedAssetId === null) {
+      return null;
+    }
+    const item = timeline.getItemForAsset(openedAssetId);
+    if (item === null) {
+      return null;
+    } else if (item.itemType === 'asset') {
+      return { slideType: 'singleAsset', assetId: item.assetId };
+    } else {
+      return {
+        slideType: 'assetSeries',
+        assetSeriesId: item.seriesId,
+        coverIndex: item.coverIndex,
+      };
+    }
+  });
   const pagerSlides: {
     left: SlideRef | null;
     current: SlideRef;
@@ -62,6 +81,9 @@
   // handle window resize (debounced)
   let resizeTimeout: number | null = null;
   $effect(() => {
+    if (!scrollWrapper) {
+      return;
+    }
     viewport.width;
     viewport.height;
     if (resizeTimeout != null) {
@@ -69,6 +91,9 @@
       resizeTimeout = null;
     }
     resizeTimeout = setTimeout(() => {
+      if (!scrollWrapper) {
+        return;
+      }
       timeline.resize(viewport, scrollWrapper.scrollTop);
       resizeTimeout = null;
     }, 200);
@@ -77,6 +102,28 @@
   const intersectionObserver = new IntersectionObserver(handleSectionIntersect, {
     // I don't know how rootMargin works; using scrollWrapper, its child <section> or document does not work correctly, so we just make the intersection test divs larger to achieve the same effect
     rootMargin: '0px',
+  });
+
+  let savedOpenedAssetId: string | null = $state(null);
+  $effect(() => {
+    // if (openedAssetId !== savedOpenedAssetId) {
+    //   if (openedAssetId === null && savedOpenedAssetId !== null) {
+    //     galleryOpen = false;
+    //   } else if (openedAssetId !== null) {
+    //     galleryOpen = true;
+    //   } else if (openedAssetId === null) {
+    //     galleryOpen = false;
+    //     $path = '/';
+    //   }
+    //   savedOpenedAssetId = openedAssetId;
+    // }
+  });
+  $inspect(openedAssetId);
+
+  $effect(() => {
+    if (!galleryOpen && openedAssetId !== null) {
+      $path = '/';
+    }
   });
 
   export async function scrollToTimelineItem(pos: PositionInTimeline) {
@@ -162,10 +209,11 @@
 
   function onAssetClick(item: TimelineItem & ({ itemType: 'asset' } | { itemType: 'photoStack' })) {
     didMoveScrollToCurrentGalleryAsset = false;
-    currentSlide = getSlideRef(item);
-    tick().then(() => {
-      gallery.open();
-    });
+    if (item.itemType === 'asset') {
+      $path = `/timeline/${item.assetId}`;
+    }
+    // currentSlide = getSlideRef(item);
+    // galleryOpen = true;
   }
 
   function onSlideNavigated(dir: 'left' | 'right') {
@@ -177,6 +225,7 @@
     } else {
       currentSlide = pagerSlides.right;
     }
+    openedAssetId = currentSlide?.assetId;
   }
 
   function getThumbnailBounds(): ThumbnailBounds {
@@ -332,6 +381,7 @@
 {#if pagerSlides !== null}
   <Gallery
     bind:this={gallery}
+    bind:isOpen={galleryOpen}
     slides={pagerSlides}
     dataSource={timeline}
     {onSlideNavigated}

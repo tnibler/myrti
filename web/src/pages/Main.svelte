@@ -19,6 +19,8 @@
     loadWithinMargin: 300,
   };
 
+  const { openedAssetId } = $props();
+
   const timeline: ITimelineGrid = $state(createTimeline(layoutConfig, onAjustTimelineScrollY));
   const inSelectionMode = $derived(timeline.numAssetsSelected > 0);
   let timelineScrollWrapper: HTMLElement | null = $state(null);
@@ -86,7 +88,7 @@
 </script>
 
 {#snippet timelineGrid()}
-  <TimelineGrid {timeline} bind:scrollWrapper={timelineScrollWrapper} />
+  <TimelineGrid {timeline} {openedAssetId} bind:scrollWrapper={timelineScrollWrapper} />
 {/snippet}
 
 {#snippet timelineSelectAppBar()}

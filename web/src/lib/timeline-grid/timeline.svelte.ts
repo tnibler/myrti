@@ -697,6 +697,7 @@ export function createTimeline(
         }
       }
     }
+    return null;
     throw new Error('TODO did not find item in loaded section');
   }
 

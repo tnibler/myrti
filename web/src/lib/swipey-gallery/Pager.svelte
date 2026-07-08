@@ -349,6 +349,8 @@
           resolve();
         });
       } else {
+        // think this branchis hit after udating url to /
+        // save slide we're animation from instead
         resolve();
       }
     });

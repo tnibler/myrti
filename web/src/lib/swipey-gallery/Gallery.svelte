@@ -8,10 +8,16 @@
   > & {
     scrollWrapper: HTMLElement;
     restoreScrollOnClose: boolean;
+    isOpen: boolean;
   };
 
-  let { scrollWrapper = $bindable(), restoreScrollOnClose, ...pagerProps }: GalleryProps = $props();
-  let isOpen: boolean = $state(false);
+  let {
+    scrollWrapper = $bindable(),
+    isOpen = $bindable(),
+    restoreScrollOnClose,
+    ...pagerProps
+  }: GalleryProps = $props();
+  let actuallyOpen: 'open' | 'closed' | 'closing' = $state('closed');
   let pager: Pager | null = $state(null);
   let pagerY = 0;
   let topOffset = $state(0);
@@ -32,22 +38,42 @@
 
   function onOpenTransitionFinished() {}
 
-  export function open() {
+  $inspect(isOpen, actuallyOpen);
+  $effect(() => {
+    if (actuallyOpen === 'open' && !isOpen) {
+      actuallyOpen = 'closing';
+    } else if (actuallyOpen === 'closed' && isOpen) {
+      actuallyOpen = 'open';
+    } else if (actuallyOpen === 'open' && isOpen) {
+      return;
+    } else if (actuallyOpen === 'closed' && !isOpen) {
+      return;
+    }
+    if (isOpen) {
+      open();
+    } else {
+      close();
+    }
+  });
+
+  function open() {
     requestAnimationFrame(() => {
       pagerY = scrollWrapper.scrollTop;
       scrollWrapper.classList.add('modalOpen');
       topOffset = 0;
       scrollWrapper.scrollTo(0, pagerY);
     });
+    // isOpen = true;
+    actuallyOpen = 'open';
     topOffset = scrollWrapper.scrollTop;
-    isOpen = true;
     document.addEventListener('keydown', onKeyDown);
   }
 
-  export function close() {
+  function close() {
     document.removeEventListener('keydown', onKeyDown);
     pager?.close().then(() => {
-      isOpen = false;
+      // isOpen = false;
+      actuallyOpen = 'closed';
       scrollWrapper.classList.remove('modalOpen');
       scrollWrapper.style.height = '100%';
       if (restoreScrollOnClose) {
@@ -71,13 +97,15 @@
   }
 </script>
 
-{#if isOpen !== false}
+{#if actuallyOpen !== 'closed'}
   <Pager
     bind:this={pager}
     {...pagerProps}
     {topOffset}
     {onOpenTransitionFinished}
-    closeGallery={close}
+    closeGallery={() => {
+      isOpen = false;
+    }}
   />
 {/if}
 

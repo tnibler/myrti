@@ -1,4 +1,6 @@
-use eyre::Result;
+use std::time::Duration;
+
+use eyre::{Context, Result};
 use futures::{stream::FuturesUnordered, TryStreamExt};
 use strum::EnumCount;
 use tokio::sync::{mpsc, oneshot};
@@ -162,8 +164,18 @@ async fn run_scheduler(
     mut video_packaging_recv: mpsc::UnboundedReceiver<MsgFromVideoPackaging>,
     mut image_conversion_recv: mpsc::UnboundedReceiver<MsgFromImageConversion>,
 ) {
+    let mut reindex_interval = {
+        let mut int = tokio::time::interval(Duration::from_secs(60));
+        int.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        int
+    };
     loop {
         tokio::select! {
+            _ = reindex_interval.tick() => {
+                if let Err(err) = reindex_all(&sched.db_pool, &sched.indexing_actor).await {
+                    tracing::error!(?err, "Error reindexing asset roots");
+                }
+            }
             Some(msg) = recv.recv() => {
                 sched.handle_message(msg).await;
             }
@@ -229,6 +241,9 @@ impl Scheduler {
                     ?report,
                     "TODO unhandled indexing error"
                 );
+            }
+            MsgFromIndexing::IndexingComplete { root_dir_id } => {
+                tracing::debug!(?root_dir_id, "Completed indexing root directory");
             }
             MsgFromIndexing::FailedToStartIndexing {
                 root_dir_id,
@@ -489,6 +504,10 @@ impl Scheduler {
                         tracing::info!("all actors shutdown");
                         did_shutdown_send.send(()).expect("receiver must be alive");
                     });
+                } else {
+                    tracing::debug!(
+                        "Already waiting for shutdown, received another shutdown message"
+                    );
                 }
             }
             SchedulerMessage::Startup => {
@@ -546,13 +565,22 @@ async fn on_startup(
         let _ = thumbnail_actor.msg_create_album_thumbnail(album_thumb);
     }
 
-    let asset_roots = interact!(conn, move |conn| {
+    if let Err(err) = reindex_all(&db_pool, &indexing_actor).await {
+        tracing::error!(?err, "Error reindexing asset roots");
+    }
+}
+
+#[instrument(skip_all)]
+async fn reindex_all(db_pool: &DbPool, indexing_actor: &IndexingActorHandle) -> Result<()> {
+    tracing::info!("reindexing all");
+    let conn = db_pool.get().await?;
+    let res = interact!(conn, move |conn| {
         repository::asset_root_dir::get_asset_roots(conn)
     })
-    .await
-    .expect("TODO how do we handle errors in scheduler")
-    .expect("TODO how do we handle errors in scheduler");
-    for asset_root in asset_roots {
-        let _ = indexing_actor.msg_index_asset_root(asset_root.id);
+    .await?
+    .context("error querying asset roots")?;
+    for root_dir in res {
+        let _ = indexing_actor.msg_index_asset_root(root_dir.id);
     }
+    Ok(())
 }

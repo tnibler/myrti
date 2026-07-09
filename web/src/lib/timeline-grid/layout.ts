@@ -44,7 +44,6 @@ export function layoutSegments(
   };
   /** save last segment if it might be merged with the next one */
   let candidateToMergeWith: MergeCandidate | null = null;
-  const interMergedSegmentMargin = 30;
 
   /** Utility function: next segment was not merged with previously saved merge candidate,
    * so compute layout for saved candidate and add to result array */
@@ -73,9 +72,9 @@ export function layoutSegments(
       }
       startLeft -= opts.boxSpacing; // n boxes, n-1 gaps
       mergedRow.push({ segment, boxes });
-      startLeft += interMergedSegmentMargin;
+      startLeft += opts.segmentMargin;
     }
-    startLeft -= interMergedSegmentMargin; // n boxes, n-1 gaps
+    startLeft -= opts.segmentMargin; // n boxes, n-1 gaps
     console.assert(
       startLeft <= containerWidth,
       `after laying out row, startLeft should be <= ${containerWidth} but is ${startLeft}`,
@@ -133,13 +132,13 @@ export function layoutSegments(
         segment.start.month() === prevSegment.start.month() &&
         segment.start.year() === prevSegment.start.year();
       const fitsInWidth =
-        candidateToMergeWith.width + segmentWidth + interMergedSegmentMargin <= containerWidth;
+        candidateToMergeWith.width + segmentWidth + opts.segmentMargin <= containerWidth;
       return sameMonthAndYear && fitsInWidth;
     })();
     if (canMergeWithPrevious) {
       console.assert(candidateToMergeWith !== null && candidateToMergeWith.segments.length > 0);
       candidateToMergeWith!.segments.push(segment);
-      candidateToMergeWith!.width += segmentWidth + interMergedSegmentMargin;
+      candidateToMergeWith!.width += segmentWidth + opts.segmentMargin;
     } else {
       // can not merge with previous segments
       if (candidateToMergeWith !== null) {

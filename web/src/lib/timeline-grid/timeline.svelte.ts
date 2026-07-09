@@ -997,9 +997,10 @@ export function createTimeline(
           const startDate = (() => {
             const it = remainingItems[0][0];
             if (it.itemType === 'asset') {
-              return it.takenDate;
+              return assetsById.get(it.assetId).takenDate;
             } else {
-              return it.sortDate;
+              const lastAssetId = assetSeriesById.get(it.seriesId).assetIds.at(-1);
+              return assetsById.get(lastAssetId).takenDate;
             }
           })();
           const endDate = (() => {
@@ -1007,7 +1008,7 @@ export function createTimeline(
             if (it.itemType === 'asset') {
               return assetsById.get(it.assetId).takenDate;
             } else {
-              const lastAssetId = assetSeriesById.get(it.seriesId).assetIds[-1];
+              const lastAssetId = assetSeriesById.get(it.seriesId).assetIds.at(-1);
               return assetsById.get(lastAssetId).takenDate;
             }
           })();
@@ -1022,7 +1023,6 @@ export function createTimeline(
           newSegments.push(newSegment);
         } else {
           for (const items of remainingItems) {
-            console.assert(items.length > 0);
             const startDate = (() => {
               const it = items[0];
               if (it.itemType === 'asset') {
@@ -1037,7 +1037,7 @@ export function createTimeline(
               if (it.itemType === 'asset') {
                 return assetsById.get(it.assetId).takenDate;
               } else {
-                const lastAssetId = assetSeriesById.get(it.seriesId).assetIds[-1];
+                const lastAssetId = assetSeriesById.get(it.seriesId).assetIds.at(-1);
                 return assetsById.get(lastAssetId).takenDate;
               }
             })();
@@ -1069,6 +1069,7 @@ export function createTimeline(
       if (!sections[i].segments || sections[i].segments.length === 0) {
         return false;
       }
+      console.log(sections[i].segments.at(-1), sections[i].segments.at(0));
       return sections[i].segments.at(-1)!.sortDate <= groupSortDate;
     });
     console.assert(insertInSectionIndex !== undefined && insertInSectionIndex >= 0);
@@ -1094,7 +1095,7 @@ export function createTimeline(
       if (it.itemType === 'asset') {
         return assetsById.get(it.assetId).takenDate;
       } else {
-        const lastAssetId = assetSeriesById.get(it.seriesId).assetIds[-1];
+        const lastAssetId = assetSeriesById.get(it.seriesId).assetIds.at(-1);
         return assetsById.get(lastAssetId).takenDate;
       }
     })();
@@ -1158,8 +1159,9 @@ export function createTimeline(
     const assetsInGroup = R.pipe(
       state.itemsInGroup,
       R.uniqueBy((it) => (it.itemType === 'asset' ? it : it.seriesId)),
-      R.flatMap((it) => (it.itemType === 'asset' ? [it] : assetSeriesById.get(it.seriesId).assets)),
-      R.map((asset) => asset.id),
+      R.flatMap((it) =>
+        it.itemType === 'asset' ? [it.assetId] : assetSeriesById.get(it.seriesId)?.assetIds,
+      ),
     );
     const response = createTimelineGroupResponse.parse(
       (await createTimelineGroup({ name: title, assets: assetsInGroup })).data,
@@ -1292,7 +1294,7 @@ export function createTimeline(
     }
     const assetIds = R.pipe(
       selectedItems.values().toArray(),
-      R.flatMap((item) => (item.item.itemType === 'asset' ? [item.item.id] : [])),
+      R.flatMap((item) => (item.item.itemType === 'asset' ? [item.item.assetId] : [])),
     );
     createSeriesResponse.parse((await createSeries({ assetIds })).data);
     clearSelection();

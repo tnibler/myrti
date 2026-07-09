@@ -3,11 +3,24 @@ import type { SingleAssetSlide } from './gallery-types';
 
 export function slideForAsset(asset: AssetWithSpe): SingleAssetSlide {
   if (asset.assetType === 'image') {
+    const supported = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'avif'];
+    const src = (() => {
+      const supportedRepr = asset.representations.find(
+        (repr) => supported.indexOf(repr.format) >= 0,
+      );
+      if (
+        supported.map((format) => 'image/' + format).indexOf(asset.mimeType) >= 0 ||
+        !supportedRepr
+      ) {
+        return '/api/assets/original/' + asset.id;
+      }
+      return `/api/assets/repr/${asset.id}/${supportedRepr.id}`;
+    })();
     return {
       assetType: 'image',
       asset,
       size: { width: asset.width, height: asset.height },
-      src: '/api/assets/original/' + asset.id,
+      src,
       placeholderSrc: '/api/assets/thumbnail/' + asset.id + '/large/avif',
     };
   } else {

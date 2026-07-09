@@ -495,3 +495,34 @@ pub fn set_asset_is_series_selection(
         Err(eyre!("Could not update Asset.is_series_selection: asset id {asset_id} is not part of any series"))
     }
 }
+
+#[instrument(skip(conn))]
+pub fn get_all_assets_geojson(conn: &mut DbConn) -> Result<String> {
+    #[derive(Debug, Clone, QueryableByName)]
+    #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+    struct Row {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        pub point_features: String,
+    }
+    let geojson: Row = diesel::sql_query(
+        r#"
+    WITH point_features AS (
+        SELECT json_object(
+            'type', 'Feature',
+            'geometry', json_object(
+                'type', 'Point',
+                'coordinates', json_array(Asset.gps_longitude * 1e-9, Asset.gps_latitude * 1e-9)
+            ),
+            'properties', json_object(
+                'id', Asset.asset_id,
+                'taken_date', Asset.taken_date
+            )
+        ) AS feature FROM Asset 
+        WHERE Asset.gps_latitude IS NOT NULL AND Asset.gps_longitude IS NOT NULL
+    ) 
+    SELECT json_object('type', 'FeatureCollection', 'features', json_group_array(json(feature))) AS point_features FROM point_features;
+        "#,
+    )
+    .get_result(conn)?;
+    Ok(geojson.point_features)
+}

@@ -239,8 +239,10 @@ async fn main() -> Result<()> {
         .nest("/api/dash", routes::dash::router())
         .nest("/api/timelinegroups", routes::timeline_group::router())
         .nest("/api/jobs", routes::jobs::router())
+        .nest("/api/map", routes::map::router())
         .nest("/api", routes::api_router())
-        .fallback_service(SpaServeDirService::new(ServeDir::new("./static")))
+        .fallback_service(ServeDir::new("/home/thomas/Downloads"))
+        // .fallback_service(SpaServeDirService::new(ServeDir::new("./static")))
         .layer(
             ServiceBuilder::new()
                 .set_x_request_id(MakeRequestUuid)

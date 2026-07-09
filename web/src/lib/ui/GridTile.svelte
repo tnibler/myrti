@@ -25,10 +25,10 @@
     mdiCircleOutline,
   } from '@mdi/js';
   import { LayersIcon } from 'lucide-svelte';
-  import type { Action } from 'svelte/action';
   import { fade } from 'svelte/transition';
 
   type GridTileProps = {
+    href: string;
     asset: AssetWithSpe;
     box: TileBox;
     selectState: SelectState;
@@ -39,6 +39,7 @@
     className: string | undefined;
   };
   let {
+    href,
     asset,
     box,
     selectState,
@@ -75,11 +76,12 @@
 </script>
 
 <a
-  href=""
+  {href}
   class={'absolute group select-none ' + className + ' ' + (isHoverable ? '' : 'cursor-default')}
   style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
   onclick={(e) => {
     e.preventDefault();
+    e.stopPropagation();
     onTileClick();
   }}
   onmouseenter={() => {
@@ -126,7 +128,11 @@
       </svg>
     {/if}
     {#if showStackIcon}
-      <LayersIcon class="absolute right-0 mr-1 mt-1 md:mr-2 md:mt-2" size="24" color="white" />
+      <LayersIcon
+        class="absolute right-0 mr-1 mt-1 md:mr-2 md:mt-2 bg-black/30"
+        size="24"
+        color="white"
+      />
     {/if}
     <div class="absolute z-20 h-full w-full">
       {#if selectState.state === 'select' || (selectState.state === 'default' && isMouseOver)}

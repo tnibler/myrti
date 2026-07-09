@@ -7,6 +7,10 @@
 import axios from 'axios';
 import type { AxiosRequestConfig, AxiosResponse } from 'axios';
 
+export interface AddAssetsToSeriesRequest {
+  assetIds: AssetId[];
+}
+
 export interface AddToTimelineGroupRequest {
   assets: AssetId[];
   groupId: TimelineGroupId;
@@ -97,6 +101,12 @@ export interface AssetDetailsResponse {
 export type AssetId = string;
 
 export type AssetRootDirId = string;
+
+export interface AssetSeries {
+  assetIds: AssetId[];
+  id: AssetSeriesId;
+  selectionIndices: number[];
+}
 
 export type AssetSeriesId = string;
 
@@ -233,7 +243,7 @@ export type SegmentTypeOneOfThree = {
 export type SegmentType = SegmentTypeOneOf | SegmentTypeOneOfThree;
 
 export interface SetAssetIsSeriesSelectionResponse {
-  assetIds: number[];
+  assetIds: AssetId[];
   selectionIndices: number[];
   seriesId: AssetSeriesId;
 }
@@ -394,6 +404,11 @@ export type GetTimelineParams = {
   lastFetch?: string | null;
 };
 
+/**
+ * @nullable
+ */
+export type DeleteSeries200 = unknown | null;
+
 export const getAllAlbums = <TData = AxiosResponse<Album[]>>(
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
@@ -524,11 +539,33 @@ export const setAssetIsSeriesSelection = <TData = AxiosResponse<SetAssetIsSeries
   return axios.post(`/api/assets/${id}/seriesSelection`, setAssetSeriesSelectionRequest, options);
 };
 
+export const getAllAssetsGeojson = <TData = AxiosResponse<string>>(
+  options?: AxiosRequestConfig,
+): Promise<TData> => {
+  return axios.get(`/api/map/assetPoints`, {
+    responseType: 'text',
+    ...options,
+  });
+};
+
 export const createSeries = <TData = AxiosResponse<CreateSeriesResponse>>(
   createSeriesRequest: CreateSeriesRequest,
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
   return axios.post(`/api/photoSeries`, createSeriesRequest, options);
+};
+
+export const deleteSeries = <TData = AxiosResponse<DeleteSeries200>>(
+  options?: AxiosRequestConfig,
+): Promise<TData> => {
+  return axios.delete(`/api/photoSeries/:id`, options);
+};
+
+export const addAssetsToSeries = <TData = AxiosResponse<AssetSeries>>(
+  addAssetsToSeriesRequest: AddAssetsToSeriesRequest,
+  options?: AxiosRequestConfig,
+): Promise<TData> => {
+  return axios.patch(`/api/photoSeries/:id`, addAssetsToSeriesRequest, options);
 };
 
 export const getTimelineSections = <TData = AxiosResponse<TimelineSectionsResponse>>(
@@ -574,7 +611,10 @@ export type GetAssetResult = AxiosResponse<Asset>;
 export type GetAssetDetailsResult = AxiosResponse<AssetDetailsResponse>;
 export type SetAssetRotationCorrectionResult = AxiosResponse<void>;
 export type SetAssetIsSeriesSelectionResult = AxiosResponse<SetAssetIsSeriesSelectionResponse>;
+export type GetAllAssetsGeojsonResult = AxiosResponse<string>;
 export type CreateSeriesResult = AxiosResponse<CreateSeriesResponse>;
+export type DeleteSeriesResult = AxiosResponse<DeleteSeries200>;
+export type AddAssetsToSeriesResult = AxiosResponse<AssetSeries>;
 export type GetTimelineSectionsResult = AxiosResponse<TimelineSectionsResponse>;
 export type GetTimelineSegmentsResult = AxiosResponse<TimelineSegmentsResponse>;
 export type CreateTimelineGroupResult = AxiosResponse<CreateTimelineGroupResponse>;

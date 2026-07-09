@@ -63,7 +63,7 @@ pub async fn index_file(
             let (ffprobe_output, streams) = match FFProbe::streams(path, ffprobe_path).await {
                 Ok(r) => r,
                 Err(err) => {
-                    tracing::trace!(%path, %err, "Could not get stream info with ffprobe, ignoring file");
+                    tracing::debug!(%path, %err, "Could not get stream info with ffprobe, ignoring file");
                     return Ok(None);
                 }
             };
@@ -105,7 +105,7 @@ pub async fn index_file(
             let size = match vips_get_size_result {
                 Ok(s) => s,
                 Err(_) => {
-                    tracing::trace!(%path, "Could not read image size, ignoring file");
+                    tracing::debug!(%path, "Could not read image size, ignoring file");
                     return Ok(None);
                 }
             };
@@ -125,7 +125,7 @@ pub async fn index_file(
             (CreateAssetSpe::Image(create_image), size)
         }
         None | Some(_) => {
-            tracing::trace!(%path, "Ignoring file with no or unknown MIME type");
+            tracing::debug!(%path, "Ignoring file with no or unknown MIME type");
             return Ok(None);
         }
     };

@@ -10,14 +10,26 @@
   import TimelineGrid from '@lib/timeline-grid/TimelineGrid.svelte';
   import { appendAssetsToAlbum, createAlbum } from '@api/myrti';
   import { setGalleryContext, type GalleryContext } from '@lib/swipey-gallery/context';
+  import { MediaQuery } from 'svelte/reactivity';
 
-  const layoutConfig: TimelineOptions = {
-    targetRowHeight: 160,
-    headerHeight: 50,
-    segmentMargin: 20,
-    boxSpacing: 4,
-    loadWithinMargin: 300,
-  };
+  const smallScreen = new MediaQuery('max-width: 639px');
+  const layoutConfig: TimelineOptions = $derived(
+    smallScreen.current
+      ? {
+          targetRowHeight: 100,
+          headerHeight: 35,
+          segmentMargin: 8,
+          boxSpacing: 2,
+          loadWithinMargin: 300,
+        }
+      : {
+          targetRowHeight: 160,
+          headerHeight: 50,
+          segmentMargin: 16,
+          boxSpacing: 4,
+          loadWithinMargin: 300,
+        },
+  );
 
   const { openedAssetId } = $props();
 

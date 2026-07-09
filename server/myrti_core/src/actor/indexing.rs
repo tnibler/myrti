@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{eyre, Context, Result};
@@ -27,6 +27,9 @@ pub enum MsgFromIndexing {
         root_dir_id: AssetRootDirId,
         path: Option<PathBuf>,
         report: eyre::Report,
+    },
+    IndexingComplete {
+        root_dir_id: AssetRootDirId,
     },
     FailedToStartIndexing {
         root_dir_id: AssetRootDirId,
@@ -58,10 +61,14 @@ impl IndexingActorHandle {
         send_from_us: mpsc::UnboundedSender<MsgFromIndexing>,
     ) -> Self {
         let (send, recv) = mpsc::unbounded_channel();
+        let (subtask_send, subtask_recv) = mpsc::unbounded_channel();
         let actor = IndexingActor {
             db_pool,
             config,
             send_from_us,
+            subtask_send,
+            subtask_recv,
+            running_tasks: Default::default(),
         };
         tokio::spawn(run_indexing_actor(recv, actor));
         Self { send }
@@ -90,6 +97,9 @@ struct IndexingActor {
     pub db_pool: DbPool,
     pub config: config::Config,
     pub send_from_us: mpsc::UnboundedSender<MsgFromIndexing>,
+    subtask_recv: mpsc::UnboundedReceiver<(AssetRootDirId, MsgFromIndexing)>,
+    subtask_send: mpsc::UnboundedSender<(AssetRootDirId, MsgFromIndexing)>,
+    running_tasks: HashSet<AssetRootDirId>,
 }
 
 const MAX_TASKS: usize = 4;
@@ -97,13 +107,27 @@ const MAX_QUEUE_SIZE: usize = 10;
 
 async fn run_indexing_actor(
     mut recv: mpsc::UnboundedReceiver<MsgToIndexing>,
-    actor: IndexingActor,
+    mut actor: IndexingActor,
 ) {
     let mut is_running = true;
-    let mut running_tasks: usize = 0;
     let mut queue: VecDeque<DoTaskMsg> = Default::default();
     loop {
         tokio::select! {
+            Some((asset_root_id, msg)) = actor.subtask_recv.recv() => {
+                match &msg {
+                    MsgFromIndexing::FailedToStartIndexing { root_dir_id, .. } | MsgFromIndexing::IndexingComplete { root_dir_id } => {
+                        debug_assert_eq!(*root_dir_id, asset_root_id);
+                        let was_running = actor.running_tasks.remove(&asset_root_id);
+                        debug_assert!(was_running);
+                    },
+                    MsgFromIndexing::IndexingError {..} => {},
+                    MsgFromIndexing::DroppedMessage => {},
+                    MsgFromIndexing::NewAsset(_) => {},
+                    MsgFromIndexing::ActivityChange { .. } => panic!("not a message subtasks should send"),
+                }
+                // Forward to supervising task/scheduler
+                let _ = actor.send_from_us.send(msg);
+            },
             Some(msg) = recv.recv() => {
                 match msg {
                     MsgToIndexing::Pause => {
@@ -115,17 +139,16 @@ async fn run_indexing_actor(
                         // TODO: unpause currently running indexing jobs
                     }
                     MsgToIndexing::DoTask(task) => {
-                        if is_running && running_tasks < MAX_TASKS {
-                            running_tasks += 1;
+                        if is_running && actor.running_tasks.len() < MAX_TASKS {
                             let _ = actor.send_from_us.send(MsgFromIndexing::ActivityChange {
-                                running_tasks,
+                                running_tasks: actor.running_tasks.len(),
                                 queued_tasks: queue.len()
                             });
                             actor.process_message(task).await;
                         } else if queue.len() < MAX_QUEUE_SIZE {
                             queue.push_back(task);
                             let _ = actor.send_from_us.send(MsgFromIndexing::ActivityChange {
-                                running_tasks,
+                                running_tasks: actor.running_tasks.len(),
                                 queued_tasks: queue.len()
                             });
                         } else {
@@ -139,11 +162,18 @@ async fn run_indexing_actor(
 }
 
 impl IndexingActor {
-    async fn process_message(&self, msg: DoTaskMsg) {
+    async fn process_message(&mut self, msg: DoTaskMsg) {
         match msg {
             DoTaskMsg::IndexAssetRootDir { root_dir_id } => {
-                let send_copy = self.send_from_us.clone();
+                if self.running_tasks.contains(&root_dir_id) {
+                    tracing::trace!(
+                        ?root_dir_id,
+                        "Indexing task already running, not starting another"
+                    );
+                    return;
+                }
 
+                let send_copy = self.subtask_send.clone();
                 let start_result = handle_indexing_message(
                     self.db_pool.clone(),
                     send_copy,
@@ -159,6 +189,8 @@ impl IndexingActor {
                             root_dir_id,
                             report: report.wrap_err("Error starting indexing job"),
                         });
+                } else {
+                    self.running_tasks.insert(root_dir_id);
                 }
             }
         }
@@ -167,7 +199,7 @@ impl IndexingActor {
 
 async fn handle_indexing_message(
     db_pool: DbPool,
-    send_result: mpsc::UnboundedSender<MsgFromIndexing>,
+    send_result: mpsc::UnboundedSender<(AssetRootDirId, MsgFromIndexing)>,
     bin_paths: Option<config::BinPaths>,
     root_dir_id: AssetRootDirId,
 ) -> Result<()> {
@@ -186,7 +218,7 @@ async fn handle_indexing_message(
 #[instrument(skip(pool, send_result, bin_paths))]
 async fn index_asset_root(
     pool: DbPool,
-    send_result: mpsc::UnboundedSender<MsgFromIndexing>,
+    send_result: mpsc::UnboundedSender<(AssetRootDirId, MsgFromIndexing)>,
     bin_paths: Option<config::BinPaths>,
     asset_root: AssetRootDir,
 ) {
@@ -216,22 +248,31 @@ async fn index_asset_root(
                                 report,
                             },
                         };
-                        let _ = send_result.send(msg);
+                        let _ = send_result.send((asset_root.id, msg));
                     }
                 }
             }
             Err(e) => {
-                let _ = send_result.send(MsgFromIndexing::IndexingError {
-                    root_dir_id: asset_root.id,
-                    path: e.path().map(|p| {
-                        p.to_owned()
-                            .try_into()
-                            .expect("only UTF-8 paths are supported")
-                    }),
-                    report: eyre!("error while listing directory: {}", e),
-                });
+                let _ = send_result.send((
+                    asset_root.id,
+                    MsgFromIndexing::IndexingError {
+                        root_dir_id: asset_root.id,
+                        path: e.path().map(|p| {
+                            p.to_owned()
+                                .try_into()
+                                .expect("only UTF-8 paths are supported")
+                        }),
+                        report: eyre!("error while listing directory: {}", e),
+                    },
+                ));
             }
         }
     }
+    let _ = send_result.send((
+        asset_root.id,
+        MsgFromIndexing::IndexingComplete {
+            root_dir_id: asset_root.id,
+        },
+    ));
     tracing::info!(path=%asset_root.path, new_assets=new_asset_count, "Finished indexing");
 }

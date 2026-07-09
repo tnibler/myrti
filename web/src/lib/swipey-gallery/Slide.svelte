@@ -13,6 +13,7 @@
   import { slideForAsset } from './asset-slide';
   import { getGalleryContext, type GalleryContext } from './context';
   import * as R from 'remeda';
+  import { goto } from 'elegua';
 
   export type OpenTransitionParams = {
     fromBounds: ThumbnailBounds;
@@ -414,7 +415,7 @@
 	transform: translate3d({pan.x + centerX}px, {pan.y +
     centerY}px, 0) scale3d({cssTransformZoom}, {cssTransformZoom}, 1);"
 >
-  {#key slideToDisplay.assetType}
+  {#key `${slideToDisplay.asset.id}, ${slideToDisplay.size.width}, ${slideToDisplay.size.height}`}
     {#if slideToDisplay.assetType === 'image' && showContent}
       <SlideImage
         bind:this={slideImage}
@@ -451,17 +452,14 @@
   {/if}
 </div>
 {#if slideToDisplay.slideType === 'assetSeries' && showUi}
-  <div
-    class="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-auto
-          "
-  >
+  <div class="absolute bottom-4 left-1/2 -translate-x-1/2 max-w-full md:max-w-7xl md:h-48 h-24">
     <div
-      class="rounded-xl bg-black/70 backdrop-blur px-2 py-4 flex flex-row h-48 max-w-7xl overflow-x-auto overflow-y-hidden"
+      class="rounded-xl bg-black/70 backdrop-blur px-1 md:px-2 py-2 md:py-4 flex flex-row overflow-x-auto h-full overflow-y-hidden"
     >
       {#each slideToDisplay.series.assetIds as assetId, indexInSeries (assetId)}
         {@const asset = dataSource.getAsset(assetId)}
         {@const isSelection = slideToDisplay.series.selectionIndices.indexOf(indexInSeries) !== -1}
-        <div class="group relative h-full shrink-0 mx-3">
+        <div class="group relative h-full shrink-0 mx-1 md:mx-3">
           <div class="absolute top-1 right-1">
             <input
               type="checkbox"
@@ -482,7 +480,7 @@
                 height="24"
                 viewBox="0 0 24 24"
                 class="rounded-md bg-black/70 backdrop-blur p-1
-                        opacity-0 hover:fill-white group-has-checked:fill-white group-has-checked:opacity-100 group-hover:opacity-100 group-has-focus:opacity-100 pointer-events-auto"
+                        opacity-0 hover:fill-white group-has-checked:fill-white group-has-checked:opacity-100 group-hover:opacity-100 group-has-focus:opacity-100"
               >
                 <path d={mdiStar} />
               </svg>
@@ -492,8 +490,14 @@
             href="javascript:;"
             onclick={(e) => {
               e.stopPropagation();
+              e.preventDefault();
+              isContentVisible = false;
+              contentHasLoaded = false;
+              goto('/timeline/' + asset.id);
               selectedSeriesIndex = indexInSeries;
             }}
+            onpointerup={(e) => e.stopPropagation()}
+            onpointerdown={(e) => e.stopPropagation()}
           >
             <img
               src="/api/assets/thumbnail/{asset.id}/small/avif"

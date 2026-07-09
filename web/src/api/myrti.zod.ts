@@ -281,7 +281,7 @@ export const setAssetIsSeriesSelectionBody = zod.object({
 export const setAssetIsSeriesSelectionResponseSelectionIndicesItemMin = 0;
 
 export const setAssetIsSeriesSelectionResponse = zod.object({
-  assetIds: zod.array(zod.number()),
+  assetIds: zod.array(zod.string()),
   selectionIndices: zod.array(
     zod.number().min(setAssetIsSeriesSelectionResponseSelectionIndicesItemMin),
   ),
@@ -294,6 +294,30 @@ export const createSeriesBody = zod.object({
 
 export const createSeriesResponse = zod.object({
   seriesId: zod.string(),
+});
+
+export const deleteSeriesParams = zod.object({
+  id: zod.string().describe('AssetSeriesId'),
+});
+
+export const deleteSeriesResponseDefault = null;
+
+export const deleteSeriesResponse = zod.unknown().nullable();
+
+export const addAssetsToSeriesParams = zod.object({
+  id: zod.string().describe('AssetSeriesId'),
+});
+
+export const addAssetsToSeriesBody = zod.object({
+  assetIds: zod.array(zod.string()),
+});
+
+export const addAssetsToSeriesResponseSelectionIndicesItemMin = 0;
+
+export const addAssetsToSeriesResponse = zod.object({
+  assetIds: zod.array(zod.string()),
+  id: zod.string(),
+  selectionIndices: zod.array(zod.number().min(addAssetsToSeriesResponseSelectionIndicesItemMin)),
 });
 
 export const getTimelineSectionsResponse = zod.object({

@@ -4,6 +4,7 @@
   import { path, resolve, params } from 'elegua';
   import MainLayout from '@lib/MainLayout.svelte';
   import AlbumDetail from './pages/album-detail/AlbumDetail.svelte';
+  import WorldMap from './pages/WorldMap.svelte';
 </script>
 
 {#if resolve($path, '/') || resolve($path, '/timeline/:id')}
@@ -15,4 +16,9 @@
   <MainLayout content={listAlbums} showAppBarOverride={false} activeSideBarEntry="albums" />
 {:else if resolve($path, '/albums/:id')}
   <AlbumDetail albumId={$params['id']} />
+{:else if resolve($path, '/map')}
+  {#snippet worldMap()}
+    <WorldMap />
+  {/snippet}
+  <MainLayout content={worldMap} showAppBarOverride={false} activeSideBarEntry="map" />
 {/if}

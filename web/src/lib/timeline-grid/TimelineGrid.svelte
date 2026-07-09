@@ -25,6 +25,7 @@
   let animationsDisabledToStart = true;
   let didMoveScrollToCurrentGalleryAsset = $state(false);
   let restoreScrollOnClose = $derived(!didMoveScrollToCurrentGalleryAsset);
+  let useOpenTransition = $state(false);
 
   let currentSlide: SlideRef | null = $derived.by(() => {
     if (openedAssetId === null) {
@@ -186,6 +187,7 @@
 
   function onAssetClick(item: TimelineItem & ({ itemType: 'asset' } | { itemType: 'photoStack' })) {
     didMoveScrollToCurrentGalleryAsset = false;
+    useOpenTransition = true;
     if (item.itemType === 'asset') {
       $path = `/timeline/${item.assetId}`;
     } else {
@@ -193,8 +195,6 @@
       const id = series.assetIds[item.coverIndex];
       $path = `/timeline/${id}`;
     }
-    // currentSlide = getSlideRef(item);
-    // galleryOpen = true;
   }
 
   function onSlideNavigated(dir: 'left' | 'right') {
@@ -303,6 +303,7 @@
       {@const itemIndex = timeline.visibleItems.startIdx + item.originalItemIndex}
       {#if item.type === 'asset'}
         <GridTile
+          href="/api/timeline/{item.assetId}"
           className={gridItemTransitionClass}
           asset={timeline.getAsset(item.assetId)}
           box={item}
@@ -370,6 +371,7 @@
   isOpen={galleryOpen}
   slides={pagerSlides}
   dataSource={timeline}
+  {useOpenTransition}
   {onSlideNavigated}
   {getThumbnailBounds}
   {scrollWrapper}

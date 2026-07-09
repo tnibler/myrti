@@ -267,7 +267,6 @@ export function newGestureController(
       tapState = {
         lastTapPoint: { x: p.x, y: p.y },
         tapTimer: setTimeout(() => {
-          console.log('tap');
           // TODO signal tap
           clearTapState();
         }, DOUBLETAP_DELAY),

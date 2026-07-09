@@ -10,6 +10,7 @@
     } | null;
     onSlideNavigated: (dir: 'left' | 'right') => void;
     dataSource: GalleryDataSource;
+    useOpenTransition: boolean;
 
     getThumbnailBounds: () => ThumbnailBounds;
     closeGallery: () => void;
@@ -63,6 +64,7 @@
     getThumbnailBounds,
     closeGallery,
     dataSource,
+    useOpenTransition,
     onOpenTransitionFinished,
     topOffset,
   }: PagerProps = $props();
@@ -93,7 +95,7 @@
       return [0, 1, 2].map((id) => {
         const sl = slides[['left' as const, 'current' as const, 'right' as const][id]];
         const openTransition =
-          id === 1
+          id === 1 && useOpenTransition
             ? {
                 onTransitionEnd: afterOpenTransition,
                 fromBounds: getThumbnailBounds(sl),
@@ -181,6 +183,9 @@
       backgroundOpacity = 1 - ratio;
     },
   };
+  const gestureController = newGestureController(gallery, () => {
+    hasMouse = true;
+  });
 
   let pagerWrapper: HTMLElement;
 
@@ -198,35 +203,26 @@
   }
 
   function bindEvents() {
-    const onMouseDetected = () => {
-      hasMouse = true;
-    };
-    let gestureController = newGestureController(gallery, onMouseDetected);
     pagerWrapper.onpointerdown = (e) => {
       if (!uiVisible) {
         showUi();
         // don't initiate drag or anything if ui was hidden
         return;
       }
-      gestureController.onPointerDown(e);
     };
-    window.onpointerup = gestureController.onPointerUp;
-    window.onpointermove = gestureController.onPointerMove;
     pagerWrapper.onpointercancel = gestureController.onPointerUp;
-    pagerWrapper.onclick = gestureController.onClick;
     document.documentElement.onpointerleave = gestureController.onPointerUp;
-    window.onmousemove = () => {
+    pagerWrapper.onmousemove = () => {
       showUi();
     };
   }
 
   function unbindEvents() {
     pagerWrapper.onpointerdown = null;
-    window.onpointerup = null;
-    window.onpointermove = null;
+    document.documentElement.onpointerleave = null;
     pagerWrapper.onpointercancel = null;
     pagerWrapper.onclick = null;
-    window.onmousemove = null;
+    pagerWrapper.onmousemove = null;
   }
 
   function onHideUiTimeout() {
@@ -431,6 +427,10 @@
             id="id-{slideHolder.id}"
             class="slide-holder"
             style="transform: translate3d({Math.round(x)}px, 0px, 0px);"
+            onpointerdown={(e) => gestureController.onPointerDown(e)}
+            onclick={(e) => gestureController.onClick(e)}
+            onpointerup={(e) => gestureController.onPointerUp(e)}
+            onpointermove={(e) => gestureController.onPointerMove(e)}
           >
             {#if slideHolder.slide !== null}
               {#key [slideHolder.slide.assetId, slideHolder.slide.assetSeriesId, slideHolder.slide.coverIndex]}
@@ -452,15 +452,13 @@
       </div>
     {/if}
     {#if uiVisible}
-      <!-- Note: idk what capture really means at time of writing. The intent is for the pointerdown/up/.. listeners in bindEvent()
-        to not be triggered when ui elements in this div are clicked. -->
       <div
         class="absolute top-0 left-0 w-full h-full flex flex-col z-10 pointer-events-none"
         out:fade
-        onpointerdowncapture={(e) => {
+        onpointerdown={(e) => {
           e.stopPropagation();
         }}
-        onpointerupcapture={(e) => {
+        onpointerup={(e) => {
           e.stopPropagation();
         }}
       >
@@ -535,16 +533,16 @@
   </div>
 
   <div class={'bg-white z-50 transition-all w-96 ' + (isSidePanelOpen ? 'mr-0' : 'mr-[-24rem]')}>
-    <!-- {#if slides.current !== null} -->
-    <!--   {@const slide = slides.current} -->
-    <!--   <InfoPanel -->
-    <!--     asset={slide.slideType === 'singleAsset' -->
-    <!--       ? dataSource.getAsset(slide.assetId) -->
-    <!--       : dataSource.getAsset( -->
-    <!--           dataSource.getAssetSeries(slide.assetSeriesId).assetIds[slide.coverIndex], -->
-    <!--         )} -->
-    <!--   /> -->
-    <!-- {/if} -->
+    {#if slides?.current}
+      {@const slide = slides.current}
+      <InfoPanel
+        asset={slide.slideType === 'singleAsset'
+          ? dataSource.getAsset(slide.assetId)
+          : dataSource.getAsset(
+              dataSource.getAssetSeries(slide.assetSeriesId).assetIds[slide.coverIndex],
+            )}
+      />
+    {/if}
   </div>
 </div>
 

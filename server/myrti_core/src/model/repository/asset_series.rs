@@ -101,3 +101,65 @@ pub fn get_series_for_asset(conn: &mut DbConn, asset_id: AssetId) -> Result<Opti
         }))
     })
 }
+
+#[tracing::instrument(skip(conn))]
+pub fn dissolve_series(conn: &mut DbConn, series_id: AssetSeriesId) -> Result<()> {
+    use diesel::prelude::*;
+    use schema::{Asset, AssetSeries};
+    conn.transaction(|conn| {
+        diesel::update(Asset::table.filter(Asset::series_id.eq(Some(series_id.0))))
+            .set((
+                Asset::series_id.eq(None::<i64>),
+                Asset::is_series_selection.eq(None::<i32>),
+            ))
+            .execute(conn)?;
+        diesel::delete(AssetSeries::table.find(series_id.0)).execute(conn)?;
+        Ok(())
+    })
+}
+
+#[tracing::instrument(skip(conn))]
+pub fn add_assets_to_series(
+    conn: &mut DbConn,
+    series_id: AssetSeriesId,
+    asset_ids: &[AssetId],
+) -> Result<AssetSeries> {
+    use diesel::prelude::*;
+    use schema::Asset;
+    conn.transaction(|conn| {
+        diesel::update(
+            Asset::table.filter(
+                Asset::series_id
+                    .is_null()
+                    .and(Asset::asset_id.eq_any(asset_ids.iter().map(|id| id.0))),
+            ),
+        )
+        .set((
+            Asset::series_id.eq(Some(series_id.0)),
+            Asset::is_series_selection.eq(Some(0)),
+        ))
+        .execute(conn)?;
+        let assets_in_series: Vec<(i64, Option<i32>)> = Asset::table
+            .filter(Asset::series_id.eq(Some(series_id.0)))
+            .order_by(Asset::taken_date.desc())
+            .select((Asset::asset_id, Asset::is_series_selection))
+            .load(conn)?;
+        let selection_indices: Vec<usize> = assets_in_series
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, (_asset_id, is_selection))| {
+                let is_selection = is_selection.expect("was filtered not null") != 0;
+                is_selection.then_some(idx)
+            })
+            .collect();
+        let asset_ids = assets_in_series
+            .into_iter()
+            .map(|(asset_id, _)| AssetId(asset_id))
+            .collect();
+        Ok(crate::model::AssetSeries {
+            series_id,
+            asset_ids,
+            selection_indices,
+        })
+    })
+}

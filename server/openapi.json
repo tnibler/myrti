@@ -605,6 +605,26 @@
         }
       }
     },
+    "/api/map/assetPoints": {
+      "get": {
+        "tags": [
+          "crate::routes::map"
+        ],
+        "operationId": "getAllAssetsGeojson",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/photoSeries": {
       "post": {
         "tags": [
@@ -629,6 +649,78 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CreateSeriesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/photoSeries/:id": {
+      "delete": {
+        "tags": [
+          "crate::routes::photo_series"
+        ],
+        "operationId": "deleteSeries",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "AssetSeriesId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "default": null,
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "crate::routes::photo_series"
+        ],
+        "operationId": "addAssetsToSeries",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "AssetSeriesId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddAssetsToSeriesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetSeries"
                 }
               }
             }
@@ -741,6 +833,20 @@
   },
   "components": {
     "schemas": {
+      "AddAssetsToSeriesRequest": {
+        "type": "object",
+        "required": [
+          "assetIds"
+        ],
+        "properties": {
+          "assetIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetId"
+            }
+          }
+        }
+      },
       "AddToTimelineGroupRequest": {
         "type": "object",
         "required": [
@@ -969,6 +1075,32 @@
       },
       "AssetRootDirId": {
         "type": "string"
+      },
+      "AssetSeries": {
+        "type": "object",
+        "required": [
+          "id",
+          "assetIds",
+          "selectionIndices"
+        ],
+        "properties": {
+          "assetIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetId"
+            }
+          },
+          "id": {
+            "$ref": "#/components/schemas/AssetSeriesId"
+          },
+          "selectionIndices": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
       },
       "AssetSeriesId": {
         "type": "string"
@@ -1285,8 +1417,7 @@
           "assetIds": {
             "type": "array",
             "items": {
-              "type": "integer",
-              "format": "int64"
+              "$ref": "#/components/schemas/AssetId"
             }
           },
           "selectionIndices": {

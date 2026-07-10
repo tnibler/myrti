@@ -1,21 +1,20 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use camino::Utf8PathBuf as PathBuf;
 use claims::assert_ok;
 use itertools::Itertools;
 use proptest::prelude::*;
 
-use super::proptest_arb::{arb_new_album, arb_new_asset};
-use super::util::{prop_insert_create_test_assets, set_assets_root_dir};
+use super::proptest_arb::arb_new_album;
 
 use crate::model::repository::album::AddItemToAlbum;
-use crate::model::repository::test::proptest_arb::arb_new_album_item;
-use crate::model::repository::test::util::prop_insert_create_test_asset;
+use crate::model::repository::test::proptest_arb::{arb_new_album_item, ArbCreateAlbumItem};
+use crate::model::repository::test::util::{prop_insert_create_test_asset, set_asset_root_dir};
 use crate::model::{
     repository::{self, album::CreateAlbum},
-    Album, Asset, AssetId, AssetRootDir, AssetRootDirId,
+    Album, AssetRootDir, AssetRootDirId,
 };
-use crate::model::{AlbumItem, AlbumItemType, AssetBase};
+use crate::model::{AlbumItem, AlbumItemType};
 
 #[test]
 fn prop_create_retrieve_albums() {
@@ -28,7 +27,7 @@ fn prop_create_retrieve_albums() {
             (
                 albums_asset_idxs in albums.into_iter().map(|album| (Just(album), prop::collection::vec(any::<prop::sample::Index>(), 0..=items.len()))).collect::<Vec<_>>(),
                 items in Just(items),
-            ) -> (Vec<AlbumItemType>, Vec<(Album, Vec<prop::sample::Index>)>) {
+            ) -> (Vec<ArbCreateAlbumItem>, Vec<(Album, Vec<prop::sample::Index>)>) {
                 (items, albums_asset_idxs)
             }
     }
@@ -46,18 +45,12 @@ fn prop_create_retrieve_albums() {
         ));
         // set root_dir_id for Asset items, insert into the db and set assset_id
         let items = items.into_iter().map(|item| match item {
-            AlbumItemType::Asset(asset) => {
-                let asset_to_insert = Asset {
-                    base: AssetBase {
-                        root_dir_id,
-                        ..asset.base
-                    },
-                    ..asset
-                };
+            ArbCreateAlbumItem::Asset(asset) => {
+                let asset_to_insert = set_asset_root_dir(asset, root_dir_id);
                 let asset_with_id = prop_insert_create_test_asset(&mut conn, &asset_to_insert)?;
                 Ok(AlbumItemType::Asset(asset_with_id))
             },
-            item @ AlbumItemType::Text(_) => Ok(item),
+            ArbCreateAlbumItem::Text(text) => Ok(AlbumItemType::Text(text)),
         }).collect::<Result<Vec<_>, TestCaseError>>()?;
 
         let mut albums_with_ids: Vec<Album> = Vec::default();

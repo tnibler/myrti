@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use camino::Utf8PathBuf as PathBuf;
 use chrono::Months;
-use claims::{assert_err, assert_ok};
+use claims::assert_ok;
 use diesel::prelude::*;
 use itertools::Itertools;
 use pretty_assertions::assert_eq;
@@ -10,14 +10,15 @@ use proptest::prelude::*;
 
 use proptest_arb::{arb_new_asset, arb_new_video_asset};
 
+use crate::model::repository::test::util::{make_created_asset, prop_insert_create_test_asset};
 use crate::model::{
-    repository, Asset, AssetBase, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetType,
-    AudioRepresentation, AudioRepresentationId, CreateAsset, CreateAssetBase, CreateAssetImage,
-    CreateAssetSpe, Image, Size, ThumbnailFormat, ThumbnailType, TimestampInfo, Video, VideoAsset,
-    VideoRepresentation, VideoRepresentationId,
+    repository, Asset, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetThumbnail,
+    AssetThumbnailId, AudioRepresentation, AudioRepresentationId, CreateAsset, CreateAssetBase,
+    CreateAssetImage, CreateAssetSpe, CreateAssetVideo, FFProbeOutput, Size, ThumbnailFormat,
+    ThumbnailType, TimestampInfo, VideoAsset, VideoRepresentation, VideoRepresentationId,
 };
 
-use super::util::{set_asset_root_dir, set_video_asset_root_dir};
+use super::util::set_asset_root_dir;
 use super::*;
 
 #[test]
@@ -37,98 +38,17 @@ fn prop_insert_retrieve_asset() {
         if path_exists.unwrap() {
             return Ok(());
         }
-        let ffprobe_output: Option<&[u8]> = match &asset.sp {
-            AssetSpe::Video(_) => Some(&[]),
-            _ => None
-        };
-        #[allow(deprecated)]
-        let insert_result = repository::asset::insert_asset(&mut conn, &asset, ffprobe_output);
+        let insert_result = repository::asset::create_asset(&mut conn, asset.clone());
         prop_assert!(insert_result.is_ok(), "insert failed: {:?}", insert_result.unwrap_err());
         let asset_id = insert_result.unwrap();
-        let asset_with_id = Asset {
-            base: AssetBase {
-                id: asset_id,
-                ..asset.base
-            },
-            ..asset
-        };
+
         let retrieved = repository::asset::get_asset(&mut conn, asset_id);
         prop_assert!(retrieved.is_ok(), "retrieve failed: {:?}", retrieved.unwrap_err());
-        prop_assert_eq!(asset_with_id, retrieved.unwrap());
+        let retrieved = retrieved.unwrap();
+
+        let asset_with_id = make_created_asset(&asset, &retrieved);
+        prop_assert_eq!(asset_with_id, retrieved);
     });
-}
-
-#[allow(unused_must_use, deprecated)]
-#[test]
-fn inserting_mismatching_asset_ty_and_spe_fails() {
-    let mut conn = super::db::open_in_memory_and_migrate();
-    let asset_root_dir = AssetRootDir {
-        id: AssetRootDirId(0),
-        path: PathBuf::from("/path/to/assets"),
-    };
-    let root_dir_id = assert_ok!(repository::asset_root_dir::insert_asset_root(
-        &mut conn,
-        &asset_root_dir
-    ));
-    let asset = Asset {
-        sp: AssetSpe::Image(Image {
-            image_format_name: "jpeg".into(),
-        }),
-        base: AssetBase {
-            id: AssetId(0),
-            root_dir_id,
-            ty: AssetType::Video,
-            file_type: "jpeg".to_owned(),
-            file_path: PathBuf::from("image.jpg"),
-            is_hidden: false,
-            added_at: utc_now_millis_zero(),
-            taken_date: utc_now_millis_zero()
-                .checked_sub_months(Months::new(2))
-                .unwrap(),
-            timestamp_info: TimestampInfo::UtcCertain,
-            size: Size {
-                width: 1024,
-                height: 1024,
-            },
-            rotation_correction: None,
-            hash: None,
-            gps_coordinates: None,
-        },
-    };
-    // should fail both with and without ffprobe_output
-    assert_err!(repository::asset::insert_asset(
-        &mut conn,
-        &asset,
-        None::<&[u8]>
-    ));
-    assert_err!(repository::asset::insert_asset(
-        &mut conn,
-        &asset,
-        Some(&[])
-    ));
-
-    let asset2 = Asset {
-        sp: AssetSpe::Video(Video {
-            video_codec_name: "h264".into(),
-            video_bitrate: 1234,
-            audio_codec_name: Some("aac".into()),
-            has_dash: false,
-        }),
-        base: AssetBase {
-            ty: AssetType::Image,
-            ..asset.base
-        },
-    };
-    assert_err!(repository::asset::insert_asset(
-        &mut conn,
-        &asset2,
-        Some(&[])
-    ));
-    assert_err!(repository::asset::insert_asset(
-        &mut conn,
-        &asset2,
-        None::<&[u8]>
-    ));
 }
 
 #[test]
@@ -137,7 +57,7 @@ fn prop_get_assets_with_missing_thumbnails() {
         fn arb_asset_with_some_thumbnails()(
             asset in arb_new_asset(),
             thumb_present in any::<(bool, bool)>(),
-        ) -> (Asset, bool, bool) {
+        ) -> (CreateAsset, bool, bool) {
             (asset, thumb_present.0, thumb_present.1)
         }
     }
@@ -155,36 +75,50 @@ fn prop_get_assets_with_missing_thumbnails() {
             .map(|(asset, t_lg_orig, t_sm_sq)|
                 (set_asset_root_dir(asset, root_dir_id), t_lg_orig, t_sm_sq)
             ).collect();
-        let mut assets_with_ids: Vec<(Asset, bool, bool)> = Vec::default();
+        let mut assets_with_ids: Vec<(AssetId, bool, bool)> = Vec::default();
         for (asset, has_lg_orig, has_sm_sq) in assets_thumb_present {
-            let ffprobe_output: Option<&[u8]> = match &asset.sp {
-                AssetSpe::Video(_) => Some(&[]),
-                _ => None
-            };
-            #[allow(deprecated)]
-            let insert_result = repository::asset::insert_asset(&mut conn, &asset, ffprobe_output);
+            let insert_result = repository::asset::create_asset(&mut conn, asset);
             prop_assert!(insert_result.is_ok());
             let asset_id = insert_result.unwrap();
-            let asset_with_id = Asset {
-                base: AssetBase {
-                    id: asset_id,
-                    ..asset.base
-                },
-                ..asset
-            };
             if has_lg_orig {
-                assert_ok!(repository::asset::set_asset_has_thumbnail(&mut conn, asset_id, ThumbnailType::LargeOrigAspect, Size { width: 100, height: 100 }, &[ThumbnailFormat::Webp, ThumbnailFormat::Avif]));
+                assert_ok!(repository::asset::insert_asset_thumbnail(&mut conn, AssetThumbnail {
+                    id: AssetThumbnailId(0),
+                    asset_id,
+                    ty: ThumbnailType::LargeOrigAspect,
+                    size: Size { width: 100, height: 100 },
+                    format: ThumbnailFormat::Avif
+                }));
+                assert_ok!(repository::asset::insert_asset_thumbnail(&mut conn, AssetThumbnail {
+                    id: AssetThumbnailId(0),
+                    asset_id,
+                    ty: ThumbnailType::LargeOrigAspect,
+                    size: Size { width: 100, height: 100 },
+                    format: ThumbnailFormat::Webp
+                }));
             }
             if has_sm_sq {
-                assert_ok!(repository::asset::set_asset_has_thumbnail(&mut conn, asset_id, ThumbnailType::SmallSquare, Size { width: 100, height: 100 }, &[ThumbnailFormat::Webp, ThumbnailFormat::Avif]));
+                assert_ok!(repository::asset::insert_asset_thumbnail(&mut conn, AssetThumbnail {
+                    id: AssetThumbnailId(0),
+                    asset_id,
+                    ty: ThumbnailType::SmallSquare,
+                    size: Size { width: 100, height: 100 },
+                    format: ThumbnailFormat::Avif
+                }));
+                assert_ok!(repository::asset::insert_asset_thumbnail(&mut conn, AssetThumbnail {
+                    id: AssetThumbnailId(0),
+                    asset_id,
+                    ty: ThumbnailType::SmallSquare,
+                    size: Size { width: 100, height: 100 },
+                    format: ThumbnailFormat::Webp
+                }));
             }
-            assets_with_ids.push((asset_with_id, has_lg_orig, has_sm_sq));
+            assets_with_ids.push((asset_id, has_lg_orig, has_sm_sq));
         }
         let expected_with_missing_thumb: HashSet<AssetId> = assets_with_ids.into_iter()
-            .filter(|(_asset, has_lg_orig, has_sm_sq)| {
+            .filter(|(_asset_id, has_lg_orig, has_sm_sq)| {
                 !(*has_lg_orig && *has_sm_sq)
             })
-            .map(|(asset, _, _)| asset.base.id)
+            .map(|(asset_id, _, _)| asset_id)
             .collect();
         let actual = repository::asset::get_assets_with_missing_thumbnail(&mut conn, None);
         prop_assert!(actual.is_ok());
@@ -212,21 +146,20 @@ fn get_videos_without_dash() {
         &mut conn,
         &asset_root_dir2
     ));
-    let asset = Asset {
-        sp: AssetSpe::Video(Video {
+    let asset = CreateAsset {
+        spe: CreateAssetSpe::Video(CreateAssetVideo {
             video_codec_name: "h264".to_owned(),
             video_bitrate: 1234,
             audio_codec_name: Some("opus".to_owned()),
             has_dash: false,
+            video_duration_ms: None,
+            ffprobe_output: FFProbeOutput(Default::default()),
         }),
-        base: AssetBase {
-            id: AssetId(0),
-            ty: AssetType::Video,
+        base: CreateAssetBase {
             root_dir_id: root_dir2_id,
             file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video.mp4"),
             is_hidden: false,
-            added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(3))
                 .unwrap(),
@@ -238,6 +171,7 @@ fn get_videos_without_dash() {
             rotation_correction: Some(90),
             hash: None,
             gps_coordinates: None,
+            exiftool_output: Default::default(),
         },
     };
     let asset2 = CreateAsset {
@@ -256,78 +190,60 @@ fn get_videos_without_dash() {
                 width: 1000,
                 height: 1000,
             },
+            is_hidden: false,
             rotation_correction: None,
             hash: None,
             gps_coordinates: None,
+            exiftool_output: Default::default(),
         },
     };
-    let asset3 = Asset {
-        sp: AssetSpe::Video(Video {
+    let asset3 = CreateAsset {
+        spe: CreateAssetSpe::Video(CreateAssetVideo {
             video_codec_name: "hevc".to_owned(),
             video_bitrate: 123456,
             audio_codec_name: Some("aac".into()),
             has_dash: true,
+            video_duration_ms: None,
+            ffprobe_output: FFProbeOutput(Default::default()),
         }),
-        base: AssetBase {
+        base: CreateAssetBase {
             root_dir_id: root_dir2_id,
             file_path: "/some/video.mp4".into(),
             ..asset.base.clone()
         },
     };
-    let asset4 = Asset {
-        sp: AssetSpe::Video(Video {
+    let asset4 = CreateAsset {
+        spe: CreateAssetSpe::Video(CreateAssetVideo {
             video_codec_name: "hevc".to_owned(),
             video_bitrate: 123456,
             audio_codec_name: Some("mp3".into()),
             has_dash: false,
+            video_duration_ms: Some(123433323),
+            ffprobe_output: FFProbeOutput(Default::default()),
         }),
-        base: AssetBase {
+        base: CreateAssetBase {
             root_dir_id: root_dir2_id,
             file_path: "/some/video2.mp4".into(),
             ..asset.base.clone()
         },
     };
-    let ffprobe_output1: Option<&[u8]> = Some(&[]);
-    let ffprobe_output3: Option<&[u8]> = Some(&[]);
-    let ffprobe_output4: Option<&[u8]> = Some(&[]);
-    #[allow(deprecated)]
-    let asset_id = assert_ok!(repository::asset::insert_asset(
-        &mut conn,
-        &asset,
-        ffprobe_output1
-    ));
+    let asset_id = assert_ok!(repository::asset::create_asset(&mut conn, asset.clone()));
     let _asset2_id = assert_ok!(repository::asset::create_asset(&mut conn, asset2));
-    #[allow(deprecated)]
-    let _asset3_id = assert_ok!(repository::asset::insert_asset(
-        &mut conn,
-        &asset3,
-        ffprobe_output3
-    ));
-    #[allow(deprecated)]
-    let asset4_id = assert_ok!(repository::asset::insert_asset(
-        &mut conn,
-        &asset4,
-        ffprobe_output4
-    ));
+    let _asset3_id = assert_ok!(repository::asset::create_asset(&mut conn, asset3,));
+    let asset4_id = assert_ok!(repository::asset::create_asset(&mut conn, asset4.clone()));
     let videos_without_dash: HashSet<VideoAsset> =
         assert_ok!(repository::asset::get_video_assets_without_dash(&mut conn))
             .into_iter()
             .collect();
     let expected: HashSet<VideoAsset> = [
-        Asset {
-            base: AssetBase {
-                id: asset4_id,
-                ..asset4.base
-            },
-            ..asset4
-        },
-        Asset {
-            base: AssetBase {
-                id: asset_id,
-                ..asset.base
-            },
-            ..asset
-        },
+        make_created_asset(
+            &asset4,
+            &assert_ok!(repository::asset::get_asset(&mut conn, asset4_id)),
+        ),
+        make_created_asset(
+            &asset,
+            &assert_ok!(repository::asset::get_asset(&mut conn, asset_id)),
+        ),
     ]
     .into_iter()
     .map(|a| a.try_into().unwrap())
@@ -351,15 +267,12 @@ fn get_videos_in_acceptable_codec_without_dash() {
         &asset_root_dir
     ));
     // h264 aac with dash
-    let asset1 = Asset {
-        base: AssetBase {
-            id: AssetId(0),
-            ty: AssetType::Video,
+    let asset1 = CreateAsset {
+        base: CreateAssetBase {
             root_dir_id,
             file_type: "mp4".to_owned(),
             file_path: PathBuf::from("video.mp4"),
             is_hidden: false,
-            added_at: utc_now_millis_zero(),
             taken_date: utc_now_millis_zero()
                 .checked_sub_months(Months::new(3))
                 .unwrap(),
@@ -371,96 +284,82 @@ fn get_videos_in_acceptable_codec_without_dash() {
             rotation_correction: Some(90),
             hash: None,
             gps_coordinates: None,
+            exiftool_output: Default::default(),
         },
-        sp: AssetSpe::Video(Video {
+        spe: CreateAssetSpe::Video(CreateAssetVideo {
             video_codec_name: "h264".to_owned(),
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
             has_dash: true,
+            video_duration_ms: Some(43444444),
+            ffprobe_output: FFProbeOutput(Default::default()),
         }),
     };
     // h264 flac no dash
-    let asset2 = Asset {
-        base: AssetBase {
+    let asset2 = CreateAsset {
+        base: CreateAssetBase {
             file_path: "video2.mp4".into(),
             ..asset1.base.clone()
         },
-        sp: AssetSpe::Video(Video {
+        spe: CreateAssetSpe::Video(CreateAssetVideo {
             video_codec_name: "h264".to_owned(),
             video_bitrate: 1234,
             audio_codec_name: Some("flac".into()),
             has_dash: false,
+            video_duration_ms: None,
+            ffprobe_output: FFProbeOutput(Default::default()),
         }),
     };
     // hevc aac with dash
-    let asset3 = Asset {
-        sp: AssetSpe::Video(Video {
+    let asset3 = CreateAsset {
+        spe: CreateAssetSpe::Video(CreateAssetVideo {
             video_codec_name: "hevc".into(),
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
             has_dash: true,
+            video_duration_ms: None,
+            ffprobe_output: FFProbeOutput(Default::default()),
         }),
-        base: AssetBase {
+        base: CreateAssetBase {
             file_path: "video3.mp4".into(),
             ..asset1.base.clone()
         },
     };
     // hevc aac no dash
-    let asset4 = Asset {
-        sp: AssetSpe::Video(Video {
+    let asset4 = CreateAsset {
+        spe: CreateAssetSpe::Video(CreateAssetVideo {
             video_codec_name: "hevc".into(),
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
             has_dash: false,
+            video_duration_ms: Some(12333),
+            ffprobe_output: FFProbeOutput(Default::default()),
         }),
-        base: AssetBase {
+        base: CreateAssetBase {
             file_path: "video4.mp4".into(),
             ..asset1.base.clone()
         },
     };
     // hevc mp3 no dash
-    let asset5 = Asset {
-        sp: AssetSpe::Video(Video {
+    let asset5 = CreateAsset {
+        spe: CreateAssetSpe::Video(CreateAssetVideo {
             video_codec_name: "hevc".into(),
             video_bitrate: 1234,
             audio_codec_name: Some("mp3".into()),
             has_dash: false,
+            video_duration_ms: Some(1233),
+            ffprobe_output: FFProbeOutput(Default::default()),
         }),
-        base: AssetBase {
+        base: CreateAssetBase {
             file_path: "video5.mp4".into(),
             ..asset1.base.clone()
         },
     };
-    #[allow(deprecated)]
-    let _asset1_id = assert_ok!(repository::asset::insert_asset(
-        &mut conn,
-        &asset1,
-        Some(&[])
-    ));
-    #[allow(deprecated)]
-    let asset2_id = assert_ok!(repository::asset::insert_asset(
-        &mut conn,
-        &asset2,
-        Some(&[])
-    ));
-    #[allow(deprecated)]
-    let _asset3_id = assert_ok!(repository::asset::insert_asset(
-        &mut conn,
-        &asset3,
-        Some(&[])
-    ));
-    #[allow(deprecated)]
-    let asset4_id = assert_ok!(repository::asset::insert_asset(
-        &mut conn,
-        &asset4,
-        Some(&[])
-    ));
-    #[allow(deprecated)]
-    let asset5_id = assert_ok!(repository::asset::insert_asset(
-        &mut conn,
-        &asset5,
-        Some(&[])
-    ));
+    let _asset1_id = assert_ok!(repository::asset::create_asset(&mut conn, asset1,));
+    let asset2_id = assert_ok!(repository::asset::create_asset(&mut conn, asset2,));
+    let _asset3_id = assert_ok!(repository::asset::create_asset(&mut conn, asset3,));
+    let asset4_id = assert_ok!(repository::asset::create_asset(&mut conn, asset4,));
+    let asset5_id = assert_ok!(repository::asset::create_asset(&mut conn, asset5,));
     let acceptable_video_codecs1 = ["h264"];
     let acceptable_audio_codecs1 = ["aac", "flac"];
     repository::config::set_acceptable_video_codecs(&mut conn, acceptable_video_codecs1).unwrap();
@@ -555,8 +454,12 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
                     None => Just(None).boxed(),
                     Some(codec) => arb_new_audio_repr(codec).prop_map(Some).boxed()
             }
-        )-> (VideoAsset, Vec<VideoRepresentation>, Option<AudioRepresentation>) {
-            let audio_repr = match (&asset.video.audio_codec_name, audio_repr) {
+        )-> (CreateAsset, Vec<VideoRepresentation>, Option<AudioRepresentation>) {
+            let video = match &asset.spe {
+                CreateAssetSpe::Video(video) => video,
+                CreateAssetSpe::Image(_) => panic!(),
+            };
+            let audio_repr = match (&video.audio_codec_name, audio_repr) {
                 // if the original asset has no audio we don't generate
                 // additional audio reprs
                 (None, _) => None,
@@ -576,11 +479,11 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
         let root_dir_id = assert_ok!(repository::asset_root_dir::insert_asset_root(&mut conn, &asset_root_dir));
         repository::config::set_acceptable_video_codecs(&mut conn, &acceptable_video_codecs).unwrap();
         repository::config::set_acceptable_audio_codecs(&mut conn, &acceptable_audio_codecs).unwrap();
-        let mut assets_with_ids: Vec<VideoAsset> = Vec::default();
+        let mut assets_with_ids: Vec<Asset> = Vec::default();
         let assets_and_reprs: Vec<_> = assets_and_reprs
             .into_iter()
             .map(|(asset, video_repr, audio_repr)|
-                (set_video_asset_root_dir(asset, root_dir_id), video_repr, audio_repr)
+                (set_asset_root_dir(asset, root_dir_id), video_repr, audio_repr)
         ).collect();
         for (asset, video_reprs, audio_repr) in &assets_and_reprs {
             let path_exists = repository::asset::asset_or_duplicate_with_path_exists(&mut conn, root_dir_id, &asset.base.file_path);
@@ -588,18 +491,11 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
             if path_exists.unwrap() {
                 continue;
             }
-            let ffprobe_output = Some(&[]);
-            #[allow(deprecated)]
-            let asset_insert_result = repository::asset::insert_asset(&mut conn, &asset.into(), ffprobe_output);
-            prop_assert!(asset_insert_result.is_ok(), "Error inserting asset: {}", asset_insert_result.unwrap_err());
-            let asset_id = asset_insert_result.unwrap();
-            assets_with_ids.push(VideoAsset {
-                base:AssetBase {
-                    id: asset_id,
-                    ..asset.base.clone()
-                },
-                ..asset.clone()
-            });
+            let asset = prop_insert_create_test_asset(&mut conn, asset);
+            prop_assert!(asset.is_ok(), "Error inserting asset: {}", asset.unwrap_err());
+            let asset = asset.unwrap();
+            let asset_id = asset.base.id;
+            assets_with_ids.push(asset);
             let tx_result = conn.transaction(|conn| {
                 for repr in video_reprs {
                     let repr_insert_result = repository::representation::insert_video_representation(
@@ -626,11 +522,15 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
         let expected_no_acceptable_reprs: HashSet<AssetId> = assets_with_ids.iter().zip(assets_and_reprs.iter())
             .filter(|(asset, (_, video_reprs, audio_repr))| {
                 let mut video_repr_codecs: HashSet<String> = video_reprs.iter().map(|repr| repr.codec_name.clone()).collect::<HashSet<_>>();
+                let video = match &asset.sp {
+                    AssetSpe::Video(video) => video,
+                    AssetSpe::Image(_) => panic!(),
+                };
                 if asset.base.file_type == "mp4" {
-                    video_repr_codecs.insert(asset.video.video_codec_name.clone());
+                    video_repr_codecs.insert(video.video_codec_name.clone());
                 }
                 let video_repr_missing = acceptable_video_codecs.intersection(&video_repr_codecs).collect_vec().is_empty();
-                let audio_repr_missing = match &asset.video.audio_codec_name {
+                let audio_repr_missing = match &video.audio_codec_name {
                     None => false,
                     Some(orig_codec) => {
                         let mut audio_repr_codecs: HashSet<String> = audio_repr.iter().map(|repr| repr.codec_name.clone()).collect();

@@ -2,15 +2,15 @@ use proptest::prelude::*;
 
 use crate::model::{
     repository::{self, db::DbConn, timeline_group::CreateTimelineGroup},
-    Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, TimelineGroup, TimelineGroupId,
-    VideoAsset,
+    Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, AssetType, CreateAsset, CreateAssetBase,
+    CreateAssetSpe, Image, TimelineGroup, TimelineGroupId, Video, VideoAsset,
 };
 
 /// Inserts asset and returns them in the same order, with asset_id set
 /// For VideoAssets, it uses an empty string as ffprobe_output
 pub fn prop_insert_create_test_assets(
     conn: &mut DbConn,
-    assets: &[Asset],
+    assets: &[CreateAsset],
 ) -> Result<Vec<Asset>, TestCaseError> {
     let mut assets_with_ids: Vec<Asset> = Vec::default();
     for asset in assets {
@@ -22,29 +22,23 @@ pub fn prop_insert_create_test_assets(
 
 pub fn prop_insert_create_test_asset(
     conn: &mut DbConn,
-    asset: &Asset,
+    asset: &CreateAsset,
 ) -> Result<Asset, TestCaseError> {
-    let ffprobe_output: Option<&[u8]> = match &asset.sp {
-        AssetSpe::Video(_video) => Some(&[]),
-        _ => None,
-    };
-    #[allow(deprecated)]
-    let asset_insert_result = repository::asset::insert_asset(conn, asset, ffprobe_output);
+    let asset_insert_result = repository::asset::create_asset(conn, asset.clone());
     prop_assert!(
         asset_insert_result.is_ok(),
         "Inserting Asset returned error: {}",
         asset_insert_result.unwrap_err()
     );
     let asset_id = asset_insert_result.unwrap();
-    let asset_with_id = Asset {
-        base: AssetBase {
-            id: asset_id,
-            ..asset.base.clone()
-        },
-        ..asset.clone()
-    };
-    prop_assert_ne!(asset_with_id.base.id, AssetId(0));
-    Ok(asset_with_id)
+    let retrieved = repository::asset::get_asset(conn, asset_id);
+    prop_assert!(
+        retrieved.is_ok(),
+        "retrieve failed: {:?}",
+        retrieved.unwrap_err()
+    );
+    let retrieved = retrieved.unwrap();
+    Ok(make_created_asset(asset, &retrieved))
 }
 
 /// Inserts empty albums, then adds assets to them
@@ -103,26 +97,29 @@ pub fn prop_insert_timeline_group_add_assets(
     Ok(group_with_id)
 }
 
-pub fn set_assets_root_dir(assets: Vec<Asset>, root_dir_id: AssetRootDirId) -> Vec<Asset> {
+pub fn set_assets_root_dir(
+    assets: Vec<CreateAsset>,
+    root_dir_id: AssetRootDirId,
+) -> Vec<CreateAsset> {
     assets
         .into_iter()
-        .map(|asset| Asset {
-            base: AssetBase {
+        .map(|asset| CreateAsset {
+            base: CreateAssetBase {
                 root_dir_id,
                 ..asset.base
             },
-            sp: asset.sp,
+            spe: asset.spe,
         })
         .collect()
 }
 
-pub fn set_asset_root_dir(asset: Asset, root_dir_id: AssetRootDirId) -> Asset {
-    Asset {
-        base: AssetBase {
+pub fn set_asset_root_dir(asset: CreateAsset, root_dir_id: AssetRootDirId) -> CreateAsset {
+    CreateAsset {
+        base: CreateAssetBase {
             root_dir_id,
             ..asset.base
         },
-        sp: asset.sp,
+        ..asset
     }
 }
 
@@ -133,5 +130,40 @@ pub fn set_video_asset_root_dir(asset: VideoAsset, root_dir_id: AssetRootDirId) 
             ..asset.base
         },
         video: asset.video,
+    }
+}
+
+pub fn make_created_asset(asset: &CreateAsset, inserted: &Asset) -> Asset {
+    Asset {
+        base: AssetBase {
+            ty: match &asset.spe {
+                CreateAssetSpe::Image(_) => AssetType::Image,
+                CreateAssetSpe::Video(_) => AssetType::Video,
+            },
+            root_dir_id: asset.base.root_dir_id,
+            file_type: asset.base.file_type.clone(),
+            file_path: asset.base.file_path.clone(),
+            is_hidden: asset.base.is_hidden,
+            taken_date: asset.base.taken_date,
+            timestamp_info: asset.base.timestamp_info.clone(),
+            size: asset.base.size,
+            rotation_correction: asset.base.rotation_correction,
+            gps_coordinates: asset.base.gps_coordinates,
+
+            id: inserted.base.id,
+            added_at: inserted.base.added_at,
+            hash: inserted.base.hash,
+        },
+        sp: match &asset.spe {
+            CreateAssetSpe::Image(img) => AssetSpe::Image(Image {
+                image_format_name: img.image_format_name.clone(),
+            }),
+            CreateAssetSpe::Video(vid) => AssetSpe::Video(Video {
+                video_codec_name: vid.video_codec_name.clone(),
+                video_bitrate: vid.video_bitrate,
+                audio_codec_name: vid.audio_codec_name.clone(),
+                has_dash: vid.has_dash,
+            }),
+        },
     }
 }

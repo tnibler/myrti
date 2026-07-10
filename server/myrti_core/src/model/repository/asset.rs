@@ -217,7 +217,7 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
         root_dir_id: create_asset.base.root_dir_id.0,
         file_type: create_asset.base.file_type.into(),
         file_path: create_asset.base.file_path.as_str().into(),
-        is_hidden: bool_to_int(false),
+        is_hidden: bool_to_int(create_asset.base.is_hidden),
         hash: create_asset
             .base
             .hash

@@ -187,6 +187,7 @@ pub async fn index_file(
         taken_date: timestamp,
         timestamp_info,
         size,
+        is_hidden: false,
         rotation_correction: None,
         exiftool_output: exiftool_json,
         hash: Some(hash),

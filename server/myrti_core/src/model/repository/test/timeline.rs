@@ -7,20 +7,24 @@ use is_sorted::IsSorted;
 use proptest::prelude::*;
 
 use crate::model::{
-    repository, repository::timeline::TimelineElement,  Asset, AssetId,
-    AssetRootDir, AssetRootDirId, TimelineGroup,
-    repository::db::DbConn,
+    repository::{self, db::DbConn, timeline::TimelineElement},
+    Asset, AssetId, AssetRootDir, AssetRootDirId, CreateAsset, TimelineGroup,
 };
-use proptest_arb::{arb_new_timeline_group, arb_new_asset};
+use proptest_arb::{arb_new_asset, arb_new_timeline_group};
 
 use super::{util::*, *};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct GroupWithCreateAssets {
+    pub group: TimelineGroup,
+    pub assets: Vec<CreateAsset>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct GroupWithAssets {
     pub group: TimelineGroup,
     pub assets: Vec<Asset>,
 }
-
 
 #[test]
 fn prop_test_timeline() {
@@ -39,8 +43,8 @@ fn prop_test_timeline() {
         (
             group in arb_new_timeline_group(),
             assets in prop::collection::vec(arb_new_asset(), 1..30)
-        ) -> GroupWithAssets {
-            GroupWithAssets { group, assets }
+        ) -> GroupWithCreateAssets {
+            GroupWithCreateAssets { group, assets }
         }
     }
     proptest!(|(
@@ -59,8 +63,8 @@ fn prop_test_timeline() {
         let root_dir_id = assert_ok!(repository::asset_root_dir::insert_asset_root(&mut conn, &asset_root_dir));
         // set root_dir_id for all assets
         let assets_not_in_groups = set_assets_root_dir(assets_not_in_groups, root_dir_id);
-        let groups_with_assets: Vec<GroupWithAssets> = groups_with_assets.into_iter().map(|gwa| {
-            GroupWithAssets {
+        let groups_with_assets: Vec<GroupWithCreateAssets> = groups_with_assets.into_iter().map(|gwa| {
+            GroupWithCreateAssets {
                 assets: set_assets_root_dir(gwa.assets, root_dir_id),
                 group: gwa.group,
             }
@@ -124,7 +128,7 @@ fn prop_test_timeline() {
         let next_chunk = {
             let c = repository::timeline::get_timeline_chunk(&mut conn, last_id, timeline_chunk_size as i64);
             prop_assert!(c.is_ok(), "get_timeline_chunk error:\n{}", c.unwrap_err());
-            c.unwrap() 
+            c.unwrap()
         };
         prop_assert!(next_chunk.is_empty());
 
@@ -166,9 +170,9 @@ fn prop_test_timeline() {
                     }
                 }
                 let last_el = match last_timeline_element {
-                    None => { 
-                        last_timeline_element = Some(tlel); 
-                        continue; 
+                    None => {
+                        last_timeline_element = Some(tlel);
+                        continue;
                     }
                     Some(last_el) => last_el
                 };
@@ -215,7 +219,7 @@ fn prop_test_timeline() {
 
 fn prop_insert_timeline_groups_insert_add_assets(
     conn: &mut DbConn,
-    groups: &[GroupWithAssets],
+    groups: &[GroupWithCreateAssets],
 ) -> Result<Vec<GroupWithAssets>, TestCaseError> {
     let mut groups_with_ids: Vec<GroupWithAssets> = Vec::default();
     for group in groups {
@@ -224,8 +228,7 @@ fn prop_insert_timeline_groups_insert_add_assets(
             conn,
             &group.group.clone(),
             assets_with_id.iter().map(|asset| asset.base.id),
-        )
-        ?;
+        )?;
         groups_with_ids.push(GroupWithAssets {
             assets: assets_with_id,
             group: group_with_id,

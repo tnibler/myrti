@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
-use eyre::Result;
+use eyre::{eyre, Result};
 use tracing::instrument;
 
 use crate::model::{
@@ -126,6 +126,35 @@ pub fn add_assets_to_group(
         .bind::<diesel::sql_types::BigInt, _>(group_id.0)
         .execute(conn)?;
         Ok(())
+    })
+}
+
+#[instrument(skip(conn))]
+pub fn remove_assets_from_group(
+    conn: &mut DbConn,
+    group_id: TimelineGroupId,
+    asset_ids: &[AssetId],
+) -> Result<()> {
+    use schema::TimelineGroupItem;
+    if asset_ids.is_empty() {
+        return Ok(());
+    }
+    conn.transaction(|conn| {
+        let affected_rows = diesel::delete(
+            TimelineGroupItem::table.filter(
+                TimelineGroupItem::asset_id
+                    .eq_any(asset_ids.iter().map(|id| id.0))
+                    .and(TimelineGroupItem::group_id.eq(group_id.0)),
+            ),
+        )
+        .execute(conn)?;
+        if affected_rows != asset_ids.len() {
+            Err(eyre!(
+                "mismatch: not all asset_ids belonged to specified group_id"
+            ))
+        } else {
+            Ok(())
+        }
     })
 }
 

@@ -53,7 +53,8 @@ pub async fn ffprobe_get_streams(
         .wait_with_output()
         .await
         .wrap_err("ffprobe error")?;
-    let parsed_streams = ffprobe_get_streams_from_json(&ffprobe_result.stdout)?;
+    let parsed_streams = ffprobe_get_streams_from_json(&ffprobe_result.stdout)
+        .with_context(|| format!("error parsings ffprobe streams for {}", path))?;
     Ok((ffprobe_result.stdout, parsed_streams))
 }
 
@@ -101,8 +102,12 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
         pub streams: Vec<FFProbeStreamType>,
     }
 
-    let parsed: FFProbeOutput =
-        serde_json::from_slice(json).wrap_err("could not parse ffprobe output")?;
+    let parsed: FFProbeOutput = serde_json::from_slice(json).wrap_err_with(|| {
+        format!(
+            "could not parse ffprobe output:\n{}",
+            String::from_utf8_lossy(json)
+        )
+    })?;
     let streams: Result<Vec<StreamType>> = parsed
         .streams
         .into_iter()

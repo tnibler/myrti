@@ -61,6 +61,7 @@ pub struct CreateAssetBase {
     pub taken_date: DateTime<Utc>,
     pub timestamp_info: TimestampInfo,
     pub size: Size,
+    pub is_hidden: bool,
     /// degrees clockwise
     pub rotation_correction: Option<i32>,
     /// Seahash of the file, if already computed

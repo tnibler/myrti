@@ -4,8 +4,8 @@ use proptest::prelude::*;
 use crate::model::{
     Album, AlbumId, AlbumItem, AlbumItemType, Asset, AssetBase, AssetId, AssetRootDirId, AssetType,
     CreateAsset, CreateAssetBase, CreateAssetImage, CreateAssetSpe, CreateAssetVideo,
-    GpsCoordinates, Image, ImageAsset, Size, TimelineGroup, TimelineGroupId, TimestampInfo, Video,
-    VideoAsset,
+    FFProbeOutput, GpsCoordinates, Image, ImageAsset, Size, TimelineGroup, TimelineGroupId,
+    TimestampInfo, Video, VideoAsset,
 };
 
 fn path_strategy() -> BoxedStrategy<PathBuf> {
@@ -54,13 +54,11 @@ pub fn timestamp_info_strategy() -> BoxedStrategy<TimestampInfo> {
 
 prop_compose! {
     pub fn arb_new_asset_base(
-        ty: AssetType,
         file_type: String,
     )
     (
         file_path in path_strategy().no_shrink(),
         is_hidden in any::<bool>(),
-        added_at in arb_datetime_utc(),
         taken_date in arb_datetime_utc(),
         timestamp_info in timestamp_info_strategy(),
         size in (200..4000_i32, 200..4000_i32).prop_map(|(w, h)| Size { width: w, height: h}),
@@ -75,21 +73,20 @@ prop_compose! {
             gps_coords_strategy().prop_map(Some)
         ],
         hash in any::<Option<u64>>().no_shrink(),
-    ) -> AssetBase {
-        AssetBase {
-            id: AssetId(0),
-            ty,
+        exiftool_output in any::<Vec<u8>>().no_shrink(),
+    ) -> CreateAssetBase {
+        CreateAssetBase {
             root_dir_id: AssetRootDirId(0),
             file_type: file_type.clone(),
             file_path,
             is_hidden,
-            added_at,
             taken_date,
             timestamp_info,
             size,
             rotation_correction,
             gps_coordinates,
             hash,
+            exiftool_output,
         }
     }
 }
@@ -100,12 +97,12 @@ prop_compose! {
         file_type in "jpeg|png|webp|avif|heic"
     )
     (
-        base in arb_new_asset_base(AssetType::Image, file_type)
-    ) -> ImageAsset {
-        ImageAsset {
-            image: Image {
+        base in arb_new_asset_base(file_type)
+    ) -> CreateAsset {
+        CreateAsset {
+            spe: CreateAssetSpe::Image(CreateAssetImage {
                 image_format_name: base.file_type.clone()
-            },
+            }),
             base,
         }
     }
@@ -117,42 +114,48 @@ prop_compose! {
         file_type in "mp4|mov|avi",
     )
     (
-        base in arb_new_asset_base(AssetType::Video, file_type),
+        base in arb_new_asset_base(file_type),
         video_codec_name in "h264|hevc|av1|vp9|mjpeg",
         video_bitrate in 800_000_i64..5_000_000,
         audio_codec_name in prop_oneof![
             1 => Just(None),
             4 => "mp3|aac|opus|pcm_u8".prop_map(Some),
         ],
-    ) -> VideoAsset {
-        VideoAsset {
+        video_duration_ms in any::<Option<i64>>().no_shrink(),
+        ffprobe_output in any::<Vec<u8>>().no_shrink(),
+    ) -> CreateAsset {
+        CreateAsset {
             base,
-            video: Video {
+            spe: CreateAssetSpe::Video(CreateAssetVideo {
                 video_codec_name,
                 video_bitrate,
                 audio_codec_name,
-                has_dash: false
-            }
+                has_dash: false,
+                video_duration_ms,
+                ffprobe_output: FFProbeOutput(ffprobe_output),
+            }),
         }
     }
 }
 
-pub fn arb_new_album_item() -> BoxedStrategy<AlbumItemType> {
+#[derive(Debug, Clone, PartialEq, Hash)]
+pub enum ArbCreateAlbumItem {
+    Asset(CreateAsset),
+    Text(String),
+}
+
+pub fn arb_new_album_item() -> BoxedStrategy<ArbCreateAlbumItem> {
     prop_oneof![
-        arb_new_asset().prop_map(AlbumItemType::Asset),
+        arb_new_asset().prop_map(ArbCreateAlbumItem::Asset),
         prop::string::string_regex("[a-zA-Z0-9 .,-]+")
             .unwrap()
-            .prop_map(AlbumItemType::Text)
+            .prop_map(ArbCreateAlbumItem::Text)
     ]
     .boxed()
 }
 
-pub fn arb_new_asset() -> BoxedStrategy<Asset> {
-    prop_oneof![
-        arb_new_image_asset().prop_map(|image| image.into()),
-        arb_new_video_asset().prop_map(|video| video.into())
-    ]
-    .boxed()
+pub fn arb_new_asset() -> BoxedStrategy<CreateAsset> {
+    prop_oneof![arb_new_image_asset(), arb_new_video_asset()].boxed()
 }
 
 prop_compose! {
@@ -213,61 +216,65 @@ prop_compose! {
             gps_coords_strategy().prop_map(Some)
         ],
         hash in any::<Option<u64>>().no_shrink(),
+        is_hidden in any::<bool>(),
+        exiftool_output in any::<Vec<u8>>().no_shrink(),
     ) -> CreateAssetBase {
         CreateAssetBase {
             root_dir_id: asset_root_id,
             file_type: file_type.clone(),
             file_path,
             taken_date,
+            is_hidden,
             timestamp_info,
             size,
             rotation_correction,
             gps_coordinates,
             hash,
+            exiftool_output,
         }
     }
 }
 
-prop_compose! {
-    pub fn arb_new_create_image_asset(asset_root_dir_id: AssetRootDirId)
-    (
-        file_type in "jpeg|png|webp|avif|heic"
-    )
-    (
-        base in arb_new_create_asset_base(asset_root_dir_id, file_type)
-    ) -> CreateAsset {
-        CreateAsset {
-            spe: CreateAssetSpe::Image(CreateAssetImage  {
-                image_format_name: base.file_type.clone()
-            }),
-            base,
-        }
-    }
-}
-
-prop_compose! {
-    pub fn arb_new_create_video_asset(asset_root_dir_id: AssetRootDirId)
-    (
-        file_type in "mp4|mov|avi",
-    )
-    (
-        base in arb_new_create_asset_base(asset_root_dir_id, file_type),
-        video_codec_name in "h264|hevc|av1|vp9|mjpeg",
-        video_bitrate in 800_000_i64..5_000_000,
-        audio_codec_name in prop_oneof![
-            1 => Just(None),
-            4 => "mp3|aac|opus|pcm_u8".prop_map(Some),
-        ],
-    ) -> CreateAsset {
-        CreateAsset {
-            base,
-            spe: CreateAssetSpe::Video(CreateAssetVideo {
-                video_codec_name,
-                video_bitrate,
-                audio_codec_name,
-                has_dash: false,
-                ffprobe_output: Default::default(),
-            })
-        }
-    }
-}
+// prop_compose! {
+//     pub fn arb_new_create_image_asset(asset_root_dir_id: AssetRootDirId)
+//     (
+//         file_type in "jpeg|png|webp|avif|heic"
+//     )
+//     (
+//         base in arb_new_create_asset_base(asset_root_dir_id, file_type)
+//     ) -> CreateAsset {
+//         CreateAsset {
+//             spe: CreateAssetSpe::Image(CreateAssetImage  {
+//                 image_format_name: base.file_type.clone()
+//             }),
+//             base,
+//         }
+//     }
+// }
+//
+// prop_compose! {
+//     pub fn arb_new_create_video_asset(asset_root_dir_id: AssetRootDirId)
+//     (
+//         file_type in "mp4|mov|avi",
+//     )
+//     (
+//         base in arb_new_create_asset_base(asset_root_dir_id, file_type),
+//         video_codec_name in "h264|hevc|av1|vp9|mjpeg",
+//         video_bitrate in 800_000_i64..5_000_000,
+//         audio_codec_name in prop_oneof![
+//             1 => Just(None),
+//             4 => "mp3|aac|opus|pcm_u8".prop_map(Some),
+//         ],
+//     ) -> CreateAsset {
+//         CreateAsset {
+//             base,
+//             spe: CreateAssetSpe::Video(CreateAssetVideo {
+//                 video_codec_name,
+//                 video_bitrate,
+//                 audio_codec_name,
+//                 has_dash: false,
+//                 ffprobe_output: Default::default(),
+//             })
+//         }
+//     }
+// }

@@ -27,6 +27,7 @@ fn insert_retrieve_video_representation() {
             audio_codec_name: Some("aac".into()),
             has_dash: false,
             ffprobe_output: Default::default(),
+            video_duration_ms: None,
         }),
         base: CreateAssetBase {
             root_dir_id,
@@ -40,9 +41,11 @@ fn insert_retrieve_video_representation() {
                 width: 1024,
                 height: 1023,
             },
+            is_hidden: false,
             rotation_correction: None,
             gps_coordinates: None,
             hash: None,
+            exiftool_output: Default::default(),
         },
     };
     let asset2 = CreateAsset {
@@ -52,6 +55,7 @@ fn insert_retrieve_video_representation() {
             audio_codec_name: Some("opus".into()),
             has_dash: false,
             ffprobe_output: Default::default(),
+            video_duration_ms: Some(14444),
         }),
         base: CreateAssetBase {
             root_dir_id,
@@ -65,9 +69,11 @@ fn insert_retrieve_video_representation() {
                 width: 1024,
                 height: 1023,
             },
+            is_hidden: false,
             rotation_correction: None,
             hash: None,
             gps_coordinates: None,
+            exiftool_output: Default::default(),
         },
     };
     let asset_id = assert_ok!(repository::asset::create_asset(&mut conn, asset));
@@ -159,6 +165,7 @@ fn insert_retrieve_audio_representation() {
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
             has_dash: false,
+            video_duration_ms: None,
             ffprobe_output: Default::default(),
         }),
         base: CreateAssetBase {
@@ -173,9 +180,11 @@ fn insert_retrieve_audio_representation() {
                 width: 1024,
                 height: 1023,
             },
+            is_hidden: false,
             rotation_correction: None,
             hash: None,
             gps_coordinates: None,
+            exiftool_output: Default::default(),
         },
     };
     let asset2 = CreateAsset {
@@ -185,6 +194,7 @@ fn insert_retrieve_audio_representation() {
             audio_codec_name: Some("mp3".into()),
             has_dash: false,
             ffprobe_output: Default::default(),
+            video_duration_ms: Some(123433423),
         }),
         base: CreateAssetBase {
             root_dir_id,
@@ -198,9 +208,11 @@ fn insert_retrieve_audio_representation() {
                 width: 1024,
                 height: 1023,
             },
+            is_hidden: false,
             rotation_correction: None,
             hash: None,
             gps_coordinates: None,
+            exiftool_output: Default::default(),
         },
     };
     let asset_id = assert_ok!(repository::asset::create_asset(&mut conn, asset));

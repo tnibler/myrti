@@ -37,9 +37,11 @@ fn insert_retrieve_image_representation() {
                 width: 1024,
                 height: 1023,
             },
+            is_hidden: false,
             rotation_correction: None,
             hash: Some(0x56a28ebc104e84),
             gps_coordinates: None,
+            exiftool_output: Default::default(),
         },
     };
     let asset_id = assert_ok!(repository::asset::create_asset(&mut conn, asset));
@@ -70,8 +72,8 @@ fn insert_retrieve_image_representation() {
     assert_eq!(expected, retrieved);
 }
 
-#[tokio::test]
-async fn get_images_with_no_acceptable_repr() {
+#[test]
+fn get_images_with_no_acceptable_repr() {
     let mut conn = super::db::open_in_memory_and_migrate();
     let asset_root_dir = AssetRootDir {
         id: AssetRootDirId(0),
@@ -97,12 +99,14 @@ async fn get_images_with_no_acceptable_repr() {
                 width: 1024,
                 height: 1023,
             },
+            is_hidden: false,
             rotation_correction: None,
             hash: Some(0x56a28ebc104e84),
             gps_coordinates: None,
+            exiftool_output: Default::default(),
         },
     };
-    let asset1_id = assert_ok!(repository::asset::create_asset(&mut conn, asset1));
+    let _asset1_id = assert_ok!(repository::asset::create_asset(&mut conn, asset1));
     let asset2 = CreateAsset {
         spe: CreateAssetSpe::Image(CreateAssetImage {
             image_format_name: "heif".into(),
@@ -119,9 +123,11 @@ async fn get_images_with_no_acceptable_repr() {
                 width: 1024,
                 height: 1023,
             },
+            is_hidden: false,
             rotation_correction: None,
             hash: Some(0x123),
             gps_coordinates: None,
+            exiftool_output: Default::default(),
         },
     };
     let asset2_id = assert_ok!(repository::asset::create_asset(&mut conn, asset2));

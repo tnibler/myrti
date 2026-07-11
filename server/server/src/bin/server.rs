@@ -17,7 +17,7 @@ use tower::ServiceBuilder;
 use tower_http::{
     cors::{Any, CorsLayer},
     request_id::MakeRequestUuid,
-    services::ServeDir,
+    services::{ServeDir, ServeFile},
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     ServiceBuilderExt,
 };
@@ -185,6 +185,7 @@ async fn main() -> Result<()> {
     } else {
         config_dir.join(&config.data_dir.path)
     };
+    let pmtiles_path = data_dir_path.join("map.pmtiles");
     info!("Starting up...");
     if !std::fs::exists(&data_dir_path)? {
         std::fs::create_dir(&data_dir_path)
@@ -241,8 +242,8 @@ async fn main() -> Result<()> {
         .nest("/api/jobs", routes::jobs::router())
         .nest("/api/map", routes::map::router())
         .nest("/api", routes::api_router())
-        .fallback_service(ServeDir::new("/home/thomas/Downloads"))
-        // .fallback_service(SpaServeDirService::new(ServeDir::new("./static")))
+        .nest_service("/static/map.pmtiles", ServeFile::new(&pmtiles_path))
+        .fallback_service(SpaServeDirService::new(ServeDir::new("./static")))
         .layer(
             ServiceBuilder::new()
                 .set_x_request_id(MakeRequestUuid)

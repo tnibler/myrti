@@ -6,6 +6,7 @@ import type {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   TimelineItem as ApiTimelineItem,
   AssetSeriesId,
+  TimelineGroupId,
 } from '@api/myrti';
 import { dayjs } from '@lib/dayjs';
 import { klona } from 'klona/json';
@@ -19,6 +20,7 @@ import {
   getTimelineSegments,
   setAssetsHidden,
   setAssetIsSeriesSelection,
+  editTimelineGroup,
 } from '../../api/myrti';
 import {
   createSeriesResponse,
@@ -93,6 +95,10 @@ export interface ITimelineGrid {
   readonly visibleItems: ItemRange;
   readonly options: TimelineOptions;
   readonly addToGroupClickAreas: AddToGroupClickArea[];
+  readonly editGroupEnabled: 'none' | 'add' | 'remove';
+  readonly createStackEnabled: boolean;
+  readonly addToStackEnabled: boolean;
+  readonly deleteStackEnabled: boolean;
   // /** Assets are highlighted when something is selected and shift is pressed to preview
   //  * possible range selection. */
   // readonly selectionPreviewIds: Map<AssetId, boolean>;
@@ -126,6 +132,7 @@ export interface ITimelineGrid {
   createStackClicked: () => Promise<void>;
   cancelCreateGroup: () => Promise<void>;
   confirmCreateGroup: (title: string) => Promise<void>;
+  removeFromGroupClicked: () => Promise<void>;
   addSelectedToExistingGroup: (groupId: string) => Promise<void>;
   setAssetSeriesSelection: (assetId: string, isSeriesSelection: boolean) => Promise<void>;
 
@@ -1246,7 +1253,7 @@ export function createTimeline(
       return;
     }
 
-    // await addToTimelineGroup({ assets: assetIdsInGroup, groupId });
+    await editTimelineGroup({ assets: assetIdsInGroup, groupId, operation: 'add' });
 
     let mergeInto: (TimelineSegment & { type: 'group' }) | null = null;
     outer: for (const [sectionIdx, section] of newSections.entries()) {
@@ -1322,10 +1329,177 @@ export function createTimeline(
     }
   }
 
+  // TODO: exit creating group mode when selection is canceled or empty
+  $effect(() => {
+    if (state.state === 'creatingTimelineGroup' && selectedItems.size === 0) {
+      cancelCreateGroup();
+    }
+  });
+
+  const editGroupEnabled = $derived.by(() => {
+    if (state.state !== 'justLooking') {
+      return 'none';
+    }
+    if (selectedItems.size === 0) {
+      return 'none';
+    }
+    let selectedGroupId = null;
+    let anyNotInGroup = false;
+    let anyInGroup = false;
+    for (const { item } of selectedItems.values()) {
+      const { segment } = getContainingSegment(item);
+      if (!segment) {
+        console.error('containing segment is null');
+        return 'none';
+      }
+      if (segment.type !== 'group') {
+        anyNotInGroup = true;
+      } else if (selectedGroupId === null) {
+        selectedGroupId = segment.groupId;
+        anyInGroup = true;
+      } else if (segment.groupId !== selectedGroupId) {
+        return 'none';
+      }
+    }
+    if (!anyInGroup) {
+      return 'add';
+    } else if (anyInGroup && !anyNotInGroup) {
+      return 'remove';
+    }
+    return 'none';
+  });
+
+  const createStackEnabled = $derived.by(() => {
+    if (state.state !== 'justLooking') {
+      return false;
+    }
+    if (
+      selectedItems.size < 2 ||
+      selectedItems.values().find((item) => item.item.itemType === 'photoStack') !== undefined
+    ) {
+      return false;
+    }
+    let anyInGroup = null;
+    for (const { item } of selectedItems.values()) {
+      console.assert(item.itemType === 'asset');
+      if (item.itemType === 'asset') {
+        const groupId = getContainingGroup(item);
+        if ((groupId === null) !== (anyInGroup === null)) {
+          return false;
+        } else if (groupId !== null && anyInGroup !== null && groupId !== anyInGroup) {
+          return false;
+        }
+        anyInGroup = groupId;
+      }
+    }
+    return true;
+  });
+
+  const addToStackEnabled = $derived.by(() => {
+    if (state.state !== 'justLooking') {
+      return false;
+    }
+    if (selectedItems.size < 2) {
+      return false;
+    }
+    let seriesId = null;
+    for (const { item } of selectedItems.values()) {
+      if (item.itemType === 'photoStack') {
+        if (seriesId !== null && seriesId !== item.seriesId) {
+          return false;
+        }
+        seriesId = item.seriesId;
+      }
+    }
+    return seriesId !== null;
+  });
+
+  const deleteStackEnabled = $derived.by(() => {
+    if (state.state !== 'justLooking') {
+      return false;
+    }
+    let seriesId = null;
+    for (const { item } of selectedItems.values()) {
+      if (item.itemType === 'photoStack') {
+        seriesId = item.seriesId;
+      } else {
+        return false;
+      }
+    }
+    return seriesId !== null;
+  });
+
+  const removeFromGroupClicked = async () => {
+    if (selectedItems.size === 0) {
+      return;
+    }
+
+    const assetIds: AssetId[] = [];
+    let groupId = null;
+    const affectedSections = [];
+    for (const item of selectedItems.values()) {
+      console.assert(item.item.itemType === 'asset');
+      if (item.item.itemType !== 'asset') {
+        return;
+      }
+      const groupId_ = getContainingGroup(item.item);
+      if (groupId !== null && groupId !== groupId_) {
+        console.error('items from multiple groups selected');
+        return;
+      }
+      groupId = groupId_;
+      assetIds.push(item.item.assetId);
+      const { sectionIdx } = getContainingSegment(item.item);
+      if (sectionIdx === null) {
+        console.error('containing section is null');
+        return;
+      }
+      if (affectedSections.indexOf(sectionIdx) < 0) {
+        affectedSections.push(sectionIdx);
+      }
+    }
+    if (groupId === null) {
+      console.error('not items in group selected');
+      return;
+    }
+    await editTimelineGroup({ groupId, assets: assetIds, operation: 'remove' });
+    clearSelection();
+    for (const sectionIdx of affectedSections) {
+      await loadSection(sectionIdx, 'reload');
+      layoutSection(sectionIdx, 'adjustScroll');
+    }
+  };
+
+  function getContainingSegment(
+    item: TimelineItem,
+  ):
+    | { segment: TimelineSegment; sectionIdx: number; segmentIdx: number }
+    | { segment: null; sectionIdx: null; segmentIdx: null } {
+    for (const [sectionIdx, section] of sections.entries()) {
+      if (section.segments !== null) {
+        for (const [segmentIdx, segment] of section.segments.entries()) {
+          if (segment.items.indexOf(item) >= 0) {
+            return { sectionIdx, segmentIdx, segment };
+          }
+        }
+      }
+    }
+    return { segment: null };
+  }
+
+  function getContainingGroup(item: TimelineItem & { itemType: 'asset' }): TimelineGroupId | null {
+    const { segment } = getContainingSegment(item);
+    if (!segment || segment.type !== 'group') {
+      return null;
+    }
+    return segment.groupId;
+  }
+
   return {
     createGroupClicked,
     cancelCreateGroup,
     confirmCreateGroup,
+    removeFromGroupClicked,
     addSelectedToExistingGroup,
     createStackClicked,
     setAssetSeriesSelection,
@@ -1371,6 +1545,18 @@ export function createTimeline(
           item.itemType === 'asset' ? [item.assetId] : assetSeriesById.get(item.seriesId).assetIds,
         ),
       );
+    },
+    get editGroupEnabled() {
+      return editGroupEnabled;
+    },
+    get createStackEnabled() {
+      return createStackEnabled;
+    },
+    get addToStackEnabled() {
+      return addToStackEnabled;
+    },
+    get deleteStackEnabled() {
+      return deleteStackEnabled;
     },
     set setAnimationsEnabled(v: ((enabled: boolean) => Promise<void>) | null) {
       setAnimationsEnabled = v;

@@ -5,7 +5,7 @@ use myrti_core::{
 
 use axum::{
     extract::State,
-    routing::{post, put},
+    routing::{patch, post},
     Json, Router,
 };
 use chrono::{DateTime, Utc};
@@ -22,7 +22,7 @@ use crate::{
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/", post(create_timeline_group))
-        .route("/", put(add_to_timeline_group))
+        .route("/", patch(edit_timeline_group))
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema, PartialEq, Eq)]
@@ -85,22 +85,30 @@ pub async fn create_timeline_group(
     }))
 }
 
+#[derive(Debug, Copy, Clone, Deserialize, ToSchema, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum EditTimelineGroup {
+    Add,
+    Remove,
+}
+
 #[derive(Debug, Clone, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct AddToTimelineGroupRequest {
+pub struct EditTimelineGroupRequest {
     pub assets: Vec<AssetId>,
     pub group_id: TimelineGroupId,
+    pub operation: EditTimelineGroup,
 }
 
 #[utoipa::path(
-    put,
+    patch,
     path = "/api/timelinegroups",
-    request_body = AddToTimelineGroupRequest,
+    request_body = EditTimelineGroupRequest,
     responses((status = 200)),
 )]
-pub async fn add_to_timeline_group(
+pub async fn edit_timeline_group(
     State(app_state): State<SharedState>,
-    Json(request): Json<AddToTimelineGroupRequest>,
+    Json(request): Json<EditTimelineGroupRequest>,
 ) -> ApiResult<()> {
     if request.assets.is_empty() {
         return Err(eyre!("assetIds can not be empty").into());
@@ -113,7 +121,14 @@ pub async fn add_to_timeline_group(
     let group_id: model::TimelineGroupId = request.group_id.try_into()?;
     let conn = app_state.pool.get().await?;
     interact!(conn, move |conn| {
-        repository::timeline_group::add_assets_to_group(conn, group_id, &asset_ids)
+        match request.operation {
+            EditTimelineGroup::Add => {
+                repository::timeline_group::add_assets_to_group(conn, group_id, &asset_ids)
+            }
+            EditTimelineGroup::Remove => {
+                repository::timeline_group::remove_assets_from_group(conn, group_id, &asset_ids)
+            }
+        }
     })
     .await??;
     Ok(())

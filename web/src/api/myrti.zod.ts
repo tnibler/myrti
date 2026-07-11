@@ -484,7 +484,8 @@ export const createTimelineGroupResponse = zod.object({
   timelineGroupId: zod.string(),
 });
 
-export const addToTimelineGroupBody = zod.object({
+export const editTimelineGroupBody = zod.object({
   assets: zod.array(zod.string()),
   groupId: zod.string(),
+  operation: zod.enum(['add', 'remove']),
 });

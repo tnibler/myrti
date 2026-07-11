@@ -808,16 +808,16 @@
           }
         }
       },
-      "put": {
+      "patch": {
         "tags": [
           "crate::routes::timeline_group"
         ],
-        "operationId": "addToTimelineGroup",
+        "operationId": "editTimelineGroup",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AddToTimelineGroupRequest"
+                "$ref": "#/components/schemas/EditTimelineGroupRequest"
               }
             }
           },
@@ -844,24 +844,6 @@
             "items": {
               "$ref": "#/components/schemas/AssetId"
             }
-          }
-        }
-      },
-      "AddToTimelineGroupRequest": {
-        "type": "object",
-        "required": [
-          "assets",
-          "groupId"
-        ],
-        "properties": {
-          "assets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AssetId"
-            }
-          },
-          "groupId": {
-            "$ref": "#/components/schemas/TimelineGroupId"
           }
         }
       },
@@ -1278,6 +1260,35 @@
             "items": {
               "$ref": "#/components/schemas/AlbumItemId"
             }
+          }
+        }
+      },
+      "EditTimelineGroup": {
+        "type": "string",
+        "enum": [
+          "add",
+          "remove"
+        ]
+      },
+      "EditTimelineGroupRequest": {
+        "type": "object",
+        "required": [
+          "assets",
+          "groupId",
+          "operation"
+        ],
+        "properties": {
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssetId"
+            }
+          },
+          "groupId": {
+            "$ref": "#/components/schemas/TimelineGroupId"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/EditTimelineGroup"
           }
         }
       },

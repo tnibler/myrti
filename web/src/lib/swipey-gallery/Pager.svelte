@@ -47,16 +47,9 @@
   import type { OpenTransitionParams } from './Slide.svelte';
   import { fade } from 'svelte/transition';
   import * as R from 'remeda';
-  import {
-    EyeOffIcon,
-    InfoIcon,
-    RotateCwIcon,
-    XIcon,
-    ZoomInIcon,
-    ZoomOutIcon,
-  } from 'lucide-svelte';
   import InfoPanel from './InfoPanel.svelte';
   import Slide from './Slide.svelte';
+  import { EyeOff, Info, RotateCw, X, ZoomIn, ZoomOut } from '@lucide/svelte';
 
   let {
     slides,
@@ -400,7 +393,7 @@
   class="
   absolute top-0 left-0 w-full h-dvh
   flex flex-row
-  touch-none overflow-hidden z-5"
+  touch-none overflow-hidden z-20"
   style:cursor={uiVisible ? 'default' : 'none'}
   style:top={`${topOffset}px`}
 >
@@ -467,7 +460,7 @@
     h-16 px-2 gap-4 bg-gradient-to-b from-black/50 pointer-events-auto"
         >
           <button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
-            <RotateCwIcon color="white" />
+            <RotateCw color="white" />
           </button>
           <button
             class="p-2"
@@ -475,7 +468,7 @@
             onclick={() => onZoomOutClicked()}
             disabled={isZoomOutDisabled}
           >
-            <ZoomOutIcon color={isZoomOutDisabled ? '#aaa' : 'white'} />
+            <ZoomOut color={isZoomOutDisabled ? '#aaa' : 'white'} />
           </button>
           <button
             class="p-2"
@@ -483,10 +476,10 @@
             onclick={() => onZoomInClicked()}
             disabled={isZoomInDisabled}
           >
-            <ZoomInIcon color={isZoomInDisabled ? '#aaa' : 'white'} />
+            <ZoomIn color={isZoomInDisabled ? '#aaa' : 'white'} />
           </button>
           <button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
-            <EyeOffIcon color="white" />
+            <EyeOff color="white" />
           </button>
           <button
             class="p-2"
@@ -496,10 +489,10 @@
               moveSlideAnimate('backToCenter');
             }}
           >
-            <InfoIcon color="white" />
+            <Info color="white" />
           </button>
           <button class="p-4" class:button-visible={hasMouse} onclick={() => closeGallery()}>
-            <XIcon color="white" />
+            <X color="white" />
           </button>
         </div>
         <div class="flex flex-row grow-1 justify-between {hasMouse ? '' : 'hidden'} ">

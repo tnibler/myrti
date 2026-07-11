@@ -3,7 +3,7 @@
 </script>
 
 <script lang="ts">
-  import { BookImageIcon, ImagesIcon, MapIcon } from 'lucide-svelte';
+  import { BookImage, Images, Map } from '@lucide/svelte';
   import SidebarItem from './SidebarItem.svelte';
   import { intl } from '@lib/i18next';
 
@@ -36,7 +36,7 @@
 
 <button
   type="button"
-  class="text-heading bg-transparent box-border hover:bg-neutral-secondary-medium font-medium leading-5 rounded-base ms-3 mt-3 text-sm p-2 inline-flex sm:hidden fixed top-0 left-0 z-20"
+  class="text-heading bg-transparent box-border hover:bg-neutral-secondary-medium font-medium leading-5 rounded-base ms-3 mt-3 text-sm p-2 inline-flex sm:hidden fixed top-0 left-0 z-10"
   onclick={() => (isOpen = !isOpen)}
   aria-controls="default-sidebar"
   aria-expanded={isOpen}
@@ -69,7 +69,7 @@
 
 <aside
   id="default-sidebar"
-  class="fixed sm:relative flex flex-col top-0 left-0 z-20 w-64 h-full bg-white shadow-xl sm:shadow-none transition-transform duration-300 ease-in-out
+  class="fixed sm:relative flex flex-col top-0 left-0 z-10 w-64 h-full bg-white shadow-xl sm:shadow-none transition-transform duration-300 ease-in-out
     {isOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'}"
   aria-label="Sidebar"
   ontouchstart={onTouchStart}
@@ -81,17 +81,17 @@
   </div>
   <a href="/" draggable="false"
     ><SidebarItem title={intl('nav.photos')} isActive={activeEntry === 'timeline'}>
-      <ImagesIcon />
+      <Images />
     </SidebarItem>
   </a>
   <a href="/albums" draggable="false">
     <SidebarItem title={intl('nav.albums')} isActive={activeEntry === 'albums'}>
-      <BookImageIcon />
+      <BookImage />
     </SidebarItem>
   </a>
   <a href="/map" draggable="false">
     <SidebarItem title={intl('nav.map')} isActive={activeEntry === 'map'}>
-      <MapIcon />
+      <Map />
     </SidebarItem>
   </a>
 </aside>

@@ -24,7 +24,7 @@
     mdiCheckboxMarkedCircle,
     mdiCircleOutline,
   } from '@mdi/js';
-  import { LayersIcon } from 'lucide-svelte';
+  import { Layers } from '@lucide/svelte';
   import { fade } from 'svelte/transition';
 
   type GridTileProps = {
@@ -128,7 +128,7 @@
       </svg>
     {/if}
     {#if showStackIcon}
-      <LayersIcon
+      <Layers
         class="absolute right-0 mr-1 mt-1 md:mr-2 md:mt-2 bg-black/30"
         size="24"
         color="white"

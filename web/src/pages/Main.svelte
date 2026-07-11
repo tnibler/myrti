@@ -106,11 +106,19 @@
 {#snippet timelineSelectAppBar()}
   <TimelineSelectAppBar
     {numAssetsSelected}
-    onCancelSelectClicked={() => timeline.clearSelection()}
-    {onAddToAlbumClicked}
-    {onAddToGroupClicked}
-    {onCreateStackClicked}
-    onHideClicked={onHideAssetsClicked}
+    cancelSelect={{ visible: numAssetsSelected > 0, onClick: () => timeline.clearSelection() }}
+    addToAlbum={{ visible: true, onClick: onAddToAlbumClicked }}
+    addToGroup={{ visible: timeline.editGroupEnabled === 'add', onClick: onAddToGroupClicked }}
+    removeFromGroup={{
+      visible: timeline.editGroupEnabled === 'remove',
+      onClick: () => {
+        timeline.removeFromGroupClicked();
+      },
+    }}
+    createStack={{ visible: timeline.createStackEnabled, onClick: onCreateStackClicked }}
+    deleteStack={{ visible: timeline.deleteStackEnabled, onClick: () => {} }}
+    addToStack={{ visible: timeline.addToStackEnabled, onClick: () => {} }}
+    hide={{ visible: true, onClick: onHideAssetsClicked }}
   />
 {/snippet}
 <AddToAlbumDialog bind:this={addToAlbumDialog} onSubmit={onCreateAlbumSubmit} />

@@ -11,11 +11,6 @@ export interface AddAssetsToSeriesRequest {
   assetIds: AssetId[];
 }
 
-export interface AddToTimelineGroupRequest {
-  assets: AssetId[];
-  groupId: TimelineGroupId;
-}
-
 export interface Album {
   changedAt: string;
   createdAt: string;
@@ -183,6 +178,20 @@ export interface CreateTimelineGroupResponse {
 
 export interface DeleteAlbumItemRequest {
   itemIds: AlbumItemId[];
+}
+
+export type EditTimelineGroup = (typeof EditTimelineGroup)[keyof typeof EditTimelineGroup];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const EditTimelineGroup = {
+  add: 'add',
+  remove: 'remove',
+} as const;
+
+export interface EditTimelineGroupRequest {
+  assets: AssetId[];
+  groupId: TimelineGroupId;
+  operation: EditTimelineGroup;
 }
 
 export type HideAssetAction = (typeof HideAssetAction)[keyof typeof HideAssetAction];
@@ -588,11 +597,11 @@ export const createTimelineGroup = <TData = AxiosResponse<CreateTimelineGroupRes
   return axios.post(`/api/timelinegroups`, createTimelineGroupRequest, options);
 };
 
-export const addToTimelineGroup = <TData = AxiosResponse<void>>(
-  addToTimelineGroupRequest: AddToTimelineGroupRequest,
+export const editTimelineGroup = <TData = AxiosResponse<void>>(
+  editTimelineGroupRequest: EditTimelineGroupRequest,
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
-  return axios.put(`/api/timelinegroups`, addToTimelineGroupRequest, options);
+  return axios.patch(`/api/timelinegroups`, editTimelineGroupRequest, options);
 };
 
 export type GetAllAlbumsResult = AxiosResponse<Album[]>;
@@ -618,4 +627,4 @@ export type AddAssetsToSeriesResult = AxiosResponse<AssetSeries>;
 export type GetTimelineSectionsResult = AxiosResponse<TimelineSectionsResponse>;
 export type GetTimelineSegmentsResult = AxiosResponse<TimelineSegmentsResponse>;
 export type CreateTimelineGroupResult = AxiosResponse<CreateTimelineGroupResponse>;
-export type AddToTimelineGroupResult = AxiosResponse<void>;
+export type EditTimelineGroupResult = AxiosResponse<void>;

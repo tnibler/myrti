@@ -303,7 +303,7 @@
       {@const itemIndex = timeline.visibleItems.startIdx + item.originalItemIndex}
       {#if item.type === 'asset'}
         <GridTile
-          href="/api/timeline/{item.assetId}"
+          href="/timeline/{item.assetId}"
           className={gridItemTransitionClass}
           asset={timeline.getAsset(item.assetId)}
           box={item}

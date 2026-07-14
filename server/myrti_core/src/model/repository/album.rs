@@ -230,12 +230,11 @@ pub fn append_items_to_album(
     album_id: AlbumId,
     items: &[AddItemToAlbum],
 ) -> Result<()> {
-    use diesel::dsl::max;
     use schema::{Album, AlbumItem};
     conn.immediate_transaction(|conn| {
         let last_index: Option<i32> = AlbumItem::table
             .filter(AlbumItem::album_id.eq(album_id.0))
-            .select(max(AlbumItem::idx))
+            .select(diesel::dsl::max(AlbumItem::idx))
             .get_result(conn)?;
         let first_insert_index = last_index.map(|last| last + 1).unwrap_or(0);
         let _album_item_ids = items

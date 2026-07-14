@@ -29,12 +29,24 @@ pub fn ffmpeg_video_flags(produce_video: &ProduceVideo) -> Vec<String> {
                         format!("-preset"),
                         target.preset.to_string(),
                     ];
+                    if let Some(interv) = encoding_target.force_keyframe_interval {
+                        f.extend([
+                            "-g".to_owned(),
+                            interv.to_string(),
+                            "-keyint_min".to_owned(),
+                            interv.to_string(),
+                            "-force_key_frames".to_owned(),
+                            format!("expr:gte(t,n_forced*{})", interv),
+                            "-sc_threshold".to_owned(),
+                            "0".to_owned(),
+                        ])
+                    }
                     if let Some(tune) = target.tune {
-                        f.push("-tune".to_string());
+                        f.push("-tune".to_owned());
                         f.push(tune.to_string());
                     }
                     if let Some(max_bitrate) = target.max_bitrate {
-                        f.push("-maxrate".to_string());
+                        f.push("-maxrate".to_owned());
                         f.push(max_bitrate.to_string());
                     }
 
@@ -58,6 +70,14 @@ pub fn ffmpeg_video_flags(produce_video: &ProduceVideo) -> Vec<String> {
                     if let Some(fast_decode) = target.fast_decode {
                         f.push("-svtav1-params".to_string());
                         f.push(format!("fast-decode={}", fast_decode.fast_decode()));
+                    }
+                    if let Some(interv) = encoding_target.force_keyframe_interval {
+                        f.extend([
+                            "-g".to_owned(),
+                            interv.to_string(),
+                            "-keyint_min".to_owned(),
+                            interv.to_string(),
+                        ])
                     }
                     f
                 }

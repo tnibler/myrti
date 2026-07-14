@@ -22,6 +22,7 @@ struct TomlBinPaths {
     pub ffmpeg: Option<String>,
     pub ffprobe: Option<String>,
     pub exiftool: Option<String>,
+    pub gpac: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -55,6 +56,7 @@ pub struct BinPaths {
     pub ffmpeg: Option<PathBuf>,
     pub ffprobe: Option<PathBuf>,
     pub exiftool: Option<PathBuf>,
+    pub gpac: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,6 +97,7 @@ pub async fn read_config(path: &Path) -> Result<Config> {
         ffmpeg: bin_paths.ffmpeg.map(PathBuf::from),
         ffprobe: bin_paths.ffprobe.map(PathBuf::from),
         exiftool: bin_paths.exiftool.map(PathBuf::from),
+        gpac: bin_paths.gpac.map(PathBuf::from),
     });
     let address = toml_config.address;
     let port: Option<u16> = toml_config.port;

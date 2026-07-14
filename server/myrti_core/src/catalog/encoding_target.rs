@@ -4,6 +4,7 @@ use super::operation::package_video::AudioEncodingTarget;
 pub struct VideoEncodingTarget {
     pub codec: CodecTarget,
     pub scale: Option<Scale>,
+    pub force_keyframe_interval: Option<i32>,
 }
 
 #[allow(dead_code)]

@@ -28,4 +28,6 @@ pub struct VideoStream {
 
 pub struct FFProbe {}
 
-pub use command::ffprobe_get_streams_from_json;
+pub use command::{
+    ffprobe_get_max_iframe_interval, ffprobe_get_streams, ffprobe_get_streams_from_json,
+};

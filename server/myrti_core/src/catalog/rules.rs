@@ -8,16 +8,18 @@ use crate::{
     catalog::{
         encoding_target::{av1, CodecTarget, VideoEncodingTarget},
         operation::package_video::{
-            AudioEncodingTarget, AudioTranscode, CreateAudioRepr, CreateVideoRepr, VideoTranscode,
+            AudioEncodingTarget, AudioTranscode, CreateAudioRepr, CreateGHIIndex, CreateVideoRepr,
+            VideoTranscode,
         },
         storage_key,
     },
-    interact,
+    config, interact,
     model::{
         repository::{self, asset::AssetHasThumbnails, db::PooledDbConn},
         AlbumId, AssetId, AssetThumbnail, ThumbnailFormat, ThumbnailType, VideoAsset,
     },
     processing,
+    util::OptionPathExt,
 };
 
 use super::{
@@ -30,10 +32,11 @@ use super::{
     },
 };
 
-#[instrument(skip(conn))]
+#[instrument(skip(conn), ret)]
 pub async fn required_video_packaging_for_asset(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
+    bin_paths: Option<&config::BinPaths>,
 ) -> Result<Vec<PackageVideo>> {
     let acceptable_video_codecs = ["h264", "av1", "vp9"];
     let acceptable_audio_codecs = ["aac", "opus", "flac", "mp3"];
@@ -74,25 +77,60 @@ pub async fn required_video_packaging_for_asset(
         return Ok(Default::default());
     }
 
+    let is_mp4 = asset.base.file_type == "mp4";
     let orig_codec_ok = acceptable_video_codecs.contains(&video.video_codec_name.as_str());
+    let orig_audio_codec_ok = video
+        .audio_codec_name
+        .as_ref()
+        .is_none_or(|codec| acceptable_audio_codecs.contains(&codec.as_str()));
 
-    let ffprobe_output = interact!(conn, move |conn| repository::asset::get_ffprobe_output(
-        conn, asset_id
-    ))
+    let has_ghi_index = interact!(
+        conn,
+        move |conn| repository::asset::get_asset_has_ghi_index(conn, asset_id)
+    )
     .await??;
-    let streams = processing::video::ffprobe_get_streams_from_json(&ffprobe_output)
-        .wrap_err("failed to parse ffprobe output stored in db")?;
-    let has_rotation_metadata = match streams.video.rotation {
-        None | Some(0) => false,
-        // have to reencode, as shaka packager discards stream tags like rotation
-        Some(_rot) => true,
+    let asset_path = interact!(conn, move |conn| {
+        repository::asset::get_asset_path_on_disk(conn, asset_id)
+    })
+    .await??
+    .path_on_disk();
+    let create_ghi = if has_ghi_index.is_none() {
+        let max_iframe_interval = processing::video::ffprobe_get_max_iframe_interval(
+            &asset_path,
+            bin_paths.and_then(|p| p.ffprobe.as_opt_path()),
+        )
+        .await?;
+        let orig_audio_streamable = is_mp4 && orig_audio_codec_ok;
+        let orig_vid_streamable =
+            is_mp4 && orig_codec_ok && max_iframe_interval.is_none_or(|i| i < 8.0);
+        tracing::info!(?asset.base.file_path, ?max_iframe_interval, ?orig_vid_streamable, ?orig_audio_streamable, ?acceptable_video_codecs, ?video.video_codec_name);
+        if !orig_vid_streamable && !orig_audio_streamable {
+            interact!(
+                conn,
+                move |conn| repository::asset::set_asset_has_ghi_index(conn, asset_id, 0)
+            )
+            .await??;
+            None
+        } else {
+            // let video_out_key = storage_key::dash_file(
+            //     asset.base.id,
+            //     format_args!("{}x{}.mp4", asset.base.size.width, asset.base.size.height),
+            // );
+            Some(CreateGHIIndex {
+                include_video: orig_vid_streamable,
+                include_audio: video.audio_codec_name.is_some() && orig_audio_streamable,
+                out_file_key: storage_key::dash_file(asset_id, format_args!("original")),
+            })
+        }
+    } else {
+        None
     };
+
     let video_out_key = storage_key::dash_file(
         asset.base.id,
-        format_args!("{}x{}.mp4", asset.base.size.width, asset.base.size.height),
+        format_args!("{}x{}", asset.base.size.width, asset.base.size.height),
     );
-    let is_mp4 = asset.base.file_type == "mp4";
-    let create_video_repr = if is_mp4 && orig_codec_ok && !has_rotation_metadata {
+    let create_video_repr = if is_mp4 && orig_codec_ok && false {
         // no need to reencode
         CreateVideoRepr::PackageOriginalFile {
             output_key: video_out_key,
@@ -108,6 +146,7 @@ pub async fn required_video_packaging_for_asset(
                     max_bitrate: None,
                 }),
                 scale: None,
+                force_keyframe_interval: None,
             },
             output_key: video_out_key,
         })
@@ -122,8 +161,7 @@ pub async fn required_video_packaging_for_asset(
         asset_id: asset.base.id,
         create_video_repr,
         create_audio_repr,
-        existing_video_reprs,
-        mpd_out_key: storage_key::mpd_manifest(asset.base.id),
+        create_ghi,
     }])
 }
 
@@ -275,110 +313,94 @@ pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageV
     })
     .await??;
     let mut acceptable_codecs_no_dash_and_no_rotation_metadata: Vec<VideoAsset> = Vec::default();
-    let mut must_reencode_because_rotation_metadata: Vec<VideoAsset> = Vec::default();
     for asset in acceptable_codecs_no_dash {
-        let ffprobe_output = interact!(conn, move |conn| repository::asset::get_ffprobe_output(
-            conn,
-            asset.base.id
-        ))
-        .await??;
-        let streams = processing::video::ffprobe_get_streams_from_json(&ffprobe_output)
-            .wrap_err("failed to parse ffprobe output stored in db")?;
-        match streams.video.rotation {
-            None | Some(0) => {
-                acceptable_codecs_no_dash_and_no_rotation_metadata.push(asset);
-            }
-            // have to reencode, as shaka packager discards stream tags like rotation
-            Some(_rot) => {
-                must_reencode_because_rotation_metadata.push(asset);
-            }
-        }
+        // TODO: check iframe interval
+        // let ffprobe_output = interact!(conn, move |conn| repository::asset::get_ffprobe_output(
+        //     conn,
+        //     asset.base.id
+        // ))
+        // .await??;
+        // let streams = processing::video::ffprobe_get_streams_from_json(&ffprobe_output)
+        //     .wrap_err("failed to parse ffprobe output stored in db")?;
+        // acceptable_codecs_no_dash_and_no_rotation_metadata.push(asset);
     }
-    let package_orig_tasks = acceptable_codecs_no_dash_and_no_rotation_metadata
-        .into_iter()
-        .map(|asset| {
-            // if there is no dash resource directory then there can not already be an audio
-            // representation, so create one if the video has audio
-            let create_audio_repr = if asset.video.audio_codec_name.is_some() {
-                Some(CreateAudioRepr::PackageOriginalFile {
-                    output_key: storage_key::dash_file(asset.base.id, format_args!("audio.mp4")),
-                })
-            } else {
-                // video does not have audio
-                None
-            };
-            // likewise for video representations
-            let existing_video_reprs = Vec::default();
-            let video_out_key = storage_key::dash_file(
-                asset.base.id,
-                format_args!("{}x{}.mp4", asset.base.size.width, asset.base.size.height),
-            );
-            PackageVideo {
-                asset_id: asset.base.id,
-                create_video_repr: CreateVideoRepr::PackageOriginalFile {
-                    output_key: video_out_key,
-                },
-                create_audio_repr,
-                existing_video_reprs,
-                mpd_out_key: storage_key::mpd_manifest(asset.base.id),
-            }
-        });
+    let package_orig_tasks = std::iter::empty();
+    // let package_orig_tasks = acceptable_codecs_no_dash_and_no_rotation_metadata
+    //     .into_iter()
+    //     .map(|asset| {
+    //         // if there is no dash resource directory then there can not already be an audio
+    //         // representation, so create one if the video has audio
+    //         let create_audio_repr = if asset.video.audio_codec_name.is_some() {
+    //             Some(CreateAudioRepr::PackageOriginalFile {
+    //                 output_key: storage_key::dash_file(asset.base.id, format_args!("audio.mp4")),
+    //             })
+    //         } else {
+    //             // video does not have audio
+    //             None
+    //         };
+    //         // likewise for video representations
+    //         PackageVideo {
+    //             asset_id: asset.base.id,
+    //             create_video_repr: CreateVideoRepr::PackageOriginalFile {
+    //                 output_key: video_out_key,
+    //             },
+    //             create_audio_repr,
+    //             create_ghi: None,
+    //         }
+    //     });
 
     let no_good_reprs: Vec<VideoAsset> = interact!(conn, move |conn| {
         repository::asset::get_video_assets_with_no_acceptable_repr(conn)
     })
     .await??;
-    let reencode_tasks = no_good_reprs
-        .into_iter()
-        .chain(must_reencode_because_rotation_metadata.into_iter())
-        .map(|asset| {
-            let video_out_key = storage_key::dash_file(
-                asset.base.id,
-                format_args!("{}x{}.mp4", asset.base.size.width, asset.base.size.height),
-            );
-            let create_video_repr = match asset.video.video_codec_name.as_str() {
-                // TODO replace with target codec from config and only transcode if the
-                // original codec is unacceptable. Or maybe transcode anyway, provide a config
-                // option etc..
-                "av1" => CreateVideoRepr::PackageOriginalFile {
-                    output_key: video_out_key,
+    let reencode_tasks = no_good_reprs.into_iter().map(|asset| {
+        let video_out_key = storage_key::dash_file(
+            asset.base.id,
+            format_args!("{}x{}.mp4", asset.base.size.width, asset.base.size.height),
+        );
+        let create_video_repr = match asset.video.video_codec_name.as_str() {
+            // TODO replace with target codec from config and only transcode if the
+            // original codec is unacceptable. Or maybe transcode anyway, provide a config
+            // option etc..
+            "av1" => CreateVideoRepr::PackageOriginalFile {
+                output_key: video_out_key,
+            },
+            _ => CreateVideoRepr::Transcode(VideoTranscode {
+                target: VideoEncodingTarget {
+                    codec: CodecTarget::AV1(av1::AV1Target {
+                        crf: av1::Crf::default(),
+                        fast_decode: None,
+                        preset: None,
+                        max_bitrate: None,
+                    }),
+                    scale: None,
+                    force_keyframe_interval: None,
                 },
-                _ => CreateVideoRepr::Transcode(VideoTranscode {
-                    target: VideoEncodingTarget {
-                        codec: CodecTarget::AV1(av1::AV1Target {
-                            crf: av1::Crf::default(),
-                            fast_decode: None,
-                            preset: None,
-                            max_bitrate: None,
-                        }),
-                        scale: None,
-                    },
-                    output_key: video_out_key,
-                }),
-            };
-            let audio_out_key = storage_key::dash_file(asset.base.id, format_args!("audio.mp4"));
-            // TODO actually check existing reprs in database.
-            // maybe the acceptable video in config changed, making us reencode video
-            // but actually a suitable audio repr already exists (or vice versa)
-            let create_audio_repr = match asset.video.audio_codec_name.as_deref() {
-                Some("aac" | "opus" | "mp3") => Some(CreateAudioRepr::PackageOriginalFile {
-                    output_key: audio_out_key,
-                }),
-                // TODO matching strings is ehh since we only allow a few codecs anyway
-                Some(_) => Some(CreateAudioRepr::Transcode(AudioTranscode {
-                    target: AudioEncodingTarget::OPUS,
-                    output_key: audio_out_key,
-                })),
-                None => None,
-            };
-            PackageVideo {
-                asset_id: asset.base.id,
-                create_video_repr,
-                create_audio_repr,
-                existing_video_reprs: Vec::default(),
-                mpd_out_key: storage_key::mpd_manifest(asset.base.id),
-            }
-        });
+                output_key: video_out_key,
+            }),
+        };
+        let audio_out_key = storage_key::dash_file(asset.base.id, format_args!("audio.mp4"));
+        // TODO actually check existing reprs in database.
+        // maybe the acceptable video in config changed, making us reencode video
+        // but actually a suitable audio repr already exists (or vice versa)
+        let create_audio_repr = match asset.video.audio_codec_name.as_deref() {
+            Some("aac" | "opus" | "mp3") => Some(CreateAudioRepr::PackageOriginalFile {
+                output_key: audio_out_key,
+            }),
+            // TODO matching strings is ehh since we only allow a few codecs anyway
+            Some(_) => Some(CreateAudioRepr::Transcode(AudioTranscode {
+                target: AudioEncodingTarget::OPUS,
+                output_key: audio_out_key,
+            })),
+            None => None,
+        };
+        PackageVideo {
+            asset_id: asset.base.id,
+            create_video_repr,
+            create_audio_repr,
+            create_ghi: None,
+        }
+    });
     Ok(package_orig_tasks.chain(reencode_tasks).collect())
 }
 

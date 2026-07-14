@@ -264,8 +264,12 @@ impl Scheduler {
                 .msg_create_asset_thumbnail(thumbnails_required)
                 .expect("receiver must be alive");
         }
-        let video_packaging_required =
-            rules::required_video_packaging_for_asset(&mut conn, asset_id).await?;
+        let video_packaging_required = rules::required_video_packaging_for_asset(
+            &mut conn,
+            asset_id,
+            self.config.bin_paths.as_ref(),
+        )
+        .await?;
         for vid_pack in video_packaging_required {
             self.video_packaging_actor
                 .msg_package_video(vid_pack)

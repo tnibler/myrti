@@ -497,6 +497,56 @@ pub fn set_asset_is_series_selection(
 }
 
 #[instrument(skip(conn))]
+pub fn set_asset_max_iframe_interval(
+    conn: &mut DbConn,
+    asset_id: AssetId,
+    interval: Option<f64>,
+) -> Result<()> {
+    use schema::Asset;
+    todo!()
+    // diesel::update(Asset::table.filter(Asset::asset_id.eq(asset_id.0))).set(Asset::h)
+}
+
+#[instrument(skip(conn))]
+pub fn get_asset_has_ghi_index(conn: &mut DbConn, asset_id: AssetId) -> Result<Option<i32>> {
+    use schema::Asset;
+    let r: Option<i32> = Asset::table
+        .select(Asset::has_ghi)
+        .filter(
+            Asset::asset_id
+                .eq(asset_id.0)
+                .and(Asset::ty.eq(to_db_asset_ty(AssetType::Video))),
+        )
+        .get_result(conn)
+        .context("querying Asset for has_ghi_index")?;
+    Ok(r)
+}
+
+#[instrument(skip(conn))]
+pub fn set_asset_has_ghi_index(
+    conn: &mut DbConn,
+    asset_id: AssetId,
+    has_ghi_index: i32,
+) -> Result<()> {
+    use schema::Asset;
+    let n_affected = diesel::update(
+        Asset::table.filter(
+            Asset::asset_id
+                .eq(asset_id.0)
+                .and(Asset::ty.eq(to_db_asset_ty(AssetType::Video))),
+        ),
+    )
+    .set(Asset::has_ghi.eq(has_ghi_index))
+    .execute(conn)
+    .context("error updating column Asset.has_ghi_index")?;
+    if n_affected == 1 {
+        Ok(())
+    } else {
+        Err(eyre!("error updating column Asset.has_ghi_index"))
+    }
+}
+
+#[instrument(skip(conn))]
 pub fn get_all_assets_geojson(conn: &mut DbConn) -> Result<String> {
     #[derive(Debug, Clone, QueryableByName)]
     #[diesel(check_for_backend(diesel::sqlite::Sqlite))]

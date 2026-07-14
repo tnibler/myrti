@@ -68,6 +68,14 @@ CREATE TABLE Asset (
   audio_codec_name TEXT,
   has_dash INTEGER,
 
+  -- NULL: unknown
+  -- 0: none
+  -- 1: video
+  -- 2: audio
+  -- 3: video+audio
+  has_ghi INTEGER,
+  max_iframe_interval REAL,
+
   FOREIGN KEY (series_id) REFERENCES AssetSeries(series_id),
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(asset_root_dir_id),
   UNIQUE(root_dir_id, file_path),
@@ -78,6 +86,7 @@ CREATE TABLE Asset (
   CHECK (timezone_info IN (1, 2, 3, 4, 5, 6) AND (timezone_info IN (2, 6) OR timezone_offset IS NOT NULL)),
 
   CHECK(has_dash IN (0, 1)),
+  CHECK(has_ghi IN (0, 1, 2, 3)),
   -- valid Image or Video
   CHECK((ty = 1
       AND image_format_name IS NOT NULL
@@ -86,14 +95,17 @@ CREATE TABLE Asset (
       AND video_bitrate IS NULL
       AND video_duration_ms IS NULL
       AND audio_codec_name IS NULL
-      AND has_dash IS NULL)
-    OR (
+      AND has_dash IS NULL
+      AND has_ghi IS NULL
+      AND max_iframe_interval IS NULL
+    ) OR (
       ty = 2 
       AND image_format_name IS NULL
       AND ffprobe_output IS NOT NULL
       AND video_codec_name IS NOT NULL
-      AND video_bitrate IS NOT NULL 
+      AND video_bitrate IS NOT NULL
       AND has_dash IS NOT NULL
+      AND has_ghi
       -- audio_codec_name, video_duration_ms can be null if there's no audio stream
   )),
 

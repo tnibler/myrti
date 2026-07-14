@@ -79,10 +79,12 @@ async fn check_can_encode_video(ffmpeg_bin_path: Option<&Path>) -> Result<(), ()
         VideoEncodingTarget {
             codec: CodecTarget::AVC(AVCTarget::default()),
             scale: None,
+            force_keyframe_interval: Some(30),
         },
         VideoEncodingTarget {
             codec: CodecTarget::AV1(AV1Target::default()),
             scale: None,
+            force_keyframe_interval: Some(30),
         },
     ];
     let input = "color=white:640x480:duration=3";

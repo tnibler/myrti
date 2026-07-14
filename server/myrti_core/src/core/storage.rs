@@ -80,7 +80,7 @@ pub enum CommandOutputFile {
 
 #[derive(Debug, Clone)]
 pub struct LocalFileStorage {
-    root: PathBuf,
+    pub root: PathBuf,
 }
 
 #[derive(Debug, Clone)]

@@ -2,6 +2,7 @@ use std::process::Stdio;
 
 use camino::Utf8Path as Path;
 use eyre::{eyre, Context, Result};
+use itertools::Itertools;
 use serde::Deserialize;
 use tokio::process::Command;
 use tracing::{instrument, warn};
@@ -159,6 +160,56 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
         })
         .collect();
     streams
+}
+
+/// Max interval (seconds) between any 2 I-Frames in video stream, or None if there aren't 2 I-Frames.
+pub async fn ffprobe_get_max_iframe_interval(
+    path: &Path,
+    ffprobe_bin_path: Option<&Path>,
+) -> Result<Option<f64>> {
+    let ffprobe_result = Command::new(ffprobe_bin_path.unwrap_or("ffprobe".into()))
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "frame=pts_time",
+            "-skip_frame",
+            "nokey",
+            "-of",
+            "csv=print_section=0",
+        ])
+        .arg(path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .wrap_err("failed to call ffprobe")?
+        .wait_with_output()
+        .await
+        .wrap_err("ffprobe error")?;
+    let timestamps: Vec<f64> = String::from_utf8(ffprobe_result.stdout)?
+        .lines()
+        .map(|line| {
+            line.trim_end_matches(',')
+                // .ok_or_else(|| eyre!("Unexpected line format in ffprobe output: '{}'", line))?
+                .parse()
+                .with_context(|| {
+                    format!(
+                        "Error parsing I-Frame timestamps from ffprobe output: '{}'",
+                        line
+                    )
+                })
+        })
+        .try_collect()?;
+    if !timestamps.is_sorted_by(|a, b| a < b) {
+        return Err(eyre!("I-Frame timestamps are not ascending. Weird"));
+    }
+    Ok(timestamps
+        .iter()
+        .tuple_windows()
+        .map(|(a, b)| b - a)
+        .max_by(|a, b| a.total_cmp(&b)))
 }
 
 #[test]

@@ -1,11 +1,11 @@
 use diesel::prelude::*;
-use eyre::{Context, Result};
+use eyre::{eyre, Context, Result};
 use tracing::instrument;
 
 use crate::model::{
     repository::db_entity::{DbAudioRepresentation, DbImageRepresentation, DbVideoRepresentation},
-    AssetId, AudioRepresentation, AudioRepresentationId, ImageRepresentation,
-    ImageRepresentationId, VideoRepresentation, VideoRepresentationId,
+    AssetId, AudioRepresentation, AudioRepresentationId, CreateVideoRepresentation,
+    ImageRepresentation, ImageRepresentationId, VideoRepresentation, VideoRepresentationId,
 };
 
 use super::db::DbConn;
@@ -18,7 +18,11 @@ pub fn get_video_representations(
 ) -> Result<Vec<VideoRepresentation>> {
     use schema::VideoRepresentation;
     let db_video_reprs: Vec<DbVideoRepresentation> = VideoRepresentation::table
-        .filter(VideoRepresentation::asset_id.eq(asset_id.0))
+        .filter(
+            VideoRepresentation::asset_id
+                .eq(asset_id.0)
+                .and(VideoRepresentation::created_status.eq(1)),
+        )
         .load(conn)?;
 
     db_video_reprs
@@ -30,26 +34,49 @@ pub fn get_video_representations(
 #[instrument(skip(conn), level = "trace")]
 pub fn insert_video_representation(
     conn: &mut DbConn,
-    repr: &VideoRepresentation,
+    repr: CreateVideoRepresentation,
 ) -> Result<VideoRepresentationId> {
     use schema::VideoRepresentation;
-
-    assert!(repr.id.0 == 0);
 
     let id = diesel::insert_into(VideoRepresentation::table)
         .values((
             VideoRepresentation::asset_id.eq(repr.asset_id.0),
-            VideoRepresentation::codec_name.eq(&repr.codec_name),
-            VideoRepresentation::width.eq(repr.width),
-            VideoRepresentation::height.eq(repr.height),
-            VideoRepresentation::bitrate.eq(&repr.bitrate),
-            VideoRepresentation::file_key.eq(&repr.file_key),
-            VideoRepresentation::media_info_key.eq(&repr.media_info_key),
+            VideoRepresentation::name.eq(repr.name),
+            VideoRepresentation::codec_name.eq(repr.codec_name),
+            VideoRepresentation::created_status.eq(0),
         ))
         .returning(VideoRepresentation::video_repr_id)
         .get_result(conn)
         .wrap_err("error inserting into table VideoRepresentation")?;
     Ok(VideoRepresentationId(id))
+}
+
+#[instrument(skip(conn), level = "trace")]
+pub fn finalize_video_representation(conn: &mut DbConn, repr: &VideoRepresentation) -> Result<()> {
+    use schema::VideoRepresentation;
+    let n_affected = diesel::update(
+        VideoRepresentation::table.filter(
+            VideoRepresentation::video_repr_id
+                .eq(repr.id.0)
+                .and(VideoRepresentation::asset_id.eq(repr.asset_id.0))
+                .and(VideoRepresentation::created_status.eq(0))
+                .and(VideoRepresentation::name.eq(&repr.name))
+                .and(VideoRepresentation::codec_name.eq(&repr.codec_name)),
+        ),
+    )
+    .set((
+        VideoRepresentation::width.eq(repr.width),
+        VideoRepresentation::height.eq(repr.height),
+        VideoRepresentation::bitrate.eq(repr.bitrate),
+        VideoRepresentation::created_status.eq(1),
+    ))
+    .execute(conn)
+    .context("error updating table VideoRepresentation")?;
+    if n_affected == 1 {
+        Ok(())
+    } else {
+        Err(eyre!("did not find VideoRepresentation row to update"))
+    }
 }
 
 #[instrument(skip(conn), level = "trace")]

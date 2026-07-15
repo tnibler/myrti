@@ -5,8 +5,7 @@ use tracing::Instrument;
 use crate::{
     actor::{misc::task_loop, simple_queue_actor::TaskError},
     catalog::operation::package_video::{
-        apply_package_video, perform_side_effects_package_video, CompletedPackageVideo,
-        PackageVideo,
+        perform_side_effects_package_video, CompletedPackageVideo, PackageVideo,
     },
     config,
     core::storage::Storage,
@@ -83,13 +82,6 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                 let db_pool = self.db_pool.clone();
                 let storage = self.storage.clone();
                 let bin_paths = self.config.bin_paths.clone();
-                async fn apply_result(
-                    db_pool: DbPool,
-                    result: CompletedPackageVideo,
-                ) -> Result<()> {
-                    let mut conn = db_pool.get().await?;
-                    apply_package_video(&mut conn, result.clone()).await
-                }
                 tokio::task::spawn(
                     async move {
                         let (process_control_send, process_control_recv) =
@@ -97,7 +89,7 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                         let result_fut = perform_side_effects_package_video(
                             &db_pool,
                             &storage,
-                            &package_video,
+                            package_video.clone(),
                             bin_paths.as_ref(),
                             process_control_recv,
                         );
@@ -114,30 +106,14 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                         };
                         match result {
                             Ok(result) => {
-                                let apply_result = apply_result(db_pool, result).await;
-                                match apply_result {
-                                    Ok(()) => {
-                                        result_send
-                                            .send((
-                                                task_id,
-                                                Ok(VideoPackagingTaskResult::PackagingComplete(
-                                                    package_video,
-                                                )),
-                                            ))
-                                            .expect("Receiver must be alive");
-                                    }
-                                    Err(report) => {
-                                        result_send
-                                            .send((
-                                                task_id,
-                                                Ok(VideoPackagingTaskResult::PackagingError {
-                                                    package_video,
-                                                    report,
-                                                }),
-                                            ))
-                                            .expect("Receiver must be alive");
-                                    }
-                                }
+                                result_send
+                                    .send((
+                                        task_id,
+                                        Ok(VideoPackagingTaskResult::PackagingComplete(
+                                            package_video,
+                                        )),
+                                    ))
+                                    .expect("Receiver must be alive");
                             }
                             Err(report) => {
                                 result_send

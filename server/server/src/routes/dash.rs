@@ -5,7 +5,7 @@ use axum::{
     routing::get,
     Router,
 };
-use eyre::Context;
+use eyre::{eyre, Context};
 use serde::Deserialize;
 use tower::ServiceExt;
 use tracing::Instrument;
@@ -24,7 +24,7 @@ struct DashFilePath {
     pub path: String,
 }
 
-#[tracing::instrument(fields(request = true), skip(app_state))]
+#[tracing::instrument(fields(request = true), skip(app_state), err)]
 async fn get_dash_file(
     Path(path): Path<DashFilePath>,
     State(app_state): State<SharedState>,
@@ -32,7 +32,57 @@ async fn get_dash_file(
 ) -> ApiResult<Response> {
     let asset_id: model::AssetId = path.id.try_into()?;
 
-    let storage_key = storage_key::dash_file(asset_id, format_args!("{}", &path.path));
+    let key = storage_key::dash_file(asset_id, format_args!("{}", &path.path));
+
+    let storage = &app_state.storage;
+    let fs_path = storage
+        .local_path(&key)
+        .await?
+        .expect("not implemented for non-local StorageProvider");
+
+    if let Some(stripped) = path.path.strip_prefix("original/original_") {
+        if !tokio::fs::try_exists(&fs_path).await? {
+            let (repr, rest) = match stripped.strip_prefix("video-") {
+                None => match stripped.strip_prefix("audio-") {
+                    Some(rest) => ("original_audio", rest),
+                    None => return Err(eyre!("bad path").into()),
+                },
+                Some(rest) => ("original_video", rest),
+            };
+            let ghi_path = storage
+                .local_path(&storage_key::dash_file(
+                    asset_id,
+                    format_args!("original/index.ghi"),
+                ))
+                .await?
+                .expect("not supported");
+            let out_dir = storage
+                .local_path(&storage_key::dash_file(asset_id, format_args!("original")))
+                .await?
+                .expect("not supported");
+            tracing::info!(?repr, "{}, {}", &ghi_path, &rest);
+
+            let segment_number: i32 = {
+                if rest == "init.mp4" {
+                    0
+                } else {
+                    let rest = rest.strip_suffix(".m4s").ok_or(eyre!("bad path"))?;
+                    rest.parse().context("error parsing segment number")?
+                }
+            };
+
+            let (_tx, mut rx) = tokio::sync::mpsc::channel(5);
+            myrti_core::processing::video::gpac::create_segment(
+                &ghi_path,
+                &out_dir,
+                &repr,
+                segment_number,
+                None,
+                &mut rx,
+            )
+            .await?;
+        }
+    }
     // TODO (#8)
     // TODO handle non-local StorageProvider
     // TODO return correct error code for not found
@@ -43,12 +93,7 @@ async fn get_dash_file(
     // };
     // let read = app_state.storage.open_read_stream(&storage_key).await?;
     // let headers = [(CONTENT_TYPE, content_type)];
-    let path = app_state
-        .storage
-        .local_path(&storage_key)
-        .await?
-        .expect("not implemented for non-local StorageProvider");
-    let serve_dir = tower_http::services::ServeFile::new(&path)
+    let serve_dir = tower_http::services::ServeFile::new(&fs_path)
         .oneshot(request)
         .in_current_span()
         .await

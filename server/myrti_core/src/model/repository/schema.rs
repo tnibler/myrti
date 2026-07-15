@@ -195,12 +195,12 @@ diesel::table! {
     VideoRepresentation (video_repr_id) {
         video_repr_id -> BigInt,
         asset_id -> BigInt,
+        name -> Text,
+        created_status -> Integer,
         codec_name -> Text,
-        width -> Integer,
-        height -> Integer,
-        bitrate -> BigInt,
-        file_key -> Text,
-        media_info_key -> Text,
+        width -> Nullable<Integer>,
+        height -> Nullable<Integer>,
+        bitrate -> Nullable<BigInt>,
     }
 }
 

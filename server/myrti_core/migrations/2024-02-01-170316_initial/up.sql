@@ -137,13 +137,17 @@ CREATE TABLE AssetThumbnail (
 CREATE TABLE VideoRepresentation (
   video_repr_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   asset_id INTEGER NOT NULL,
-  -- columns that aren't known until encoding is done can be null if is_preallocated_dummy is true
+  name TEXT NOT NULL CHECK(NAME != ''),
   codec_name TEXT NOT NULL,
-  width INTEGER NOT NULL,
-  height INTEGER NOT NULL,
-  bitrate INTEGER NOT NULL,
-  file_key TEXT NOT NULL,
-  media_info_key TEXT NOT NULL,
+  width INTEGER,
+  height INTEGER,
+  bitrate INTEGER,
+  created_status INTEGER NOT NULL CHECK(created_status IN (0, 1)),
+  CHECK(created_status = 0 OR (
+      width IS NOT NULL
+      AND height IS NOT NULL
+      AND bitrate IS NOT NULL
+  )),
   FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 

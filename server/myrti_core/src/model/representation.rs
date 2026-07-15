@@ -1,17 +1,21 @@
-use super::{
-    AssetId, AudioRepresentationId, ImageRepresentationId, VideoRepresentationId,
-};
+use super::{AssetId, AudioRepresentationId, ImageRepresentationId, VideoRepresentationId};
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CreateVideoRepresentation<'a> {
+    pub asset_id: AssetId,
+    pub name: &'a str,
+    pub codec_name: &'a str,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VideoRepresentation {
     pub id: VideoRepresentationId,
     pub asset_id: AssetId,
+    pub name: String,
     pub codec_name: String,
     pub width: i32,
     pub height: i32,
     pub bitrate: i64,
-    pub file_key: String,
-    pub media_info_key: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

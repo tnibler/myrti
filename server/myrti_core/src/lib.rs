@@ -3,7 +3,7 @@ pub mod catalog;
 pub mod config;
 pub mod core;
 pub mod model;
-mod processing;
+pub mod processing;
 pub use deadpool_diesel;
 pub use processing::startup_self_check;
 pub mod util;

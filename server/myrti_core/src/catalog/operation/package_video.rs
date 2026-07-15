@@ -33,6 +33,7 @@ use crate::{
             ffmpeg_into_shaka::{FFmpegIntoShakaFFmpegTrait, FFmpegIntoShakaTrait},
             ffprobe_get_streams,
             gpac::{CreateGHIOptions, DasherOptions},
+            mp4_rotate::copy_mp4_rotation_metadata,
             mpd::{self, BaseURL},
             mpd_generator::MpdGeneratorTrait,
             shaka::{RepresentationType, ShakaPackagerTrait},
@@ -329,11 +330,7 @@ pub async fn perform_side_effects_package_video(
             .await??
             .is_some_and(|i| i == 1 || i == 3);
 
-            let pre_input_flags = if has_video_ghi {
-                vec![OsString::from("-noautorotate")]
-            } else {
-                vec![]
-            };
+            let pre_input_flags = vec![OsString::from("-noautorotate")];
             FFmpeg::new(
                 pre_input_flags,
                 ffmpeg_video_flags(&ProduceVideo::Transcode(transcode.target.clone()))
@@ -373,10 +370,14 @@ pub async fn perform_side_effects_package_video(
             .await?;
             tracing::debug!(?dash_result);
 
-            if has_video_ghi { // actually, do that regardless. otherwise new reprs and original
-                 // (dash or not dash) can never be mixed
-                 // TODO: copy rotation from original to ffmpeg output
-            }
+            copy_mp4_rotation_metadata(
+                asset_path.path_on_disk().as_std_path(),
+                dash_result.mp4_path.as_std_path(),
+            )
+            .await
+            .context(
+                "error copying mp4 rotation metadata from original asset to new representation",
+            )?;
 
             let (_, streams) = ffprobe_get_streams(&dash_result.mp4_path, ffprobe_path).await?;
             interact!(conn, move |conn| {

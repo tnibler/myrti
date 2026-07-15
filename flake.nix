@@ -6,6 +6,11 @@
 
     crane.url = "github:ipetkov/crane";
 
+    gpac = {
+      # url = "github:gpac/gpac";
+      url = "github:tnibler/gpac/fix-bin-index-different-nb-segments";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -25,6 +30,7 @@
     nixpkgs,
     crane,
     fenix,
+    gpac,
     flake-utils,
     advisory-db,
     ...
@@ -47,12 +53,14 @@
           llvmPackages.libclang
           clang
         ];
-        buildInputs = with pkgs; [
-          vips.dev
-          glib.dev
-          ffmpeg
-          shaka-packager
-        ];
+        buildInputs = with pkgs;
+          [
+            vips.dev
+            glib.dev
+            ffmpeg
+            shaka-packager
+          ]
+          ++ [gpac.packages.${system}.default];
 
         # Additional environment variables can be set directly
         # MY_CUSTOM_VAR = "some value";

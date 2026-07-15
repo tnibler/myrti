@@ -7,4 +7,5 @@ pub mod shaka;
 pub mod shaka_into_ffmpeg;
 pub mod transcode;
 pub use ffprobe::*;
+pub mod mp4_rotate;
 pub mod mpd;

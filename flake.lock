@@ -70,6 +70,27 @@
         "type": "github"
       }
     },
+    "gpac": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1784138926,
+        "narHash": "sha256-bl74EkPjJM1fniE1o7kmogRBatloSx/ZEeoVQphXgag=",
+        "owner": "tnibler",
+        "repo": "gpac",
+        "rev": "038728c96e52b01d06afe8c403c7e78b277c9195",
+        "type": "github"
+      },
+      "original": {
+        "owner": "tnibler",
+        "ref": "fix-bin-index-different-nb-segments",
+        "repo": "gpac",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1782918843,
@@ -92,6 +113,7 @@
         "crane": "crane",
         "fenix": "fenix",
         "flake-utils": "flake-utils",
+        "gpac": "gpac",
         "nixpkgs": "nixpkgs"
       }
     },

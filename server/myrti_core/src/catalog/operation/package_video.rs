@@ -47,66 +47,20 @@ use crate::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CreateAudioRepr {
-    Transcode(AudioTranscode),
-    PackageOriginalFile { output_key: String },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CreatedAudioRepr {
-    Transcode(AudioTranscodeResult),
-    PackagedOriginalFile {
-        out_file_key: String,
-        out_media_info_key: String,
-    },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CreateVideoRepr {
-    Transcode(VideoTranscode),
-    PackageOriginalFile { output_key: String },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreateGHIIndex {
-    pub include_video: bool,
-    pub include_audio: bool,
-    pub out_file_key: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-/// all paths are relative to the dash resource directory
 pub struct PackageVideo {
     pub asset_id: AssetId,
-    pub create_video_repr: CreateVideoRepr,
-    pub create_audio_repr: Option<CreateAudioRepr>,
-    pub create_ghi: Option<CreateGHIIndex>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CreatedVideoRepr {
-    PackagedOriginalFile {
-        out_file_key: String,
-        out_media_info_key: String,
-    },
-    Transcode(VideoTranscodeResult),
-}
-
-// Some things like the resulting size and bitrate of
-// a video we don't actually know until ffmpeg is done.
-// That information needs to be known to apply the operation
-// to the database
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CompletedPackageVideo {
-    pub asset_id: AssetId,
-    pub created_video_repr: CreatedVideoRepr,
-    pub created_audio_repr: Option<CreatedAudioRepr>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VideoTranscode {
-    pub target: VideoEncodingTarget,
     pub output_key: String,
+    pub task: PackageVideoTask,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PackageVideoTask {
+    TranscodeVideo(VideoEncodingTarget),
+    TranscodeAudio(AudioEncodingTarget),
+    CreateGHIIndex {
+        include_video: bool,
+        include_audio: bool,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,19 +78,6 @@ pub enum AudioEncodingTarget {
     OPUS,
     FLAC,
     MP3,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AudioTranscode {
-    pub target: AudioEncodingTarget,
-    pub output_key: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AudioTranscodeResult {
-    pub target: AudioEncodingTarget,
-    pub out_file_key: String,
-    pub out_media_info_key: String,
 }
 
 // #[instrument(skip(pool, storage, process_control_recv), level = "debug")]
@@ -164,15 +105,15 @@ pub async fn perform_side_effects_package_video(
     })
     .await??;
 
-    let ffmpeg_video_op: Option<ProduceVideo> = match package_video.create_video_repr.clone() {
-        CreateVideoRepr::Transcode(video_transcode) => {
-            Some(ProduceVideo::Transcode(video_transcode.target))
+    let ffmpeg_video_op: Option<ProduceVideo> = match &package_video.task {
+        PackageVideoTask::TranscodeVideo(transcode) => {
+            Some(ProduceVideo::Transcode(transcode.clone()))
         }
         _ => None,
     };
-    let ffmpeg_audio_op: Option<ProduceAudio> = match package_video.create_audio_repr.clone() {
-        Some(CreateAudioRepr::Transcode(audio_transcode)) => {
-            Some(ProduceAudio::Transcode(audio_transcode.target))
+    let ffmpeg_audio_op: Option<ProduceAudio> = match &package_video.task {
+        PackageVideoTask::TranscodeAudio(transcode) => {
+            Some(ProduceAudio::Transcode(transcode.clone()))
         }
         _ => None,
     };
@@ -192,18 +133,16 @@ pub async fn perform_side_effects_package_video(
         None
     };
 
-    if let Some(CreateGHIIndex {
+    if let PackageVideoTask::CreateGHIIndex {
         include_video,
         include_audio,
-        out_file_key,
-    }) = &package_video.create_ghi
+    } = &package_video.task
     {
-        tracing::info!(?package_video.create_ghi);
         // let max_iframe_interval = interact!(conn, move |conn| repository::asset::set_asset_max_iframe_interval)
         let segment_duration = 2; // TODO
         let out_dir = match storage {
             Storage::LocalFileStorage(local_file_storage) => {
-                local_file_storage.root.join(out_file_key)
+                local_file_storage.root.join(&package_video.output_key)
             }
         };
         processing::video::gpac::create_ghi_and_manifest(
@@ -232,171 +171,142 @@ pub async fn perform_side_effects_package_video(
         .await??;
     }
 
-    match package_video.create_audio_repr {
-        Some(CreateAudioRepr::PackageOriginalFile { output_key }) => {
-            ShakaPackager::run(
-                &asset_path.path_on_disk(),
+    if let PackageVideoTask::TranscodeAudio(transcode) = package_video.task.clone() {
+        debug_assert!(ffmpeg_into_shaka.is_some());
+        let ffmpeg_into_shaka = match ffmpeg_into_shaka.as_ref() {
+            Some(f) => f,
+            None => {
+                error!("BUG: ffmpeg_into_shaka is None when it should not be");
+                return Err(eyre!(
+                    "BUG: ffmpeg_into_shaka is None when it should not be"
+                ));
+            }
+        };
+        let shaka_result = ffmpeg_into_shaka
+            .run_shaka_packager(
                 RepresentationType::Audio,
-                &output_key,
+                &package_video.output_key,
                 storage,
                 shaka_packager_path,
                 &mut process_control_recv,
             )
-            .await
-            .wrap_err("could not shaka package audio stream")?;
-            let out_media_info_key = format!("{}.media_info", output_key);
+            .await?;
 
+        let file_key = package_video.output_key.clone();
+        interact!(conn, move |conn| {
             let audio_representation = AudioRepresentation {
                 id: AudioRepresentationId(0),
                 asset_id,
-                codec_name: asset.video.audio_codec_name.unwrap(), // TODO
-                file_key: output_key.clone(),
-                media_info_key: out_media_info_key.clone(),
+                codec_name: audio_codec_name(&transcode),
+                file_key,
+                media_info_key: String::new(),
             };
-            interact!(conn, move |conn| {
-                repository::representation::insert_audio_representation(conn, &audio_representation)
-            })
-            .await?;
-        }
-        Some(CreateAudioRepr::Transcode(transcode)) => {
-            debug_assert!(ffmpeg_into_shaka.is_some());
-            let ffmpeg_into_shaka = match ffmpeg_into_shaka.as_ref() {
-                Some(f) => f,
-                None => {
-                    error!("BUG: ffmpeg_into_shaka is None when it should not be");
-                    return Err(eyre!(
-                        "BUG: ffmpeg_into_shaka is None when it should not be"
-                    ));
-                }
-            };
-            let shaka_result = ffmpeg_into_shaka
-                .run_shaka_packager(
-                    RepresentationType::Audio,
-                    &transcode.output_key,
-                    storage,
-                    shaka_packager_path,
-                    &mut process_control_recv,
-                )
-                .await?;
+            repository::representation::insert_audio_representation(conn, &audio_representation)
+        })
+        .await?;
+    }
 
-            interact!(conn, move |conn| {
-                let audio_representation = AudioRepresentation {
-                    id: AudioRepresentationId(0),
+    if let PackageVideoTask::TranscodeVideo(transcode) = &package_video.task {
+        debug_assert!(ffmpeg_into_shaka.is_some());
+        let repr_name = package_video
+            .output_key
+            .split("/")
+            .last()
+            .unwrap()
+            .to_owned();
+        let repr_name2 = repr_name.clone();
+        let codec_name = codec_name(&transcode.codec);
+        let repr_id = interact!(conn, move |conn| {
+            repository::representation::insert_video_representation(
+                conn,
+                CreateVideoRepresentation {
                     asset_id,
-                    codec_name: audio_codec_name(&transcode.target),
-                    file_key: transcode.output_key.clone(),
-                    media_info_key: String::new(),
-                };
-                repository::representation::insert_audio_representation(conn, &audio_representation)
-            })
-            .await?;
-        }
-        None => {}
-    };
-
-    match package_video.create_video_repr {
-        CreateVideoRepr::PackageOriginalFile { output_key } => {
-            unimplemented!()
-        }
-        CreateVideoRepr::Transcode(transcode) => {
-            debug_assert!(ffmpeg_into_shaka.is_some());
-            let repr_name = transcode.output_key.split("/").last().unwrap().to_owned();
-            let repr_name2 = repr_name.clone();
-            let codec_name = codec_name(&transcode.target.codec);
-            let repr_id = interact!(conn, move |conn| {
-                repository::representation::insert_video_representation(
-                    conn,
-                    CreateVideoRepresentation {
-                        asset_id,
-                        name: &repr_name2,
-                        codec_name,
-                    },
-                )
-            })
-            .await??;
-
-            let repr_file_stem = format!("{}-{}", repr_id.0, repr_name);
-            let ffmpeg_out_dir = tempfile::tempdir()?;
-            let ffmpeg_out_path = ffmpeg_out_dir
-                .path()
-                .join(format!("{}.mp4", repr_file_stem));
-            let utf8_path: camino::Utf8PathBuf = ffmpeg_out_path
-                .to_path_buf()
-                .try_into()
-                .expect("temp files should have utf8 paths");
-            let has_video_ghi = interact!(conn, move |conn| {
-                repository::asset::get_asset_has_ghi_index(conn, asset_id)
-            })
-            .await??
-            .is_some_and(|i| i == 1 || i == 3);
-
-            let pre_input_flags = vec![OsString::from("-noautorotate")];
-            FFmpeg::new(
-                pre_input_flags,
-                ffmpeg_video_flags(&ProduceVideo::Transcode(transcode.target.clone()))
-                    .into_iter()
-                    .chain(std::iter::once("-an".to_owned()))
-                    .map(OsString::from)
-                    .collect(),
-            )
-            .run_with_local_output(
-                asset_path.path_on_disk().as_str(),
-                &utf8_path,
-                ffmpeg_path,
-                &mut process_control_recv,
-            )
-            .await
-            .context("Error transcoding with ffmpeg")?;
-
-            let out_dir = match storage {
-                Storage::LocalFileStorage(local_file_storage) => local_file_storage.root.join(
-                    storage_key::dash_file(asset_id, format_args!("{}", &repr_file_stem)),
-                ),
-            };
-
-            let mpd_name = "stream.mpd";
-
-            tokio::fs::create_dir(&out_dir).await?;
-            let dash_result = processing::video::gpac::run_dasher(
-                &utf8_path,
-                &out_dir,
-                DasherOptions {
-                    mpd_name,
-                    base_url: None,
+                    name: &repr_name2,
+                    codec_name,
                 },
-                gpac_path,
-                &mut process_control_recv,
             )
-            .await?;
-            tracing::debug!(?dash_result);
+        })
+        .await??;
 
-            copy_mp4_rotation_metadata(
-                asset_path.path_on_disk().as_std_path(),
-                dash_result.mp4_path.as_std_path(),
+        let repr_file_stem = format!("{}-{}", repr_id.0, repr_name);
+        let ffmpeg_out_dir = tempfile::tempdir()?;
+        let ffmpeg_out_path = ffmpeg_out_dir
+            .path()
+            .join(format!("{}.mp4", repr_file_stem));
+        let utf8_path: camino::Utf8PathBuf = ffmpeg_out_path
+            .to_path_buf()
+            .try_into()
+            .expect("temp files should have utf8 paths");
+        let has_video_ghi = interact!(conn, move |conn| {
+            repository::asset::get_asset_has_ghi_index(conn, asset_id)
+        })
+        .await??
+        .is_some_and(|i| i == 1 || i == 3);
+
+        let pre_input_flags = vec![OsString::from("-noautorotate")];
+        FFmpeg::new(
+            pre_input_flags,
+            ffmpeg_video_flags(&ProduceVideo::Transcode(transcode.clone()))
+                .into_iter()
+                .chain(std::iter::once("-an".to_owned()))
+                .map(OsString::from)
+                .collect(),
+        )
+        .run_with_local_output(
+            asset_path.path_on_disk().as_str(),
+            &utf8_path,
+            ffmpeg_path,
+            &mut process_control_recv,
+        )
+        .await
+        .context("Error transcoding with ffmpeg")?;
+
+        let out_dir = match storage {
+            Storage::LocalFileStorage(local_file_storage) => local_file_storage.root.join(
+                storage_key::dash_file(asset_id, format_args!("{}", &repr_file_stem)),
+            ),
+        };
+
+        let mpd_name = "stream.mpd";
+
+        tokio::fs::create_dir(&out_dir).await?;
+        let dash_result = processing::video::gpac::run_dasher(
+            &utf8_path,
+            &out_dir,
+            DasherOptions {
+                mpd_name,
+                base_url: None,
+            },
+            gpac_path,
+            &mut process_control_recv,
+        )
+        .await?;
+        tracing::debug!(?dash_result);
+
+        copy_mp4_rotation_metadata(
+            asset_path.path_on_disk().as_std_path(),
+            dash_result.mp4_path.as_std_path(),
+        )
+        .await
+        .context("error copying mp4 rotation metadata from original asset to new representation")?;
+
+        let (_, streams) = ffprobe_get_streams(&dash_result.mp4_path, ffprobe_path).await?;
+        interact!(conn, move |conn| {
+            repository::representation::finalize_video_representation(
+                conn,
+                &VideoRepresentation {
+                    id: repr_id,
+                    asset_id,
+                    name: repr_name.to_owned(),
+                    codec_name: codec_name.to_owned(),
+                    width: streams.video.width,
+                    height: streams.video.height,
+                    bitrate: streams.video.bitrate,
+                },
             )
-            .await
-            .context(
-                "error copying mp4 rotation metadata from original asset to new representation",
-            )?;
-
-            let (_, streams) = ffprobe_get_streams(&dash_result.mp4_path, ffprobe_path).await?;
-            interact!(conn, move |conn| {
-                repository::representation::finalize_video_representation(
-                    conn,
-                    &VideoRepresentation {
-                        id: repr_id,
-                        asset_id,
-                        name: repr_name.to_owned(),
-                        codec_name: codec_name.to_owned(),
-                        width: streams.video.width,
-                        height: streams.video.height,
-                        bitrate: streams.video.bitrate,
-                    },
-                )
-            })
-            .await??;
-        }
-    };
+        })
+        .await??;
+    }
 
     let existing_video_reprs = interact!(conn, move |conn| {
         repository::representation::get_video_representations(conn, asset_id)

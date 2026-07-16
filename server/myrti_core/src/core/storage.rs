@@ -147,22 +147,24 @@ impl StorageProvider for LocalFileStorage {
 
     #[instrument(err, skip(self), level = "trace")]
     async fn open_write_stream(&self, key: &str) -> Result<Box<dyn AsyncWrite + Send + Unpin>> {
+        let path = self.root.join(key);
         Ok(Box::new(
             tokio::fs::OpenOptions::new()
-                .create_new(true)
+                .create(true)
                 .read(true)
                 .write(true)
-                .open(self.root.join(key))
+                .open(&path)
                 .await
-                .wrap_err("error opening file for writing")?,
+                .wrap_err_with(|| format!("error opening file {path} for writing"))?,
         ))
     }
 
     #[instrument(err, skip(self), level = "trace")]
     async fn exists(&self, key: &str) -> Result<bool> {
-        tokio::fs::try_exists(self.root.join(key))
+        let path = self.root.join(key);
+        tokio::fs::try_exists(&path)
             .await
-            .wrap_err("error checking if path exists")
+            .wrap_err_with(|| format!("error checking if path {path} exists"))
     }
 
     #[instrument(err, skip(self), level = "trace")]

@@ -4,9 +4,7 @@ use tracing::Instrument;
 
 use crate::{
     actor::{misc::task_loop, simple_queue_actor::TaskError},
-    catalog::operation::package_video::{
-        perform_side_effects_package_video, CompletedPackageVideo, PackageVideo,
-    },
+    catalog::operation::package_video::{perform_side_effects_package_video, PackageVideo},
     config,
     core::storage::Storage,
     model::repository::db::DbPool,

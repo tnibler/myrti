@@ -24,7 +24,6 @@ pub struct AudioRepresentation {
     pub asset_id: AssetId,
     pub codec_name: String,
     pub file_key: String,
-    pub media_info_key: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

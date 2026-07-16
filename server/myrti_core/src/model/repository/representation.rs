@@ -93,7 +93,6 @@ pub fn insert_audio_representation(
             AudioRepresentation::asset_id.eq(repr.asset_id.0),
             AudioRepresentation::codec_name.eq(&repr.codec_name),
             AudioRepresentation::file_key.eq(&repr.file_key),
-            AudioRepresentation::media_info_key.eq(&repr.media_info_key),
         ))
         .returning(AudioRepresentation::audio_repr_id)
         .get_result(conn)?;

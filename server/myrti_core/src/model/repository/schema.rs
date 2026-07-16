@@ -83,7 +83,6 @@ diesel::table! {
         asset_id -> BigInt,
         codec_name -> Text,
         file_key -> Text,
-        media_info_key -> Text,
     }
 }
 

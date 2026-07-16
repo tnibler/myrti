@@ -1,12 +1,10 @@
 use std::ffi::OsString;
 
-use diesel::Connection;
 use eyre::{eyre, Context, Result};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::mpsc,
 };
-use tracing::{error, instrument};
 
 use crate::{
     catalog::{
@@ -17,30 +15,21 @@ use crate::{
     core::storage::{Storage, StorageProvider},
     interact,
     model::{
-        repository::{
-            self,
-            db::{DbPool, PooledDbConn},
-        },
+        repository::{self, db::DbPool},
         AssetId, AudioRepresentation, AudioRepresentationId, CreateVideoRepresentation, Size,
-        Video, VideoAsset, VideoRepresentation, VideoRepresentationId,
+        VideoRepresentation,
     },
     processing::{
         self,
-        commands::{FFmpeg, FFmpegIntoShaka, MpdGenerator, ShakaIntoFFmpeg, ShakaPackager},
+        commands::FFmpeg,
         process_control::ProcessControl,
         video::{
             ffmpeg::{FFmpegLocalOutputTrait, FFmpegTrait},
-            ffmpeg_into_shaka::{FFmpegIntoShakaFFmpegTrait, FFmpegIntoShakaTrait},
             ffprobe_get_streams,
             gpac::{CreateGHIOptions, DasherOptions},
             mp4_rotate::copy_mp4_rotation_metadata,
             mpd::{self, BaseURL},
-            mpd_generator::MpdGeneratorTrait,
-            shaka::{RepresentationType, ShakaPackagerTrait},
-            shaka_into_ffmpeg::ShakaIntoFFmpegTrait,
-            transcode::{ffmpeg_video_flags, ProduceAudio, ProduceVideo},
-            video_rotation::FFProbeRotationTrait,
-            FFProbe,
+            transcode::{ffmpeg_audio_flags, ffmpeg_video_flags},
         },
     },
     util::OptionPathExt,
@@ -97,41 +86,7 @@ pub async fn perform_side_effects_package_video(
 
     let ffmpeg_path = bin_paths.and_then(|bp| bp.ffmpeg.as_opt_path());
     let ffprobe_path = bin_paths.and_then(|bp| bp.ffprobe.as_opt_path());
-    let shaka_packager_path = bin_paths.and_then(|bp| bp.shaka_packager.as_opt_path());
-    let gpac_path = bin_paths.and_then(|bp| bp.mpd_generator.as_opt_path());
-
-    let asset: VideoAsset = interact!(conn, move |conn| {
-        repository::asset::get_asset(conn, asset_id)?.try_into()
-    })
-    .await??;
-
-    let ffmpeg_video_op: Option<ProduceVideo> = match &package_video.task {
-        PackageVideoTask::TranscodeVideo(transcode) => {
-            Some(ProduceVideo::Transcode(transcode.clone()))
-        }
-        _ => None,
-    };
-    let ffmpeg_audio_op: Option<ProduceAudio> = match &package_video.task {
-        PackageVideoTask::TranscodeAudio(transcode) => {
-            Some(ProduceAudio::Transcode(transcode.clone()))
-        }
-        _ => None,
-    };
-
-    let ffmpeg_into_shaka = if ffmpeg_video_op.is_some() || ffmpeg_audio_op.is_some() {
-        let ffmpeg_into_shaka = FFmpegIntoShaka::new(
-            asset_path.path_on_disk(),
-            ffmpeg_video_op.as_ref(),
-            ffmpeg_audio_op.as_ref(),
-        );
-        Some(
-            ffmpeg_into_shaka
-                .run_ffmpeg(ffmpeg_path, &mut process_control_recv)
-                .await?,
-        )
-    } else {
-        None
-    };
+    let gpac_path = bin_paths.and_then(|bp| bp.gpac.as_opt_path());
 
     if let PackageVideoTask::CreateGHIIndex {
         include_video,
@@ -171,43 +126,37 @@ pub async fn perform_side_effects_package_video(
         .await??;
     }
 
-    if let PackageVideoTask::TranscodeAudio(transcode) = package_video.task.clone() {
-        debug_assert!(ffmpeg_into_shaka.is_some());
-        let ffmpeg_into_shaka = match ffmpeg_into_shaka.as_ref() {
-            Some(f) => f,
-            None => {
-                error!("BUG: ffmpeg_into_shaka is None when it should not be");
-                return Err(eyre!(
-                    "BUG: ffmpeg_into_shaka is None when it should not be"
-                ));
-            }
-        };
-        let shaka_result = ffmpeg_into_shaka
-            .run_shaka_packager(
-                RepresentationType::Audio,
-                &package_video.output_key,
-                storage,
-                shaka_packager_path,
-                &mut process_control_recv,
-            )
-            .await?;
-
+    if let PackageVideoTask::TranscodeAudio(transcode) = &package_video.task {
+        FFmpeg::new(
+            Vec::default(),
+            ffmpeg_audio_flags(transcode)
+                .into_iter()
+                .map(OsString::from)
+                .collect(),
+        )
+        .run_with_local_output(
+            asset_path.path_on_disk().as_str(),
+            package_video.output_key.as_str().into(),
+            ffmpeg_path,
+            &mut process_control_recv,
+        )
+        .await
+        .context("error transcoding audio with ffmpeg")?;
         let file_key = package_video.output_key.clone();
+        let codec_name = audio_codec_name(transcode);
         interact!(conn, move |conn| {
             let audio_representation = AudioRepresentation {
                 id: AudioRepresentationId(0),
                 asset_id,
-                codec_name: audio_codec_name(&transcode),
+                codec_name,
                 file_key,
-                media_info_key: String::new(),
             };
             repository::representation::insert_audio_representation(conn, &audio_representation)
         })
-        .await?;
+        .await??;
     }
 
     if let PackageVideoTask::TranscodeVideo(transcode) = &package_video.task {
-        debug_assert!(ffmpeg_into_shaka.is_some());
         let repr_name = package_video
             .output_key
             .split("/")
@@ -246,7 +195,7 @@ pub async fn perform_side_effects_package_video(
         let pre_input_flags = vec![OsString::from("-noautorotate")];
         FFmpeg::new(
             pre_input_flags,
-            ffmpeg_video_flags(&ProduceVideo::Transcode(transcode.clone()))
+            ffmpeg_video_flags(transcode)
                 .into_iter()
                 .chain(std::iter::once("-an".to_owned()))
                 .map(OsString::from)
@@ -259,7 +208,7 @@ pub async fn perform_side_effects_package_video(
             &mut process_control_recv,
         )
         .await
-        .context("Error transcoding with ffmpeg")?;
+        .context("error transcoding audio with ffmpeg")?;
 
         let out_dir = match storage {
             Storage::LocalFileStorage(local_file_storage) => local_file_storage.root.join(

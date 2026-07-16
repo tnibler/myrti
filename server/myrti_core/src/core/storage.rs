@@ -151,6 +151,7 @@ impl StorageProvider for LocalFileStorage {
         Ok(Box::new(
             tokio::fs::OpenOptions::new()
                 .create(true)
+                .truncate(true)
                 .read(true)
                 .write(true)
                 .open(&path)

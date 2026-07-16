@@ -41,7 +41,6 @@ pub struct DbAudioRepresentation {
     pub asset_id: i64,
     pub codec_name: String,
     pub file_key: String,
-    pub media_info_key: String,
 }
 
 impl TryFrom<DbImageRepresentation> for ImageRepresentation {
@@ -84,7 +83,6 @@ impl TryFrom<DbAudioRepresentation> for AudioRepresentation {
             asset_id: AssetId(value.asset_id),
             codec_name: value.codec_name.clone(),
             file_key: value.file_key.clone(),
-            media_info_key: value.media_info_key.clone(),
         })
     }
 }

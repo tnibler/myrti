@@ -17,20 +17,18 @@ use crate::{
     util::OptionPathExt,
 };
 
-use super::video::transcode::{ffmpeg_audio_flags, ffmpeg_video_flags, ProduceAudio, ProduceVideo};
+use super::video::transcode::{ffmpeg_audio_flags, ffmpeg_video_flags};
 
 pub async fn run_self_check(bin_paths: Option<&BinPaths>) -> Result<(), ()> {
     let ffmpeg_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.ffmpeg.as_opt_path());
     check_can_run_ffmpeg(ffmpeg_bin_path).await?;
     check_can_encode_video(ffmpeg_bin_path).await?;
     check_can_encode_audio(ffmpeg_bin_path).await?;
-    let shaka_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.shaka_packager.as_opt_path());
-    let mpd_generator_bin_path: Option<&Path> =
-        bin_paths.and_then(|bp| bp.mpd_generator.as_opt_path());
-    check_can_run_shaka_and_mpd_generator(shaka_bin_path, mpd_generator_bin_path).await?;
     let exiftool_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.exiftool.as_opt_path());
     check_can_run_exiftool(exiftool_bin_path).await?;
     check_can_encode_vips_images().await?;
+    let gpac_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.gpac.as_opt_path());
+    check_can_run_gpac(gpac_bin_path).await?;
     Ok(())
 }
 
@@ -94,11 +92,10 @@ async fn check_can_encode_video(ffmpeg_bin_path: Option<&Path>) -> Result<(), ()
         .collect();
     for encoding_target in encoding_targets {
         let name = codec_name(&encoding_target.codec);
-        let video_flags: Vec<OsString> =
-            ffmpeg_video_flags(&ProduceVideo::Transcode(encoding_target))
-                .into_iter()
-                .map(|s| s.into())
-                .collect();
+        let video_flags: Vec<OsString> = ffmpeg_video_flags(&encoding_target)
+            .into_iter()
+            .map(|s| s.into())
+            .collect();
         let out_path: PathBuf = format!("/tmp/_myrti_test_{}.mp4", name).into();
 
         let mut command = Command::new(ffmpeg_bin_path.unwrap_or("ffmpeg".into()));
@@ -157,11 +154,10 @@ async fn check_can_encode_audio(ffmpeg_bin_path: Option<&Path>) -> Result<(), ()
         .collect();
     for encoding_target in encoding_targets {
         let name = audio_codec_name(&encoding_target);
-        let audio_flags: Vec<OsString> =
-            ffmpeg_audio_flags(&ProduceAudio::Transcode(encoding_target))
-                .into_iter()
-                .map(|s| s.into())
-                .collect();
+        let audio_flags: Vec<OsString> = ffmpeg_audio_flags(&encoding_target)
+            .into_iter()
+            .map(|s| s.into())
+            .collect();
         let out_path: PathBuf = format!("/tmp/_myrti_test_{}.mp4", name).into();
 
         let mut command = Command::new(ffmpeg_bin_path.unwrap_or("ffmpeg".into()));
@@ -206,107 +202,48 @@ async fn check_can_encode_audio(ffmpeg_bin_path: Option<&Path>) -> Result<(), ()
     Ok(())
 }
 
-async fn check_can_run_shaka_and_mpd_generator(
-    shaka_bin_path: Option<&Path>,
-    mpd_generator_bin_path: Option<&Path>,
-) -> Result<(), ()> {
-    let mut shaka_command = Command::new(shaka_bin_path.map(|p| p.as_str()).unwrap_or("packager"));
-    shaka_command.stdout(Stdio::piped());
-    shaka_command.stderr(Stdio::piped());
-    shaka_command.arg("--version");
-    let shaka_proc = match shaka_command.spawn() {
+async fn check_can_run_gpac(gpac_bin_path: Option<&Path>) -> Result<(), ()> {
+    let mut command = Command::new(gpac_bin_path.map(|p| p.as_str()).unwrap_or("gpac"));
+    command
+        .args(["-h", "-version"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let proc = match command.spawn() {
         Ok(c) => c,
         Err(err) => match err.kind() {
             std::io::ErrorKind::NotFound => {
-                if let Some(shaka_path) = mpd_generator_bin_path {
-                    tracing::error!(
-                        "Could not find shaka packager at path from config: {}",
-                        shaka_path
-                    );
+                if let Some(gpac_path) = gpac_bin_path {
+                    tracing::error!("Could not find gpac at path from config: {}", gpac_path);
                 } else {
                     tracing::error!(
-                        "Could not find shaka packager (no 'packager' in $PATH). Please download it and specify its location in the config file",
+                        "Could not find gpac (no 'gpac' in $PATH). Please download it and specify its location in the config file",
                     );
                 }
                 return Err(());
             }
             _kind => {
-                tracing::error!("Error running shaka packager: {}", err);
+                tracing::error!("Error running gpac: {}", err);
                 return Err(());
             }
         },
     };
-    let shaka_result = shaka_proc.wait_with_output().await;
-    match shaka_result {
+    let result = proc.wait_with_output().await;
+    match result {
         Ok(result) => {
             if !result.status.success() {
                 tracing::error!(
-                    "Testing shaka packager with 'packager --version' exited with an error:\n{}",
+                    "Testing gpac with 'gpac -h -version' exited with an error:\n{}",
                     String::from_utf8_lossy(&result.stderr)
                 );
                 return Err(());
             }
         }
         Err(err) => {
-            tracing::error!(
-                "Testing shaka packager with 'packager --version' failed:\n{:?}",
-                err
-            );
+            tracing::error!("Testing gpac with 'gpac -h -version' failed:\n{:?}", err);
             return Err(());
         }
     }
-    tracing::debug!("ok: can run shaka packager");
-
-    let mut mpdg_command = Command::new(
-        mpd_generator_bin_path
-            .map(|p| p.as_str())
-            .unwrap_or("mpd_generator"),
-    );
-    mpdg_command.stdout(Stdio::piped());
-    mpdg_command.stderr(Stdio::piped());
-    mpdg_command.arg("--version");
-    let mpdg_proc = match mpdg_command.spawn() {
-        Ok(c) => c,
-        Err(err) => match err.kind() {
-            std::io::ErrorKind::NotFound => {
-                if let Some(mpdg_path) = mpd_generator_bin_path {
-                    tracing::error!(
-                        "Could not find mpd_generator at path from config: {}",
-                        mpdg_path
-                    );
-                } else {
-                    tracing::error!(
-                        "Could not find mpd_generator (no 'mpd_generator ' in $PATH). Please download it and specify its location in the config file",
-                    );
-                }
-                return Err(());
-            }
-            _kind => {
-                tracing::error!("Error running mpd_generator: {}", err);
-                return Err(());
-            }
-        },
-    };
-    let mpdg_result = mpdg_proc.wait_with_output().await;
-    match mpdg_result {
-        Ok(result) => {
-            if !result.status.success() {
-                tracing::error!(
-                    "Testing mpd_generator with 'mpd_generator  --version' exited with an error:\n{}",
-                    String::from_utf8_lossy(&result.stderr)
-                );
-                return Err(());
-            }
-        }
-        Err(err) => {
-            tracing::error!(
-                "Testing mpd_generator  with 'mpd_generator  --version' failed:\n{:?}",
-                err
-            );
-            return Err(());
-        }
-    }
-    tracing::debug!("ok: can run mpd_generator");
+    tracing::debug!("ok: can run gpac");
     Ok(())
 }
 

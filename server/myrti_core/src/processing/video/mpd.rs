@@ -3137,7 +3137,7 @@ mod tests {
         path.push("fixtures");
         path.push("incomplete.mpd");
         let xml = fs::read_to_string(path).unwrap();
-        assert!(matches!(parse(&xml), Err(crate::DashMpdError::Parsing(_))));
+        assert!(matches!(parse(&xml), Err(super::DashMpdError::Parsing(_))));
     }
 
     #[test]

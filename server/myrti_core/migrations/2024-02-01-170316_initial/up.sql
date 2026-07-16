@@ -154,10 +154,9 @@ CREATE TABLE VideoRepresentation (
 CREATE TABLE AudioRepresentation (
   audio_repr_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   asset_id INTEGER NOT NULL,
+  name TEXT NOT NULL CHECK(NAME != ''),
   codec_name TEXT NOT NULL,
-  -- bitrate INTEGER NOT NULL,
-  file_key TEXT NOT NULL,
-  media_info_key TEXT NOT NULL,
+  created_status INTEGER NOT NULL CHECK(created_status IN (0, 1)),
   FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 

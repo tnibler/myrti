@@ -1,10 +1,10 @@
 use super::{AssetId, AudioRepresentationId, ImageRepresentationId, VideoRepresentationId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CreateVideoRepresentation<'a> {
+pub struct CreateVideoRepresentation {
     pub asset_id: AssetId,
-    pub name: &'a str,
-    pub codec_name: &'a str,
+    pub name: String,
+    pub codec_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -19,11 +19,18 @@ pub struct VideoRepresentation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CreateAudioRepresentation {
+    pub asset_id: AssetId,
+    pub name: String,
+    pub codec_name: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AudioRepresentation {
     pub id: AudioRepresentationId,
     pub asset_id: AssetId,
+    pub name: String,
     pub codec_name: String,
-    pub file_key: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

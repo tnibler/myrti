@@ -4,7 +4,7 @@ use tracing::Instrument;
 
 use crate::{
     actor::{misc::task_loop, simple_queue_actor::TaskError},
-    catalog::operation::package_video::{perform_side_effects_package_video, PackageVideo},
+    catalog::operation::package_video::{do_package_video, PackageVideo},
     config,
     core::storage::Storage,
     model::repository::db::DbPool,
@@ -84,7 +84,7 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                     async move {
                         let (process_control_send, process_control_recv) =
                             tokio::sync::mpsc::channel(1);
-                        let result_fut = perform_side_effects_package_video(
+                        let result_fut = do_package_video(
                             &db_pool,
                             &storage,
                             package_video.clone(),

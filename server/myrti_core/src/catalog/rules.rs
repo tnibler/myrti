@@ -6,7 +6,7 @@ use tracing::instrument;
 
 use crate::{
     catalog::{
-        encoding_target::{av1, CodecTarget, VideoEncodingTarget},
+        encoding_target::{audio_codec_name, av1, CodecTarget, VideoEncodingTarget},
         operation::package_video::{AudioEncodingTarget, PackageVideoTask},
         storage_key,
     },
@@ -94,16 +94,16 @@ pub async fn required_video_packaging_for_asset(
 
     let mut ops = Vec::new();
 
-    // TODO: properly check required audio and video transcoding separately
-    let need_transcode_video = if has_ghi_index.is_none() {
-        let max_iframe_interval = processing::video::ffprobe_get_max_iframe_interval(
-            &asset_path,
-            bin_paths.and_then(|p| p.ffprobe.as_opt_path()),
-        )
-        .await?;
-        let orig_audio_streamable = is_mp4 && orig_audio_codec_ok;
-        let orig_vid_streamable =
-            is_mp4 && orig_codec_ok && max_iframe_interval.is_none_or(|i| i < 8.0);
+    let max_iframe_interval = processing::video::ffprobe_get_max_iframe_interval(
+        &asset_path,
+        bin_paths.and_then(|p| p.ffprobe.as_opt_path()),
+    )
+    .await?;
+    let orig_audio_streamable = is_mp4 && orig_audio_codec_ok;
+    let orig_vid_streamable =
+        is_mp4 && orig_codec_ok && max_iframe_interval.is_none_or(|i| i < 8.0);
+
+    if has_ghi_index.is_none() {
         tracing::info!(?asset.base.file_path, ?max_iframe_interval, ?orig_vid_streamable, ?orig_audio_streamable, ?acceptable_video_codecs, ?video.video_codec_name);
         if !orig_vid_streamable && !orig_audio_streamable {
             interact!(
@@ -111,30 +111,25 @@ pub async fn required_video_packaging_for_asset(
                 move |conn| repository::asset::set_asset_has_ghi_index(conn, asset_id, 0)
             )
             .await??;
-            true
         } else {
             ops.push(PackageVideo {
                 asset_id,
+                repr_name: "original".to_owned(),
                 task: PackageVideoTask::CreateGHIIndex {
                     include_video: orig_vid_streamable,
                     include_audio: video.audio_codec_name.is_some() && orig_audio_streamable,
                 },
                 output_key: storage_key::dash_file(asset_id, format_args!("original")),
             });
-            !orig_vid_streamable
         }
-    } else {
-        true
-    };
+    }
 
-    // out_key should become the name, later preprended with repr id
-    let video_out_key = storage_key::dash_file(
-        asset.base.id,
-        format_args!("{}x{}", asset.base.size.width, asset.base.size.height),
-    );
-    // TODO: this condition is kind of wrong
-    if need_transcode_video {
+    if !orig_vid_streamable && !has_acceptable_video_repr {
+        let repr_name = format!("{}x{}", asset.base.size.width, asset.base.size.height);
+        let video_out_key = storage_key::dash_file(asset.base.id, format_args!("{}", repr_name));
         ops.push(PackageVideo {
+            asset_id,
+            repr_name,
             task: PackageVideoTask::TranscodeVideo(VideoEncodingTarget {
                 codec: CodecTarget::AV1(av1::AV1Target {
                     crf: av1::Crf::default(),
@@ -145,15 +140,15 @@ pub async fn required_video_packaging_for_asset(
                 scale: None,
                 force_keyframe_interval: None,
             }),
-            asset_id,
             output_key: video_out_key,
         });
     };
-    // TODO: and not ghi used
-    if !has_acceptable_audio_repr {
+    if !orig_audio_streamable && !orig_vid_streamable {
+        let repr_name = audio_codec_name(&AudioEncodingTarget::AAC);
         ops.push(PackageVideo {
-            task: PackageVideoTask::TranscodeAudio(AudioEncodingTarget::AAC),
             asset_id,
+            repr_name,
+            task: PackageVideoTask::TranscodeAudio(AudioEncodingTarget::AAC),
             output_key: storage_key::dash_file(asset_id, format_args!("audio_aac.mp4")),
         });
     };

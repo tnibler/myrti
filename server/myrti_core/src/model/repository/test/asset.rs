@@ -14,8 +14,9 @@ use crate::model::repository::test::util::{make_created_asset, prop_insert_creat
 use crate::model::{
     repository, Asset, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetThumbnail,
     AssetThumbnailId, AudioRepresentation, AudioRepresentationId, CreateAsset, CreateAssetBase,
-    CreateAssetImage, CreateAssetSpe, CreateAssetVideo, FFProbeOutput, Size, ThumbnailFormat,
-    ThumbnailType, TimestampInfo, VideoAsset, VideoRepresentation, VideoRepresentationId,
+    CreateAssetImage, CreateAssetSpe, CreateAssetVideo, CreateAudioRepresentation,
+    CreateVideoRepresentation, FFProbeOutput, Size, ThumbnailFormat, ThumbnailType, TimestampInfo,
+    VideoAsset, VideoRepresentation, VideoRepresentationId,
 };
 
 use super::util::set_asset_root_dir;
@@ -412,12 +413,11 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
             VideoRepresentation {
                 id: VideoRepresentationId(0),
                 asset_id: AssetId(0),
+                name: format!("{}x{}", width, height),
                 codec_name: codec_name.clone(),
                 bitrate,
                 width,
                 height,
-                media_info_key: format!("{}.media_info", file_key),
-                file_key,
             }
         }
     }
@@ -432,8 +432,7 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
                 id: AudioRepresentationId(0),
                 asset_id: AssetId(0),
                 codec_name: codec_name.clone(),
-                media_info_key: format!("{}.media_info", file_key),
-                file_key,
+                name: codec_name.clone(),
             }
         }
     }
@@ -498,22 +497,39 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
             assets_with_ids.push(asset);
             let tx_result = conn.transaction(|conn| {
                 for repr in video_reprs {
-                    let repr_insert_result = repository::representation::insert_video_representation(
+                    let repr_id = repository::representation::insert_video_representation(
+                        conn,
+                        &CreateVideoRepresentation {
+                            asset_id,
+                            name: repr.name.clone(),
+                            codec_name: repr.codec_name.clone()
+                    });
+                    prop_assert!(repr_id.is_ok());
+                    let repr_id = repr_id.unwrap();
+                    let finalize_result = repository::representation::finalize_video_representation(
                         conn,
                         &VideoRepresentation {
                             asset_id,
+                            id: repr_id,
                             ..repr.clone()
                     });
-                    prop_assert!(repr_insert_result.is_ok());
+                    prop_assert!(finalize_result.is_ok());
                 }
                 if let Some(repr) = audio_repr {
-                    let repr_insert_result = repository::representation::insert_audio_representation(
+                    let repr_id = repository::representation::insert_audio_representation(
                         conn,
-                        &AudioRepresentation {
+                        &CreateAudioRepresentation {
                             asset_id,
-                            ..repr.clone()
+                            name: repr.name.clone(),
+                            codec_name: repr.codec_name.clone()
                     });
-                    prop_assert!(repr_insert_result.is_ok());
+                    prop_assert!(repr_id.is_ok());
+                    let repr_id = repr_id.unwrap();
+                    let finalize_result = repository::representation::finalize_audio_representation(
+                        conn,
+                        repr_id,
+                    );
+                    prop_assert!(finalize_result.is_ok());
                 }
                 Ok(())
             });

@@ -39,8 +39,9 @@ pub struct DbImageRepresentation {
 pub struct DbAudioRepresentation {
     pub audio_repr_id: i64,
     pub asset_id: i64,
+    pub name: String,
+    pub created_status: i32,
     pub codec_name: String,
-    pub file_key: String,
 }
 
 impl TryFrom<DbImageRepresentation> for ImageRepresentation {
@@ -82,7 +83,7 @@ impl TryFrom<DbAudioRepresentation> for AudioRepresentation {
             id: AudioRepresentationId(value.audio_repr_id),
             asset_id: AssetId(value.asset_id),
             codec_name: value.codec_name.clone(),
-            file_key: value.file_key.clone(),
+            name: value.name.clone(),
         })
     }
 }

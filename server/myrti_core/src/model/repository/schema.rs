@@ -81,8 +81,9 @@ diesel::table! {
     AudioRepresentation (audio_repr_id) {
         audio_repr_id -> BigInt,
         asset_id -> BigInt,
+        name -> Text,
+        created_status -> Integer,
         codec_name -> Text,
-        file_key -> Text,
     }
 }
 

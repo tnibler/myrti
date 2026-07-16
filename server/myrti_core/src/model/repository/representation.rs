@@ -4,8 +4,9 @@ use tracing::instrument;
 
 use crate::model::{
     repository::db_entity::{DbAudioRepresentation, DbImageRepresentation, DbVideoRepresentation},
-    AssetId, AudioRepresentation, AudioRepresentationId, CreateVideoRepresentation,
-    ImageRepresentation, ImageRepresentationId, VideoRepresentation, VideoRepresentationId,
+    AssetId, AudioRepresentation, AudioRepresentationId, CreateAudioRepresentation,
+    CreateVideoRepresentation, ImageRepresentation, ImageRepresentationId, VideoRepresentation,
+    VideoRepresentationId,
 };
 
 use super::db::DbConn;
@@ -34,15 +35,15 @@ pub fn get_video_representations(
 #[instrument(skip(conn), level = "trace")]
 pub fn insert_video_representation(
     conn: &mut DbConn,
-    repr: CreateVideoRepresentation,
+    repr: &CreateVideoRepresentation,
 ) -> Result<VideoRepresentationId> {
     use schema::VideoRepresentation;
 
     let id = diesel::insert_into(VideoRepresentation::table)
         .values((
             VideoRepresentation::asset_id.eq(repr.asset_id.0),
-            VideoRepresentation::name.eq(repr.name),
-            VideoRepresentation::codec_name.eq(repr.codec_name),
+            VideoRepresentation::name.eq(&repr.name),
+            VideoRepresentation::codec_name.eq(&repr.codec_name),
             VideoRepresentation::created_status.eq(0),
         ))
         .returning(VideoRepresentation::video_repr_id)
@@ -82,21 +83,40 @@ pub fn finalize_video_representation(conn: &mut DbConn, repr: &VideoRepresentati
 #[instrument(skip(conn), level = "trace")]
 pub fn insert_audio_representation(
     conn: &mut DbConn,
-    repr: &AudioRepresentation,
+    repr: &CreateAudioRepresentation,
 ) -> Result<AudioRepresentationId> {
     use schema::AudioRepresentation;
-
-    assert!(repr.id.0 == 0);
 
     let id = diesel::insert_into(AudioRepresentation::table)
         .values((
             AudioRepresentation::asset_id.eq(repr.asset_id.0),
             AudioRepresentation::codec_name.eq(&repr.codec_name),
-            AudioRepresentation::file_key.eq(&repr.file_key),
+            AudioRepresentation::name.eq(&repr.name),
+            AudioRepresentation::created_status.eq(0),
         ))
         .returning(AudioRepresentation::audio_repr_id)
         .get_result(conn)?;
     Ok(AudioRepresentationId(id))
+}
+
+#[instrument(skip(conn), level = "trace")]
+pub fn finalize_audio_representation(conn: &mut DbConn, id: AudioRepresentationId) -> Result<()> {
+    use schema::AudioRepresentation;
+    let n_affected = diesel::update(
+        AudioRepresentation::table.filter(
+            AudioRepresentation::audio_repr_id
+                .eq(id.0)
+                .and(AudioRepresentation::created_status.eq(0)),
+        ),
+    )
+    .set((AudioRepresentation::created_status.eq(1),))
+    .execute(conn)
+    .context("error updating table AudioRepresentation")?;
+    if n_affected == 1 {
+        Ok(())
+    } else {
+        Err(eyre!("did not find AudioRepresentation row to update"))
+    }
 }
 
 #[instrument(skip(conn), level = "trace")]

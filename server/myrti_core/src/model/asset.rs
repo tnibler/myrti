@@ -2,19 +2,22 @@ use camino::Utf8PathBuf as PathBuf;
 use chrono::{DateTime, Utc};
 use eyre::{eyre, Report};
 
-use super::{AssetBase, AssetRootDirId, GpsCoordinates, Size, TimestampInfo};
+use super::{
+    AssetBase, AssetRootDirId, GpsCoordinates, ImageAssetId, Size, TimestampInfo, VideoAssetId,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Image {
+    pub image_asset_id: ImageAssetId,
     pub image_format_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Video {
+    pub video_asset_id: VideoAssetId,
     pub video_codec_name: String,
     pub video_bitrate: i64,
     pub audio_codec_name: Option<String>,
-    pub has_dash: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -2,21 +2,22 @@ use std::borrow::Cow;
 
 use camino::Utf8PathBuf as PathBuf;
 use chrono::FixedOffset;
-use diesel::{prelude::Insertable, Queryable, QueryableByName, Selectable};
+use diesel::prelude::*;
 use eyre::{eyre, Context, Result};
 
 use crate::model::{
     util::{datetime_from_db_repr, hash_vec8_to_u64},
-    Asset, AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetType,
-    GpsCoordinates, Image, Size, TimestampInfo, Video,
+    AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetType, GpsCoordinates, Image,
+    ImageAssetId, Size, TimestampInfo, Video, VideoAssetId,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, QueryableByName, Selectable)]
+#[derive(Debug, Clone, PartialEq, Eq, Identifiable, Queryable, QueryableByName, Selectable)]
 #[diesel(table_name = super::super::schema::Asset)]
+#[diesel(primary_key(asset_id))]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct DbAsset {
     pub asset_id: i64,
-    pub ty: i32,
+    pub asset_type: i32,
     pub root_dir_id: i64,
     pub file_type: String,
     pub file_path: String,
@@ -31,18 +32,41 @@ pub struct DbAsset {
     pub rotation_correction: Option<i32>,
     pub gps_latitude: Option<i64>,
     pub gps_longitude: Option<i64>,
-    pub image_format_name: Option<String>,
-    pub video_codec_name: Option<String>,
-    pub video_bitrate: Option<i64>,
-    pub audio_codec_name: Option<String>,
-    pub has_dash: Option<i32>,
 }
 
-impl TryFrom<DbAsset> for Asset {
+#[derive(
+    Debug, Clone, PartialEq, Eq, Identifiable, Queryable, QueryableByName, Selectable, Associations,
+)]
+#[diesel(table_name = super::super::schema::ImageAsset)]
+#[diesel(primary_key(image_asset_id))]
+#[diesel(belongs_to(DbAsset, foreign_key = asset_id))]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct DbImageAsset {
+    pub asset_id: i64,
+    pub image_asset_id: i64,
+    pub image_format_name: String,
+}
+
+#[derive(
+    Debug, Clone, PartialEq, Eq, Identifiable, Queryable, QueryableByName, Selectable, Associations,
+)]
+#[diesel(table_name = super::super::schema::VideoAsset)]
+#[diesel(primary_key(video_asset_id))]
+#[diesel(belongs_to(DbAsset, foreign_key = asset_id))]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct DbVideoAsset {
+    pub asset_id: i64,
+    pub video_asset_id: i64,
+    pub video_codec_name: String,
+    pub video_bitrate: i64,
+    pub audio_codec_name: Option<String>,
+    pub has_ghi: Option<i32>,
+}
+
+impl TryFrom<DbAsset> for AssetBase {
     type Error = eyre::Report;
 
     fn try_from(value: DbAsset) -> Result<Self, Self::Error> {
-        let ty = from_db_asset_ty(value.ty)?;
         let timestamp_info =
             from_db_timezone_info(value.timezone_info, value.timezone_offset.as_deref())?;
         let hash: Option<u64> = value.hash.as_ref().map(hash_vec8_to_u64).transpose()?;
@@ -50,16 +74,12 @@ impl TryFrom<DbAsset> for Asset {
             (Some(lat), Some(lon)) => Some(GpsCoordinates { lat, lon }),
             (None, None) => None,
             _ => {
-                tracing::warn!(
-                    asset_id = value.asset_id,
-                    "Asset has only one of gps lat/lon"
-                );
-                None
+                panic!("Asset only has one of gps lat/lon, db constraints should disallow this")
             }
         };
-        let base = AssetBase {
+        Ok(AssetBase {
             id: AssetId(value.asset_id),
-            ty: from_db_asset_ty(value.ty)?,
+            ty: from_db_asset_ty(value.asset_type)?,
             root_dir_id: AssetRootDirId(value.root_dir_id),
             file_type: value.file_type,
             file_path: value.file_path.into(),
@@ -74,28 +94,31 @@ impl TryFrom<DbAsset> for Asset {
             },
             rotation_correction: value.rotation_correction,
             gps_coordinates: coords,
-        };
-        let sp = match ty {
-            AssetType::Image => AssetSpe::Image(Image {
-                image_format_name: value
-                    .image_format_name
-                    .ok_or(eyre!("image DbAsset must have image_format_name set"))?,
-            }),
-            AssetType::Video => AssetSpe::Video(Video {
-                video_codec_name: value
-                    .video_codec_name
-                    .ok_or(eyre!("video DbAsset must have video_codec_name set"))?,
-                video_bitrate: value
-                    .video_bitrate
-                    .ok_or(eyre!("video DbAsset must have video_bitrate set"))?,
-                audio_codec_name: value.audio_codec_name.clone(),
-                has_dash: value
-                    .has_dash
-                    .map(|i| i != 0)
-                    .ok_or(eyre!("Video asset can not have has_dash null"))?,
-            }),
-        };
-        Ok(Asset { base, sp })
+        })
+    }
+}
+
+impl TryFrom<DbVideoAsset> for Video {
+    type Error = eyre::Report;
+
+    fn try_from(value: DbVideoAsset) -> Result<Self, Self::Error> {
+        Ok(Video {
+            video_asset_id: VideoAssetId(value.video_asset_id),
+            video_codec_name: value.video_codec_name,
+            video_bitrate: value.video_bitrate,
+            audio_codec_name: value.audio_codec_name,
+        })
+    }
+}
+
+impl TryFrom<DbImageAsset> for Image {
+    type Error = eyre::Report;
+
+    fn try_from(value: DbImageAsset) -> Result<Self, Self::Error> {
+        Ok(Image {
+            image_asset_id: ImageAssetId(value.image_asset_id),
+            image_format_name: value.image_format_name,
+        })
     }
 }
 
@@ -104,7 +127,7 @@ impl TryFrom<DbAsset> for Asset {
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct DbInsertAsset<'a> {
     pub asset_id: Option<i64>,
-    pub ty: i32,
+    pub asset_type: i32,
     pub root_dir_id: i64,
     pub file_type: Cow<'a, str>,
     pub file_path: Cow<'a, str>,
@@ -120,19 +143,19 @@ pub struct DbInsertAsset<'a> {
     pub exiftool_output: Cow<'a, [u8]>,
     pub gps_latitude: Option<i64>,
     pub gps_longitude: Option<i64>,
+}
 
-    pub motion_photo: i32,
-    pub motion_photo_assoc_asset_id: Option<i64>,
-    pub motion_photo_pts_us: Option<i64>,
-    pub motion_photo_video_file_id: Option<i64>,
-
-    pub image_format_name: Option<Cow<'a, str>>,
-    pub ffprobe_output: Option<Cow<'a, [u8]>>,
-    pub video_codec_name: Option<Cow<'a, str>>,
-    pub video_bitrate: Option<i64>,
+#[derive(Debug, Clone, PartialEq, Eq, Insertable)]
+#[diesel(table_name = super::super::schema::VideoAsset)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct DbInsertVideoAsset<'a> {
+    pub asset_id: i64,
+    pub ffprobe_output: Cow<'a, [u8]>,
+    pub video_codec_name: Cow<'a, str>,
+    pub video_bitrate: i64,
     pub video_duration_ms: Option<i64>,
     pub audio_codec_name: Option<Cow<'a, str>>,
-    pub has_dash: Option<i32>,
+    pub has_ghi: Option<i32>,
 }
 
 pub fn to_db_asset_ty(ty: AssetType) -> i32 {

@@ -22,7 +22,7 @@ diesel::table! {
 diesel::table! {
     Asset (asset_id) {
         asset_id -> BigInt,
-        ty -> Integer,
+        asset_type -> Integer,
         root_dir_id -> BigInt,
         file_path -> Text,
         file_type -> Text,
@@ -46,16 +46,39 @@ diesel::table! {
         motion_photo_assoc_asset_id -> Nullable<BigInt>,
         motion_photo_pts_us -> Nullable<BigInt>,
         motion_photo_video_file_id -> Nullable<BigInt>,
+    }
+}
 
-        image_format_name -> Nullable<Text>,
-        ffprobe_output -> Nullable<Binary>,
-        video_codec_name -> Nullable<Text>,
-        video_bitrate -> Nullable<BigInt>,
+diesel::table! {
+    VideoAsset (video_asset_id) {
+        video_asset_id -> BigInt,
+        asset_type -> Integer,
+        asset_id -> BigInt,
+        ffprobe_output -> Binary,
+        video_codec_name -> Text,
+        video_bitrate -> BigInt,
         video_duration_ms -> Nullable<BigInt>,
         audio_codec_name -> Nullable<Text>,
-        has_dash -> Nullable<Integer>,
         has_ghi -> Nullable<Integer>,
-        // max_iframe_interval -> Nullable<Real>,
+        max_iframe_interval -> Nullable<Double>,
+    }
+}
+
+diesel::table! {
+    ImageAsset (image_asset_id) {
+        image_asset_id -> BigInt,
+        asset_type -> Integer,
+        asset_id -> BigInt,
+        image_format_name -> Text,
+    }
+}
+
+diesel::table! {
+    MotionPhoto (motion_photo_id) {
+        motion_photo_id -> BigInt,
+        image_asset_id -> BigInt,
+        video_asset_id -> Nullable<BigInt>,
+        photo_pts_us -> Nullable<BigInt>,
     }
 }
 
@@ -80,7 +103,7 @@ diesel::table! {
 diesel::table! {
     AudioRepresentation (audio_repr_id) {
         audio_repr_id -> BigInt,
-        asset_id -> BigInt,
+        video_asset_id -> BigInt,
         name -> Text,
         created_status -> Integer,
         codec_name -> Text,
@@ -130,7 +153,7 @@ diesel::table! {
 diesel::table! {
     ImageRepresentation (image_repr_id) {
         image_repr_id -> BigInt,
-        asset_id -> BigInt,
+        image_asset_id -> BigInt,
         format_name -> Text,
         width -> Integer,
         height -> Integer,
@@ -146,14 +169,6 @@ diesel::table! {
         format_name -> Text,
         width -> Integer,
         height -> Integer,
-        file_key -> Text,
-    }
-}
-
-diesel::table! {
-    MotionPhotoVideoFile (file_id) {
-        file_id -> BigInt,
-        asset_id -> BigInt,
         file_key -> Text,
     }
 }
@@ -194,7 +209,7 @@ diesel::table! {
 diesel::table! {
     VideoRepresentation (video_repr_id) {
         video_repr_id -> BigInt,
-        asset_id -> BigInt,
+        video_asset_id -> BigInt,
         name -> Text,
         created_status -> Integer,
         codec_name -> Text,
@@ -221,16 +236,17 @@ diesel::joinable!(AlbumItem -> Asset (asset_id));
 diesel::joinable!(AlbumThumbnail -> Album (album_id));
 diesel::joinable!(Asset -> AssetRootDir (root_dir_id));
 diesel::joinable!(Asset -> AssetSeries (series_id));
+diesel::joinable!(VideoAsset -> Asset (asset_id));
+diesel::joinable!(ImageAsset -> Asset (asset_id));
 diesel::joinable!(AssetThumbnail -> Asset (asset_id));
-diesel::joinable!(AudioRepresentation -> Asset (asset_id));
+diesel::joinable!(AudioRepresentation -> VideoAsset (video_asset_id));
 diesel::joinable!(DuplicateAsset -> Asset (asset_id));
 diesel::joinable!(DuplicateAsset -> AssetRootDir (root_dir_id));
-diesel::joinable!(ImageRepresentation -> Asset (asset_id));
+diesel::joinable!(ImageRepresentation -> ImageAsset (image_asset_id));
 diesel::joinable!(TimelineGroupItem -> Asset (asset_id));
 diesel::joinable!(TimelineGroupItem -> TimelineGroup (group_id));
-diesel::joinable!(VideoRepresentation -> Asset (asset_id));
+diesel::joinable!(VideoRepresentation -> VideoAsset (video_asset_id));
 diesel::joinable!(DeletedAutoAssetSeries -> Asset (asset_id));
-diesel::joinable!(MotionPhotoVideoFile -> Asset (asset_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     Album,
@@ -245,11 +261,13 @@ diesel::allow_tables_to_appear_in_same_query!(
     FailedFFmpeg,
     FailedShakaPackager,
     FailedThumbnailJob,
+    ImageAsset,
     ImageRepresentation,
     TimelineGroup,
     TimelineGroupItem,
     AssetSeries,
     VideoRepresentation,
     DeletedAutoAssetSeries,
-    MotionPhotoVideoFile,
+    MotionPhoto,
+    VideoAsset,
 );

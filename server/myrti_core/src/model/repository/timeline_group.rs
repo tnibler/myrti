@@ -7,7 +7,7 @@ use crate::model::{
     repository::db_entity::{DbAsset, DbTimelineGroup},
     timeline_group::TimelineGroup,
     util::{datetime_from_db_repr, datetime_to_db_repr},
-    Asset, AssetId, TimelineGroupId,
+    Asset, AssetBase, AssetId, TimelineGroupId,
 };
 
 use super::{db::DbConn, schema};
@@ -159,7 +159,7 @@ pub fn remove_assets_from_group(
 }
 
 #[instrument(skip(conn))]
-pub fn get_assets_in_group(conn: &mut DbConn, group_id: TimelineGroupId) -> Result<Vec<Asset>> {
+pub fn get_assets_in_group(conn: &mut DbConn, group_id: TimelineGroupId) -> Result<Vec<AssetBase>> {
     use schema::{Asset, TimelineGroupItem};
     let db_assets: Vec<DbAsset> = TimelineGroupItem::table
         .filter(TimelineGroupItem::group_id.eq(group_id.0))
@@ -168,6 +168,6 @@ pub fn get_assets_in_group(conn: &mut DbConn, group_id: TimelineGroupId) -> Resu
         .load(conn)?;
     db_assets
         .into_iter()
-        .map(|db_asset| db_asset.try_into())
+        .map(AssetBase::try_from)
         .collect::<Result<Vec<_>>>()
 }

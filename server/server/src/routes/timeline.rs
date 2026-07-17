@@ -302,8 +302,9 @@ async fn asset_with_reprs(pool: DbPool, asset: model::Asset) -> eyre::Result<Ass
                 "jpeg" | "avif" | "png" => Vec::new(),
                 _ => {
                     let conn = pool.get().await?;
+                    let image_asset_id = image.image_asset_id;
                     interact!(conn, move |conn| {
-                        repository::representation::get_image_representations(conn, asset.base.id)
+                        repository::representation::get_image_representations(conn, image_asset_id)
                     })
                     .await??
                 }
@@ -322,7 +323,7 @@ async fn asset_with_reprs(pool: DbPool, asset: model::Asset) -> eyre::Result<Ass
             })
         }
         model::AssetSpe::Video(video) => AssetSpe::Video(Video {
-            has_dash: video.has_dash,
+            has_dash: true, // FIXME: field doesn't exist anymore
         }),
     };
     Ok(AssetWithSpe {
@@ -334,10 +335,10 @@ async fn asset_with_reprs(pool: DbPool, asset: model::Asset) -> eyre::Result<Ass
 async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<AssetWithSpe> {
     let conn = pool.get().await?;
     match &asset.sp {
-        model::AssetSpe::Image(_image) => {
-            let asset_id = asset.base.id;
+        model::AssetSpe::Image(image) => {
+            let image_asset_id = image.image_asset_id;
             let reprs = interact!(conn, move |conn| {
-                repository::representation::get_image_representations(conn, asset_id)
+                repository::representation::get_image_representations(conn, image_asset_id)
             })
             .await??;
             let api_reprs = reprs
@@ -357,10 +358,10 @@ async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<Ass
                 }),
             })
         }
-        model::AssetSpe::Video(video) => Ok(AssetWithSpe {
+        model::AssetSpe::Video(_video) => Ok(AssetWithSpe {
             asset: asset.into(),
             spe: AssetSpe::Video(Video {
-                has_dash: video.has_dash,
+                has_dash: true, // FIXME: field doesn't exist anymore
             }),
         }),
     }

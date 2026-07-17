@@ -17,7 +17,7 @@ use crate::{
     model::{
         repository::{self, db::DbPool},
         AssetId, AudioRepresentation, AudioRepresentationId, CreateAudioRepresentation,
-        CreateVideoRepresentation, Size, VideoRepresentation,
+        CreateVideoRepresentation, Size, VideoAssetId, VideoRepresentation,
     },
     processing::{
         self,
@@ -38,6 +38,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageVideo {
     pub asset_id: AssetId,
+    pub video_asset_id: VideoAssetId,
     pub repr_name: String,
     pub output_key: String,
     pub task: PackageVideoTask,
@@ -79,6 +80,7 @@ pub async fn do_package_video(
     mut process_control_recv: mpsc::Receiver<ProcessControl>,
 ) -> Result<()> {
     let asset_id = package_video.asset_id;
+    let video_asset_id = package_video.video_asset_id;
     let conn = pool.get().await?;
     let asset_path = interact!(conn, move |conn| {
         repository::asset::get_asset_path_on_disk(conn, asset_id)
@@ -122,7 +124,7 @@ pub async fn do_package_video(
                 (false, false) => 0,
             };
             interact!(conn, move |conn| {
-                repository::asset::set_asset_has_ghi_index(conn, asset_id, has_ghi)
+                repository::asset::set_asset_has_ghi_index(conn, video_asset_id, has_ghi)
             })
             .await??;
         }
@@ -135,7 +137,7 @@ pub async fn do_package_video(
                 repository::representation::insert_audio_representation(
                     conn,
                     &CreateAudioRepresentation {
-                        asset_id,
+                        video_asset_id,
                         codec_name: codec_name2,
                         name: repr_name,
                     },
@@ -200,7 +202,7 @@ pub async fn do_package_video(
                 repository::representation::insert_video_representation(
                     conn,
                     &CreateVideoRepresentation {
-                        asset_id,
+                        video_asset_id,
                         name: repr_name,
                         codec_name: codec_name2,
                     },
@@ -273,7 +275,7 @@ pub async fn do_package_video(
                     conn,
                     &VideoRepresentation {
                         id: repr_id,
-                        asset_id,
+                        video_asset_id,
                         name: repr_name.to_owned(),
                         codec_name: codec_name.to_owned(),
                         width: streams.video.width,
@@ -288,11 +290,11 @@ pub async fn do_package_video(
 
     // merge MPD manifests
     let existing_video_reprs = interact!(conn, move |conn| {
-        repository::representation::get_video_representations(conn, asset_id)
+        repository::representation::get_video_representations(conn, video_asset_id)
     })
     .await??;
     let existing_audio_reprs = interact!(conn, move |conn| {
-        repository::representation::get_audio_representations(conn, asset_id)
+        repository::representation::get_audio_representations(conn, video_asset_id)
     })
     .await??;
 
@@ -344,7 +346,7 @@ pub async fn do_package_video(
         }
     }
     let has_ghi = interact!(conn, move |conn| {
-        repository::asset::get_asset_has_ghi_index(conn, asset_id)
+        repository::asset::get_asset_has_ghi_index(conn, video_asset_id)
     })
     .await??;
     if has_ghi.is_some_and(|s| s != 0) {

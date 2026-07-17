@@ -55,15 +55,16 @@ pub async fn required_video_packaging_for_asset(
         }
         crate::model::AssetSpe::Video(video) => video,
     };
+    let video_asset_id = video.video_asset_id;
     let existing_video_reprs = interact!(conn, move |conn| {
-        repository::representation::get_video_representations(conn, asset_id)
+        repository::representation::get_video_representations(conn, video_asset_id)
     })
     .await??;
     let has_acceptable_video_repr = existing_video_reprs
         .iter()
         .any(|repr| acceptable_video_codecs.contains(&repr.codec_name.as_str()));
     let audio_reprs = interact!(conn, move |conn| {
-        repository::representation::get_audio_representations(conn, asset_id)
+        repository::representation::get_audio_representations(conn, video_asset_id)
     })
     .await??;
     let has_acceptable_audio_repr = video.audio_codec_name.is_none()
@@ -83,7 +84,7 @@ pub async fn required_video_packaging_for_asset(
 
     let has_ghi_index = interact!(
         conn,
-        move |conn| repository::asset::get_asset_has_ghi_index(conn, asset_id)
+        move |conn| repository::asset::get_asset_has_ghi_index(conn, video_asset_id)
     )
     .await??;
     let asset_path = interact!(conn, move |conn| {
@@ -108,12 +109,13 @@ pub async fn required_video_packaging_for_asset(
         if !orig_vid_streamable && !orig_audio_streamable {
             interact!(
                 conn,
-                move |conn| repository::asset::set_asset_has_ghi_index(conn, asset_id, 0)
+                move |conn| repository::asset::set_asset_has_ghi_index(conn, video_asset_id, 0)
             )
             .await??;
         } else {
             ops.push(PackageVideo {
                 asset_id,
+                video_asset_id: video.video_asset_id,
                 repr_name: "original".to_owned(),
                 task: PackageVideoTask::CreateGHIIndex {
                     include_video: orig_vid_streamable,
@@ -129,6 +131,7 @@ pub async fn required_video_packaging_for_asset(
         let video_out_key = storage_key::dash_file(asset.base.id, format_args!("{}", repr_name));
         ops.push(PackageVideo {
             asset_id,
+            video_asset_id: video.video_asset_id,
             repr_name,
             task: PackageVideoTask::TranscodeVideo(VideoEncodingTarget {
                 codec: CodecTarget::AV1(av1::AV1Target {
@@ -147,6 +150,7 @@ pub async fn required_video_packaging_for_asset(
         let repr_name = audio_codec_name(&AudioEncodingTarget::AAC);
         ops.push(PackageVideo {
             asset_id,
+            video_asset_id: video.video_asset_id,
             repr_name,
             task: PackageVideoTask::TranscodeAudio(AudioEncodingTarget::AAC),
             output_key: storage_key::dash_file(asset_id, format_args!("audio_aac.mp4")),
@@ -298,22 +302,22 @@ pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageV
     })
     .await??;
 
-    let acceptable_codecs_no_dash = interact!(conn, move |conn| {
-        repository::asset::get_videos_in_acceptable_codec_without_dash(conn)
-    })
-    .await??;
-    let mut acceptable_codecs_no_dash_and_no_rotation_metadata: Vec<VideoAsset> = Vec::default();
-    for asset in acceptable_codecs_no_dash {
-        // TODO: check iframe interval
-        // let ffprobe_output = interact!(conn, move |conn| repository::asset::get_ffprobe_output(
-        //     conn,
-        //     asset.base.id
-        // ))
-        // .await??;
-        // let streams = processing::video::ffprobe_get_streams_from_json(&ffprobe_output)
-        //     .wrap_err("failed to parse ffprobe output stored in db")?;
-        // acceptable_codecs_no_dash_and_no_rotation_metadata.push(asset);
-    }
+    // let acceptable_codecs_no_dash = interact!(conn, move |conn| {
+    //     repository::asset::get_videos_in_acceptable_codec_without_dash(conn)
+    // })
+    // .await??;
+    // let mut acceptable_codecs_no_dash_and_no_rotation_metadata: Vec<VideoAsset> = Vec::default();
+    // for asset in acceptable_codecs_no_dash {
+    // TODO: check iframe interval
+    // let ffprobe_output = interact!(conn, move |conn| repository::asset::get_ffprobe_output(
+    //     conn,
+    //     asset.base.id
+    // ))
+    // .await??;
+    // let streams = processing::video::ffprobe_get_streams_from_json(&ffprobe_output)
+    //     .wrap_err("failed to parse ffprobe output stored in db")?;
+    // acceptable_codecs_no_dash_and_no_rotation_metadata.push(asset);
+    // }
     // let package_orig_tasks = std::iter::empty();
     // let package_orig_tasks = acceptable_codecs_no_dash_and_no_rotation_metadata
     //     .into_iter()
@@ -339,10 +343,10 @@ pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageV
     //         }
     //     });
 
-    let no_good_reprs: Vec<VideoAsset> = interact!(conn, move |conn| {
-        repository::asset::get_video_assets_with_no_acceptable_repr(conn)
-    })
-    .await??;
+    // let no_good_reprs: Vec<VideoAsset> = interact!(conn, move |conn| {
+    //     repository::asset::get_video_assets_with_no_acceptable_repr(conn)
+    // })
+    // .await??;
     return Ok(Default::default());
     // let reencode_tasks = no_good_reprs.into_iter().map(|asset| {
     //     let video_out_key = storage_key::dash_file(
@@ -412,15 +416,16 @@ pub async fn image_conversion_due(conn: &mut PooledDbConn) -> Result<Vec<Convert
     );
     let ops = assets_no_good_repr
         .into_iter()
-        .map(|asset_id| {
+        .map(|(image_asset_id, asset_id)| {
             let target = ImageConversionTarget {
                 scale: None,
                 format: super::image_conversion_target::ImageFormatTarget::AVIF(
                     AvifTarget::default(),
                 ),
             };
-            let output_file_key = storage_key::image_representation(asset_id, &target);
+            let output_file_key = storage_key::image_representation(image_asset_id, &target);
             ConvertImage {
+                image_asset_id,
                 asset_id,
                 target,
                 output_file_key,

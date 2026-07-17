@@ -8,12 +8,13 @@ use diesel::{
     RunQueryDsl, SelectableHelper,
 };
 use eyre::{eyre, Context, Result};
-use is_sorted::IsSorted;
 use itertools::Itertools;
 use tracing::instrument;
 
 use crate::model::{
-    util::datetime_from_db_repr, Asset, AssetId, AssetSeriesId, TimelineGroup, TimelineGroupId,
+    repository::{self, db_entity::from_db_asset_ty},
+    util::datetime_from_db_repr,
+    Asset, AssetBase, AssetId, AssetSeriesId, TimelineGroup, TimelineGroupId,
 };
 
 use super::{db::DbConn, db_entity::DbAsset, timeline_group::get_timeline_group};
@@ -104,7 +105,9 @@ pub fn get_timeline_chunk(
         .load(conn)?;
     let mut timeline_els: Vec<TimelineElement> = Vec::default();
     for row in assets_groupid {
-        let asset: Asset = row.asset.try_into()?;
+        // TODO: additional query per row is not great
+        let asset: Asset = repository::asset::get_asset(conn, AssetId(row.asset.asset_id))?;
+
         let group_id = row.group_id.map(TimelineGroupId);
         // let sort_group_date = datetime_from_db_repr(row.sort_group_date)?;
         let mut last_el = timeline_els.last_mut();
@@ -365,7 +368,8 @@ pub fn get_segments_in_section(
                 if first_row.is_none() {
                     first_row = Some(row.clone());
                 }
-                let asset: Asset = row.asset.try_into()?;
+                // TODO: additional query per row is not great
+                let asset: Asset = repository::asset::get_asset(conn, AssetId(row.asset.asset_id))?;
                 match (
                     row.series_id,
                     row.series_date,

@@ -5,6 +5,9 @@ DROP TABLE DuplicateAsset;
 DROP TABLE VideoRepresentation;
 DROP TABLE AudioRepresentation;
 DROP TABLE ImageRepresentation;
+DROP TABLE VideoAsset;
+DROP TABLE ImageAsset;
+DROP TABLE MotionPhoto;
 DROP TABLE Album;
 DROP TABLE AlbumItem;
 DROP TABLE AssetSeries;
@@ -18,6 +21,5 @@ DROP TABLE FailedThumbnailJob;
 DROP TABLE FailedFFmpeg;
 DROP TABLE FailedShakaPackager;
 DROP TABLE DeletedAutoAssetSeries;
-DROP TABLE MotionPhotoVideoFile;
 
 DROP VIEW TimelineSegment;

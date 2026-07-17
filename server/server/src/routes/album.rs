@@ -158,7 +158,7 @@ pub async fn get_album_details(
                                 representations: Vec::default(), //FIXME
                             }),
                             model::AssetSpe::Video(video) => AssetSpe::Video(Video {
-                                has_dash: video.has_dash,
+                                has_dash: true, // FIXME: field doesn't exist anymore
                             }),
                         },
                         asset: asset.into(),

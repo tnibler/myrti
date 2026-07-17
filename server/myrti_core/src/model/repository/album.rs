@@ -11,7 +11,10 @@ use tracing::instrument;
 
 use crate::model::{
     self,
-    repository::db_entity::{DbAlbum, DbAlbumWithItemCount, DbAsset, DbInsertAlbum},
+    repository::{
+        self,
+        db_entity::{DbAlbum, DbAlbumWithItemCount, DbAsset, DbInsertAlbum},
+    },
     util::datetime_to_db_repr,
     Album, AlbumId, AlbumItem, AlbumItemId, AlbumItemType, Asset, AssetId,
 };
@@ -126,7 +129,8 @@ pub fn get_items_in_album(conn: &mut DbConn, album_id: AlbumId) -> Result<Vec<Al
         .map(|row| match (row.asset, row.album_item.text) {
             (Some(asset), None) => {
                 assert!(row.album_item.ty == 1);
-                let asset = asset.try_into()?;
+                // TODO: extra query per row, not nice
+                let asset = repository::asset::get_asset(conn, AssetId(asset.asset_id))?;
                 Ok(model::AlbumItem {
                     id: AlbumItemId(row.album_item.album_item_id),
                     item: AlbumItemType::Asset(asset),
@@ -176,7 +180,10 @@ pub fn get_assets_in_album(
     .wrap_err("error querying for Assets in Album")?;
     db_assets
         .into_iter()
-        .map(|db_asset| db_asset.try_into())
+        .map(|db_asset| {
+            // TODO: extra query per row, not nice
+            repository::asset::get_asset(conn, AssetId(db_asset.asset_id))
+        })
         .collect::<Result<Vec<_>>>()
 }
 

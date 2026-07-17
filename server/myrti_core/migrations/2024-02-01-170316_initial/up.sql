@@ -16,7 +16,7 @@ CREATE TABLE AssetSeries (
 CREATE TABLE Asset (
   asset_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   -- 1=Image, 2=Video
-  ty INTEGER NOT NULL CHECK (ty IN (1, 2)),
+  asset_type INTEGER NOT NULL CHECK (asset_type IN (1, 2)),
   root_dir_id INTEGER NOT NULL,
   file_path TEXT NOT NULL,
   file_type TEXT NOT NULL,
@@ -47,70 +47,85 @@ CREATE TABLE Asset (
   gps_latitude INTEGER,
   gps_longitude INTEGER,
 
-  -- 0: not a motion photo
-  -- 1: motion photo with embedded video inside
-  -- 2: this is the photo part of a motion photo split into 2 files/assets
-  -- 3: this is the video part of a motion photo split into 2 files assets
-  motion_photo INTEGER NOT NULL,
-  -- asset_id of photo/video asset belonging to this motion photo
-  motion_photo_assoc_asset_id INTEGER CHECK ((motion_photo = 2 OR motion_photo = 3) = (motion_photo_assoc_asset_id IS NOT NULL)),
-  motion_photo_pts_us INTEGER CHECK ((motion_photo IS NULL) = (motion_photo_pts_us IS NOT NULL)),
-  motion_photo_video_file_id INTEGER CHECK ((motion_photo = 1) = (motion_photo_video_file_id IS NOT NULL)),
+  -- FKs in Video/ImageAsset need to reference a candidate key in Asset.
+  -- Any set of columns (asset_id, ...) obviously fulfills that, but sqlite doesn't know so it needs an explicit index
+  UNIQUE(asset_id, asset_type),
 
-  -- columns for images only
-  image_format_name TEXT,
+  FOREIGN KEY (series_id) REFERENCES AssetSeries(series_id),
+  FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(asset_root_dir_id),
+  UNIQUE(root_dir_id, file_path),
 
-  -- columns for videos only
-  ffprobe_output BLOB,
-  video_codec_name TEXT,
-  video_bitrate INTEGER,
+  -- timezone_offset NULL is only valid for timezone_info=UtcCertain, and NoTimestamp I guess?
+  CHECK (timezone_info IN (1, 2, 3, 4, 5, 6) AND (timezone_info IN (2, 6) OR timezone_offset IS NOT NULL)),
+
+  CHECK((gps_latitude IS NULL AND gps_longitude IS NULL) OR (gps_latitude IS NOT NULL AND gps_longitude IS NOT NULL))
+) STRICT;
+
+CREATE TABLE VideoAsset (
+  video_asset_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  asset_id INTEGER NOT NULL UNIQUE,
+  asset_type INTEGER NOT NULL CHECK (asset_type = 2) DEFAULT 2,
+  ffprobe_output BLOB NOT NULL,
+  video_codec_name TEXT NOT NULL,
+  video_bitrate INTEGER NOT NULL,
   video_duration_ms INTEGER,
   audio_codec_name TEXT,
-  has_dash INTEGER,
 
   -- NULL: unknown
   -- 0: none
   -- 1: video
   -- 2: audio
   -- 3: video+audio
-  has_ghi INTEGER,
+  has_ghi INTEGER CHECK(has_ghi IN (0, 1, 2, 3)),
   max_iframe_interval REAL,
-
-  FOREIGN KEY (series_id) REFERENCES AssetSeries(series_id),
-  FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(asset_root_dir_id),
-  UNIQUE(root_dir_id, file_path),
-  FOREIGN KEY (motion_photo_assoc_asset_id) REFERENCES Asset(asset_id),
-  FOREIGN KEY (motion_photo_video_file_id) REFERENCES MotionPhotoVideoFile(file_id),
-
-  -- timezone_offset NULL is only valid for timezone_info=UtcCertain, and NoTimestamp I guess?
-  CHECK (timezone_info IN (1, 2, 3, 4, 5, 6) AND (timezone_info IN (2, 6) OR timezone_offset IS NOT NULL)),
-
-  CHECK(has_dash IN (0, 1)),
-  CHECK(has_ghi IN (0, 1, 2, 3)),
-  -- valid Image or Video
-  CHECK((ty = 1
-      AND image_format_name IS NOT NULL
-      AND ffprobe_output IS NULL
-      AND video_codec_name IS NULL
-      AND video_bitrate IS NULL
-      AND video_duration_ms IS NULL
-      AND audio_codec_name IS NULL
-      AND has_dash IS NULL
-      AND has_ghi IS NULL
-      AND max_iframe_interval IS NULL
-    ) OR (
-      ty = 2 
-      AND image_format_name IS NULL
-      AND ffprobe_output IS NOT NULL
-      AND video_codec_name IS NOT NULL
-      AND video_bitrate IS NOT NULL
-      AND has_dash IS NOT NULL
-      AND has_ghi
-      -- audio_codec_name, video_duration_ms can be null if there's no audio stream
-  )),
-
-  CHECK((gps_latitude IS NULL AND gps_longitude IS NULL) OR (gps_latitude IS NOT NULL AND gps_longitude IS NOT NULL))
+  UNIQUE(asset_id),
+  FOREIGN KEY (asset_id, asset_type) REFERENCES Asset(asset_id, asset_type) DEFERRABLE INITIALLY DEFERRED
 ) STRICT;
+
+CREATE TABLE ImageAsset (
+  image_asset_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  asset_id INTEGER NOT NULL UNIQUE,
+  asset_type INTEGER NOT NULL CHECK (asset_type = 1) DEFAULT 1,
+  image_format_name TEXT NOT NULL,
+  UNIQUE(asset_id),
+  FOREIGN KEY (asset_id, asset_type) REFERENCES Asset(asset_id, asset_type) DEFERRABLE INITIALLY DEFERRED
+) STRICT;
+
+-- Check that a row Asset has exactly one matching row in ImageAsset or VideoAsset
+CREATE TRIGGER _image_asset_insert BEFORE INSERT ON ImageAsset
+BEGIN
+  SELECT CASE
+    WHEN EXISTS (SELECT 1 FROM VideoAsset WHERE VideoAsset.asset_id = NEW.asset_id)
+      THEN RAISE(ABORT, 'row in Asset already has matching row in VideoAsset')
+  END;
+END;
+CREATE TRIGGER _video_asset_insert BEFORE INSERT ON VideoAsset
+BEGIN
+  SELECT CASE
+    WHEN EXISTS (SELECT 1 FROM ImageAsset WHERE ImageAsset.asset_id = NEW.asset_id)
+      THEN RAISE(ABORT, 'row in Asset already has matching row in ImageAsset')
+  END;
+END;
+-- CREATE TRIGGER _asset_insert AFTER INSERT ON Asset
+-- BEGIN
+--   SELECT CASE
+--     WHEN NOT EXISTS (SELECT 1 FROM ImageAsset WHERE ImageAsset.asset_id = NEW.asset_id)
+--       AND NOT EXISTS (SELECT 1 FROM VideoAsset WHERE VideoAsset.asset_id = NEW.asset_id)
+--       THEN RAISE(ABORT, 'row in Asset has no matching row in ImageAsset or VideoAsset')
+--   END;
+-- END;
+
+
+CREATE TABLE MotionPhoto (
+  motion_photo_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  image_asset_id INTEGER NOT NULL UNIQUE,
+  video_asset_id INTEGER UNIQUE,
+  photo_pts_us INTEGER,
+  FOREIGN KEY (image_asset_id) REFERENCES PhotoAsset(image_asset_id) ON DELETE CASCADE,
+  FOREIGN KEY (video_asset_id) REFERENCES VideoAsset(video_asset_id) ON DELETE CASCADE
+) STRICT;
+
+
 
 CREATE TABLE DuplicateAsset (
   dup_asset_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -136,7 +151,7 @@ CREATE TABLE AssetThumbnail (
 
 CREATE TABLE VideoRepresentation (
   video_repr_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  asset_id INTEGER NOT NULL,
+  video_asset_id INTEGER NOT NULL,
   name TEXT NOT NULL CHECK(NAME != ''),
   codec_name TEXT NOT NULL,
   width INTEGER,
@@ -148,27 +163,27 @@ CREATE TABLE VideoRepresentation (
       AND height IS NOT NULL
       AND bitrate IS NOT NULL
   )),
-  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
+  FOREIGN KEY (video_asset_id) REFERENCES VideoAsset(video_asset_id)
 ) STRICT;
 
 CREATE TABLE AudioRepresentation (
   audio_repr_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  asset_id INTEGER NOT NULL,
+  video_asset_id INTEGER NOT NULL,
   name TEXT NOT NULL CHECK(NAME != ''),
   codec_name TEXT NOT NULL,
   created_status INTEGER NOT NULL CHECK(created_status IN (0, 1)),
-  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
+  FOREIGN KEY (video_asset_id) REFERENCES VideoAsset(video_asset_id)
 ) STRICT;
 
 CREATE TABLE ImageRepresentation (
   image_repr_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  asset_id INTEGER NOT NULL,
+  image_asset_id INTEGER NOT NULL,
   format_name TEXT NOT NULL,
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
   file_size INTEGER NOT NULL,
   file_key TEXT NOT NULL,
-  FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
+  FOREIGN KEY (image_asset_id) REFERENCES ImageAsset(image_asset_id)
 ) STRICT;
 
 CREATE TABLE AlbumThumbnail (
@@ -181,13 +196,6 @@ CREATE TABLE AlbumThumbnail (
   FOREIGN KEY (album_id) REFERENCES Album(album_id),
   UNIQUE (album_id, format_name, width, height),
   UNIQUE (file_key)
-) STRICT;
-
-CREATE TABLE MotionPhotoVideoFile (
-  file_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-  asset_id INTEGER NOT NULL,
-  file_key TEXT NOT NULL,
-  FOREIGN KEY(asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 
 CREATE TABLE Album (

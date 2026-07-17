@@ -9,7 +9,7 @@ use crate::{
             self,
             db::{DbPool, PooledDbConn},
         },
-        AssetId, ImageRepresentation, ImageRepresentationId, Size,
+        AssetId, ImageAssetId, ImageRepresentation, ImageRepresentationId, Size,
     },
     processing::{self, image::image_conversion::ConvertImageTrait},
 };
@@ -17,6 +17,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct ConvertImage {
     pub asset_id: AssetId,
+    pub image_asset_id: ImageAssetId,
     pub target: ImageConversionTarget,
     pub output_file_key: String,
 }
@@ -29,7 +30,7 @@ pub async fn apply_convert_image(
 ) -> Result<()> {
     let image_representation = ImageRepresentation {
         id: ImageRepresentationId(0),
-        asset_id: op.asset_id,
+        image_asset_id: op.image_asset_id,
         format_name: image_format_name(&op.target.format).to_owned(),
         file_key: op.output_file_key.clone(),
         file_size: result.file_size,

@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 
 use camino::Utf8Path as Path;
 use chrono::Utc;
@@ -9,9 +9,11 @@ use diesel::{insert_into, prelude::*};
 use eyre::{eyre, Context, Result};
 use tracing::instrument;
 
+use crate::model::repository::db_entity::{DbImageAsset, DbInsertVideoAsset, DbVideoAsset};
 use crate::model::{
-    self, Asset, AssetId, AssetPathOnDisk, AssetRootDirId, AssetThumbnail, AssetThumbnailId,
-    AssetType, CreateAsset, CreateAssetSpe, TimestampInfo, VideoAsset,
+    self, Asset, AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetThumbnail,
+    AssetThumbnailId, AssetType, CreateAsset, CreateAssetSpe, Image, ImageAssetId, TimestampInfo,
+    VideoAsset, VideoAssetId,
 };
 use crate::model::{
     repository::db_entity::{to_db_asset_ty, DbAssetPathOnDisk, DbAssetThumbnail},
@@ -24,9 +26,34 @@ use super::schema;
 
 #[instrument(skip(conn))]
 pub fn get_asset(conn: &mut DbConn, id: AssetId) -> Result<Asset> {
-    use schema::Asset::dsl::*;
-    let db_asset: DbAsset = Asset.select(DbAsset::as_select()).find(id.0).first(conn)?;
-    db_asset.try_into()
+    let db_asset: DbAsset = schema::Asset::table
+        .select(DbAsset::as_select())
+        .find(id.0)
+        .first(conn)?;
+    let image_asset: Option<DbImageAsset> = DbImageAsset::belonging_to(&db_asset)
+        .select(DbImageAsset::as_select())
+        .get_result(conn)
+        .optional()?;
+    if let Some(image_asset) = image_asset {
+        return Ok(model::Asset {
+            base: db_asset.try_into()?,
+            sp: AssetSpe::Image(Image {
+                image_asset_id: ImageAssetId(image_asset.image_asset_id),
+                image_format_name: image_asset.image_format_name,
+            }),
+        });
+    }
+    let video_asset: Option<DbVideoAsset> = DbVideoAsset::belonging_to(&db_asset)
+        .select(DbVideoAsset::as_select())
+        .get_result(conn)
+        .optional()?;
+    if let Some(video_asset) = video_asset {
+        return Ok(Asset {
+            base: db_asset.try_into()?,
+            sp: AssetSpe::Video(video_asset.try_into()?),
+        });
+    }
+    panic!("asset is neither image nor video, db constraints disallow this")
 }
 
 #[instrument(skip(conn))]
@@ -91,12 +118,30 @@ pub fn asset_or_duplicate_with_path_exists(
 
 #[instrument(skip(conn))]
 pub fn get_assets(conn: &mut DbConn) -> Result<Vec<Asset>> {
-    use schema::Asset::dsl::*;
-    let db_assets: Vec<DbAsset> = Asset.select(DbAsset::as_select()).load(conn)?;
-    db_assets
+    use schema::{Asset, ImageAsset, VideoAsset};
+    let images = Asset::table
+        .inner_join(ImageAsset::table)
+        .select((DbAsset::as_select(), DbImageAsset::as_select()))
+        .load(conn)?
         .into_iter()
-        .map(|a| a.try_into())
-        .collect::<Result<Vec<_>>>()
+        .map(|(base, image): (DbAsset, DbImageAsset)| {
+            Ok(model::Asset {
+                base: base.try_into()?,
+                sp: AssetSpe::Image(image.try_into()?),
+            })
+        });
+    let videos = Asset::table
+        .inner_join(VideoAsset::table)
+        .select((DbAsset::as_select(), DbVideoAsset::as_select()))
+        .load(conn)?
+        .into_iter()
+        .map(|(base, video): (DbAsset, DbVideoAsset)| {
+            Ok(model::Asset {
+                base: base.try_into()?,
+                sp: AssetSpe::Video(video.try_into()?),
+            })
+        });
+    images.chain(videos).collect::<Result<Vec<_>>>()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -210,7 +255,7 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
     };
     let insertable: DbInsertAsset = DbInsertAsset {
         asset_id: None,
-        ty: to_db_asset_ty(match &create_asset.spe {
+        asset_type: to_db_asset_ty(match &create_asset.spe {
             CreateAssetSpe::Image(_) => AssetType::Image,
             CreateAssetSpe::Video(_) => AssetType::Video,
         }),
@@ -232,53 +277,46 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
         exiftool_output: Cow::Borrowed(&create_asset.base.exiftool_output),
         gps_latitude: create_asset.base.gps_coordinates.map(|c| c.lat),
         gps_longitude: create_asset.base.gps_coordinates.map(|c| c.lon),
-
-        motion_photo: 0,
-        motion_photo_assoc_asset_id: None,
-        motion_photo_pts_us: None,
-        motion_photo_video_file_id: None,
-
-        image_format_name: match &create_asset.spe {
-            CreateAssetSpe::Image(img) => Some(img.image_format_name.as_str().into()),
-            CreateAssetSpe::Video(_) => None,
-        },
-        ffprobe_output: match &create_asset.spe {
-            CreateAssetSpe::Image(_) => None,
-            CreateAssetSpe::Video(video) => Some(video.ffprobe_output.0.as_slice().into()),
-        },
-        video_codec_name: match &create_asset.spe {
-            CreateAssetSpe::Image(_) => None,
-            CreateAssetSpe::Video(video) => Some(video.video_codec_name.as_str().into()),
-        },
-        video_bitrate: match &create_asset.spe {
-            CreateAssetSpe::Image(_) => None,
-            CreateAssetSpe::Video(video) => Some(video.video_bitrate),
-        },
-        video_duration_ms: match &create_asset.spe {
-            CreateAssetSpe::Image(_) => None,
-            CreateAssetSpe::Video(video) => video.video_duration_ms,
-        },
-        audio_codec_name: match &create_asset.spe {
-            CreateAssetSpe::Image(_) => None,
-            CreateAssetSpe::Video(video) => Some(
-                video
-                    .audio_codec_name
-                    .as_ref()
-                    .map(|a| Cow::Borrowed(a.as_str())),
-            )
-            .flatten(),
-        },
-        has_dash: match &create_asset.spe {
-            CreateAssetSpe::Image(_) => None,
-            CreateAssetSpe::Video(video) => Some(bool_to_int(video.has_dash)),
-        },
     };
-    let id: i64 = insert_into(schema::Asset::table)
-        .values(&insertable)
-        .returning(schema::Asset::asset_id)
-        .get_result(conn)
-        .wrap_err("error inserting Asset")?;
-    Ok(AssetId(id))
+    conn.exclusive_transaction(|conn| {
+        let id: i64 = insert_into(schema::Asset::table)
+            .values(&insertable)
+            .returning(schema::Asset::asset_id)
+            .get_result(conn)
+            .wrap_err("error inserting Asset")?;
+
+        match create_asset.spe {
+            CreateAssetSpe::Image(create_asset_image) => {
+                let _image_asset_id = insert_into(schema::ImageAsset::table)
+                    .values((
+                        schema::ImageAsset::asset_id.eq(id),
+                        schema::ImageAsset::image_format_name
+                            .eq(&create_asset_image.image_format_name),
+                    ))
+                    .execute(conn)
+                    .wrap_err("error inserting ImageAsset")?;
+            }
+            CreateAssetSpe::Video(create_asset_video) => {
+                let _video_asset_id = insert_into(schema::VideoAsset::table)
+                    .values(DbInsertVideoAsset {
+                        asset_id: id,
+                        ffprobe_output: Cow::Borrowed(&create_asset_video.ffprobe_output.0),
+                        video_codec_name: create_asset_video.video_codec_name.as_str().into(),
+                        video_bitrate: create_asset_video.video_bitrate,
+                        video_duration_ms: create_asset_video.video_duration_ms,
+                        audio_codec_name: create_asset_video
+                            .audio_codec_name
+                            .as_deref()
+                            .map(Cow::Borrowed),
+                        has_ghi: None,
+                    })
+                    .execute(conn)
+                    .wrap_err("error inserting VideoAsset")?;
+            }
+        }
+
+        Ok(AssetId(id))
+    })
 }
 
 #[instrument(skip(conn))]
@@ -302,31 +340,6 @@ pub fn insert_asset_thumbnail(
 }
 
 #[instrument(skip(conn))]
-pub fn set_asset_has_dash(conn: &mut DbConn, asset_id: AssetId, has_dash: bool) -> Result<()> {
-    use schema::Asset;
-    diesel::update(Asset::table.find(asset_id.0))
-        .set(Asset::has_dash.eq(bool_to_int(has_dash)))
-        .execute(conn)?;
-    Ok(())
-}
-
-#[instrument(skip(conn))]
-pub fn get_video_assets_without_dash(conn: &mut DbConn) -> Result<Vec<VideoAsset>> {
-    use schema::Asset::dsl::*;
-    let db_assets: Vec<DbAsset> = Asset
-        .filter(
-            ty.eq(to_db_asset_ty(AssetType::Video))
-                .and(has_dash.eq(bool_to_int(false))),
-        )
-        .select(DbAsset::as_select())
-        .load(conn)?;
-    db_assets
-        .into_iter()
-        .map(|db_asset| VideoAsset::try_from(model::Asset::try_from(db_asset)?))
-        .collect::<Result<Vec<VideoAsset>>>()
-}
-
-#[instrument(skip(conn))]
 pub fn get_asset_exiftool_output(conn: &mut DbConn, asset_id: AssetId) -> Result<Vec<u8>> {
     use schema::Asset;
     let exiftool_output: Vec<u8> = Asset::table
@@ -338,25 +351,23 @@ pub fn get_asset_exiftool_output(conn: &mut DbConn, asset_id: AssetId) -> Result
 }
 
 #[instrument(skip(conn))]
-pub fn get_video_assets_with_no_acceptable_repr(conn: &mut DbConn) -> Result<Vec<VideoAsset>> {
-    use schema::Asset;
-    let query = Asset::table
-        .select(DbAsset::as_select())
-        .filter(Asset::ty.eq(to_db_asset_ty(AssetType::Video)))
-        .filter(sql::<Bool>(
-            r#"
+pub fn get_video_assets_with_no_acceptable_repr(conn: &mut DbConn) -> Result<Vec<AssetBase>> {
+    let query = diesel::sql_query(
+        r#"
+            SELECT Asset.* FROM Asset INNER JOIN VideoAsset ON Asset.asset_id = VideoAsset.asset_ID
+            WHERE
             (
             (
-                Asset.audio_codec_name IS NOT NULL
+                VideoAsset.audio_codec_name IS NOT NULL
                 AND
                 NOT EXISTS 
                 (
                     SELECT * FROM
                     (
-                        SELECT Asset.audio_codec_name
+                        SELECT VideoAsset.audio_codec_name
                         UNION
                         SELECT ar.codec_name FROM AudioRepresentation ar
-                        WHERE ar.asset_id = Asset.asset_id
+                        WHERE ar.video_asset_id = VideoAsset.video_asset_id
                     )
                     INTERSECT SELECT * FROM AcceptableAudioCodec
                 )
@@ -367,83 +378,84 @@ pub fn get_video_assets_with_no_acceptable_repr(conn: &mut DbConn) -> Result<Vec
                 (
                     SELECT * FROM
                     (
-                        SELECT * FROM (SELECT Asset.video_codec_name WHERE Asset.file_type='mp4')
+                        SELECT vr.codec_name FROM VideoRepresentation vr WHERE vr.video_asset_id = VideoAsset.video_asset_id
                         UNION
-                        SELECT vr.codec_name FROM VideoRepresentation vr
-                        WHERE vr.asset_id = Asset.asset_id
+                        SELECT VideoAsset.video_codec_name WHERE VideoAsset.has_ghi = 1 OR VideoAsset.has_ghi = 3
                     )
                     INTERSECT SELECT * FROM AcceptableVideoCodec
                 )
             )
-            )
+            );
         "#,
-        ));
-    let db_assets: Vec<DbAsset> = query.load(conn)?;
+    );
+    let db_assets: Vec<DbAsset> = query
+        .load(conn)
+        .wrap_err("error querying for VideoAssets with no acceptable codec representations")?;
     db_assets
         .into_iter()
-        .map(|db_asset| model::Asset::try_from(db_asset)?.try_into())
+        .map(|db_asset| model::AssetBase::try_from(db_asset))
         .collect::<Result<Vec<_>>>()
 }
 
-#[instrument(skip(conn))]
-pub fn get_videos_in_acceptable_codec_without_dash(conn: &mut DbConn) -> Result<Vec<VideoAsset>> {
-    use schema::Asset;
-    let db_assets: Vec<DbAsset> = Asset::table
-        .select(DbAsset::as_select())
-        .filter(
-            Asset::ty
-                .eq(to_db_asset_ty(AssetType::Video))
-                .and(Asset::has_dash.assume_not_null().eq(bool_to_int(false)))
-                .and(Asset::file_type.eq("mp4")),
-        )
-        .filter(
-            sql::<Bool>(r#"
-            (
-                Asset.audio_codec_name IS NULL 
-                OR 
-                EXISTS (SELECT codec_name FROM AcceptableAudioCodec WHERE codec_name = Asset.audio_codec_name)
-            ) 
-            AND 
-                EXISTS (SELECT codec_name FROM AcceptableVideoCodec WHERE codec_name = Asset.video_codec_name)
-            "#)
-        )
-        .load(conn)?;
-    db_assets
-        .into_iter()
-        .map(|db_asset| model::Asset::try_from(db_asset)?.try_into())
-        .collect::<Result<Vec<_>>>()
-}
+// #[instrument(skip(conn))]
+// pub fn get_videos_in_acceptable_codec_without_dash(conn: &mut DbConn) -> Result<Vec<VideoAsset>> {
+//     use schema::Asset;
+//     let db_assets: Vec<DbAsset> = Asset::table
+//         .select(DbAsset::as_select())
+//         .filter(
+//             Asset::ty
+//                 .eq(to_db_asset_ty(AssetType::Video))
+//                 .and(Asset::has_dash.assume_not_null().eq(bool_to_int(false)))
+//                 .and(Asset::file_type.eq("mp4")),
+//         )
+//         .filter(
+//             sql::<Bool>(r#"
+//             (
+//                 Asset.audio_codec_name IS NULL
+//                 OR
+//                 EXISTS (SELECT codec_name FROM AcceptableAudioCodec WHERE codec_name = Asset.audio_codec_name)
+//             )
+//             AND
+//                 EXISTS (SELECT codec_name FROM AcceptableVideoCodec WHERE codec_name = Asset.video_codec_name)
+//             "#)
+//         )
+//         .load(conn)?;
+//     db_assets
+//         .into_iter()
+//         .map(|db_asset| model::Asset::try_from(db_asset)?.try_into())
+//         .collect::<Result<Vec<_>>>()
+// }
 
 #[instrument(skip(conn, acceptable_codecs))]
 pub fn get_image_assets_with_no_acceptable_repr(
     conn: &mut DbConn,
     acceptable_codecs: &[&str],
-) -> Result<Vec<AssetId>> {
+) -> Result<Vec<(ImageAssetId, AssetId)>> {
     use diesel::dsl::{exists, not};
-    use schema::{Asset, ImageRepresentation};
-    let asset_ids: Vec<i64> = Asset::table
-        .filter(Asset::ty.eq(to_db_asset_ty(AssetType::Image)))
-        .filter(not(Asset::image_format_name
-            .assume_not_null()
-            .eq_any(acceptable_codecs)))
+    use schema::{ImageAsset, ImageRepresentation};
+    let asset_ids: Vec<(i64, i64)> = ImageAsset::table
+        .filter(not(ImageAsset::image_format_name.eq_any(acceptable_codecs)))
         .filter(not(exists(
             ImageRepresentation::table.filter(
-                ImageRepresentation::asset_id
-                    .eq(Asset::asset_id)
+                ImageRepresentation::image_asset_id
+                    .eq(ImageAsset::image_asset_id)
                     .and(ImageRepresentation::format_name.eq_any(acceptable_codecs)),
             ),
         )))
-        .select(Asset::asset_id)
+        .select((ImageAsset::image_asset_id, ImageAsset::asset_id))
         .load(conn)?;
-    Ok(asset_ids.into_iter().map(AssetId).collect())
+    Ok(asset_ids
+        .into_iter()
+        .map(|(id, asset_id)| (ImageAssetId(id), AssetId(asset_id)))
+        .collect())
 }
 
 #[instrument(skip(conn))]
 pub fn get_ffprobe_output(conn: &mut DbConn, asset_id: AssetId) -> Result<Vec<u8>> {
-    use schema::Asset;
-    let ffprobe_output: Vec<u8> = Asset::table
+    use schema::VideoAsset;
+    let ffprobe_output: Vec<u8> = VideoAsset::table
         .find(asset_id.0)
-        .select(Asset::ffprobe_output.assume_not_null())
+        .select(VideoAsset::ffprobe_output)
         .first(conn)?;
     Ok(ffprobe_output)
 }
@@ -508,15 +520,11 @@ pub fn set_asset_max_iframe_interval(
 }
 
 #[instrument(skip(conn))]
-pub fn get_asset_has_ghi_index(conn: &mut DbConn, asset_id: AssetId) -> Result<Option<i32>> {
-    use schema::Asset;
-    let r: Option<i32> = Asset::table
-        .select(Asset::has_ghi)
-        .filter(
-            Asset::asset_id
-                .eq(asset_id.0)
-                .and(Asset::ty.eq(to_db_asset_ty(AssetType::Video))),
-        )
+pub fn get_asset_has_ghi_index(conn: &mut DbConn, asset_id: VideoAssetId) -> Result<Option<i32>> {
+    use schema::VideoAsset;
+    let r: Option<i32> = VideoAsset::table
+        .find(asset_id.0)
+        .select(VideoAsset::has_ghi)
         .get_result(conn)
         .context("querying Asset for has_ghi_index")?;
     Ok(r)
@@ -525,20 +533,14 @@ pub fn get_asset_has_ghi_index(conn: &mut DbConn, asset_id: AssetId) -> Result<O
 #[instrument(skip(conn))]
 pub fn set_asset_has_ghi_index(
     conn: &mut DbConn,
-    asset_id: AssetId,
+    asset_id: VideoAssetId,
     has_ghi_index: i32,
 ) -> Result<()> {
-    use schema::Asset;
-    let n_affected = diesel::update(
-        Asset::table.filter(
-            Asset::asset_id
-                .eq(asset_id.0)
-                .and(Asset::ty.eq(to_db_asset_ty(AssetType::Video))),
-        ),
-    )
-    .set(Asset::has_ghi.eq(has_ghi_index))
-    .execute(conn)
-    .context("error updating column Asset.has_ghi_index")?;
+    use schema::VideoAsset;
+    let n_affected = diesel::update(VideoAsset::table.find(asset_id.0))
+        .set(VideoAsset::has_ghi.eq(has_ghi_index))
+        .execute(conn)
+        .context("error updating column Asset.has_ghi_index")?;
     if n_affected == 1 {
         Ok(())
     } else {

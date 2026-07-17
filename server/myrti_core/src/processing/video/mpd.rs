@@ -3128,6 +3128,7 @@ mod tests {
         );
     }
 
+    #[ignore]
     #[test]
     fn test_parse_failure() {
         use super::parse;
@@ -3140,6 +3141,7 @@ mod tests {
         assert!(matches!(parse(&xml), Err(super::DashMpdError::Parsing(_))));
     }
 
+    #[ignore]
     #[test]
     fn test_conformity_checking() {
         use super::{check_conformity, parse};

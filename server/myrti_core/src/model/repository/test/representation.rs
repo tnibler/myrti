@@ -85,11 +85,7 @@ fn insert_retrieve_video_representation() {
         bitrate: 123456,
         width: 123,
         height: 456,
-        file_key: storage_key::dash_file(asset_id, format_args!("av1_100x100.mp4")),
-        media_info_key: storage_key::dash_file(
-            asset_id,
-            format_args!("av1_100x100.mp4.media_info"),
-        ),
+        name: format!("av1_100x100"),
     };
     let video_repr2 = VideoRepresentation {
         id: VideoRepresentationId(0),
@@ -98,11 +94,7 @@ fn insert_retrieve_video_representation() {
         bitrate: 123456,
         width: 1230,
         height: 4560,
-        file_key: storage_key::dash_file(asset_id, format_args!("av1_1230x4560.mp4")),
-        media_info_key: storage_key::dash_file(
-            asset_id,
-            format_args!("av1_1230x4560.mp4.media_info"),
-        ),
+        name: format!("av1_1230x4560"),
     };
     let video_repr3 = VideoRepresentation {
         id: VideoRepresentationId(0),
@@ -111,32 +103,48 @@ fn insert_retrieve_video_representation() {
         bitrate: 12345,
         width: 230,
         height: 560,
-        file_key: storage_key::dash_file(asset2_id, format_args!("av1_1230x4560.mp4")),
-        media_info_key: storage_key::dash_file(
-            asset2_id,
-            format_args!("av1_1230x4560.mp4.media_info"),
-        ),
+        name: format!("av1_1230x4560"),
     };
     let video_repr_id = assert_ok!(repository::representation::insert_video_representation(
         &mut conn,
-        &video_repr
+        &CreateVideoRepresentation {
+            asset_id,
+            name: video_repr.name.clone(),
+            codec_name: video_repr.codec_name.clone()
+        }
     ));
     let video_repr2_id = assert_ok!(repository::representation::insert_video_representation(
         &mut conn,
-        &video_repr2
+        &CreateVideoRepresentation {
+            asset_id,
+            name: video_repr2.name.clone(),
+            codec_name: video_repr2.codec_name.clone()
+        }
     ));
     let _video_repr3_id = assert_ok!(repository::representation::insert_video_representation(
         &mut conn,
-        &video_repr3
+        &CreateVideoRepresentation {
+            asset_id: asset2_id,
+            name: video_repr3.name.clone(),
+            codec_name: video_repr3.codec_name.clone()
+        }
     ));
     let video_repr_with_id = VideoRepresentation {
         id: video_repr_id,
         ..video_repr
     };
+    assert_ok!(repository::representation::finalize_video_representation(
+        &mut conn,
+        &video_repr_with_id
+    ));
     let video_repr2_with_id = VideoRepresentation {
         id: video_repr2_id,
         ..video_repr2
     };
+    assert_ok!(repository::representation::finalize_video_representation(
+        &mut conn,
+        &video_repr2_with_id
+    ));
     let retrieved: HashSet<_> = assert_ok!(repository::representation::get_video_representations(
         &mut conn, asset_id
     ))
@@ -220,24 +228,38 @@ fn insert_retrieve_audio_representation() {
     let audio_repr = AudioRepresentation {
         id: AudioRepresentationId(0),
         asset_id,
+        name: "opus".into(),
         codec_name: "opus".into(),
-        file_key: storage_key::dash_file(asset_id, format_args!("audio.mp4")),
-        media_info_key: storage_key::dash_file(asset_id, format_args!("audio.mp4.media_info")),
     };
     let audio_repr2 = AudioRepresentation {
         id: AudioRepresentationId(0),
         asset_id: asset2_id,
         codec_name: "flac".into(),
-        file_key: storage_key::dash_file(asset2_id, format_args!("audio.mp4")),
-        media_info_key: storage_key::dash_file(asset2_id, format_args!("audio.mp4.media_info")),
+        name: "flac".into(),
     };
     let audio_repr_id = assert_ok!(repository::representation::insert_audio_representation(
         &mut conn,
-        &audio_repr
+        &CreateAudioRepresentation {
+            asset_id,
+            name: audio_repr.name.clone(),
+            codec_name: audio_repr.codec_name.clone()
+        }
     ));
-    let _audio_repr2_id = assert_ok!(repository::representation::insert_audio_representation(
+    let audio_repr2_id = assert_ok!(repository::representation::insert_audio_representation(
         &mut conn,
-        &audio_repr2
+        &CreateAudioRepresentation {
+            asset_id: asset2_id,
+            name: audio_repr2.name.clone(),
+            codec_name: audio_repr2.codec_name.clone()
+        }
+    ));
+    assert_ok!(repository::representation::finalize_audio_representation(
+        &mut conn,
+        audio_repr_id
+    ));
+    assert_ok!(repository::representation::finalize_audio_representation(
+        &mut conn,
+        audio_repr2_id
     ));
     let audio_repr_with_id = AudioRepresentation {
         id: audio_repr_id,

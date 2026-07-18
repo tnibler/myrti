@@ -51,6 +51,7 @@ pub enum PackageVideoTask {
     CreateGHIIndex {
         include_video: bool,
         include_audio: bool,
+        segment_duration: i32,
     },
 }
 
@@ -90,6 +91,10 @@ pub async fn do_package_video(
         repository::asset::get_asset(conn, asset_id)
     })
     .await??;
+    let video = match asset.sp {
+        crate::model::AssetSpe::Image(_) => panic!(),
+        crate::model::AssetSpe::Video(video) => video,
+    };
 
     let ffmpeg_path = bin_paths.and_then(|bp| bp.ffmpeg.as_opt_path());
     let ffprobe_path = bin_paths.and_then(|bp| bp.ffprobe.as_opt_path());
@@ -108,9 +113,8 @@ pub async fn do_package_video(
         PackageVideoTask::CreateGHIIndex {
             include_video,
             include_audio,
+            segment_duration,
         } => {
-            // let max_iframe_interval = interact!(conn, move |conn| repository::asset::set_asset_max_iframe_interval)
-            let segment_duration = 2; // TODO
             let out_dir = match storage {
                 Storage::LocalFileStorage(local_file_storage) => {
                     local_file_storage.root.join(&package_video.output_key)
@@ -119,7 +123,7 @@ pub async fn do_package_video(
             processing::video::gpac::create_ghi_and_manifest(
                 &asset_path.path_on_disk(),
                 &CreateGHIOptions {
-                    segment_duration,
+                    segment_duration: *segment_duration,
                     video_rep_id: include_video.then(|| String::from("original_video")),
                     audio_rep_id: include_audio.then(|| String::from("original_audio")),
                     mpd_base_url: None,
@@ -195,6 +199,7 @@ pub async fn do_package_video(
                 DasherOptions {
                     mpd_name,
                     base_url: None,
+                    segment_duration: 2, // TODO
                 },
                 gpac_path,
                 &mut process_control_recv,
@@ -231,7 +236,11 @@ pub async fn do_package_video(
                 .try_into()
                 .expect("temp files should have utf8 paths");
 
-            let pre_input_flags = vec![OsString::from("-noautorotate")];
+            let pre_input_flags = if video.is_original_streamable {
+                vec![OsString::from("-noautorotate")]
+            } else {
+                vec![]
+            };
             FFmpeg::new(
                 pre_input_flags,
                 ffmpeg_video_flags(transcode)
@@ -260,14 +269,14 @@ pub async fn do_package_video(
                 DasherOptions {
                     mpd_name,
                     base_url: None,
+                    segment_duration: 2, // TODO
                 },
                 gpac_path,
                 &mut process_control_recv,
             )
             .await?;
 
-            if asset.base.file_type == "mp4" {
-                // FIXME:
+            if video.is_original_streamable {
                 copy_mp4_rotation_metadata(
                     asset_path.path_on_disk().as_std_path(),
                     dash_result.mp4_path.as_std_path(),

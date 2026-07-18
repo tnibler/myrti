@@ -1,7 +1,7 @@
 use std::process::Stdio;
 
 use camino::Utf8Path as Path;
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 use itertools::Itertools;
 use serde::Deserialize;
 use tokio::process::Command;
@@ -68,8 +68,17 @@ enum StreamType {
 #[allow(dead_code)]
 fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
     #[derive(Debug, Clone, Deserialize)]
-    struct FFProbeSideData {
-        pub rotation: Option<i32>,
+    #[serde(tag = "side_data_type")]
+    enum FFProbeSideData {
+        #[serde(rename = "Display Matrix")]
+        DisplayMatrix { rotation: Option<i32> },
+        #[serde(rename = "Frame Cropping")]
+        FrameCropping {
+            crop_top: Option<i32>,
+            crop_bottom: Option<i32>,
+            crop_left: Option<i32>,
+            crop_right: Option<i32>,
+        },
     }
     #[derive(Debug, Clone, Deserialize)]
     struct FFProbeVideoStream {
@@ -80,6 +89,7 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
         pub height: i32,
         pub bit_rate: String,
         pub side_data_list: Option<Vec<FFProbeSideData>>,
+        pub avg_frame_rate: String,
     }
     #[derive(Debug, Clone, Deserialize)]
     struct FFProbeAudioStream {
@@ -126,7 +136,10 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
                     .parse()
                     .wrap_err("could not parse bit_rate ffprobe output")?,
                 rotation: match video.side_data_list {
-                    Some(side_datas) => side_datas.first().and_then(|sd| sd.rotation),
+                    Some(side_datas) => side_datas.iter().find_map(|sd| match sd {
+                        FFProbeSideData::DisplayMatrix { rotation } => *rotation,
+                        _ => None,
+                    }),
                     _ => None,
                 },
                 duration_ms: match video.duration.as_deref().map(str::parse::<f32>) {
@@ -135,7 +148,7 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
                     Some(Err(err)) => {
                         // unsure if this can happen, let's see if it ever does
                         debug_assert!(false, "ffprobe: stream duration present but fails to parse");
-                        tracing::error!(
+                        tracing::warn!(
                             video.duration,
                             ?err,
                             "ffprobe: stream duration present but fails to parse"
@@ -143,6 +156,20 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
                         None
                     }
                 },
+                avg_frame_rate: video
+                    .avg_frame_rate
+                    .split_once("/")
+                    .and_then(|(num, denom)| {
+                        let num = num.parse::<i32>();
+                        let denom = denom.parse::<i32>();
+                        match (num, denom) {
+                            (Ok(n), Ok(d)) => Some((n, d)),
+                            (num, denom) => {
+                                tracing::warn!(?num, ?denom, "ffprobe: failed to parse framerate");
+                                None
+                            }
+                        }
+                    }),
             })),
             FFProbeStreamType::Audio(audio) => Ok(StreamType::Audio(AudioStream {
                 codec_name: audio.codec_name,
@@ -162,11 +189,11 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
     streams
 }
 
-/// Max interval (seconds) between any 2 I-Frames in video stream, or None if there aren't 2 I-Frames.
+/// Max interval (frame count, seconds) between any 2 I-Frames in video stream, or None if there aren't 2 I-Frames.
 pub async fn ffprobe_get_max_iframe_interval(
     path: &Path,
     ffprobe_bin_path: Option<&Path>,
-) -> Result<Option<f64>> {
+) -> Result<Option<(i32, f64)>> {
     let ffprobe_result = Command::new(ffprobe_bin_path.unwrap_or("ffprobe".into()))
         .args([
             "-v",
@@ -174,9 +201,7 @@ pub async fn ffprobe_get_max_iframe_interval(
             "-select_streams",
             "v:0",
             "-show_entries",
-            "frame=pts_time",
-            "-skip_frame",
-            "nokey",
+            "frame=pts_time,pict_type",
             "-of",
             "csv=print_section=0",
         ])
@@ -188,28 +213,39 @@ pub async fn ffprobe_get_max_iframe_interval(
         .wait_with_output()
         .await
         .wrap_err("ffprobe error")?;
-    let timestamps: Vec<f64> = String::from_utf8(ffprobe_result.stdout)?
+    let timestamps: Vec<(i32, f64)> = String::from_utf8(ffprobe_result.stdout)?
         .lines()
-        .map(|line| {
-            line.trim_end_matches(',')
-                // .ok_or_else(|| eyre!("Unexpected line format in ffprobe output: '{}'", line))?
-                .parse()
-                .with_context(|| {
-                    format!(
-                        "Error parsing I-Frame timestamps from ffprobe output: '{}'",
-                        line
-                    )
-                })
+        .enumerate()
+        .map(|(idx, line)| {
+            let (pts, pict_type) = line
+                .trim_end_matches(',')
+                .split_once(",")
+                .ok_or_else(|| eyre!("Unexpected line format in ffprobe output: '{}'", line))?;
+            let timestamp = pts.parse().with_context(|| {
+                format!(
+                    "Error parsing frame timestamps from ffprobe output: '{}'",
+                    line
+                )
+            })?;
+            Ok::<_, eyre::Report>((i32::try_from(idx)?, timestamp, pict_type))
+        })
+        .filter_map_ok(|(idx, timestamp, pict_type)| {
+            if pict_type == "I" {
+                Some((idx, timestamp))
+            } else {
+                None
+            }
         })
         .try_collect()?;
     if !timestamps.is_sorted_by(|a, b| a < b) {
         return Err(eyre!("I-Frame timestamps are not ascending. Weird"));
     }
-    Ok(timestamps
+    let max_interval = timestamps
         .iter()
         .tuple_windows()
-        .map(|(a, b)| b - a)
-        .max_by(|a, b| a.total_cmp(&b)))
+        .map(|((idx_a, t_a), (idx_b, t_b))| (idx_b - idx_a, t_b - t_a))
+        .max_by_key(|(delta_idx, _delta_t)| *delta_idx);
+    Ok(max_interval)
 }
 
 #[test]
@@ -306,6 +342,7 @@ fn ffprobe_output_parsed_correctly() {
             bitrate: 28034318,
             rotation: Some(-90),
             duration_ms: Some(26285),
+            avg_frame_rate: Some((15770000, 262847)),
         }),
         StreamType::Audio(AudioStream {
             codec_name: "aac".into(),
@@ -371,6 +408,7 @@ fn ffprobe_output_parsed_correctly() {
         bitrate: 11841634,
         rotation: None,
         duration_ms: Some(30080),
+        avg_frame_rate: Some((25, 1)),
     })]
     .into_iter()
     .collect();
@@ -432,4 +470,291 @@ fn ffprobe_output_parsed_correctly() {
             .into_iter()
             .collect();
     assert_eq!(parsed_video_and_unknown, expected_video_only);
+}
+
+#[test]
+fn ffprobe_parse_iphone_motion_photo_mov() {
+    use claims::assert_ok;
+    use pretty_assertions::assert_eq;
+    use std::collections::HashSet;
+    let output = r#"
+"streams": [
+        {
+            "index": 0,
+            "codec_name": "hevc",
+            "codec_long_name": "H.265 / HEVC (High Efficiency Video Coding)",
+            "profile": "Main",
+            "codec_type": "video",
+            "codec_tag_string": "hvc1",
+            "codec_tag": "0x31637668",
+            "width": 1920,
+            "height": 1440,
+            "coded_width": 1920,
+            "coded_height": 1440,
+            "has_b_frames": 2,
+            "pix_fmt": "yuvj420p",
+            "level": 150,
+            "color_range": "pc",
+            "color_space": "smpte170m",
+            "color_transfer": "bt709",
+            "color_primaries": "smpte432",
+            "chroma_location": "left",
+            "view_ids_available": "",
+            "view_pos_available": "",
+            "id": "0x1",
+            "r_frame_rate": "240/1",
+            "avg_frame_rate": "11600/401",
+            "time_base": "1/600",
+            "start_pts": 0,
+            "start_time": "0.000000",
+            "duration_ts": 1203,
+            "duration": "2.005000",
+            "bit_rate": "14850437",
+            "nb_frames": "58",
+            "extradata_size": 104,
+            "disposition": {
+                "default": 1,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            },
+            "tags": {
+                "creation_time": "2024-09-06T16:08:07.000000Z",
+                "language": "und",
+                "handler_name": "Core Media Video",
+                "vendor_id": "[0][0][0][0]",
+                "encoder": "HEVC"
+            },
+            "side_data_list": [
+                {
+                    "side_data_type": "Frame Cropping",
+                    "crop_top": 66,
+                    "crop_bottom": 66,
+                    "crop_left": 88,
+                    "crop_right": 88
+                },
+                {
+                    "side_data_type": "Display Matrix",
+                    "displaymatrix": "\n00000000:            0       65536           0\n00000001:       -65536           0           0\n00000002:     94371840           0  1073741824\n",
+                    "rotation": -90
+                }
+            ]
+        },
+        {
+            "index": 1,
+            "codec_name": "pcm_s16le",
+            "codec_long_name": "PCM signed 16-bit little-endian",
+            "codec_type": "audio",
+            "codec_tag_string": "lpcm",
+            "codec_tag": "0x6d63706c",
+            "sample_fmt": "s16",
+            "sample_rate": "44100",
+            "channels": 1,
+            "bits_per_sample": 16,
+            "initial_padding": 0,
+            "id": "0x2",
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/44100",
+            "start_pts": 0,
+            "start_time": "0.000000",
+            "duration_ts": 88421,
+            "duration": "2.005011",
+            "bit_rate": "705600",
+            "nb_frames": "88445",
+            "disposition": {
+                "default": 1,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            },
+            "tags": {
+                "creation_time": "2024-09-06T16:08:07.000000Z",
+                "language": "und",
+                "handler_name": "Core Media Audio",
+                "vendor_id": "[0][0][0][0]"
+            }
+        },
+        {
+            "index": 2,
+            "codec_type": "data",
+            "codec_tag_string": "mebx",
+            "codec_tag": "0x7862656d",
+            "id": "0x3",
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/600",
+            "start_pts": 0,
+            "start_time": "0.000000",
+            "duration_ts": 1203,
+            "duration": "2.005000",
+            "bit_rate": "39",
+            "nb_frames": "1",
+            "disposition": {
+                "default": 1,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            },
+            "tags": {
+                "creation_time": "2024-09-06T16:08:07.000000Z",
+                "language": "und",
+                "handler_name": "Core Media Metadata"
+            }
+        },
+        {
+            "index": 3,
+            "codec_type": "data",
+            "codec_tag_string": "mebx",
+            "codec_tag": "0x7862656d",
+            "id": "0x4",
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/600",
+            "start_pts": 0,
+            "start_time": "0.000000",
+            "duration_ts": 1203,
+            "duration": "2.005000",
+            "bit_rate": "34856",
+            "nb_frames": "58",
+            "disposition": {
+                "default": 1,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            },
+            "tags": {
+                "creation_time": "2024-09-06T16:08:07.000000Z",
+                "language": "und",
+                "handler_name": "Core Media Metadata"
+            }
+        },
+        {
+            "index": 4,
+            "codec_type": "data",
+            "codec_tag_string": "mebx",
+            "codec_tag": "0x7862656d",
+            "id": "0x5",
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/600",
+            "start_pts": 820,
+            "start_time": "1.366667",
+            "duration_ts": 1,
+            "duration": "0.001667",
+            "bit_rate": "504000",
+            "nb_frames": "1",
+            "disposition": {
+                "default": 1,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            },
+            "tags": {
+                "creation_time": "2024-09-06T16:08:07.000000Z",
+                "language": "und",
+                "handler_name": "Core Media Metadata"
+            }
+        }
+    ]
+}
+"#;
+    let expected: HashSet<StreamType> = [
+        StreamType::Video(VideoStream {
+            codec_name: "hevc".into(),
+            width: 1920,
+            height: 1440,
+            bitrate: 14850437,
+            rotation: Some(-90),
+            duration_ms: Some(2005),
+            avg_frame_rate: Some((11600, 401)),
+        }),
+        StreamType::Audio(AudioStream {
+            codec_name: "pcm_s16le".into(),
+            sample_rate: 44100,
+            bitrate: 705600,
+            channels: 1,
+        }),
+    ]
+    .into_iter()
+    .collect();
+    let parsed: HashSet<_> = assert_ok!(parse_ffprobe_output(output.as_bytes()))
+        .into_iter()
+        .collect();
+    assert_eq!(parsed, expected);
 }

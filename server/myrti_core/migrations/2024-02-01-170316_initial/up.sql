@@ -70,14 +70,24 @@ CREATE TABLE VideoAsset (
   video_bitrate INTEGER NOT NULL,
   video_duration_ms INTEGER,
   audio_codec_name TEXT,
+  frame_rate_num INTEGER CHECK(frame_rate_num IS NULL OR frame_rate_num > 0),
+  frame_rate_denom INTEGER CHECK(frame_rate_denom IS NULL OR frame_rate_denom > 0),
 
+  is_original_streamable INTEGER NOT NULL CHECK(is_original_streamable IN (0, 1)),
   -- NULL: unknown
   -- 0: none
   -- 1: video
   -- 2: audio
   -- 3: video+audio
   has_ghi INTEGER CHECK(has_ghi IN (0, 1, 2, 3)),
-  max_iframe_interval REAL,
+  max_iframe_interval INTEGER,
+  CHECK((frame_rate_num IS NULL) = (frame_rate_denom IS NULL)),
+  CHECK(is_original_streamable = 0 OR
+    (max_iframe_interval IS NOT NULL
+      AND frame_rate_num IS NOT NULL
+      AND frame_rate_denom IS NOT NULL
+  )),
+
   UNIQUE(asset_id),
   FOREIGN KEY (asset_id, asset_type) REFERENCES Asset(asset_id, asset_type) DEFERRABLE INITIALLY DEFERRED
 ) STRICT;

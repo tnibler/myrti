@@ -1,10 +1,8 @@
-use std::borrow::{Borrow, Cow};
+use std::borrow::Cow;
 
 use camino::Utf8Path as Path;
 use chrono::Utc;
 use color_eyre::eyre;
-use diesel::dsl::sql;
-use diesel::sql_types::Bool;
 use diesel::{insert_into, prelude::*};
 use eyre::{eyre, Context, Result};
 use tracing::instrument;
@@ -309,6 +307,12 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
                             .as_deref()
                             .map(Cow::Borrowed),
                         has_ghi: None,
+                        is_original_streamable: bool_to_int(
+                            create_asset_video.is_original_streamable,
+                        ),
+                        max_iframe_interval: create_asset_video.max_iframe_interval,
+                        frame_rate_num: create_asset_video.frame_rate.map(|(num, _)| num),
+                        frame_rate_denom: create_asset_video.frame_rate.map(|(_, denom)| denom),
                     })
                     .execute(conn)
                     .wrap_err("error inserting VideoAsset")?;

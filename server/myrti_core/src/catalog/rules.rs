@@ -6,21 +6,21 @@ use tracing::instrument;
 
 use crate::{
     catalog::{
-        encoding_target::{audio_codec_name, av1, CodecTarget, VideoEncodingTarget},
+        encoding_target::{CodecTarget, VideoEncodingTarget, audio_codec_name, av1},
         operation::package_video::{AudioEncodingTarget, PackageVideoTask},
         storage_key,
     },
     config, interact,
     model::{
-        repository::{self, asset::AssetHasThumbnails, db::PooledDbConn},
         AlbumId, AssetId, AssetThumbnail, ThumbnailFormat, ThumbnailType, VideoAsset,
+        repository::{self, asset::AssetHasThumbnails, db::PooledDbConn},
     },
     processing,
     util::OptionPathExt,
 };
 
 use super::{
-    image_conversion_target::{heif::AvifTarget, ImageConversionTarget},
+    image_conversion_target::{ImageConversionTarget, heif::AvifTarget},
     operation::{
         convert_image::ConvertImage,
         create_album_thumbnail::CreateAlbumThumbnail,
@@ -29,7 +29,7 @@ use super::{
     },
 };
 
-#[instrument(skip(conn), ret)]
+#[instrument(skip(conn), ret, level = "debug")]
 pub async fn required_video_packaging_for_asset(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
@@ -75,7 +75,6 @@ pub async fn required_video_packaging_for_asset(
         return Ok(Default::default());
     }
 
-    let is_mp4 = asset.base.file_type == "mp4";
     let orig_codec_ok = acceptable_video_codecs.contains(&video.video_codec_name.as_str());
     let orig_audio_codec_ok = video
         .audio_codec_name
@@ -87,32 +86,27 @@ pub async fn required_video_packaging_for_asset(
         move |conn| repository::asset::get_asset_has_ghi_index(conn, video_asset_id)
     )
     .await??;
-    let asset_path = interact!(conn, move |conn| {
-        repository::asset::get_asset_path_on_disk(conn, asset_id)
-    })
-    .await??
-    .path_on_disk();
 
     let mut ops = Vec::new();
 
-    let max_iframe_interval = processing::video::ffprobe_get_max_iframe_interval(
-        &asset_path,
-        bin_paths.and_then(|p| p.ffprobe.as_opt_path()),
-    )
-    .await?;
-    let orig_audio_streamable = is_mp4 && orig_audio_codec_ok;
-    let orig_vid_streamable =
-        is_mp4 && orig_codec_ok && max_iframe_interval.is_none_or(|i| i < 8.0);
+    let orig_audio_streamable = video.is_original_streamable && orig_audio_codec_ok;
+    let orig_vid_streamable = video.is_original_streamable && orig_codec_ok;
 
     if has_ghi_index.is_none() {
-        tracing::info!(?asset.base.file_path, ?max_iframe_interval, ?orig_vid_streamable, ?orig_audio_streamable, ?acceptable_video_codecs, ?video.video_codec_name);
         if !orig_vid_streamable && !orig_audio_streamable {
             interact!(
                 conn,
                 move |conn| repository::asset::set_asset_has_ghi_index(conn, video_asset_id, 0)
             )
             .await??;
-        } else {
+        } else if let Some(max_iframe_interval) = video.max_iframe_interval
+            && let Some((frame_rate_num, frame_rate_denom)) = video.frame_rate
+            && frame_rate_denom > 0
+            && frame_rate_num > 0
+        {
+            let gop_time =
+                (max_iframe_interval as f32 / frame_rate_num as f32) * frame_rate_denom as f32;
+            let segment_duration = gop_time.clamp(1.0, 10.0).round() as i32;
             ops.push(PackageVideo {
                 asset_id,
                 video_asset_id: video.video_asset_id,
@@ -120,6 +114,7 @@ pub async fn required_video_packaging_for_asset(
                 task: PackageVideoTask::CreateGHIIndex {
                     include_video: orig_vid_streamable,
                     include_audio: video.audio_codec_name.is_some() && orig_audio_streamable,
+                    segment_duration,
                 },
                 output_key: storage_key::dash_file(asset_id, format_args!("original")),
             });

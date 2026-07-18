@@ -1,7 +1,7 @@
 [package]
 name = "myrti_core"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 mock-commands = []
@@ -58,7 +58,7 @@ iso8601 = "0.6.3"
 [build-dependencies]
 cc = "1.0.79"
 pkg-config = "0.3.27"
-bindgen = "0.66.1"
+bindgen = "0.72.1"
 
 [dev-dependencies]
 pretty_assertions = "1.4.0"

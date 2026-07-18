@@ -1,20 +1,20 @@
 use chrono::{DateTime, Utc};
 use const_format::formatcp;
 use diesel::{
+    RunQueryDsl, SelectableHelper,
     deserialize::QueryableByName,
     query_builder::{QueryBuilder, QueryFragment},
     sql_query,
     sqlite::SqliteQueryBuilder,
-    RunQueryDsl, SelectableHelper,
 };
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 use itertools::Itertools;
 use tracing::instrument;
 
 use crate::model::{
+    Asset, AssetBase, AssetId, AssetSeriesId, TimelineGroup, TimelineGroupId,
     repository::{self, db_entity::from_db_asset_ty},
     util::datetime_from_db_repr,
-    Asset, AssetBase, AssetId, AssetSeriesId, TimelineGroup, TimelineGroupId,
 };
 
 use super::{db::DbConn, db_entity::DbAsset, timeline_group::get_timeline_group};
@@ -125,9 +125,9 @@ pub fn get_timeline_chunk(
                 };
                 timeline_els.push(new_el);
             }
-            Some(ref mut last_el) => match (last_el, group_id) {
+            Some(last_el) => match (last_el, group_id) {
                 // Matching cases: add this asset to last TimelineElement
-                (TimelineElement::DayGrouped(ref mut assets), None)
+                (TimelineElement::DayGrouped(assets), None)
                     if assets
                         .last()
                         .map(|a| {

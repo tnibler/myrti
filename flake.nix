@@ -58,7 +58,6 @@
             vips.dev
             glib.dev
             ffmpeg
-            shaka-packager
           ]
           ++ [gpac.packages.${system}.default];
 

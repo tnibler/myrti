@@ -1,17 +1,21 @@
 use camino::Utf8Path as Path;
 use chrono::{DateTime, Local, Utc};
 use color_eyre::eyre::Result;
-use eyre::{eyre, Context};
+use eyre::{Context, eyre};
 
 use crate::{
     config, interact,
-    model::{repository::db::DbPool, repository::duplicate_asset::NewDuplicateAsset, *},
+    model::{
+        repository::{db::DbPool, duplicate_asset::NewDuplicateAsset},
+        *,
+    },
     processing::{self, hash::hash_file},
+    util::OptionPathExt,
 };
 
 use super::{
-    media_metadata::{figure_out_utc_timestamp, read_media_metadata, TimestampGuess},
-    video::{streams::FFProbeStreamsTrait, FFProbe},
+    media_metadata::{TimestampGuess, figure_out_utc_timestamp, read_media_metadata},
+    video::{FFProbe, streams::FFProbeStreamsTrait},
 };
 
 /// Returns Some(AssetId) if a new, non duplicate asset was indexed and added to the database
@@ -59,13 +63,27 @@ pub async fn index_file(
     // image, same with ffprobe and video
     let (create_asset_spe, size): (CreateAssetSpe, Size) = match metadata.file.mime_type.as_ref() {
         Some(mime) if mime.starts_with("video") => {
-            // FIXME ffprobe path should come from config
             let (ffprobe_output, streams) = match FFProbe::streams(path, ffprobe_path).await {
                 Ok(r) => r,
                 Err(err) => {
                     tracing::debug!(%path, %err, "Could not get stream info with ffprobe, ignoring file");
                     return Ok(None);
                 }
+            };
+
+            let (is_original_streamable, max_iframe_interval) = if file_type == "mp4" {
+                let max_iframe_interval = processing::video::ffprobe_get_max_iframe_interval(
+                    path,
+                    bin_paths.and_then(|p| p.ffprobe.as_deref()),
+                )
+                .await?;
+                if let Some((interval_frames, interval_seconds)) = max_iframe_interval {
+                    (interval_seconds < 20.0, Some(interval_frames))
+                } else {
+                    (false, None)
+                }
+            } else {
+                (false, None)
             };
             let video = streams.video;
             let create_video = CreateAssetVideo {
@@ -75,9 +93,12 @@ pub async fn index_file(
                 audio_codec_name: streams
                     .audio
                     .map(|audio| audio.codec_name.to_ascii_lowercase()),
-                has_dash: false,
                 ffprobe_output: ffprobe_output.into(),
+                is_original_streamable,
+                max_iframe_interval,
+                frame_rate: video.avg_frame_rate,
             };
+
             let swap = match video.rotation {
                 Some(n) if n % 180 == 0 => false,
                 Some(n) if n % 90 == 0 => true,

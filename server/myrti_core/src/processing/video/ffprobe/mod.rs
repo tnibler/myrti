@@ -24,6 +24,7 @@ pub struct VideoStream {
     pub bitrate: i64,
     pub rotation: Option<i32>,
     pub duration_ms: Option<i64>,
+    pub avg_frame_rate: Option<(i32, i32)>,
 }
 
 pub struct FFProbe {}

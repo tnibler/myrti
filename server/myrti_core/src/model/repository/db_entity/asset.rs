@@ -61,6 +61,10 @@ pub struct DbVideoAsset {
     pub video_bitrate: i64,
     pub audio_codec_name: Option<String>,
     pub has_ghi: Option<i32>,
+    pub is_original_streamable: i32,
+    pub max_iframe_interval: Option<i32>,
+    pub frame_rate_num: Option<i32>,
+    pub frame_rate_denom: Option<i32>,
 }
 
 impl TryFrom<DbAsset> for AssetBase {
@@ -107,6 +111,11 @@ impl TryFrom<DbVideoAsset> for Video {
             video_codec_name: value.video_codec_name,
             video_bitrate: value.video_bitrate,
             audio_codec_name: value.audio_codec_name,
+            is_original_streamable: value.is_original_streamable != 0,
+            max_iframe_interval: value.max_iframe_interval,
+            frame_rate: value
+                .frame_rate_num
+                .and_then(|num| value.frame_rate_denom.map(|denom| (num, denom))),
         })
     }
 }
@@ -156,6 +165,10 @@ pub struct DbInsertVideoAsset<'a> {
     pub video_duration_ms: Option<i64>,
     pub audio_codec_name: Option<Cow<'a, str>>,
     pub has_ghi: Option<i32>,
+    pub is_original_streamable: i32,
+    pub max_iframe_interval: Option<i32>,
+    pub frame_rate_num: Option<i32>,
+    pub frame_rate_denom: Option<i32>,
 }
 
 pub fn to_db_asset_ty(ty: AssetType) -> i32 {

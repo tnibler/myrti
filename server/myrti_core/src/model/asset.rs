@@ -18,6 +18,9 @@ pub struct Video {
     pub video_codec_name: String,
     pub video_bitrate: i64,
     pub audio_codec_name: Option<String>,
+    pub is_original_streamable: bool,
+    pub max_iframe_interval: Option<i32>,
+    pub frame_rate: Option<(i32, i32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -89,7 +92,9 @@ pub struct CreateAssetVideo {
     pub video_bitrate: i64,
     pub video_duration_ms: Option<i64>,
     pub audio_codec_name: Option<String>,
-    pub has_dash: bool,
+    pub is_original_streamable: bool,
+    pub max_iframe_interval: Option<i32>,
+    pub frame_rate: Option<(i32, i32)>,
 }
 
 impl From<&ImageAsset> for Asset {

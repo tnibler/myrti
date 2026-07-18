@@ -1,8 +1,8 @@
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 use tokio::process::Command;
 
-use crate::processing::process_control::{run_process, ProcessControlReceiver, RunProcessOpts};
+use crate::processing::process_control::{ProcessControlReceiver, RunProcessOpts, run_process};
 
 #[derive(Debug, Clone)]
 pub struct CreateGHIOptions {
@@ -46,7 +46,8 @@ pub async fn create_ghi_and_manifest(
         .wrap_err("Error running gpac to create ghi index")?;
 
     let mut command = Command::new(gpac_bin_path.unwrap_or("gpac".into()));
-    command.args(["-i", &format!("{}:gm=main", opts.ghi_out_path,), "-o"]);
+    // gm=main produces broken init segments even though docs say it only writes manifests
+    command.args(["-i", &format!("{}:gm=all", opts.ghi_out_path,), "-o"]);
     if let Some(base) = opts.mpd_base_url.as_ref() {
         command.arg(format!("{}:base={}:stl=true", opts.mpd_out_path, base));
     } else {
@@ -99,6 +100,7 @@ pub struct GpacDashResult {
 pub struct DasherOptions<'a> {
     pub mpd_name: &'a str,
     pub base_url: Option<&'a str>,
+    pub segment_duration: i32,
 }
 
 #[tracing::instrument(skip(control_recv))]
@@ -115,11 +117,12 @@ pub async fn run_dasher(
         input_path.as_str(),
         "-o",
         format!(
-            "{}:profile=onDemand{}",
+            "{}:profile=onDemand{}:segdur={}",
             opts.mpd_name,
             opts.base_url
                 .map(|url| format!(":base={}", url))
-                .unwrap_or(String::new())
+                .unwrap_or(String::new()),
+            opts.segment_duration
         )
         .as_str(),
     ]);

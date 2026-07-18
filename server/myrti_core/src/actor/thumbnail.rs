@@ -83,7 +83,7 @@ struct ThumbnailActor {
 }
 
 impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
-    #[tracing::instrument(skip(self, ctl_recv))]
+    #[tracing::instrument(skip_all)]
     async fn run_task(
         &mut self,
         msg: ThumbnailTaskMsg,

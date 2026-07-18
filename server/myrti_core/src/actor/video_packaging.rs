@@ -68,6 +68,7 @@ struct VideoPackagingActor {
 }
 
 impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingActor {
+    #[tracing::instrument(skip_all)]
     async fn run_task(
         &mut self,
         msg: VideoPackagingTaskMsg,

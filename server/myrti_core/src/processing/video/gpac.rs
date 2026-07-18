@@ -1,9 +1,8 @@
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use eyre::{eyre, Context, Result};
-use itertools::Itertools;
 use tokio::process::Command;
 
-use crate::processing::process_control::{run_process, ProcessControlReceiver, ProcessResult};
+use crate::processing::process_control::{run_process, ProcessControlReceiver, RunProcessOpts};
 
 #[derive(Debug, Clone)]
 pub struct CreateGHIOptions {
@@ -35,19 +34,16 @@ pub async fn create_ghi_and_manifest(
         "-i",
         &input_arg,
         "-o",
-        &format!("{}:segdur={}", opts.ghi_out_path, opts.segment_duration),
+        &format!(
+            "{}:stl=true:segdur={}",
+            opts.ghi_out_path, opts.segment_duration
+        ),
     ]);
     tracing::debug!(?command);
     let child = command.spawn().context("error calling gpac")?;
-    match run_process(child, control_recv).await {
-        ProcessResult::RanToEnd(output) if output.status.success() => Ok(()),
-        ProcessResult::RanToEnd(output) => Err(eyre!(
-            "gpac exited with an error:\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        )),
-        ProcessResult::TerminatedBySignal(_) => Err(eyre!("TerminatedBySignal")),
-        ProcessResult::OtherError(err) => Err(err.wrap_err("error running gpac")),
-    }?;
+    run_process(child, RunProcessOpts::with_timeout_secs(3600), control_recv)
+        .await
+        .wrap_err("Error running gpac to create ghi index")?;
 
     let mut command = Command::new(gpac_bin_path.unwrap_or("gpac".into()));
     command.args(["-i", &format!("{}:gm=main", opts.ghi_out_path,), "-o"]);
@@ -58,15 +54,10 @@ pub async fn create_ghi_and_manifest(
     }
     tracing::debug!(?command);
     let child = command.spawn().context("error calling gpac")?;
-    match run_process(child, control_recv).await {
-        ProcessResult::RanToEnd(output) if output.status.success() => Ok(()),
-        ProcessResult::RanToEnd(output) => Err(eyre!(
-            "gpac exited with an error:\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        )),
-        ProcessResult::TerminatedBySignal(_) => Err(eyre!("TerminatedBySignal")),
-        ProcessResult::OtherError(err) => Err(err.wrap_err("error running gpac")),
-    }
+    run_process(child, RunProcessOpts::with_timeout_secs(300), control_recv)
+        .await
+        .wrap_err("error writing MPD manifest and mp4 init segment with gpac")?;
+    Ok(())
 }
 
 #[tracing::instrument(skip(control_recv), err)]
@@ -92,15 +83,10 @@ pub async fn create_segment(
     ]);
     tracing::debug!(?command);
     let child = command.spawn().context("error calling gpac")?;
-    match run_process(child, control_recv).await {
-        ProcessResult::RanToEnd(output) if output.status.success() => Ok(()),
-        ProcessResult::RanToEnd(output) => Err(eyre!(
-            "gpac exited with an error:\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        )),
-        ProcessResult::TerminatedBySignal(_) => Err(eyre!("TerminatedBySignal")),
-        ProcessResult::OtherError(err) => Err(err.wrap_err("error running gpac")),
-    }
+    run_process(child, RunProcessOpts::with_timeout_secs(60), control_recv)
+        .await
+        .wrap_err("error creating m4s segment with gpac")?;
+    Ok(())
 }
 
 #[derive(Debug, Clone)]
@@ -139,15 +125,9 @@ pub async fn run_dasher(
     ]);
     tracing::debug!(?command);
     let child = command.spawn().context("error calling gpac")?;
-    match run_process(child, control_recv).await {
-        ProcessResult::RanToEnd(output) if output.status.success() => Ok(()),
-        ProcessResult::RanToEnd(output) => Err(eyre!(
-            "gpac exited with an error:\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        )),
-        ProcessResult::TerminatedBySignal(_) => Err(eyre!("TerminatedBySignal")),
-        ProcessResult::OtherError(err) => Err(err.wrap_err("error running gpac")),
-    }?;
+    run_process(child, RunProcessOpts::with_timeout_secs(3600), control_recv)
+        .await
+        .wrap_err("error DASH-segmenting file with gpac")?;
     let mp4_name = format!(
         "{}_dashinit.mp4",
         input_path.file_stem().ok_or(eyre!("bad mpd filename"))?

@@ -1,12 +1,12 @@
 use std::process::Stdio;
 
 use camino::Utf8Path as Path;
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result};
 use tokio::process::Command;
 use tracing::instrument;
 
 use crate::processing::{
-    process_control::{run_process, ProcessControlReceiver, ProcessResult},
+    process_control::{run_process, ProcessControlReceiver, RunProcessOpts},
     video::ffmpeg::FFmpegError,
 };
 
@@ -28,10 +28,8 @@ pub async fn ffmpeg_snapshot(
         .spawn()
         .wrap_err(FFmpegError::ErrorStarting)?;
 
-    match run_process(child, control_recv).await {
-        ProcessResult::RanToEnd(output) if output.status.success() => Ok(()),
-        ProcessResult::RanToEnd(_output) => Err(eyre!("ffmpeg exited with an error")),
-        ProcessResult::TerminatedBySignal(_) => Err(FFmpegError::TerminatedBySignal.into()),
-        ProcessResult::OtherError(err) => Err(err.wrap_err("error running ffmpeg")),
-    }
+    run_process(child, RunProcessOpts::with_timeout_secs(3600), control_recv)
+        .await
+        .wrap_err("error taking snapshot with ffmpeg")?;
+    Ok(())
 }

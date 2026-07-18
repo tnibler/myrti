@@ -91,11 +91,14 @@ impl SchedulerHandle {
         config: Config,
         did_shutdown_send: oneshot::Sender<()>,
     ) -> Self {
-        // TODO: indexign shutdown
         let (indexing_did_shutdown_send, indexing_did_shutdown_recv) = oneshot::channel::<()>();
         let (from_indexing_send, from_indexing_recv) = mpsc::unbounded_channel();
-        let indexing_actor =
-            IndexingActorHandle::new(db_pool.clone(), config.clone(), from_indexing_send);
+        let indexing_actor = IndexingActorHandle::new(
+            db_pool.clone(),
+            config.clone(),
+            indexing_did_shutdown_send,
+            from_indexing_send,
+        );
 
         let (thumbnail_did_shutdown_send, thumbnail_did_shutdown_recv) = oneshot::channel();
         let (from_thumbnail_send, from_thumbnail_recv) = mpsc::unbounded_channel();
@@ -137,6 +140,7 @@ impl SchedulerHandle {
                 thumbnail_did_shutdown_recv,
                 video_did_shutdown_recv,
                 image_conversion_did_shutdown_recv,
+                indexing_did_shutdown_recv,
             ]),
             actor_states: Default::default(),
             indexing_actor: indexing_actor.clone(),
@@ -244,6 +248,9 @@ impl Scheduler {
             }
             MsgFromIndexing::IndexingComplete { root_dir_id } => {
                 tracing::debug!(?root_dir_id, "Completed indexing root directory");
+            }
+            MsgFromIndexing::IndexingCancelled { root_dir_id } => {
+                tracing::debug!(?root_dir_id, "Cancelled indexing root directory");
             }
             MsgFromIndexing::FailedToStartIndexing {
                 root_dir_id,
@@ -435,6 +442,10 @@ impl Scheduler {
 
     #[tracing::instrument(skip(self))]
     async fn handle_message(&mut self, msg: SchedulerMessage) {
+        if self.waiting_for_shutdown {
+            tracing::trace!(?msg, "waiting for shutdown, ignoring");
+            return;
+        }
         match msg {
             SchedulerMessage::Timer => {}
             SchedulerMessage::UserRequest(user_request) => match user_request {
@@ -477,6 +488,9 @@ impl Scheduler {
             SchedulerMessage::Shutdown => {
                 if !self.waiting_for_shutdown {
                     self.waiting_for_shutdown = true;
+                    self.indexing_actor
+                        .msg_shutdown()
+                        .expect("receiver must be alive");
                     self.video_packaging_actor
                         .msg_shutdown()
                         .expect("receiver must be alive");
@@ -495,10 +509,6 @@ impl Scheduler {
                         .take()
                         .expect("must be Some before shutdown called");
                     tokio::task::spawn(async move {
-                        // for recv in did_shutdown_recvs {
-                        //     recv.await.expect("TODO senders must be alive");
-                        //     tracing::info!("one task shutdown");
-                        // }
                         did_shutdown_recvs
                             .into_iter()
                             .collect::<FuturesUnordered<_>>()

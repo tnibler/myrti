@@ -8,7 +8,7 @@ use tracing::{debug, instrument};
 
 use crate::{
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
-    processing::process_control::{run_process, ProcessControlReceiver, ProcessResult},
+    processing::process_control::{run_process, ProcessControlReceiver},
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -72,12 +72,10 @@ impl FFmpegLocalOutputTrait for FFmpeg {
         command.arg(output);
         debug!(command = ?command.as_std(), "Invoking ffmpeg");
         let child = command.spawn().wrap_err(FFmpegError::ErrorStarting)?;
-        match run_process(child, control_recv).await {
-            ProcessResult::RanToEnd(output) if output.status.success() => Ok(()),
-            ProcessResult::RanToEnd(_output) => Err(eyre!("ffmpeg exited with an error")),
-            ProcessResult::TerminatedBySignal(_) => Err(FFmpegError::TerminatedBySignal.into()),
-            ProcessResult::OtherError(err) => Err(err.wrap_err("error running ffmpeg")),
-        }
+        run_process(child, Default::default(), control_recv)
+            .await
+            .wrap_err("error running ffmpeg")?;
+        Ok(())
     }
 }
 

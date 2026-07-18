@@ -59,6 +59,7 @@ struct ImageConversionActor {
 }
 
 impl Actor<ImageConversionTaskMsg, ImageConversionTaskResult> for ImageConversionActor {
+    #[tracing::instrument(skip_all)]
     async fn run_task(
         &mut self,
         msg: ImageConversionTaskMsg,

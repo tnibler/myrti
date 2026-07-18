@@ -4,7 +4,7 @@ use tracing::instrument;
 
 use crate::model::{
     repository::db_entity::{DbAudioRepresentation, DbImageRepresentation, DbVideoRepresentation},
-    AssetId, AudioRepresentation, AudioRepresentationId, CreateAudioRepresentation,
+    AudioRepresentation, AudioRepresentationId, CreateAudioRepresentation,
     CreateVideoRepresentation, ImageAssetId, ImageRepresentation, ImageRepresentationId,
     VideoAssetId, VideoRepresentation, VideoRepresentationId,
 };
@@ -15,12 +15,15 @@ use super::schema;
 #[instrument(skip(conn), level = "trace")]
 pub fn get_video_representations(
     conn: &mut DbConn,
-    asset_id: VideoAssetId,
+    video_asset_id: VideoAssetId,
 ) -> Result<Vec<VideoRepresentation>> {
     use schema::VideoRepresentation;
     let db_video_reprs: Vec<DbVideoRepresentation> = VideoRepresentation::table
-        .find(asset_id.0)
-        .filter(VideoRepresentation::created_status.eq(1))
+        .filter(
+            VideoRepresentation::video_asset_id
+                .eq(video_asset_id.0)
+                .and(VideoRepresentation::created_status.eq(1)),
+        )
         .load(conn)?;
 
     db_video_reprs

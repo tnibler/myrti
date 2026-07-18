@@ -121,11 +121,9 @@ CREATE TABLE MotionPhoto (
   image_asset_id INTEGER NOT NULL UNIQUE,
   video_asset_id INTEGER UNIQUE,
   photo_pts_us INTEGER,
-  FOREIGN KEY (image_asset_id) REFERENCES PhotoAsset(image_asset_id) ON DELETE CASCADE,
+  FOREIGN KEY (image_asset_id) REFERENCES ImageAsset(image_asset_id) ON DELETE CASCADE,
   FOREIGN KEY (video_asset_id) REFERENCES VideoAsset(video_asset_id) ON DELETE CASCADE
 ) STRICT;
-
-
 
 CREATE TABLE DuplicateAsset (
   dup_asset_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,

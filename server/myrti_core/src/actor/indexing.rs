@@ -258,7 +258,7 @@ async fn handle_indexing_message(
     Ok(())
 }
 
-#[instrument(skip(pool, send_result, bin_paths))]
+#[instrument(skip(pool, send_result, bin_paths, cancel))]
 async fn index_asset_root(
     pool: DbPool,
     send_result: mpsc::UnboundedSender<(AssetRootDirId, MsgFromIndexing)>,

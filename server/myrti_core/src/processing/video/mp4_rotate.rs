@@ -105,6 +105,7 @@ async fn video_stream_matrix_offset(path: &Path) -> Result<(u64, &'static [i32; 
                         return Ok(matrix_offset);
                     }
                 }
+                data.seek(SeekFrom::Start(end)).await?;
             }
             b"tkhd" => {
                 let mut version = [0; 1];

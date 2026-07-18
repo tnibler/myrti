@@ -86,10 +86,23 @@ pub async fn do_package_video(
         repository::asset::get_asset_path_on_disk(conn, asset_id)
     })
     .await??;
+    let asset = interact!(conn, move |conn| {
+        repository::asset::get_asset(conn, asset_id)
+    })
+    .await??;
 
     let ffmpeg_path = bin_paths.and_then(|bp| bp.ffmpeg.as_opt_path());
     let ffprobe_path = bin_paths.and_then(|bp| bp.ffprobe.as_opt_path());
     let gpac_path = bin_paths.and_then(|bp| bp.gpac.as_opt_path());
+
+    let asset_dash_dir = match storage {
+        Storage::LocalFileStorage(local_file_storage) => local_file_storage
+            .root
+            .join(storage_key::dash_file(asset_id, format_args!(""))),
+    };
+    tokio::fs::create_dir_all(&asset_dash_dir)
+        .await
+        .wrap_err_with(|| format!("error creating directory {}", &asset_dash_dir))?;
 
     match &package_video.task {
         PackageVideoTask::CreateGHIIndex {
@@ -171,13 +184,11 @@ pub async fn do_package_video(
             .await
             .context("error transcoding audio with ffmpeg")?;
 
-            let out_dir = match storage {
-                Storage::LocalFileStorage(local_file_storage) => local_file_storage.root.join(
-                    storage_key::dash_file(asset_id, format_args!("{}", &repr_file_stem)),
-                ),
-            };
+            let out_dir = asset_dash_dir.join(&repr_file_stem);
+            tokio::fs::create_dir(&out_dir)
+                .await
+                .wrap_err_with(|| format!("error creating directory {}", &out_dir))?;
             let mpd_name = "stream.mpd";
-            tokio::fs::create_dir(&out_dir).await?;
             let _dash_result = processing::video::gpac::run_dasher(
                 &utf8_path,
                 &out_dir,
@@ -238,15 +249,11 @@ pub async fn do_package_video(
             .await
             .context("error transcoding audio with ffmpeg")?;
 
-            let out_dir = match storage {
-                Storage::LocalFileStorage(local_file_storage) => local_file_storage.root.join(
-                    storage_key::dash_file(asset_id, format_args!("{}", &repr_file_stem)),
-                ),
-            };
-
+            let out_dir = asset_dash_dir.join(&repr_file_stem);
+            tokio::fs::create_dir(&out_dir)
+                .await
+                .wrap_err_with(|| format!("error creating directory {}", &out_dir))?;
             let mpd_name = "stream.mpd";
-
-            tokio::fs::create_dir(&out_dir).await?;
             let dash_result = processing::video::gpac::run_dasher(
                 &utf8_path,
                 &out_dir,
@@ -259,14 +266,17 @@ pub async fn do_package_video(
             )
             .await?;
 
-            copy_mp4_rotation_metadata(
-                asset_path.path_on_disk().as_std_path(),
-                dash_result.mp4_path.as_std_path(),
-            )
-            .await
-            .context(
-                "error copying mp4 rotation metadata from original asset to new representation",
-            )?;
+            if asset.base.file_type == "mp4" {
+                // FIXME:
+                copy_mp4_rotation_metadata(
+                    asset_path.path_on_disk().as_std_path(),
+                    dash_result.mp4_path.as_std_path(),
+                )
+                .await
+                .context(
+                    "error copying mp4 rotation metadata from original asset to new representation",
+                )?;
+            }
 
             let (_, streams) = ffprobe_get_streams(&dash_result.mp4_path, ffprobe_path).await?;
             let repr_name = package_video.repr_name.clone();
@@ -388,7 +398,7 @@ pub async fn do_package_video(
     }
 
     // TODO: set full profile
-    let mut merged_manifest = merged_manifest.unwrap();
+    let mut merged_manifest = merged_manifest.expect("at least one manifest was just created");
     merged_manifest.periods[0].adaptations = adaptation_sets;
     storage
         .open_write_stream(&storage_key::dash_file(

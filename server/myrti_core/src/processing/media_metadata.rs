@@ -47,12 +47,12 @@ pub mod exiftool {
         pub gps_time_stamp: Option<String>,
         #[serde(rename = "GPSDateStamp")]
         pub gps_date_stamp: Option<String>,
-        #[serde(rename = "GPSImgDirectionRef")]
-        pub gps_img_direction_ref: Option<String>,
-        #[serde(rename = "GPSImgDirection")]
-        pub gps_img_direction: Option<f64>,
-        #[serde(rename = "Orientation")]
-        pub orientation: Option<i32>,
+        // #[serde(rename = "GPSImgDirectionRef")]
+        // pub gps_img_direction_ref: Option<String>,
+        // #[serde(rename = "GPSImgDirection")]
+        // pub gps_img_direction: Option<String>,
+        // #[serde(rename = "Orientation")]
+        // pub orientation: Option<i32>,
         #[serde(rename = "Make")]
         pub make: Option<String>,
     }

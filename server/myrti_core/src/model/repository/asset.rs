@@ -278,7 +278,7 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
         gps_latitude: create_asset.base.gps_coordinates.map(|c| c.lat),
         gps_longitude: create_asset.base.gps_coordinates.map(|c| c.lon),
     };
-    conn.exclusive_transaction(|conn| {
+    conn.immediate_transaction(|conn| {
         let id: i64 = insert_into(schema::Asset::table)
             .values(&insertable)
             .returning(schema::Asset::asset_id)

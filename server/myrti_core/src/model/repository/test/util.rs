@@ -1,9 +1,9 @@
 use proptest::prelude::*;
 
 use crate::model::{
-    repository::{self, db::DbConn, timeline_group::CreateTimelineGroup},
     Asset, AssetBase, AssetId, AssetRootDirId, AssetSpe, AssetType, CreateAsset, CreateAssetBase,
     CreateAssetSpe, Image, TimelineGroup, TimelineGroupId, Video, VideoAsset,
+    repository::{self, db::DbConn, timeline_group::CreateTimelineGroup},
 };
 
 /// Inserts asset and returns them in the same order, with asset_id set
@@ -133,37 +133,42 @@ pub fn set_video_asset_root_dir(asset: VideoAsset, root_dir_id: AssetRootDirId) 
     }
 }
 
-pub fn make_created_asset(asset: &CreateAsset, inserted: &Asset) -> Asset {
+pub fn make_created_asset(create: &CreateAsset, inserted: &Asset) -> Asset {
     Asset {
         base: AssetBase {
-            ty: match &asset.spe {
+            ty: match &create.spe {
                 CreateAssetSpe::Image(_) => AssetType::Image,
                 CreateAssetSpe::Video(_) => AssetType::Video,
             },
-            root_dir_id: asset.base.root_dir_id,
-            file_type: asset.base.file_type.clone(),
-            file_path: asset.base.file_path.clone(),
-            is_hidden: asset.base.is_hidden,
-            taken_date: asset.base.taken_date,
-            timestamp_info: asset.base.timestamp_info.clone(),
-            size: asset.base.size,
-            rotation_correction: asset.base.rotation_correction,
-            gps_coordinates: asset.base.gps_coordinates,
+            root_dir_id: create.base.root_dir_id,
+            file_type: create.base.file_type.clone(),
+            file_path: create.base.file_path.clone(),
+            is_hidden: create.base.is_hidden,
+            taken_date: create.base.taken_date,
+            timestamp_info: create.base.timestamp_info.clone(),
+            size: create.base.size,
+            rotation_correction: create.base.rotation_correction,
+            gps_coordinates: create.base.gps_coordinates,
 
             id: inserted.base.id,
             added_at: inserted.base.added_at,
             hash: inserted.base.hash,
         },
-        sp: match &asset.spe {
-            CreateAssetSpe::Image(img) => AssetSpe::Image(Image {
-                image_format_name: img.image_format_name.clone(),
+        sp: match (&create.spe, &inserted.sp) {
+            (CreateAssetSpe::Image(create_img), AssetSpe::Image(img)) => AssetSpe::Image(Image {
+                image_asset_id: img.image_asset_id,
+                image_format_name: create_img.image_format_name.clone(),
             }),
-            CreateAssetSpe::Video(vid) => AssetSpe::Video(Video {
-                video_codec_name: vid.video_codec_name.clone(),
-                video_bitrate: vid.video_bitrate,
-                audio_codec_name: vid.audio_codec_name.clone(),
-                has_dash: vid.has_dash,
+            (CreateAssetSpe::Video(create_vid), AssetSpe::Video(vid)) => AssetSpe::Video(Video {
+                video_asset_id: vid.video_asset_id,
+                video_codec_name: create_vid.video_codec_name.clone(),
+                video_bitrate: create_vid.video_bitrate,
+                audio_codec_name: create_vid.audio_codec_name.clone(),
+                is_original_streamable: create_vid.is_original_streamable,
+                max_iframe_interval: create_vid.max_iframe_interval,
+                frame_rate: create_vid.frame_rate,
             }),
+            _ => panic!(),
         },
     }
 }

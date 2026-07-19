@@ -3,12 +3,12 @@ use std::borrow::Cow;
 use camino::Utf8PathBuf as PathBuf;
 use chrono::FixedOffset;
 use diesel::prelude::*;
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 
 use crate::model::{
-    util::{datetime_from_db_repr, hash_vec8_to_u64},
     AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetType, GpsCoordinates, Image,
     ImageAssetId, Size, TimestampInfo, Video, VideoAssetId,
+    util::{datetime_from_db_repr, hash_vec8_to_u64},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Identifiable, Queryable, QueryableByName, Selectable)]
@@ -61,7 +61,7 @@ pub struct DbVideoAsset {
     pub video_bitrate: i64,
     pub audio_codec_name: Option<String>,
     pub has_ghi: Option<i32>,
-    pub is_original_streamable: i32,
+    pub is_original_streamable: Option<i32>,
     pub max_iframe_interval: Option<i32>,
     pub frame_rate_num: Option<i32>,
     pub frame_rate_denom: Option<i32>,
@@ -111,7 +111,10 @@ impl TryFrom<DbVideoAsset> for Video {
             video_codec_name: value.video_codec_name,
             video_bitrate: value.video_bitrate,
             audio_codec_name: value.audio_codec_name,
-            is_original_streamable: value.is_original_streamable != 0,
+            is_original_streamable: value
+                .is_original_streamable
+                .expect("null currently disallowed on application side")
+                != 0,
             max_iframe_interval: value.max_iframe_interval,
             frame_rate: value
                 .frame_rate_num

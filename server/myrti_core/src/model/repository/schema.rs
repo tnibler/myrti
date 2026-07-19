@@ -61,7 +61,7 @@ diesel::table! {
         audio_codec_name -> Nullable<Text>,
         has_ghi -> Nullable<Integer>,
         max_iframe_interval -> Nullable<Integer>,
-        is_original_streamable -> Integer,
+        is_original_streamable -> Nullable<Integer>,
         frame_rate_num -> Nullable<Integer>,
         frame_rate_denom -> Nullable<Integer>,
     }

@@ -117,12 +117,19 @@ prop_compose! {
         base in arb_new_asset_base(file_type),
         video_codec_name in "h264|hevc|av1|vp9|mjpeg",
         video_bitrate in 800_000_i64..5_000_000,
-        audio_codec_name in prop_oneof![
+        audio_codec_name in prop_oneof! [
             1 => Just(None),
             4 => "mp3|aac|opus|pcm_u8".prop_map(Some),
         ],
         video_duration_ms in any::<Option<i64>>().no_shrink(),
         ffprobe_output in any::<Vec<u8>>().no_shrink(),
+        (is_original_streamable, max_iframe_interval, frame_rate) in prop_oneof! [
+            1 => (Just(false), (5i32..50).prop_map(Some).no_shrink(), (100i32..500i32, 10i32..35i32).prop_map(Some).no_shrink()),
+            1 => (Just(false), Just(None), (100i32..500i32, 10i32..35i32).prop_map(Some).no_shrink()),
+            1 => (Just(false), (5i32..50).prop_map(Some).no_shrink(), Just(None)),
+            1 => (Just(false), Just(None), Just(None)),
+            5 => (Just(true), (5i32..50).prop_map(Some).no_shrink(), (100i32..500i32, 10i32..35i32).prop_map(Some).no_shrink()),
+        ],
     ) -> CreateAsset {
         CreateAsset {
             base,
@@ -130,9 +137,11 @@ prop_compose! {
                 video_codec_name,
                 video_bitrate,
                 audio_codec_name,
-                has_dash: false,
                 video_duration_ms,
                 ffprobe_output: FFProbeOutput(ffprobe_output),
+                is_original_streamable,
+                max_iframe_interval,
+                frame_rate
             }),
         }
     }

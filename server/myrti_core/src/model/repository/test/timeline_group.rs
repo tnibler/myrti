@@ -3,9 +3,9 @@ use chrono::{Days, Months};
 use claims::{assert_err, assert_ok};
 
 use crate::model::{
-    repository::{self, timeline_group::CreateTimelineGroup},
     AssetId, AssetRootDir, AssetRootDirId, CreateAsset, CreateAssetBase, CreateAssetImage,
     CreateAssetSpe, Size, TimestampInfo,
+    repository::{self, timeline_group::CreateTimelineGroup},
 };
 
 use super::*;
@@ -127,13 +127,13 @@ fn add_remove_assets_timeline_group() {
         &mut conn, group_id
     ))
     .into_iter()
-    .map(|asset| asset.base.id)
+    .map(|asset| asset.id)
     .collect();
     let ret_group2: Vec<AssetId> = assert_ok!(repository::timeline_group::get_assets_in_group(
         &mut conn, group2_id
     ))
     .into_iter()
-    .map(|asset| asset.base.id)
+    .map(|asset| asset.id)
     .collect();
     assert_eq!(ret_group, vec![asset_id]);
     assert_eq!(ret_group2, vec![]);
@@ -146,7 +146,7 @@ fn add_remove_assets_timeline_group() {
         &mut conn, group2_id
     ))
     .into_iter()
-    .map(|asset| asset.base.id)
+    .map(|asset| asset.id)
     .collect();
     assert_eq!(ret_group2, vec![asset2_id, asset3_id]);
 
@@ -177,7 +177,7 @@ fn add_remove_assets_timeline_group() {
         &mut conn, group_id
     ))
     .into_iter()
-    .map(|asset| asset.base.id)
+    .map(|asset| asset.id)
     .collect();
     assert_eq!(&ret_group, &[]);
 
@@ -191,7 +191,7 @@ fn add_remove_assets_timeline_group() {
         &mut conn, group2_id
     ))
     .into_iter()
-    .map(|asset| asset.base.id)
+    .map(|asset| asset.id)
     .collect();
     assert_eq!(&ret_group2, &[asset2_id]);
 }

@@ -5,9 +5,10 @@ use chrono::Months;
 use claims::assert_ok;
 
 use crate::model::{
+    AssetId, AssetRootDir, AssetRootDirId, AssetSpe, CreateAsset, CreateAssetBase,
+    CreateAssetImage, CreateAssetSpe, ImageAssetId, ImageRepresentation, ImageRepresentationId,
+    Size, TimestampInfo,
     repository::{self, test::utc_now_millis_zero},
-    AssetId, AssetRootDir, AssetRootDirId, CreateAsset, CreateAssetBase, CreateAssetImage,
-    CreateAssetSpe, ImageRepresentation, ImageRepresentationId, Size, TimestampInfo,
 };
 
 #[test]
@@ -45,13 +46,19 @@ fn insert_retrieve_image_representation() {
         },
     };
     let asset_id = assert_ok!(repository::asset::create_asset(&mut conn, asset));
+    let asset = assert_ok!(repository::asset::get_asset(&mut conn, asset_id));
+    let asset_image = match asset.sp {
+        AssetSpe::Image(image) => image,
+        AssetSpe::Video(_) => panic!(),
+    };
     let image_reprs = assert_ok!(repository::representation::get_image_representations(
-        &mut conn, asset_id
+        &mut conn,
+        asset_image.image_asset_id
     ));
     assert!(image_reprs.is_empty());
     let repr1 = ImageRepresentation {
         id: ImageRepresentationId(0),
-        asset_id,
+        image_asset_id: asset_image.image_asset_id,
         format_name: "avif".into(),
         width: 1024,
         height: 1023,
@@ -67,7 +74,8 @@ fn insert_retrieve_image_representation() {
     };
     let expected = vec![repr1_with_id];
     let retrieved = assert_ok!(repository::representation::get_image_representations(
-        &mut conn, asset_id
+        &mut conn,
+        asset_image.image_asset_id
     ));
     assert_eq!(expected, retrieved);
 }
@@ -131,28 +139,35 @@ fn get_images_with_no_acceptable_repr() {
         },
     };
     let asset2_id = assert_ok!(repository::asset::create_asset(&mut conn, asset2));
+    let asset2 = assert_ok!(repository::asset::get_asset(&mut conn, asset2_id));
+    let asset2_image = match asset2.sp {
+        AssetSpe::Image(image) => image,
+        AssetSpe::Video(_) => panic!(),
+    };
 
     let acceptable_formats = ["jpeg"];
-    let actual: HashSet<AssetId> = assert_ok!(
+    let actual: HashSet<(ImageAssetId, AssetId)> = assert_ok!(
         repository::asset::get_image_assets_with_no_acceptable_repr(&mut conn, &acceptable_formats)
     )
     .into_iter()
     .collect();
-    let expected: HashSet<AssetId> = [asset2_id].into_iter().collect();
+    let expected: HashSet<(ImageAssetId, AssetId)> = [(asset2_image.image_asset_id, asset2_id)]
+        .into_iter()
+        .collect();
     assert_eq!(expected, actual);
 
     let acceptable_formats = ["jpeg", "heif"];
-    let actual: HashSet<AssetId> = assert_ok!(
+    let actual: HashSet<(ImageAssetId, AssetId)> = assert_ok!(
         repository::asset::get_image_assets_with_no_acceptable_repr(&mut conn, &acceptable_formats)
     )
     .into_iter()
     .collect();
-    let expected: HashSet<AssetId> = [].into_iter().collect();
+    let expected: HashSet<(ImageAssetId, AssetId)> = [].into_iter().collect();
     assert_eq!(expected, actual);
 
     let asset2_repr = ImageRepresentation {
         id: ImageRepresentationId(0),
-        asset_id: asset2_id,
+        image_asset_id: asset2_image.image_asset_id,
         format_name: "avif".into(),
         width: 100,
         height: 100,
@@ -165,20 +180,22 @@ fn get_images_with_no_acceptable_repr() {
     ));
 
     let acceptable_formats = ["jpeg"];
-    let actual: HashSet<AssetId> = assert_ok!(
+    let actual: HashSet<(ImageAssetId, AssetId)> = assert_ok!(
         repository::asset::get_image_assets_with_no_acceptable_repr(&mut conn, &acceptable_formats)
     )
     .into_iter()
     .collect();
-    let expected: HashSet<AssetId> = [asset2_id].into_iter().collect();
+    let expected: HashSet<(ImageAssetId, AssetId)> = [(asset2_image.image_asset_id, asset2_id)]
+        .into_iter()
+        .collect();
     assert_eq!(expected, actual);
 
     let acceptable_formats = ["jpeg", "avif"];
-    let actual: HashSet<AssetId> = assert_ok!(
+    let actual: HashSet<(ImageAssetId, AssetId)> = assert_ok!(
         repository::asset::get_image_assets_with_no_acceptable_repr(&mut conn, &acceptable_formats)
     )
     .into_iter()
     .collect();
-    let expected: HashSet<AssetId> = [].into_iter().collect();
+    let expected: HashSet<(ImageAssetId, AssetId)> = [].into_iter().collect();
     assert_eq!(expected, actual);
 }

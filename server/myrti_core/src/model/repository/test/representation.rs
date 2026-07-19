@@ -25,9 +25,11 @@ fn insert_retrieve_video_representation() {
             video_codec_name: "h264".to_owned(),
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
-            has_dash: false,
             ffprobe_output: Default::default(),
             video_duration_ms: None,
+            is_original_streamable: true,
+            max_iframe_interval: Some(100),
+            frame_rate: Some((300, 1000)),
         }),
         base: CreateAssetBase {
             root_dir_id,
@@ -53,9 +55,11 @@ fn insert_retrieve_video_representation() {
             video_codec_name: "hevc".to_owned(),
             video_bitrate: 456,
             audio_codec_name: Some("opus".into()),
-            has_dash: false,
             ffprobe_output: Default::default(),
             video_duration_ms: Some(14444),
+            is_original_streamable: false,
+            max_iframe_interval: None,
+            frame_rate: Some((100, 33)),
         }),
         base: CreateAssetBase {
             root_dir_id,
@@ -77,10 +81,21 @@ fn insert_retrieve_video_representation() {
         },
     };
     let asset_id = assert_ok!(repository::asset::create_asset(&mut conn, asset));
+    let asset = assert_ok!(repository::asset::get_asset(&mut conn, asset_id));
+    let asset_video = match asset.sp.clone() {
+        AssetSpe::Image(_) => panic!(),
+        AssetSpe::Video(video) => video,
+    };
+
     let asset2_id = assert_ok!(repository::asset::create_asset(&mut conn, asset2));
+    let asset2 = assert_ok!(repository::asset::get_asset(&mut conn, asset2_id));
+    let asset2_video = match asset2.sp.clone() {
+        AssetSpe::Image(_) => panic!(),
+        AssetSpe::Video(video) => video,
+    };
     let video_repr = VideoRepresentation {
         id: VideoRepresentationId(0),
-        asset_id,
+        video_asset_id: asset_video.video_asset_id,
         codec_name: "av1".to_owned(),
         bitrate: 123456,
         width: 123,
@@ -89,7 +104,7 @@ fn insert_retrieve_video_representation() {
     };
     let video_repr2 = VideoRepresentation {
         id: VideoRepresentationId(0),
-        asset_id,
+        video_asset_id: asset_video.video_asset_id,
         codec_name: "av1".to_owned(),
         bitrate: 123456,
         width: 1230,
@@ -98,7 +113,7 @@ fn insert_retrieve_video_representation() {
     };
     let video_repr3 = VideoRepresentation {
         id: VideoRepresentationId(0),
-        asset_id: asset2_id,
+        video_asset_id: asset2_video.video_asset_id,
         codec_name: "av1".to_owned(),
         bitrate: 12345,
         width: 230,
@@ -108,7 +123,7 @@ fn insert_retrieve_video_representation() {
     let video_repr_id = assert_ok!(repository::representation::insert_video_representation(
         &mut conn,
         &CreateVideoRepresentation {
-            asset_id,
+            video_asset_id: asset_video.video_asset_id,
             name: video_repr.name.clone(),
             codec_name: video_repr.codec_name.clone()
         }
@@ -116,7 +131,7 @@ fn insert_retrieve_video_representation() {
     let video_repr2_id = assert_ok!(repository::representation::insert_video_representation(
         &mut conn,
         &CreateVideoRepresentation {
-            asset_id,
+            video_asset_id: asset_video.video_asset_id,
             name: video_repr2.name.clone(),
             codec_name: video_repr2.codec_name.clone()
         }
@@ -124,7 +139,7 @@ fn insert_retrieve_video_representation() {
     let _video_repr3_id = assert_ok!(repository::representation::insert_video_representation(
         &mut conn,
         &CreateVideoRepresentation {
-            asset_id: asset2_id,
+            video_asset_id: asset2_video.video_asset_id,
             name: video_repr3.name.clone(),
             codec_name: video_repr3.codec_name.clone()
         }
@@ -146,7 +161,8 @@ fn insert_retrieve_video_representation() {
         &video_repr2_with_id
     ));
     let retrieved: HashSet<_> = assert_ok!(repository::representation::get_video_representations(
-        &mut conn, asset_id
+        &mut conn,
+        asset_video.video_asset_id
     ))
     .into_iter()
     .collect();
@@ -172,9 +188,11 @@ fn insert_retrieve_audio_representation() {
             video_codec_name: "h264".to_owned(),
             video_bitrate: 1234,
             audio_codec_name: Some("aac".into()),
-            has_dash: false,
             video_duration_ms: None,
             ffprobe_output: Default::default(),
+            is_original_streamable: true,
+            max_iframe_interval: Some(33),
+            frame_rate: Some((2343, 444)),
         }),
         base: CreateAssetBase {
             root_dir_id,
@@ -200,9 +218,11 @@ fn insert_retrieve_audio_representation() {
             video_codec_name: "hevc".to_owned(),
             video_bitrate: 456,
             audio_codec_name: Some("mp3".into()),
-            has_dash: false,
             ffprobe_output: Default::default(),
             video_duration_ms: Some(123433423),
+            is_original_streamable: false,
+            max_iframe_interval: Some(33),
+            frame_rate: Some((2343, 444)),
         }),
         base: CreateAssetBase {
             root_dir_id,
@@ -224,23 +244,34 @@ fn insert_retrieve_audio_representation() {
         },
     };
     let asset_id = assert_ok!(repository::asset::create_asset(&mut conn, asset));
+    let asset = assert_ok!(repository::asset::get_asset(&mut conn, asset_id));
+    let asset_video = match asset.sp.clone() {
+        AssetSpe::Image(_) => panic!(),
+        AssetSpe::Video(video) => video,
+    };
+
     let asset2_id = assert_ok!(repository::asset::create_asset(&mut conn, asset2));
+    let asset2 = assert_ok!(repository::asset::get_asset(&mut conn, asset2_id));
+    let asset2_video = match asset2.sp.clone() {
+        AssetSpe::Image(_) => panic!(),
+        AssetSpe::Video(video) => video,
+    };
     let audio_repr = AudioRepresentation {
         id: AudioRepresentationId(0),
-        asset_id,
+        video_asset_id: asset_video.video_asset_id,
         name: "opus".into(),
         codec_name: "opus".into(),
     };
     let audio_repr2 = AudioRepresentation {
         id: AudioRepresentationId(0),
-        asset_id: asset2_id,
+        video_asset_id: asset2_video.video_asset_id,
         codec_name: "flac".into(),
         name: "flac".into(),
     };
     let audio_repr_id = assert_ok!(repository::representation::insert_audio_representation(
         &mut conn,
         &CreateAudioRepresentation {
-            asset_id,
+            video_asset_id: asset_video.video_asset_id,
             name: audio_repr.name.clone(),
             codec_name: audio_repr.codec_name.clone()
         }
@@ -248,7 +279,7 @@ fn insert_retrieve_audio_representation() {
     let audio_repr2_id = assert_ok!(repository::representation::insert_audio_representation(
         &mut conn,
         &CreateAudioRepresentation {
-            asset_id: asset2_id,
+            video_asset_id: asset2_video.video_asset_id,
             name: audio_repr2.name.clone(),
             codec_name: audio_repr2.codec_name.clone()
         }
@@ -266,7 +297,8 @@ fn insert_retrieve_audio_representation() {
         ..audio_repr
     };
     let retrieved: HashSet<_> = assert_ok!(repository::representation::get_audio_representations(
-        &mut conn, asset_id
+        &mut conn,
+        asset_video.video_asset_id
     ))
     .into_iter()
     .collect();

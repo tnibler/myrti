@@ -73,7 +73,7 @@ CREATE TABLE VideoAsset (
   frame_rate_num INTEGER CHECK(frame_rate_num IS NULL OR frame_rate_num > 0),
   frame_rate_denom INTEGER CHECK(frame_rate_denom IS NULL OR frame_rate_denom > 0),
 
-  is_original_streamable INTEGER NOT NULL CHECK(is_original_streamable IN (0, 1)),
+  is_original_streamable INTEGER CHECK(is_original_streamable IN (NULL, 0, 1)),
   -- NULL: unknown
   -- 0: none
   -- 1: video
@@ -82,7 +82,7 @@ CREATE TABLE VideoAsset (
   has_ghi INTEGER CHECK(has_ghi IN (0, 1, 2, 3)),
   max_iframe_interval INTEGER,
   CHECK((frame_rate_num IS NULL) = (frame_rate_denom IS NULL)),
-  CHECK(is_original_streamable = 0 OR
+  CHECK(is_original_streamable IN (0, NULL) OR
     (max_iframe_interval IS NOT NULL
       AND frame_rate_num IS NOT NULL
       AND frame_rate_denom IS NOT NULL
@@ -185,6 +185,9 @@ CREATE TABLE AudioRepresentation (
 
 CREATE TABLE ImageRepresentation (
   image_repr_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  -- 0: created automatically
+  -- ?: for example in-camera jpeg bundled in raw file
+  repr_type INTEGER NOT NULL DEFAULT 0,
   image_asset_id INTEGER NOT NULL,
   format_name TEXT NOT NULL,
   width INTEGER NOT NULL,

@@ -394,6 +394,8 @@ pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageV
     // Ok(package_orig_tasks.chain(reencode_tasks).collect())
 }
 
+// TODO: do required image conversions on index, not just here
+
 pub async fn image_conversion_due(conn: &mut PooledDbConn) -> Result<Vec<ConvertImage>> {
     let acceptable_formats = ["jpeg", "avif", "png", "webp"];
     let assets_no_good_repr = interact!(conn, move |conn| {

@@ -4,7 +4,7 @@ use camino::Utf8Path as Path;
 use chrono::Utc;
 use color_eyre::eyre;
 use diesel::{insert_into, prelude::*};
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 use tracing::instrument;
 
 use crate::model::repository::db_entity::{DbImageAsset, DbInsertVideoAsset, DbVideoAsset};
@@ -14,12 +14,12 @@ use crate::model::{
     VideoAsset, VideoAssetId,
 };
 use crate::model::{
-    repository::db_entity::{to_db_asset_ty, DbAssetPathOnDisk, DbAssetThumbnail},
+    repository::db_entity::{DbAssetPathOnDisk, DbAssetThumbnail, to_db_asset_ty},
     util::{bool_to_int, datetime_to_db_repr, hash_u64_to_vec8, to_db_thumbnail_type},
 };
 
 use super::db::DbConn;
-use super::db_entity::{to_db_timezone_info, DbAsset, DbInsertAsset};
+use super::db_entity::{DbAsset, DbInsertAsset, to_db_timezone_info};
 use super::schema;
 
 #[instrument(skip(conn))]
@@ -358,7 +358,7 @@ pub fn get_asset_exiftool_output(conn: &mut DbConn, asset_id: AssetId) -> Result
 pub fn get_video_assets_with_no_acceptable_repr(conn: &mut DbConn) -> Result<Vec<AssetBase>> {
     let query = diesel::sql_query(
         r#"
-            SELECT Asset.* FROM Asset INNER JOIN VideoAsset ON Asset.asset_id = VideoAsset.asset_ID
+            SELECT Asset.* FROM Asset INNER JOIN VideoAsset ON Asset.asset_id = VideoAsset.asset_id
             WHERE
             (
             (
@@ -368,10 +368,9 @@ pub fn get_video_assets_with_no_acceptable_repr(conn: &mut DbConn) -> Result<Vec
                 (
                     SELECT * FROM
                     (
-                        SELECT VideoAsset.audio_codec_name
+                        SELECT ar.codec_name FROM AudioRepresentation ar WHERE ar.video_asset_id = VideoAsset.video_asset_id
                         UNION
-                        SELECT ar.codec_name FROM AudioRepresentation ar
-                        WHERE ar.video_asset_id = VideoAsset.video_asset_id
+                        SELECT VideoAsset.audio_codec_name WHERE VideoAsset.has_ghi = 2 OR VideoAsset.has_ghi = 3
                     )
                     INTERSECT SELECT * FROM AcceptableAudioCodec
                 )
@@ -508,7 +507,9 @@ pub fn set_asset_is_series_selection(
     if n_affected == 1 {
         Ok(())
     } else {
-        Err(eyre!("Could not update Asset.is_series_selection: asset id {asset_id} is not part of any series"))
+        Err(eyre!(
+            "Could not update Asset.is_series_selection: asset id {asset_id} is not part of any series"
+        ))
     }
 }
 

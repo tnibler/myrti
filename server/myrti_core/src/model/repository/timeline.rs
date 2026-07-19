@@ -465,9 +465,8 @@ pub fn get_segments_in_section(
         })
         .try_collect()?;
     debug_assert!(
-        segments
-            .iter()
-            .map(|segment| segment
+        segments.iter().all(
+            |segment| segment
                 .items
                 .iter()
                 .rev()
@@ -482,8 +481,8 @@ pub fn get_segments_in_section(
                         selection_indices: _,
                         total_series_size: _,
                     } => *series_date,
-                }))
-            .all(|b| b),
+                })
+        ),
         "assets within TimelineSegment are not sorted by taken_date/series_date descending"
     );
     segments.iter().for_each(|segment| {

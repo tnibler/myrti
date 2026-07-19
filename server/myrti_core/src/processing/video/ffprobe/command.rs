@@ -478,6 +478,7 @@ fn ffprobe_parse_iphone_motion_photo_mov() {
     use pretty_assertions::assert_eq;
     use std::collections::HashSet;
     let output = r#"
+{
 "streams": [
         {
             "index": 0,

@@ -18,11 +18,6 @@
     };
 
     flake-utils.url = "github:numtide/flake-utils";
-
-    advisory-db = {
-      url = "github:rustsec/advisory-db";
-      flake = false;
-    };
   };
 
   outputs = {
@@ -32,13 +27,55 @@
     fenix,
     gpac,
     flake-utils,
-    advisory-db,
     ...
   }:
     flake-utils.lib.eachDefaultSystem (system: let
-      pkgs = nixpkgs.legacyPackages.${system};
-
+      vipsOverlay = final: prev: {
+        vips = prev.vips.overrideAttrs (old: {
+          src = prev.fetchFromGitHub {
+            owner = "libvips";
+            repo = "libvips";
+            rev = "e01a4797cabe77d457fdfa7d776b7a7e7ca6d6a7";
+            hash = "sha256-RpbNiuEicnRTxdB6o63CGdiq2Y3+/QEimtnnOn6EoT0=";
+          };
+        });
+      };
+      pkgs = import nixpkgs {
+        inherit system;
+        overlays = [vipsOverlay];
+      };
       inherit (pkgs) lib;
+
+      pnpmDeps = pkgs.fetchPnpmDeps {
+        pname = "myrti-web-pnpm-deps";
+        version = "0.1";
+        src = ./web;
+        pnpm = pkgs.pnpm_11;
+        fetcherVersion = 3; # See https://nixos.org/manual/nixpkgs/stable/#javascript-pnpm-fetcherVersion
+        hash = "sha256-aS5zDaF9Vt+DUSt4D21T3y/nVV0i6H/zj3QTTbI/Lps=";
+      };
+
+      myrtiWeb = pkgs.stdenv.mkDerivation {
+        pname = "myrti-web";
+        version = "0.1";
+        src = ./web;
+        inherit pnpmDeps;
+
+        nativeBuildInputs = [
+          pkgs.nodejs
+          pkgs.pnpmConfigHook
+          pkgs.pnpm_11
+        ];
+
+        buildPhase = ''
+          pnpm build
+        '';
+
+        installPhase = ''
+          cp -r dist $out
+          cp -r public/shaka-player $out
+        '';
+      };
 
       craneLib = crane.mkLib pkgs;
       src = craneLib.cleanCargoSource ./server;
@@ -120,21 +157,16 @@
 
       packages = {
         inherit server;
-
-        web = pkgs.buildNpmPackage {
-          name = "myrti-web";
-          src = ./web;
-          npmDepsHash = "sha256-SW4FKbsZyd4S/UQw+bh9rUV2LbfK3kYx175H4nV9yiI=";
-          installPhase = ''
-            cp -r dist $out/
-          '';
-        };
       };
 
       apps = {
-        server = flake-utils.lib.mkApp {
-          drv = server;
-          name = "server";
+        server = let
+          runServer = pkgs.writeShellScriptBin "run-server" ''
+            exec ${server}/bin/server --serve-static ${myrtiWeb} "$@"
+          '';
+        in {
+          type = "app";
+          program = "${runServer}/bin/run-server";
         };
         print-openapi = flake-utils.lib.mkApp {
           drv = server;

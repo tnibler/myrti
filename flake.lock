@@ -1,21 +1,5 @@
 {
   "nodes": {
-    "advisory-db": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1783059128,
-        "narHash": "sha256-L+ovluBCk6nu3yrJ/IS1rRSK6N/ePJjZpwE5FB1+yGI=",
-        "owner": "rustsec",
-        "repo": "advisory-db",
-        "rev": "9d7ae756b3fe555919e87a81125ecc198f5585d3",
-        "type": "github"
-      },
-      "original": {
-        "owner": "rustsec",
-        "repo": "advisory-db",
-        "type": "github"
-      }
-    },
     "crane": {
       "locked": {
         "lastModified": 1783030479,
@@ -109,7 +93,6 @@
     },
     "root": {
       "inputs": {
-        "advisory-db": "advisory-db",
         "crane": "crane",
         "fenix": "fenix",
         "flake-utils": "flake-utils",

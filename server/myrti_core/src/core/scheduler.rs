@@ -1,31 +1,31 @@
 use std::time::Duration;
 
 use eyre::{Context, Result};
-use futures::{stream::FuturesUnordered, TryStreamExt};
+use futures::{TryStreamExt, stream::FuturesUnordered};
 use strum::EnumCount;
 use tokio::sync::{mpsc, oneshot};
 use tracing::instrument;
 
 use crate::{
     actor::{
+        TaskError,
         image_conversion::{
-            start_image_conversion_actor, ImageConversionActorHandle, MsgFromImageConversion,
+            ImageConversionActorHandle, MsgFromImageConversion, start_image_conversion_actor,
         },
         indexing::{IndexingActorHandle, MsgFromIndexing},
         thumbnail::{
-            start_thumbnail_actor, MsgFromThumbnail, ThumbnailActorHandle, ThumbnailTaskResult,
+            MsgFromThumbnail, ThumbnailActorHandle, ThumbnailTaskResult, start_thumbnail_actor,
         },
         video_packaging::{
-            start_video_packaging_actor, MsgFromVideoPackaging, VideoPackagingActorHandle,
+            MsgFromVideoPackaging, VideoPackagingActorHandle, start_video_packaging_actor,
         },
-        TaskError,
     },
     catalog::rules,
     config::Config,
     interact,
     model::{
-        repository::{self, db::DbPool},
         AssetId, AssetRootDirId,
+        repository::{self, db::DbPool},
     },
 };
 
@@ -175,7 +175,7 @@ async fn run_scheduler(
     };
     loop {
         tokio::select! {
-            _ = reindex_interval.tick() => {
+            _ = reindex_interval.tick(), if !sched.waiting_for_shutdown => {
                 if let Err(err) = reindex_all(&sched.db_pool, &sched.indexing_actor).await {
                     tracing::error!(?err, "Error reindexing asset roots");
                 }

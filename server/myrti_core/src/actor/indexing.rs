@@ -1,7 +1,8 @@
 use std::collections::{HashSet, VecDeque};
 
 use camino::Utf8PathBuf as PathBuf;
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
+use globset::{Glob, GlobSet, GlobSetBuilder};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
@@ -10,8 +11,8 @@ use walkdir::WalkDir;
 use crate::{
     config, interact,
     model::{
-        repository::{self, db::DbPool},
         AssetId, AssetRootDir, AssetRootDirId,
+        repository::{self, db::DbPool},
     },
     processing::indexing::index_file,
 };
@@ -218,7 +219,7 @@ impl IndexingActor {
                 let start_result = handle_indexing_message(
                     self.db_pool.clone(),
                     send_copy,
-                    self.config.bin_paths.clone(),
+                    &self.config,
                     root_dir_id,
                     self.cancel.child_token(),
                 )
@@ -242,7 +243,7 @@ impl IndexingActor {
 async fn handle_indexing_message(
     db_pool: DbPool,
     send_result: mpsc::UnboundedSender<(AssetRootDirId, MsgFromIndexing)>,
-    bin_paths: Option<config::BinPaths>,
+    config: &config::Config,
     root_dir_id: AssetRootDirId,
     cancel: CancellationToken,
 ) -> Result<()> {
@@ -252,25 +253,46 @@ async fn handle_indexing_message(
     })
     .await?
     .wrap_err("Error getting AssetRootDir from db")?;
+    let bin_paths = config.bin_paths.clone();
+    let dir_config = config
+        .asset_dirs
+        .iter()
+        .find(|dir| dir.path == asset_root.path);
+    let exclude_globs = dir_config.iter().flat_map(|dir| dir.exclude_globs.iter());
+    // let data_dir_globs = config.da
+    let exclude_set = GlobSet::new(exclude_globs)?;
     tokio::spawn(async move {
-        index_asset_root(db_pool, send_result, bin_paths, asset_root, cancel).await;
+        index_asset_root(
+            db_pool,
+            send_result,
+            bin_paths,
+            asset_root,
+            exclude_set,
+            cancel,
+        )
+        .await;
     });
     Ok(())
 }
 
-#[instrument(skip(pool, send_result, bin_paths, cancel))]
+#[instrument(skip(pool, send_result, bin_paths, cancel, exclude_set))]
 async fn index_asset_root(
     pool: DbPool,
     send_result: mpsc::UnboundedSender<(AssetRootDirId, MsgFromIndexing)>,
     bin_paths: Option<config::BinPaths>,
     asset_root: AssetRootDir,
+    exclude_set: GlobSet,
     cancel: CancellationToken,
 ) {
     tracing::info!(path=%asset_root.path, "Start indexing");
     // TODO WalkDir is synchronous
     // FIXME if a datadir is subdir of assetroot it should obviously not be indexed
     let mut new_asset_count = 0;
-    for entry in WalkDir::new(asset_root.path.as_path()).follow_links(true) {
+    for entry in WalkDir::new(asset_root.path.as_path())
+        .follow_links(true)
+        .into_iter()
+        .filter_entry(|ent| !exclude_set.is_match(ent.path()))
+    {
         if cancel.is_cancelled() {
             let _ = send_result.send((
                 asset_root.id,
@@ -281,30 +303,29 @@ async fn index_asset_root(
             return;
         }
         match entry {
-            Ok(e) => {
-                if e.file_type().is_file() {
-                    let utf8_path = camino::Utf8Path::from_path(e.path());
-                    if let Some(path) = utf8_path {
-                        let indexing_res =
-                            index_file(path, &asset_root, &pool, bin_paths.as_ref()).await;
-                        let msg = match indexing_res {
-                            Ok(None) => {
-                                continue;
-                            }
-                            Ok(Some(asset_id)) => {
-                                new_asset_count += 1;
-                                MsgFromIndexing::NewAsset(asset_id)
-                            }
-                            Err(report) => MsgFromIndexing::IndexingError {
-                                root_dir_id: asset_root.id,
-                                path: Some(path.to_owned()),
-                                report,
-                            },
-                        };
-                        let _ = send_result.send((asset_root.id, msg));
-                    }
+            Ok(entry) if entry.file_type().is_file() => {
+                let utf8_path = camino::Utf8Path::from_path(entry.path());
+                if let Some(path) = utf8_path {
+                    let indexing_res =
+                        index_file(path, &asset_root, &pool, bin_paths.as_ref()).await;
+                    let msg = match indexing_res {
+                        Ok(None) => {
+                            continue;
+                        }
+                        Ok(Some(asset_id)) => {
+                            new_asset_count += 1;
+                            MsgFromIndexing::NewAsset(asset_id)
+                        }
+                        Err(report) => MsgFromIndexing::IndexingError {
+                            root_dir_id: asset_root.id,
+                            path: Some(path.to_owned()),
+                            report,
+                        },
+                    };
+                    let _ = send_result.send((asset_root.id, msg));
                 }
             }
+            Ok(_dir) => {}
             Err(e) => {
                 let _ = send_result.send((
                     asset_root.id,

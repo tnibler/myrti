@@ -12,11 +12,9 @@ use crate::{
     },
     config, interact,
     model::{
-        AlbumId, AssetId, AssetThumbnail, ThumbnailFormat, ThumbnailType, VideoAsset,
+        AlbumId, AssetId, AssetThumbnail, ThumbnailFormat, ThumbnailType,
         repository::{self, asset::AssetHasThumbnails, db::PooledDbConn},
     },
-    processing,
-    util::OptionPathExt,
 };
 
 use super::{
@@ -29,7 +27,6 @@ use super::{
     },
 };
 
-#[instrument(skip(conn), ret, level = "debug")]
 pub async fn required_video_packaging_for_asset(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
@@ -124,6 +121,17 @@ pub async fn required_video_packaging_for_asset(
     if !orig_vid_streamable && !has_acceptable_video_repr {
         let repr_name = format!("{}x{}", asset.base.size.width, asset.base.size.height);
         let video_out_key = storage_key::dash_file(asset.base.id, format_args!("{}", repr_name));
+        let keyframe_interval = match video.frame_rate {
+            Some((num, denom)) if num > 0 && denom > 0 => {
+                let fr = (num as f32) / (denom as f32);
+                (fr.round() as i32).clamp(2, 240)
+            }
+            Some(_) => {
+                tracing::warn!(?asset_id, ?video.frame_rate, "garbage frame rate");
+                30
+            }
+            None => 30,
+        };
         ops.push(PackageVideo {
             asset_id,
             video_asset_id: video.video_asset_id,
@@ -136,7 +144,7 @@ pub async fn required_video_packaging_for_asset(
                     max_bitrate: None,
                 }),
                 scale: None,
-                force_keyframe_interval: None,
+                force_keyframe_interval: Some(keyframe_interval),
             }),
             output_key: video_out_key,
         });
@@ -154,17 +162,45 @@ pub async fn required_video_packaging_for_asset(
     Ok(ops)
 }
 
-#[instrument(skip(conn))]
 pub async fn required_image_conversion_for_asset(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
 ) -> Result<Vec<ConvertImage>> {
-    // TODO
-    // tracing::error!("TODO not implemented required_image_conversion");
-    Ok(Default::default())
+    let asset = interact!(conn, move |conn| {
+        repository::asset::get_asset(conn, asset_id)
+    })
+    .await??;
+    let image = match asset.sp {
+        crate::model::AssetSpe::Image(image) => image,
+        crate::model::AssetSpe::Video(_) => return Ok(Default::default()),
+    };
+    let image_asset_id = image.image_asset_id;
+    let existing_image_reprs = interact!(conn, move |conn| {
+        repository::representation::get_image_representations(conn, image_asset_id)
+    })
+    .await??;
+
+    let acceptable_formats = ["jpeg", "avif", "png", "webp"];
+    if !existing_image_reprs
+        .into_iter()
+        .any(|repr| acceptable_formats.contains(&repr.format_name.as_str()))
+    {
+        let target = ImageConversionTarget {
+            scale: None,
+            format: super::image_conversion_target::ImageFormatTarget::AVIF(AvifTarget::default()),
+        };
+        let output_file_key = storage_key::image_representation(image_asset_id, &target);
+        Ok(vec![ConvertImage {
+            image_asset_id,
+            asset_id,
+            target,
+            output_file_key,
+        }])
+    } else {
+        Ok(Default::default())
+    }
 }
 
-#[instrument(skip(conn))]
 pub async fn required_thumbnails_for_asset(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
@@ -179,7 +215,6 @@ pub async fn required_thumbnails_for_asset(
     })
 }
 
-#[instrument(skip(conn), level = "debug")]
 pub async fn thumbnails_to_create(conn: &mut PooledDbConn) -> Result<Vec<CreateAssetThumbnail>> {
     // always create all thumbnails if any are missing for now
     let limit: Option<i64> = None;
@@ -240,7 +275,6 @@ fn missing_asset_thumbnails(have_thumbnails: Vec<AssetThumbnail>) -> Vec<Thumbna
     missing
 }
 
-#[tracing::instrument(skip(conn))]
 pub async fn album_thumbnails_to_create(
     conn: &mut PooledDbConn,
 ) -> Result<Vec<CreateAlbumThumbnail>> {
@@ -269,7 +303,6 @@ pub async fn album_thumbnails_to_create(
         .collect())
 }
 
-#[tracing::instrument(skip(conn))]
 pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageVideo>> {
     // priority:
     //  - videos with original in acceptable codec and no DASH packaged
@@ -393,8 +426,6 @@ pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageV
     // });
     // Ok(package_orig_tasks.chain(reencode_tasks).collect())
 }
-
-// TODO: do required image conversions on index, not just here
 
 pub async fn image_conversion_due(conn: &mut PooledDbConn) -> Result<Vec<ConvertImage>> {
     let acceptable_formats = ["jpeg", "avif", "png", "webp"];

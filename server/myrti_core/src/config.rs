@@ -1,12 +1,16 @@
-use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
-use color_eyre::eyre::{Context, Result};
-use serde::Deserialize;
 use std::str::FromStr;
+
+use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
+use eyre::{Context, Result, eyre};
+use globset::Glob;
+use itertools::Itertools;
+use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 struct TomlAssetDir {
     path: String,
     name: Option<String>,
+    exclude: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -35,10 +39,11 @@ struct TomlConfig {
     pub port: Option<u16>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct AssetDir {
     pub path: PathBuf,
     pub name: Option<String>,
+    pub exclude_globs: Vec<Glob>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,7 +60,7 @@ pub struct BinPaths {
     pub gpac: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Config {
     pub asset_dirs: Vec<AssetDir>,
     pub data_dir: DataDir,
@@ -74,9 +79,23 @@ pub async fn read_config(path: &Path) -> Result<Config> {
         .into_iter()
         .map(|toml_value| {
             let path = PathBuf::from_str(&toml_value.path)?;
+            let exclude_globs = toml_value
+                .exclude
+                .into_iter()
+                .flat_map(|v| v.into_iter())
+                .map(|s| {
+                    Glob::new(&s).wrap_err_with(|| {
+                        format!(
+                            "error parsing exclude pattern for asset directory {}",
+                            &path
+                        )
+                    })
+                })
+                .try_collect()?;
             Ok(AssetDir {
                 path,
                 name: toml_value.name,
+                exclude_globs,
             })
         })
         .collect::<Result<_>>()?;

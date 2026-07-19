@@ -10,7 +10,6 @@ use crate::{
         *,
     },
     processing::{self, hash::hash_file},
-    util::OptionPathExt,
 };
 
 use super::{

@@ -200,6 +200,8 @@ pub async fn ffprobe_get_max_iframe_interval(
             "error",
             "-select_streams",
             "v:0",
+            "-read_intervals",
+            "%+20", // read/decode 20 seconds of the stream
             "-show_entries",
             "frame=pts_time,pict_type",
             "-of",

@@ -398,7 +398,7 @@
   style:top={`${topOffset}px`}
 >
   <div
-    class="grow relative z-[1000]"
+    class="grow relative z-[100]"
     bind:this={pagerWrapper}
     bind:clientHeight={viewport.height}
     bind:clientWidth={viewport.width}
@@ -525,7 +525,7 @@
     {/if}
   </div>
 
-  <div class={'bg-white z-50 transition-all w-96 ' + (isSidePanelOpen ? 'mr-0' : 'mr-[-24rem]')}>
+  <div class={'bg-white z-120 transition-all w-96 ' + (isSidePanelOpen ? 'mr-0' : 'mr-[-24rem]')}>
     {#if slides?.current}
       {@const slide = slides.current}
       <InfoPanel

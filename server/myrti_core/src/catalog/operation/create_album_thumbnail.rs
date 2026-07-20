@@ -6,8 +6,8 @@ use crate::{
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
     interact,
     model::{
+        AlbumId, AlbumThumbnailId, Asset, AssetId, AssetSpe, AssetType,
         repository::{self, album_thumbnail::InsertAlbumThumbnail, db::PooledDbConn},
-        AlbumId, AlbumThumbnailId, AssetId, AssetType,
     },
     processing::{
         self,
@@ -48,7 +48,7 @@ pub async fn perform_side_effects_create_thumbnail(
     .await??;
     create_thumbnail(
         in_path.clone(),
-        asset.base.ty,
+        &asset,
         &op.webp_key,
         &op.avif_key,
         op.size,
@@ -94,7 +94,7 @@ pub async fn apply_create_thumbnail(
 #[instrument(skip(storage, control_recv))]
 async fn create_thumbnail(
     asset_path: PathBuf,
-    asset_type: AssetType,
+    asset: &Asset,
     webp_key: &str,
     avif_key: &str,
     size: i32,
@@ -113,9 +113,9 @@ async fn create_thumbnail(
         outputs: out_paths,
         out_dimension,
     };
-    let _res = match asset_type {
-        AssetType::Image => GenerateThumbnail::generate_thumbnail(thumbnail_params).await?,
-        AssetType::Video => {
+    let _res = match &asset.sp {
+        AssetSpe::Image(_) => GenerateThumbnail::generate_thumbnail(thumbnail_params).await?,
+        AssetSpe::Video(_) => {
             GenerateThumbnail::generate_video_thumbnail(thumbnail_params, control_recv).await?
         }
     };

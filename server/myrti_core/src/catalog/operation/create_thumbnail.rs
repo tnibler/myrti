@@ -1,17 +1,18 @@
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{Context, Report, Result};
-use futures::{stream::FuturesUnordered, TryStreamExt};
+use futures::{TryStreamExt, stream::FuturesUnordered};
 use tracing::instrument;
 
 use crate::{
     core::storage::{CommandOutputFile, Storage, StorageCommandOutput, StorageProvider},
     interact,
     model::{
+        Asset, AssetId, AssetSpe, AssetThumbnail, AssetThumbnailId, AssetType, Size,
+        ThumbnailFormat, ThumbnailType,
         repository::{
             self,
             db::{DbPool, PooledDbConn},
         },
-        AssetId, AssetThumbnail, AssetThumbnailId, AssetType, Size, ThumbnailFormat, ThumbnailType,
     },
     processing::{
         self,
@@ -106,15 +107,7 @@ pub async fn perform_side_effects_create_thumbnail(
     .await??;
     // TODO don't await sequentially. Not super bad because op.thumbnails is small but still
     for thumb in op.thumbnails {
-        match create_thumbnail(
-            in_path.clone(),
-            asset.base.ty,
-            &thumb,
-            storage,
-            control_recv,
-        )
-        .await
-        {
+        match create_thumbnail(in_path.clone(), &asset, &thumb, storage, control_recv).await {
             Ok(res) => {
                 for (format, _file_key) in thumb.file_keys {
                     result.succeeded.push(ThumbnailSideEffectSuccess {
@@ -135,7 +128,7 @@ pub async fn perform_side_effects_create_thumbnail(
 #[instrument(skip(storage, control_recv))]
 async fn create_thumbnail(
     asset_path: PathBuf,
-    asset_type: AssetType,
+    asset: &Asset,
     thumb: &ThumbnailToCreateWithPaths,
     storage: &Storage,
     control_recv: &mut ProcessControlReceiver,
@@ -153,9 +146,10 @@ async fn create_thumbnail(
             width: 200,
             height: 200,
         },
-        ThumbnailType::LargeOrigAspect => {
-            processing::image::OutDimension::KeepAspect { width: 400 }
-        }
+        ThumbnailType::LargeOrigAspect => processing::image::OutDimension::KeepAspect {
+            width: (asset.base.size.width as f32 * (300.0 / asset.base.size.height as f32)).round()
+                as i32,
+        },
     };
     let (tx, rx) = tokio::sync::oneshot::channel();
     let thumbnail_params = ThumbnailParams {
@@ -163,9 +157,9 @@ async fn create_thumbnail(
         outputs: out_files.iter().collect(),
         out_dimension,
     };
-    let res = match asset_type {
-        AssetType::Image => GenerateThumbnail::generate_thumbnail(thumbnail_params).await,
-        AssetType::Video => {
+    let res = match asset.sp {
+        AssetSpe::Image(_) => GenerateThumbnail::generate_thumbnail(thumbnail_params).await,
+        AssetSpe::Video(_) => {
             GenerateThumbnail::generate_video_thumbnail(thumbnail_params, control_recv).await
         }
     };

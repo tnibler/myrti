@@ -281,10 +281,12 @@ async fn main() -> Result<()> {
         .nest("/api", routes::api_router())
         .nest_service("/static/map.pmtiles", ServeFile::new(&pmtiles_path));
 
-    let app = match args.serve_static {
+    let app = match args.serve_static.as_deref() {
         Some(static_path) => {
             tracing::debug!(?static_path, "serving static files");
-            app.fallback_service(SpaServeDirService::new(ServeDir::new(static_path)))
+            app.fallback_service(SpaServeDirService::new(
+                ServeDir::new(static_path).fallback(ServeFile::new(static_path.join("index.html"))),
+            ))
         }
         None => app,
     }

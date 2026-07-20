@@ -6,7 +6,7 @@ use std::{
 use axum::{http::Method, Router};
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use clap::Parser;
-use eyre::{self, Context, Result};
+use eyre::{eyre, Context, Result};
 use myrti::{
     app_state::{AppState, SharedState},
     routes,
@@ -48,6 +48,12 @@ struct Cli {
     config: String,
     #[arg(long)]
     skip_startup_check: bool,
+    /// Serve static web files from this path
+    #[arg(long)]
+    serve_static: Option<PathBuf>,
+
+    #[arg(short, long)]
+    port: Option<u16>,
 
     /// Pause image/video processing on startup (for development)
     #[arg(long, default_value_t = false)]
@@ -110,15 +116,12 @@ async fn store_asset_roots_from_config(
 async fn main() -> Result<()> {
     let args = Cli::parse();
 
-    if std::env::var("RUST_LIB_BACKTRACE").is_err() {
-        std::env::set_var("RUST_LIB_BACKTRACE", "1")
-    }
     if std::env::var("RUST_SPANTRACE").is_err() {
         std::env::set_var("RUST_SPANTRACE", "1");
     }
     color_eyre::install()?;
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "debug,hyper=info")
+    if std::env::var("MYRTI_LOG").is_err() {
+        std::env::set_var("MYRTI_LOG", "info")
     }
     let tracing = tracing_subscriber::registry()
         .with(EnvFilter::from_env("MYRTI_LOG"))
@@ -156,11 +159,54 @@ async fn main() -> Result<()> {
     myrti_core::global_init();
     // TODO make all paths in config absolute relative to config_dir if they're not already
     let config_path = PathBuf::from(args.config);
-    let config = myrti_core::config::read_config(&config_path).await.unwrap();
+    let config = myrti_core::config::read_config(&config_path)
+        .await
+        .wrap_err_with(|| format!("error parsing config file {config_path}"))?;
     // all paths in config are relative to this
     let config_dir = config_path
         .parent()
         .expect("has read config file, so parent must be a directory");
+
+    let data_dir_path = if config.data_dir.path.is_absolute() {
+        config.data_dir.path.clone()
+    } else {
+        config_dir.join(&config.data_dir.path)
+    };
+    if !std::fs::exists(&data_dir_path)? {
+        std::fs::create_dir(&data_dir_path)
+            .with_context(|| format!("error creating data directory at {}", &data_dir_path))?;
+    }
+    let db_path = config.data_dir.db_path.as_deref().unwrap_or(&data_dir_path);
+    if !std::fs::exists(&db_path)? {
+        std::fs::create_dir(&db_path)
+            .with_context(|| format!("error creating database directory at {}", &db_path))?;
+    }
+
+    let data_dir_canon = match config.data_dir.path.canonicalize_utf8() {
+        Ok(p) => p,
+        Err(e) => match e.kind() {
+            std::io::ErrorKind::NotFound => {
+                match config.data_dir.path.parent().map(|p| p.canonicalize_utf8()) {
+                    Some(Ok(p)) => p,
+                    Some(Err(e)) => return Err(eyre!("error reading data directory path: {}", e)),
+                    None => return Err(eyre!("data directory path does not exist: {}", e)),
+                }
+            }
+            _ => return Err(eyre!("error reading data directory path: {}", e)),
+        },
+    };
+    if let Some(bad_dir) = config.asset_dirs.iter().find(|dir| {
+        dir.path
+            .canonicalize_utf8()
+            .is_ok_and(|dir| dir.starts_with(&data_dir_canon))
+    }) {
+        return Err(eyre!(
+            "data directory {data_dir_canon} can not be subdirectory of asset directory {}",
+            bad_dir.path
+        ));
+    }
+
+    info!("Starting up...");
 
     if !args.skip_startup_check {
         tracing::info!("Running self check");
@@ -178,20 +224,11 @@ async fn main() -> Result<()> {
         .map(|a| a.parse().wrap_err("error parsing listening address"))
         .transpose()?
         .unwrap_or("127.0.0.1".parse().expect("is a valid address"));
-    let port = config.port.unwrap_or(3000);
+    let port = args.port.unwrap_or(3000);
 
-    let data_dir_path = if config.data_dir.path.is_absolute() {
-        config.data_dir.path.clone()
-    } else {
-        config_dir.join(&config.data_dir.path)
-    };
     let pmtiles_path = data_dir_path.join("map.pmtiles");
-    info!("Starting up...");
-    if !std::fs::exists(&data_dir_path)? {
-        std::fs::create_dir(&data_dir_path)
-            .with_context(|| format!("error creating data directory at {}", &data_dir_path))?;
-    }
-    let pool = db_setup(&data_dir_path).await.unwrap();
+
+    let pool = db_setup(db_path).await.unwrap();
     store_asset_roots_from_config(config_dir, &config, &pool).await?;
     let storage: Storage = LocalFileStorage::new(data_dir_path).into();
     let (scheduler_did_shutdown_send, scheduler_did_shutdown_recv) = oneshot::channel();
@@ -242,19 +279,26 @@ async fn main() -> Result<()> {
         .nest("/api/jobs", routes::jobs::router())
         .nest("/api/map", routes::map::router())
         .nest("/api", routes::api_router())
-        .nest_service("/static/map.pmtiles", ServeFile::new(&pmtiles_path))
-        .fallback_service(SpaServeDirService::new(ServeDir::new("./static")))
-        .layer(
-            ServiceBuilder::new()
-                .set_x_request_id(MakeRequestUuid)
-                .layer(
-                    TraceLayer::new_for_http()
-                        .make_span_with(DefaultMakeSpan::new().include_headers(true))
-                        .on_response(DefaultOnResponse::new().include_headers(true)),
-                ),
-        )
-        .layer(cors)
-        .with_state(shared_state);
+        .nest_service("/static/map.pmtiles", ServeFile::new(&pmtiles_path));
+
+    let app = match args.serve_static {
+        Some(static_path) => {
+            tracing::debug!(?static_path, "serving static files");
+            app.fallback_service(SpaServeDirService::new(ServeDir::new(static_path)))
+        }
+        None => app,
+    }
+    .layer(
+        ServiceBuilder::new()
+            .set_x_request_id(MakeRequestUuid)
+            .layer(
+                TraceLayer::new_for_http()
+                    .make_span_with(DefaultMakeSpan::new().include_headers(true))
+                    .on_response(DefaultOnResponse::new().include_headers(true)),
+            ),
+    )
+    .layer(cors)
+    .with_state(shared_state);
     // .route("/api/assets", get(get_assets))
     // .route("/api/assetRoots", get(get_asset_roots))
     let listener = tokio::net::TcpListener::bind(SocketAddr::new(addr, port))
@@ -264,21 +308,25 @@ async fn main() -> Result<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();
-    info!("Shutting down...");
+    info!("Shutting down");
     scheduler
         .send
         .send(SchedulerMessage::Shutdown)
         .await
         .expect("scheduler must be alive");
+    info!("Waiting for shutdown...");
     scheduler_did_shutdown_recv
         .await
         .expect("scheduler must be alive");
+    myrti_core::processing::image::vips_teardown();
     Ok(())
 }
 
 async fn shutdown_signal() {
     match signal::ctrl_c().await {
-        Ok(()) => {}
+        Ok(()) => {
+            tracing::debug!("Received ctrl-c shutdown signal");
+        }
         Err(err) => {
             eprintln!("Unable to listen for shutdown signal: {}", err);
             std::process::exit(1);

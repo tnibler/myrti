@@ -54,6 +54,7 @@ serde_with = "3.21.0"
 quick-xml = { version = "0.41.0", features = ["serialize", "overlapped-lists"] }
 num-traits = "0.2.19"
 iso8601 = "0.6.3"
+globset = "0.4.19"
 
 [build-dependencies]
 cc = "1.0.79"

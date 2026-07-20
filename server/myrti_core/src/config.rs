@@ -17,6 +17,7 @@ struct TomlAssetDir {
 struct TomlDataDir {
     path: String,
     name: Option<String>,
+    db_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -50,6 +51,7 @@ pub struct AssetDir {
 pub struct DataDir {
     pub path: PathBuf,
     pub name: Option<String>,
+    pub db_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +106,7 @@ pub async fn read_config(path: &Path) -> Result<Config> {
         DataDir {
             path,
             name: toml_config.data_dir.name,
+            db_path: toml_config.data_dir.db_path.map(PathBuf::from),
         }
     };
     let bin_paths = toml_config.bin_paths.map(|bin_paths| BinPaths {

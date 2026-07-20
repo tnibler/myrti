@@ -39,11 +39,15 @@ ConvertHeifResult convert_heif(const char * in_path, const char * out_path, Heif
   if (scale.do_scale) {
     // TODO premultiple alpha, resample in linear colorspace, autorot as explained in
     // https://github.com/libvips/libvips/wiki/HOWTO----Image-shrinking
-    VipsImage* scaled;
+    VipsImage* scaled = NULL;
     int ret = vips_resize(img, &scaled, scale.scale, NULL);
     if (scaled == NULL || ret != 0) {
       printf("libvips error: %s", vips_error_buffer());
       result.err = 1;
+      if (scaled != NULL) {
+        g_object_unref(scaled);
+      }
+      g_object_unref(img);
       return result;
     }
     g_object_unref(img);
@@ -70,11 +74,15 @@ ConvertJpegResult convert_jpeg(const char * in_path, const char * out_path, Jpeg
     return result;
   }
   if (scale.do_scale) {
-    VipsImage* scaled;
+    VipsImage* scaled = NULL;
     int ret = vips_resize(img, &scaled, scale.scale, NULL);
     if (scaled == NULL || ret != 0) {
       printf("libvips error: %s", vips_error_buffer());
       result.err = 1;
+      if (scaled != NULL) {
+        g_object_unref(scaled);
+      }
+      g_object_unref(img);
       return result;
     }
     result.width = scaled->Xsize;
@@ -93,6 +101,9 @@ int save_test_heif_image(const char* out_path, HeifSaveParams params) {
   int height = 400;
   int err = vips_black(&img, width, height, "bands", 3, NULL);
   if (err != 0) {
+    if (img != NULL) {
+      g_object_unref(img);
+    }
     return err;
   } 
   err = save_heif(img, out_path, params);
@@ -106,6 +117,9 @@ int save_test_jpeg_image(const char* out_path, JpegSaveParams params) {
   int height = 400;
   int err = vips_black(&img, width, height, "bands", 3, NULL);
   if (err != 0) {
+    if (img != NULL) {
+      g_object_unref(img);
+    }
     return err;
   } 
   err = save_jpeg(img, out_path, params);
@@ -119,6 +133,9 @@ int save_test_webp_image(const char* out_path) {
   int height = 400;
   int err = vips_black(&img, width, height, "bands", 3, NULL);
   if (err != 0) {
+    if (img != NULL) {
+      g_object_unref(img);
+    }
     return err;
   } 
   err = save_webp(img, out_path);

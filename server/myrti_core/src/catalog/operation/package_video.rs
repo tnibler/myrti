@@ -400,6 +400,13 @@ pub async fn do_package_video(
                         base.base = format!("{prepend_base}/{}", base.base);
                     }
                 }
+                if let Some(codecs) = rep.codecs.as_mut() {
+                    codecs.make_ascii_lowercase();
+                    // 0x00 is an invalid level but can be found in some old files and will not play
+                    // in browsers.
+                    // Set it to baseline @ 3.1 as a safe bet.
+                    *codecs = codecs.replace("avc1.42e000", "avc1.42e01f");
+                }
             }
         }
         adaptation_sets.extend(

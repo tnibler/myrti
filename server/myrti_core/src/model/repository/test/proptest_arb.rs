@@ -116,7 +116,10 @@ prop_compose! {
     (
         base in arb_new_asset_base(file_type),
         video_codec_name in "h264|hevc|av1|vp9|mjpeg",
-        video_bitrate in 800_000_i64..5_000_000,
+        video_bitrate in prop_oneof! [
+            4 => (800_000_i64..5_000_000).prop_map(Some),
+            1 => Just(None),
+        ],
         audio_codec_name in prop_oneof! [
             1 => Just(None),
             4 => "mp3|aac|opus|pcm_u8".prop_map(Some),

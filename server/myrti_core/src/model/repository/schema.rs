@@ -56,7 +56,7 @@ diesel::table! {
         asset_id -> BigInt,
         ffprobe_output -> Binary,
         video_codec_name -> Text,
-        video_bitrate -> BigInt,
+        video_bitrate -> Nullable<BigInt>,
         video_duration_ms -> Nullable<BigInt>,
         audio_codec_name -> Nullable<Text>,
         has_ghi -> Nullable<Integer>,

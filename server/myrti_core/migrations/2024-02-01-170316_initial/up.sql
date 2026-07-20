@@ -67,7 +67,7 @@ CREATE TABLE VideoAsset (
   asset_type INTEGER NOT NULL CHECK (asset_type = 2) DEFAULT 2,
   ffprobe_output BLOB NOT NULL,
   video_codec_name TEXT NOT NULL,
-  video_bitrate INTEGER NOT NULL,
+  video_bitrate INTEGER,
   video_duration_ms INTEGER,
   audio_codec_name TEXT,
   frame_rate_num INTEGER CHECK(frame_rate_num IS NULL OR frame_rate_num > 0),

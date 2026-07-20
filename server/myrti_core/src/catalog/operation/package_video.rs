@@ -1,6 +1,6 @@
 use std::ffi::OsString;
 
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::mpsc,
@@ -8,16 +8,16 @@ use tokio::{
 
 use crate::{
     catalog::{
-        encoding_target::{audio_codec_name, codec_name, VideoEncodingTarget},
+        encoding_target::{VideoEncodingTarget, audio_codec_name, codec_name},
         storage_key,
     },
     config,
     core::storage::{Storage, StorageProvider},
     interact,
     model::{
-        repository::{self, db::DbPool},
         AssetId, AudioRepresentation, AudioRepresentationId, CreateAudioRepresentation,
         CreateVideoRepresentation, Size, VideoAssetId, VideoRepresentation,
+        repository::{self, db::DbPool},
     },
     processing::{
         self,
@@ -288,6 +288,12 @@ pub async fn do_package_video(
             }
 
             let (_, streams) = ffprobe_get_streams(&dash_result.mp4_path, ffprobe_path).await?;
+            let bitrate = streams.video.bitrate.ok_or_else(|| {
+                eyre!(
+                    "transcoded mp4 has no bitrate in stream info: {}",
+                    dash_result.mp4_path
+                )
+            })?;
             let repr_name = package_video.repr_name.clone();
             interact!(conn, move |conn| {
                 repository::representation::finalize_video_representation(
@@ -299,7 +305,7 @@ pub async fn do_package_video(
                         codec_name: codec_name.to_owned(),
                         width: streams.video.width,
                         height: streams.video.height,
-                        bitrate: streams.video.bitrate,
+                        bitrate,
                     },
                 )
             })

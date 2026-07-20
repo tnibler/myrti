@@ -1,6 +1,6 @@
 use camino::Utf8PathBuf as PathBuf;
 use chrono::{DateTime, Utc};
-use eyre::{eyre, Report};
+use eyre::{Report, eyre};
 
 use super::{
     AssetBase, AssetRootDirId, GpsCoordinates, ImageAssetId, Size, TimestampInfo, VideoAssetId,
@@ -16,7 +16,7 @@ pub struct Image {
 pub struct Video {
     pub video_asset_id: VideoAssetId,
     pub video_codec_name: String,
-    pub video_bitrate: i64,
+    pub video_bitrate: Option<i64>,
     pub audio_codec_name: Option<String>,
     pub is_original_streamable: bool,
     pub max_iframe_interval: Option<i32>,
@@ -89,7 +89,7 @@ pub struct FFProbeOutput(pub Vec<u8>);
 pub struct CreateAssetVideo {
     pub ffprobe_output: FFProbeOutput,
     pub video_codec_name: String,
-    pub video_bitrate: i64,
+    pub video_bitrate: Option<i64>,
     pub video_duration_ms: Option<i64>,
     pub audio_codec_name: Option<String>,
     pub is_original_streamable: bool,

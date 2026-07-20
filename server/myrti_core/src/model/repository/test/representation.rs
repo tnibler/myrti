@@ -23,7 +23,7 @@ fn insert_retrieve_video_representation() {
     let asset = CreateAsset {
         spe: CreateAssetSpe::Video(CreateAssetVideo {
             video_codec_name: "h264".to_owned(),
-            video_bitrate: 1234,
+            video_bitrate: Some(1234),
             audio_codec_name: Some("aac".into()),
             ffprobe_output: Default::default(),
             video_duration_ms: None,
@@ -53,7 +53,7 @@ fn insert_retrieve_video_representation() {
     let asset2 = CreateAsset {
         spe: CreateAssetSpe::Video(CreateAssetVideo {
             video_codec_name: "hevc".to_owned(),
-            video_bitrate: 456,
+            video_bitrate: None,
             audio_codec_name: Some("opus".into()),
             ffprobe_output: Default::default(),
             video_duration_ms: Some(14444),
@@ -186,7 +186,7 @@ fn insert_retrieve_audio_representation() {
     let asset = CreateAsset {
         spe: CreateAssetSpe::Video(CreateAssetVideo {
             video_codec_name: "h264".to_owned(),
-            video_bitrate: 1234,
+            video_bitrate: Some(1234),
             audio_codec_name: Some("aac".into()),
             video_duration_ms: None,
             ffprobe_output: Default::default(),
@@ -216,7 +216,7 @@ fn insert_retrieve_audio_representation() {
     let asset2 = CreateAsset {
         spe: CreateAssetSpe::Video(CreateAssetVideo {
             video_codec_name: "hevc".to_owned(),
-            video_bitrate: 456,
+            video_bitrate: Some(456),
             audio_codec_name: Some("mp3".into()),
             ffprobe_output: Default::default(),
             video_duration_ms: Some(123433423),

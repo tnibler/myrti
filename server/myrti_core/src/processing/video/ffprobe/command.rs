@@ -55,7 +55,7 @@ pub async fn ffprobe_get_streams(
         .await
         .wrap_err("ffprobe error")?;
     let parsed_streams = ffprobe_get_streams_from_json(&ffprobe_result.stdout)
-        .with_context(|| format!("error parsings ffprobe streams for {}", path))?;
+        .with_context(|| format!("error parsing ffprobe streams for {}", path))?;
     Ok((ffprobe_result.stdout, parsed_streams))
 }
 
@@ -79,6 +79,8 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
             crop_left: Option<i32>,
             crop_right: Option<i32>,
         },
+        #[serde(other)]
+        Other,
     }
     #[derive(Debug, Clone, Deserialize)]
     struct FFProbeVideoStream {
@@ -87,7 +89,7 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
         pub duration: Option<String>,
         pub width: i32,
         pub height: i32,
-        pub bit_rate: String,
+        pub bit_rate: Option<String>,
         pub side_data_list: Option<Vec<FFProbeSideData>>,
         pub avg_frame_rate: String,
     }
@@ -95,7 +97,7 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
     struct FFProbeAudioStream {
         pub codec_name: String,
         pub sample_rate: String,
-        pub bit_rate: String,
+        pub bit_rate: Option<String>,
         pub channels: i32,
     }
     #[derive(Debug, Clone, Deserialize)]
@@ -133,8 +135,12 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
                 height: video.height,
                 bitrate: video
                     .bit_rate
-                    .parse()
-                    .wrap_err("could not parse bit_rate ffprobe output")?,
+                    .map(|bit_rate| {
+                        bit_rate
+                            .parse()
+                            .wrap_err("could not parse bit_rate ffprobe output")
+                    })
+                    .transpose()?,
                 rotation: match video.side_data_list {
                     Some(side_datas) => side_datas.iter().find_map(|sd| match sd {
                         FFProbeSideData::DisplayMatrix { rotation } => *rotation,
@@ -179,8 +185,12 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
                     .wrap_err("could not parse sample_rate in ffprobe output")?,
                 bitrate: audio
                     .bit_rate
-                    .parse()
-                    .wrap_err("could not parse bit_rate in ffprobe output")?,
+                    .map(|bit_rate| {
+                        bit_rate
+                            .parse()
+                            .wrap_err("could not parse bit_rate ffprobe output")
+                    })
+                    .transpose()?,
                 channels: audio.channels,
             })),
             _ => unreachable!("Other case is filtered out"),
@@ -341,7 +351,7 @@ fn ffprobe_output_parsed_correctly() {
             codec_name: "h264".into(),
             width: 1920,
             height: 1080,
-            bitrate: 28034318,
+            bitrate: Some(28034318),
             rotation: Some(-90),
             duration_ms: Some(26285),
             avg_frame_rate: Some((15770000, 262847)),
@@ -349,7 +359,7 @@ fn ffprobe_output_parsed_correctly() {
         StreamType::Audio(AudioStream {
             codec_name: "aac".into(),
             sample_rate: 48000,
-            bitrate: 256017,
+            bitrate: Some(256017),
             channels: 2,
         }),
     ]
@@ -407,7 +417,7 @@ fn ffprobe_output_parsed_correctly() {
         codec_name: "h264".into(),
         width: 1280,
         height: 720,
-        bitrate: 11841634,
+        bitrate: Some(11841634),
         rotation: None,
         duration_ms: Some(30080),
         avg_frame_rate: Some((25, 1)),
@@ -742,7 +752,7 @@ fn ffprobe_parse_iphone_motion_photo_mov() {
             codec_name: "hevc".into(),
             width: 1920,
             height: 1440,
-            bitrate: 14850437,
+            bitrate: Some(14850437),
             rotation: Some(-90),
             duration_ms: Some(2005),
             avg_frame_rate: Some((11600, 401)),
@@ -750,8 +760,152 @@ fn ffprobe_parse_iphone_motion_photo_mov() {
         StreamType::Audio(AudioStream {
             codec_name: "pcm_s16le".into(),
             sample_rate: 44100,
-            bitrate: 705600,
+            bitrate: Some(705600),
             channels: 1,
+        }),
+    ]
+    .into_iter()
+    .collect();
+    let parsed: HashSet<_> = assert_ok!(parse_ffprobe_output(output.as_bytes()))
+        .into_iter()
+        .collect();
+    assert_eq!(parsed, expected);
+}
+
+#[test]
+fn ffprobe_parse_mpeg2_mod() {
+    use claims::assert_ok;
+    use pretty_assertions::assert_eq;
+    use std::collections::HashSet;
+    let output = r#"
+{
+"streams": [
+        {
+            "index": 0,
+            "codec_name": "mpeg2video",
+            "codec_long_name": "MPEG-2 video",
+            "profile": "Main",
+            "codec_type": "video",
+            "codec_tag_string": "[0][0][0][0]",
+            "codec_tag": "0x0000",
+            "width": 720,
+            "height": 576,
+            "coded_width": 0,
+            "coded_height": 0,
+            "has_b_frames": 1,
+            "sample_aspect_ratio": "64:45",
+            "display_aspect_ratio": "16:9",
+            "pix_fmt": "yuv420p",
+            "level": 8,
+            "color_range": "tv",
+            "color_space": "bt470bg",
+            "color_transfer": "bt470bg",
+            "color_primaries": "bt470bg",
+            "chroma_location": "left",
+            "field_order": "tt",
+            "id": "0x1e0",
+            "r_frame_rate": "25/1",
+            "avg_frame_rate": "25/1",
+            "time_base": "1/90000",
+            "start_pts": 30800,
+            "start_time": "0.342222",
+            "duration_ts": 17532000,
+            "duration": "194.800000",
+            "extradata_size": 98,
+            "disposition": {
+                "default": 0,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            },
+            "side_data_list": [
+                {
+                    "side_data_type": "CPB properties",
+                    "max_bitrate": 9286000,
+                    "min_bitrate": 0,
+                    "avg_bitrate": 0,
+                    "buffer_size": 1835008,
+                    "vbv_delay": -1
+                }
+            ]
+        },
+        {
+            "index": 1,
+            "codec_name": "mp2",
+            "codec_long_name": "MP2 (MPEG audio layer 2)",
+            "codec_type": "audio",
+            "codec_tag_string": "[0][0][0][0]",
+            "codec_tag": "0x0000",
+            "mime_codec_string": "mp4a.40.33",
+            "sample_fmt": "s16p",
+            "sample_rate": "48000",
+            "channels": 2,
+            "channel_layout": "stereo",
+            "bits_per_sample": 0,
+            "initial_padding": 0,
+            "id": "0x1c0",
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/90000",
+            "start_pts": 23600,
+            "start_time": "0.262222",
+            "duration_ts": 17539200,
+            "duration": "194.880000",
+            "bit_rate": "256000",
+            "disposition": {
+                "default": 0,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            }
+        }
+    ]
+}"#;
+    let expected: HashSet<StreamType> = [
+        StreamType::Video(VideoStream {
+            codec_name: "mpeg2video".into(),
+            width: 720,
+            height: 576,
+            bitrate: None,
+            rotation: None,
+            duration_ms: Some(194800),
+            avg_frame_rate: Some((25, 1)),
+        }),
+        StreamType::Audio(AudioStream {
+            codec_name: "mp2".into(),
+            sample_rate: 48000,
+            bitrate: Some(256000),
+            channels: 2,
         }),
     ]
     .into_iter()

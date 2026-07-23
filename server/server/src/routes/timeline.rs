@@ -53,7 +53,7 @@ pub struct TimelineRequest {
     (status = 200, body=TimelineChunk)
     )
 )]
-#[instrument(skip(app_state))]
+#[instrument(level = "debug", skip(app_state))]
 pub async fn get_timeline(
     State(app_state): State<SharedState>,
     Query(req_body): Query<TimelineRequest>,
@@ -293,7 +293,7 @@ pub async fn get_timeline_segments(
     Ok(Json(TimelineSegmentsResponse { segments }))
 }
 
-#[tracing::instrument(skip(pool))]
+#[tracing::instrument(level = "trace", skip(pool))]
 async fn asset_with_reprs(pool: DbPool, asset: model::Asset) -> eyre::Result<AssetWithSpe> {
     let spe: AssetSpe = match &asset.sp {
         model::AssetSpe::Image(image) => {

@@ -21,9 +21,9 @@ use tower_http::{
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
     ServiceBuilderExt,
 };
-use tracing::info;
+use tracing::{info, Level};
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{prelude::*, EnvFilter};
+use tracing_subscriber::{fmt::format::FmtSpan, prelude::*, EnvFilter};
 
 use myrti_core::{
     config::Config,
@@ -123,10 +123,28 @@ async fn main() -> Result<()> {
     if std::env::var("MYRTI_LOG").is_err() {
         std::env::set_var("MYRTI_LOG", "info")
     }
+    let file_appender = tracing_appender::rolling::never("/tmp/", "myrti.log");
+    let (non_blocking_appender, _guard) = tracing_appender::non_blocking(file_appender);
     let tracing = tracing_subscriber::registry()
         .with(EnvFilter::from_env("MYRTI_LOG"))
         .with(ErrorLayer::default())
-        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr));
+        .with(
+            tracing_subscriber::fmt::layer()
+                .compact()
+                .with_target(false)
+                .with_file(false)
+                .with_line_number(false)
+                .with_span_events(FmtSpan::CLOSE)
+                .with_writer(std::io::stderr),
+        )
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_target(true)
+                .with_file(false)
+                .with_line_number(false)
+                .with_span_events(FmtSpan::CLOSE)
+                .with_writer(non_blocking_appender),
+        );
     #[cfg(feature = "opentelemetry")]
     {
         use opentelemetry_otlp::WithExportConfig;
@@ -295,8 +313,17 @@ async fn main() -> Result<()> {
             .set_x_request_id(MakeRequestUuid)
             .layer(
                 TraceLayer::new_for_http()
-                    .make_span_with(DefaultMakeSpan::new().include_headers(true))
-                    .on_response(DefaultOnResponse::new().include_headers(true)),
+                    .make_span_with(
+                        DefaultMakeSpan::new()
+                            .level(Level::TRACE)
+                            .include_headers(false),
+                    )
+                    .on_request(())
+                    .on_response(
+                        DefaultOnResponse::new()
+                            .level(Level::TRACE)
+                            .include_headers(false),
+                    ),
             ),
     )
     .layer(cors)

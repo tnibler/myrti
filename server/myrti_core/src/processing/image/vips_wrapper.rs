@@ -1,17 +1,17 @@
 use std::{
-    ffi::{c_char, CString},
+    ffi::{CString, c_char},
     os::unix::prelude::OsStrExt,
     sync::Once,
 };
 
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 use tracing::{error, info_span};
 
 use crate::catalog::image_conversion_target::{
+    ImageConversionTarget, ImageFormatTarget,
     heif::{AvifTarget, BitDepth, Compression},
     jpeg::JpegTarget,
-    ImageConversionTarget, ImageFormatTarget,
 };
 
 #[allow(non_snake_case, non_upper_case_globals, unused)]

@@ -9,6 +9,7 @@ use diesel::{
 };
 use eyre::{Context, Result, eyre};
 use itertools::Itertools;
+use tokio::time::Instant;
 use tracing::instrument;
 
 use crate::model::{
@@ -53,7 +54,7 @@ struct RowAssetGroupId {
 // TODO when the time comes: figure out how to handle dates of different timezones.
 // Right now assets are grouped by Asset::taken_date_local().date_naive() and sorted by timestamp,
 // which may or may not by what we want.
-#[tracing::instrument(skip(conn))]
+#[tracing::instrument(level = "debug", skip(conn))]
 pub fn get_timeline_chunk(
     conn: &mut DbConn,
     last_id: Option<AssetId>,
@@ -99,10 +100,13 @@ pub fn get_timeline_chunk(
     LIMIT $2;
     "#);
     use diesel::sql_types::{BigInt, Nullable};
+    let query_start = Instant::now();
     let assets_groupid: Vec<RowAssetGroupId> = sql_query(qb.finish())
         .bind::<Nullable<BigInt>, _>(last_id.map(|id| id.0))
         .bind::<BigInt, _>(max_count)
         .load(conn)?;
+    let query_elapsed = query_start.elapsed();
+    let processing_start = Instant::now();
     let mut timeline_els: Vec<TimelineElement> = Vec::default();
     for row in assets_groupid {
         // TODO: additional query per row is not great
@@ -157,6 +161,8 @@ pub fn get_timeline_chunk(
             },
         };
     }
+    let processing_elapsed = processing_start.elapsed();
+    tracing::debug!(?query_elapsed, ?processing_elapsed);
     Ok(timeline_els)
 }
 
@@ -195,7 +201,7 @@ struct RowTimelineSection {
     pub newest_asset_taken_date: i64,
 }
 
-#[tracing::instrument(skip(conn))]
+#[tracing::instrument(skip(conn), level = "debug")]
 pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
     const SQL_SEGMENT_IDX: &str = include_str!("timeline_segment_idx.sql");
     const QUERY: &str = formatcp!(
@@ -237,7 +243,9 @@ pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
     FROM section_segments;
     "#
     );
+    let query_start = Instant::now();
     let rows: Vec<RowTimelineSection> = sql_query(QUERY).load(conn)?;
+    let query_elapsed = query_start.elapsed();
     let sections = rows
         .into_iter()
         .map(|row| {
@@ -252,6 +260,7 @@ pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
             })
         })
         .collect::<Result<Vec<_>>>()?;
+    tracing::debug!(?query_elapsed);
     Ok(sections)
 }
 
@@ -317,7 +326,7 @@ struct RowTimelineSegmentInSection {
     pub segment_idx: i64,
 }
 
-#[instrument(err, skip(conn))]
+#[instrument(err, skip(conn), level = "debug")]
 pub fn get_segments_in_section(
     conn: &mut DbConn,
     segment_min: i64,
@@ -354,9 +363,13 @@ pub fn get_segments_in_section(
     let query = sql_query(qb.finish())
         .bind::<diesel::sql_types::BigInt, _>(segment_min)
         .bind::<diesel::sql_types::BigInt, _>(segment_max);
+    let query_start = Instant::now();
     let rows: Vec<RowTimelineSegmentInSection> = query
         .load(conn)
         .wrap_err("error querying timeline segments in section")?;
+    let query_elapsed = query_start.elapsed();
+
+    let processing_start = Instant::now();
     let segments: Vec<TimelineSegment> = rows
         .into_iter()
         .group_by(|row| row.segment_idx)
@@ -464,6 +477,8 @@ pub fn get_segments_in_section(
             })
         })
         .try_collect()?;
+    let processing_elapsed = processing_start.elapsed();
+    tracing::debug!(?query_elapsed, ?processing_elapsed);
     debug_assert!(
         segments.iter().all(
             |segment| segment

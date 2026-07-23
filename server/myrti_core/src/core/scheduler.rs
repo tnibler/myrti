@@ -262,7 +262,6 @@ impl Scheduler {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
     async fn on_new_asset_indexed(&self, asset_id: AssetId) -> Result<()> {
         let mut conn = self.db_pool.get().await.unwrap();
         let thumbnails_required = rules::required_thumbnails_for_asset(&mut conn, asset_id).await?;
@@ -293,7 +292,6 @@ impl Scheduler {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
     async fn on_thumbnail_msg(&mut self, msg: MsgFromThumbnail) -> Result<()> {
         let actor_state = &mut self.actor_states[Actors::Thumbnail as usize];
         match msg {
@@ -318,7 +316,7 @@ impl Scheduler {
                     false
                 };
                 if is_idle && !found_new_work {
-                    tracing::info!("Thumbnail actor idle");
+                    tracing::debug!("Thumbnail actor idle");
                 }
             }
             MsgFromThumbnail::DroppedMessage => {
@@ -359,7 +357,6 @@ impl Scheduler {
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
     async fn on_video_packaging_msg(&mut self, msg: MsgFromVideoPackaging) -> Result<()> {
         let actor_state = &mut self.actor_states[Actors::VideoPackaging as usize];
         match msg {
@@ -384,7 +381,7 @@ impl Scheduler {
                     false
                 };
                 if is_idle && !found_new_work {
-                    tracing::info!("VideoPackaging actor idle");
+                    tracing::debug!("VideoPackaging actor idle");
                 }
             }
             MsgFromVideoPackaging::DroppedMessage => {
@@ -395,14 +392,13 @@ impl Scheduler {
                 if was_cancelled {
                     tracing::debug!("video packaging cancelled");
                 } else {
-                    tracing::debug!(?result);
+                    tracing::trace!(?result);
                 }
             }
         }
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
     async fn on_image_conversion_msg(&mut self, msg: MsgFromImageConversion) -> Result<()> {
         let actor_state = &mut self.actor_states[Actors::ImageConversion as usize];
         match msg {
@@ -427,20 +423,19 @@ impl Scheduler {
                     false
                 };
                 if is_idle && !found_new_work {
-                    tracing::info!("ImageConversion actor idle");
+                    tracing::debug!("ImageConversion actor idle");
                 }
             }
             MsgFromImageConversion::DroppedMessage => {
                 actor_state.has_dropped_msgs = true;
             }
             MsgFromImageConversion::TaskResult(result) => {
-                tracing::debug!(?result);
+                tracing::trace!(?result);
             }
         }
         Ok(())
     }
 
-    #[tracing::instrument(skip(self))]
     async fn handle_message(&mut self, msg: SchedulerMessage) {
         if self.waiting_for_shutdown {
             tracing::trace!(?msg, "waiting for shutdown, ignoring");
@@ -584,9 +579,8 @@ async fn on_startup(
     }
 }
 
-#[instrument(skip_all)]
 async fn reindex_all(db_pool: &DbPool, indexing_actor: &IndexingActorHandle) -> Result<()> {
-    tracing::info!("reindexing all");
+    tracing::debug!("reindexing all");
     let conn = db_pool.get().await?;
     let res = interact!(conn, move |conn| {
         repository::asset_root_dir::get_asset_roots(conn)

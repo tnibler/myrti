@@ -1,15 +1,15 @@
 use eyre::{Context, Result};
 
 use crate::{
-    catalog::image_conversion_target::{image_format_name, ImageConversionTarget},
+    catalog::image_conversion_target::{ImageConversionTarget, image_format_name},
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
     interact,
     model::{
+        AssetId, ImageAssetId, ImageRepresentation, ImageRepresentationId, Size,
         repository::{
             self,
             db::{DbPool, PooledDbConn},
         },
-        AssetId, ImageAssetId, ImageRepresentation, ImageRepresentationId, Size,
     },
     processing::{self, image::image_conversion::ConvertImageTrait},
 };
@@ -22,7 +22,6 @@ pub struct ConvertImage {
     pub output_file_key: String,
 }
 
-#[tracing::instrument(skip(conn), level = "debug")]
 pub async fn apply_convert_image(
     conn: &mut PooledDbConn,
     op: &ConvertImage,
@@ -51,7 +50,6 @@ pub struct ImageConversionSideEffectResult {
     pub file_size: i64,
 }
 
-#[tracing::instrument(skip(storage, pool), level = "debug")]
 pub async fn perform_side_effects_convert_image(
     op: &ConvertImage,
     pool: DbPool,

@@ -24,7 +24,7 @@ pub struct ConvertImage {}
 
 #[async_trait]
 impl ConvertImageTrait for ConvertImage {
-    #[tracing::instrument(skip(storage))]
+    #[tracing::instrument(skip(storage), level = "debug")]
     async fn convert_image(
         path: PathBuf,
         target: ImageConversionTarget,

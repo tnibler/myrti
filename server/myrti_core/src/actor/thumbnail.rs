@@ -10,9 +10,9 @@ use crate::{
         operation::{
             create_album_thumbnail::{self, CreateAlbumThumbnail, CreateAlbumThumbnailWithPaths},
             create_thumbnail::{
-                apply_create_thumbnail, perform_side_effects_create_thumbnail,
                 CreateAssetThumbnail, CreateThumbnailWithPaths, ThumbnailSideEffectResult,
-                ThumbnailToCreateWithPaths,
+                ThumbnailToCreateWithPaths, apply_create_thumbnail,
+                perform_side_effects_create_thumbnail,
             },
         },
         storage_key,
@@ -20,11 +20,11 @@ use crate::{
     core::storage::Storage,
     interact,
     model::{
+        AssetId, FailedThumbnailJob, ThumbnailFormat,
         repository::{
             self,
             db::{DbPool, PooledDbConn},
         },
-        AssetId, FailedThumbnailJob, ThumbnailFormat,
     },
     processing::{hash::hash_file, process_control::ProcessControlReceiver},
 };
@@ -83,7 +83,6 @@ struct ThumbnailActor {
 }
 
 impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
-    #[tracing::instrument(skip_all)]
     async fn run_task(
         &mut self,
         msg: ThumbnailTaskMsg,
@@ -246,7 +245,7 @@ fn resolve(op: &CreateAssetThumbnail) -> CreateThumbnailWithPaths {
     }
 }
 
-#[tracing::instrument(skip(db_pool, storage))]
+#[tracing::instrument(skip(db_pool, storage), level = "trace")]
 async fn do_asset_thumbnail_side_effects(
     db_pool: DbPool,
     storage: Storage,
@@ -292,7 +291,7 @@ async fn do_asset_thumbnail_side_effects(
     .await
 }
 
-#[tracing::instrument(skip(db_pool, storage))]
+#[tracing::instrument(skip(db_pool, storage), level = "trace")]
 async fn do_album_thumbnail_side_effects(
     db_pool: DbPool,
     storage: Storage,
@@ -319,7 +318,6 @@ async fn do_album_thumbnail_side_effects(
     Ok(op_with_paths)
 }
 
-#[tracing::instrument(skip(conn))]
 async fn save_failed_thumbnail(conn: &mut PooledDbConn, asset_id: AssetId) -> Result<()> {
     let asset_path = interact!(conn, move |conn| {
         repository::asset::get_asset_path_on_disk(conn, asset_id)

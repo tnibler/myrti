@@ -11,8 +11,8 @@ use crate::{
 };
 
 use super::{
-    vips_wrapper::{self, VipsThumbnailParams},
     OutDimension,
+    vips_wrapper::{self, VipsThumbnailParams},
 };
 
 #[derive(Debug)]
@@ -42,7 +42,6 @@ pub struct GenerateThumbnailMock {}
 
 #[async_trait]
 impl GenerateThumbnailTrait for GenerateThumbnail {
-    #[tracing::instrument]
     async fn generate_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<ThumbnailResult> {
         let out_paths: Vec<PathBuf> = params
             .outputs
@@ -71,7 +70,6 @@ impl GenerateThumbnailTrait for GenerateThumbnail {
         })
     }
 
-    #[tracing::instrument(skip(control_recv))]
     async fn generate_video_thumbnail<'a>(
         params: ThumbnailParams<'a>,
         control_recv: &mut ProcessControlReceiver,

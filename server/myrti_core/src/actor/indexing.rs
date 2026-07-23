@@ -2,10 +2,9 @@ use std::collections::{HashSet, VecDeque};
 
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{Context, Result, eyre};
-use globset::{Glob, GlobSet, GlobSetBuilder};
+use globset::GlobSet;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
-use tracing::instrument;
 use walkdir::WalkDir;
 
 use crate::{
@@ -14,7 +13,7 @@ use crate::{
         AssetId, AssetRootDir, AssetRootDirId,
         repository::{self, db::DbPool},
     },
-    processing::indexing::index_file,
+    processing::indexing::try_index_file,
 };
 
 #[derive(Debug)]
@@ -130,7 +129,6 @@ async fn run_indexing_actor(
     loop {
         tokio::select! {
             Some((asset_root_id, msg)) = actor.subtask_recv.recv() => {
-                tracing::debug!(?msg);
                 match &msg {
                     MsgFromIndexing::FailedToStartIndexing { root_dir_id, .. }
                     | MsgFromIndexing::IndexingComplete { root_dir_id }
@@ -158,7 +156,6 @@ async fn run_indexing_actor(
                 let _ = actor.send_from_us.send(msg);
             },
             Some(msg) = recv.recv() => {
-                tracing::debug!(?msg);
                 match msg {
                     MsgToIndexing::Shutdown => {
                         is_running = false;
@@ -275,7 +272,6 @@ async fn handle_indexing_message(
     Ok(())
 }
 
-#[instrument(skip(pool, send_result, bin_paths, cancel, exclude_set))]
 async fn index_asset_root(
     pool: DbPool,
     send_result: mpsc::UnboundedSender<(AssetRootDirId, MsgFromIndexing)>,
@@ -307,7 +303,7 @@ async fn index_asset_root(
                 let utf8_path = camino::Utf8Path::from_path(entry.path());
                 if let Some(path) = utf8_path {
                     let indexing_res =
-                        index_file(path, &asset_root, &pool, bin_paths.as_ref()).await;
+                        try_index_file(path, &asset_root, &pool, bin_paths.as_ref()).await;
                     let msg = match indexing_res {
                         Ok(None) => {
                             continue;

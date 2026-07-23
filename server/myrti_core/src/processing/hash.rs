@@ -2,7 +2,7 @@ use eyre::{Context, Result};
 use fasthash::{SeaHasher, StreamHasher};
 use std::hash::Hasher;
 
-#[tracing::instrument(skip(s))]
+#[tracing::instrument(skip(s), level = "trace")]
 pub async fn hash_file(mut s: std::fs::File) -> Result<u64> {
     let (tx, rx) = tokio::sync::oneshot::channel::<std::io::Result<u64>>();
     rayon::spawn(move || {

@@ -90,7 +90,7 @@ pub mod exiftool {
     }
 }
 
-#[tracing::instrument]
+#[tracing::instrument(skip(exiftool_bin_path), level = "debug")]
 pub async fn read_media_metadata(
     path: &Path,
     exiftool_bin_path: Option<&Path>,
@@ -109,7 +109,6 @@ pub async fn read_media_metadata(
         .spawn()
         .wrap_err("failed to call exiftool")?
         .wait_with_output()
-        .instrument(debug_span!("exiftool"))
         .await
         .wrap_err("exiftool error")?;
     let raw_json = output.stdout;

@@ -4,8 +4,8 @@ use tracing::Instrument;
 
 use crate::{
     catalog::operation::convert_image::{
-        apply_convert_image, perform_side_effects_convert_image, ConvertImage,
-        ImageConversionSideEffectResult,
+        ConvertImage, ImageConversionSideEffectResult, apply_convert_image,
+        perform_side_effects_convert_image,
     },
     core::storage::Storage,
     model::repository::db::DbPool,
@@ -59,7 +59,6 @@ struct ImageConversionActor {
 }
 
 impl Actor<ImageConversionTaskMsg, ImageConversionTaskResult> for ImageConversionActor {
-    #[tracing::instrument(skip_all)]
     async fn run_task(
         &mut self,
         msg: ImageConversionTaskMsg,

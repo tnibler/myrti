@@ -22,7 +22,6 @@ use super::db::DbConn;
 use super::db_entity::{DbAsset, DbInsertAsset, to_db_timezone_info};
 use super::schema;
 
-#[instrument(skip(conn))]
 pub fn get_asset(conn: &mut DbConn, id: AssetId) -> Result<Asset> {
     let db_asset: DbAsset = schema::Asset::table
         .select(DbAsset::as_select())
@@ -54,7 +53,6 @@ pub fn get_asset(conn: &mut DbConn, id: AssetId) -> Result<Asset> {
     panic!("asset is neither image nor video, db constraints disallow this")
 }
 
-#[instrument(skip(conn))]
 pub fn get_asset_with_hash(conn: &mut DbConn, with_hash: u64) -> Result<Option<AssetId>> {
     use schema::Asset::dsl::*;
     let with_hash = hash_u64_to_vec8(with_hash);
@@ -66,7 +64,6 @@ pub fn get_asset_with_hash(conn: &mut DbConn, with_hash: u64) -> Result<Option<A
     Ok(maybe_id.map(AssetId))
 }
 
-#[instrument(skip(conn))]
 pub fn get_asset_path_on_disk(conn: &mut DbConn, id: AssetId) -> Result<AssetPathOnDisk> {
     use schema::Asset;
     use schema::AssetRootDir;
@@ -82,7 +79,6 @@ pub fn get_asset_path_on_disk(conn: &mut DbConn, id: AssetId) -> Result<AssetPat
     })
 }
 
-#[instrument(skip(conn))]
 pub fn asset_or_duplicate_with_path_exists(
     conn: &mut DbConn,
     asset_root_dir_id: AssetRootDirId,
@@ -114,7 +110,6 @@ pub fn asset_or_duplicate_with_path_exists(
     Ok(!r.is_empty())
 }
 
-#[instrument(skip(conn))]
 pub fn get_assets(conn: &mut DbConn) -> Result<Vec<Asset>> {
     use schema::{Asset, ImageAsset, VideoAsset};
     let images = Asset::table
@@ -148,7 +143,7 @@ pub struct AssetHasThumbnails {
     pub thumbnails: Vec<AssetThumbnail>,
 }
 
-#[instrument(skip(conn))]
+#[instrument(skip(conn), level = "debug")]
 pub fn get_assets_with_missing_thumbnail(
     conn: &mut DbConn,
     limit: Option<i64>,
@@ -227,7 +222,7 @@ pub fn get_assets_with_missing_thumbnail(
         .collect())
 }
 
-#[instrument(skip(conn))]
+#[instrument(skip(conn), level = "trace")]
 pub fn get_thumbnails_for_asset(
     conn: &mut DbConn,
     asset_id: AssetId,
@@ -242,7 +237,7 @@ pub fn get_thumbnails_for_asset(
         .collect::<Result<Vec<_>>>()
 }
 
-#[instrument(skip(conn))]
+#[instrument(skip_all, fields(path=create_asset.base.file_path.as_str()), level = "debug")]
 pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<AssetId> {
     let timezone_offset: Option<_> = match create_asset.base.timestamp_info {
         TimestampInfo::TzCertain(tz)
@@ -323,7 +318,7 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
     })
 }
 
-#[instrument(skip(conn))]
+#[instrument(skip(conn), level = "trace")]
 pub fn insert_asset_thumbnail(
     conn: &mut DbConn,
     thumbnail: AssetThumbnail,
@@ -343,7 +338,6 @@ pub fn insert_asset_thumbnail(
     Ok(AssetThumbnailId(id))
 }
 
-#[instrument(skip(conn))]
 pub fn get_asset_exiftool_output(conn: &mut DbConn, asset_id: AssetId) -> Result<Vec<u8>> {
     use schema::Asset;
     let exiftool_output: Vec<u8> = Asset::table
@@ -354,7 +348,7 @@ pub fn get_asset_exiftool_output(conn: &mut DbConn, asset_id: AssetId) -> Result
     Ok(exiftool_output)
 }
 
-#[instrument(skip(conn))]
+#[instrument(skip(conn), level = "debug")]
 pub fn get_video_assets_with_no_acceptable_repr(conn: &mut DbConn) -> Result<Vec<AssetBase>> {
     let query = diesel::sql_query(
         r#"
@@ -429,7 +423,7 @@ pub fn get_video_assets_with_no_acceptable_repr(conn: &mut DbConn) -> Result<Vec
 //         .collect::<Result<Vec<_>>>()
 // }
 
-#[instrument(skip(conn, acceptable_codecs))]
+#[instrument(skip(conn, acceptable_codecs), level = "debug")]
 pub fn get_image_assets_with_no_acceptable_repr(
     conn: &mut DbConn,
     acceptable_codecs: &[&str],
@@ -453,7 +447,6 @@ pub fn get_image_assets_with_no_acceptable_repr(
         .collect())
 }
 
-#[instrument(skip(conn))]
 pub fn get_ffprobe_output(conn: &mut DbConn, asset_id: AssetId) -> Result<Vec<u8>> {
     use schema::VideoAsset;
     let ffprobe_output: Vec<u8> = VideoAsset::table
@@ -463,7 +456,6 @@ pub fn get_ffprobe_output(conn: &mut DbConn, asset_id: AssetId) -> Result<Vec<u8
     Ok(ffprobe_output)
 }
 
-#[instrument(skip(conn))]
 pub fn set_assets_hidden(conn: &mut DbConn, set_hidden: bool, asset_ids: &[AssetId]) -> Result<()> {
     use schema::Asset;
     diesel::update(Asset::table.filter(Asset::asset_id.eq_any(asset_ids.iter().map(|id| id.0))))
@@ -473,7 +465,6 @@ pub fn set_assets_hidden(conn: &mut DbConn, set_hidden: bool, asset_ids: &[Asset
     Ok(())
 }
 
-#[instrument(skip(conn))]
 pub fn set_asset_rotation_correction(
     conn: &mut DbConn,
     asset_id: AssetId,
@@ -513,7 +504,6 @@ pub fn set_asset_is_series_selection(
     }
 }
 
-#[instrument(skip(conn))]
 pub fn set_asset_max_iframe_interval(
     conn: &mut DbConn,
     asset_id: AssetId,
@@ -524,7 +514,6 @@ pub fn set_asset_max_iframe_interval(
     // diesel::update(Asset::table.filter(Asset::asset_id.eq(asset_id.0))).set(Asset::h)
 }
 
-#[instrument(skip(conn))]
 pub fn get_asset_has_ghi_index(conn: &mut DbConn, asset_id: VideoAssetId) -> Result<Option<i32>> {
     use schema::VideoAsset;
     let r: Option<i32> = VideoAsset::table
@@ -535,7 +524,6 @@ pub fn get_asset_has_ghi_index(conn: &mut DbConn, asset_id: VideoAssetId) -> Res
     Ok(r)
 }
 
-#[instrument(skip(conn))]
 pub fn set_asset_has_ghi_index(
     conn: &mut DbConn,
     asset_id: VideoAssetId,
@@ -553,7 +541,7 @@ pub fn set_asset_has_ghi_index(
     }
 }
 
-#[instrument(skip(conn))]
+#[instrument(skip(conn), level = "debug")]
 pub fn get_all_assets_geojson(conn: &mut DbConn) -> Result<String> {
     #[derive(Debug, Clone, QueryableByName)]
     #[diesel(check_for_backend(diesel::sqlite::Sqlite))]

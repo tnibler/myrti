@@ -41,6 +41,7 @@ diesel::table! {
         exiftool_output -> Blob,
         gps_latitude -> Nullable<BigInt>,
         gps_longitude -> Nullable<BigInt>,
+        merged_asset_id -> Nullable<BigInt>,
 
         motion_photo -> Integer,
         motion_photo_assoc_asset_id -> Nullable<BigInt>,
@@ -73,6 +74,14 @@ diesel::table! {
         asset_type -> Integer,
         asset_id -> BigInt,
         image_format_name -> Text,
+    }
+}
+
+diesel::table! {
+    MergedAsset (merged_asset_id) {
+        merged_asset_id -> BigInt,
+        merge_type -> Integer,
+        representative_asset_id -> BigInt,
     }
 }
 
@@ -271,6 +280,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     AssetSeries,
     VideoRepresentation,
     DeletedAutoAssetSeries,
+    MergedAsset,
     MotionPhoto,
     VideoAsset,
 );

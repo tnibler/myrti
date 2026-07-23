@@ -145,7 +145,7 @@ pub enum ThumbnailFormat {
         ("format" = ThumbnailFormat, Path, description = "Image format for thumbnail")
     )
 )]
-#[tracing::instrument(fields(request = true), skip(app_state), level = "trace")]
+#[tracing::instrument(skip(app_state), level = "trace")]
 async fn get_thumbnail(
     Path((asset_id, size, format)): Path<(AssetId, ThumbnailSize, ThumbnailFormat)>,
     State(app_state): State<SharedState>,

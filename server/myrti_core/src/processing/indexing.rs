@@ -17,9 +17,7 @@ use super::{
     video::{FFProbe, streams::FFProbeStreamsTrait},
 };
 
-/// Returns Some(AssetId) if a new, non duplicate asset was indexed and added to the database
-#[tracing::instrument(skip(pool, asset_root, bin_paths))]
-pub async fn index_file(
+pub async fn try_index_file(
     path: &Path,
     asset_root: &AssetRootDir,
     pool: &DbPool,
@@ -42,12 +40,21 @@ pub async fn index_file(
     if existing {
         return Ok(None);
     }
-    let exiftool_path = bin_paths
-        .and_then(|bp| bp.exiftool.as_ref())
-        .map(|p| p.as_path());
-    let ffprobe_path = bin_paths
-        .and_then(|bp| bp.ffprobe.as_ref())
-        .map(|p| p.as_path());
+    index_file(path, path_in_asset_root, asset_root, pool, bin_paths).await
+}
+
+/// Returns Some(AssetId) if a new, non duplicate asset was indexed and added to the database
+#[tracing::instrument(skip_all, fields(path), level = "trace")]
+async fn index_file(
+    path: &Path,
+    path_in_asset_root: &Path,
+    asset_root: &AssetRootDir,
+    pool: &DbPool,
+    bin_paths: Option<&config::BinPaths>,
+) -> Result<Option<AssetId>> {
+    let asset_root_id = asset_root.id;
+    let exiftool_path = bin_paths.and_then(|bp| bp.exiftool.as_deref());
+    let ffprobe_path = bin_paths.and_then(|bp| bp.ffprobe.as_deref());
     let (exiftool_json, metadata) = read_media_metadata(path, exiftool_path)
         .await
         .wrap_err("could not read file metadata")?;
@@ -116,7 +123,8 @@ pub async fn index_file(
             };
             (CreateAssetSpe::Video(create_video), size)
         }
-        Some(mime) if mime.starts_with("image") => {
+        // TODO: Should probably use libmagic or something faster and more accurate at some point
+        Some(mime) if mime.starts_with("image") && !mime.eq_ignore_ascii_case("image/vnd.fpx") => {
             let p = path.to_owned();
             let vips_get_size_result = tokio::task::spawn_blocking(move || {
                 processing::image::get_image_size(&p).wrap_err("could not read image size")
@@ -145,7 +153,7 @@ pub async fn index_file(
             (CreateAssetSpe::Image(create_image), size)
         }
         None | Some(_) => {
-            tracing::debug!(%path, "Ignoring file with no or unknown MIME type");
+            tracing::trace!(%path, "Ignoring file with no or unknown MIME type");
             return Ok(None);
         }
     };

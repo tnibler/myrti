@@ -122,7 +122,6 @@ const SEND_ERROR_MESSAGE: &str = "Receiver held by scheduler, which must be aliv
 impl<Task: Debug + Send + Sync, TaskResult: Debug + Send + Sync, A: Actor<Task, TaskResult>>
     Runner<Task, TaskResult, A>
 {
-    #[tracing::instrument(skip(self))]
     async fn pause_all(&mut self) {
         if self.is_running {
             tracing::debug!("pausing");
@@ -134,7 +133,6 @@ impl<Task: Debug + Send + Sync, TaskResult: Debug + Send + Sync, A: Actor<Task, 
         }
     }
 
-    #[tracing::instrument(skip(self))]
     async fn resume_all(&mut self) {
         if !self.is_running {
             self.is_running = true;
@@ -158,11 +156,9 @@ impl<Task: Debug + Send + Sync, TaskResult: Debug + Send + Sync, A: Actor<Task, 
         }
     }
 
-    #[tracing::instrument(skip(self))]
     async fn dequeue_work_if_available(&mut self) {
         while self.active_tasks < self.opts.max_tasks {
             if let Some(msg) = self.queue.pop_front() {
-                tracing::debug!(?msg, "dequeuing message");
                 self.start_task(msg).await;
             } else {
                 break;
@@ -170,7 +166,6 @@ impl<Task: Debug + Send + Sync, TaskResult: Debug + Send + Sync, A: Actor<Task, 
         }
     }
 
-    #[tracing::instrument(skip(self))]
     async fn start_task(&mut self, msg: Task) {
         assert!(self.is_running);
         assert!(
@@ -191,7 +186,6 @@ impl<Task: Debug + Send + Sync, TaskResult: Debug + Send + Sync, A: Actor<Task, 
         self.signal_activity_change();
     }
 
-    #[tracing::instrument(skip(self))]
     fn signal_activity_change(&mut self) {
         if self.active_tasks == 0 && self.waiting_for_shutdown {
             self.is_running = false;
@@ -247,7 +241,6 @@ pub struct ActorOptions {
     pub max_queue_size: usize,
 }
 
-#[tracing::instrument(skip_all)]
 pub async fn run_actor<
     Task: Debug + Send + Sync + 'static,
     TaskResult: Debug + Send + Sync + 'static,

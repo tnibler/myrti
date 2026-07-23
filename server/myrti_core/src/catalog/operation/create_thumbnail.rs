@@ -46,7 +46,6 @@ pub struct ThumbnailToCreateWithPaths {
     pub file_keys: Vec<(ThumbnailFormat, String)>,
 }
 
-#[instrument(skip(conn))]
 pub async fn apply_create_thumbnail(
     conn: &mut PooledDbConn,
     asset_id: AssetId,
@@ -83,7 +82,6 @@ pub struct ThumbnailSideEffectResult {
     pub failed: Vec<(ThumbnailToCreateWithPaths, Report)>,
 }
 
-#[instrument(skip(pool, storage, control_recv), level = "debug")]
 pub async fn perform_side_effects_create_thumbnail(
     storage: &Storage,
     pool: DbPool,
@@ -125,7 +123,6 @@ pub async fn perform_side_effects_create_thumbnail(
     Ok(result)
 }
 
-#[instrument(skip(storage, control_recv))]
 async fn create_thumbnail(
     asset_path: PathBuf,
     asset: &Asset,

@@ -12,7 +12,11 @@ use tracing::Instrument;
 
 use myrti_core::{catalog::storage_key, core::storage::StorageProvider, model};
 
-use crate::{app_state::SharedState, http_error::ApiResult, schema::AssetId};
+use crate::{
+    app_state::SharedState,
+    http_error::ApiResult,
+    schema::{AssetId, FileId},
+};
 
 pub fn router() -> Router<SharedState> {
     Router::new().route("/:id/*path", get(get_dash_file).options(get_dash_file))
@@ -20,7 +24,7 @@ pub fn router() -> Router<SharedState> {
 
 #[derive(Debug, Clone, Deserialize)]
 struct DashFilePath {
-    pub id: AssetId,
+    pub id: FileId,
     pub path: String,
 }
 
@@ -30,7 +34,7 @@ async fn get_dash_file(
     State(app_state): State<SharedState>,
     request: Request<Body>,
 ) -> ApiResult<Response> {
-    let asset_id: model::AssetId = path.id.try_into()?;
+    let asset_id: model::FileId = path.id.try_into()?;
 
     let key = storage_key::dash_file(asset_id, format_args!("{}", &path.path));
 

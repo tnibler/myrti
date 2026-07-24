@@ -1,19 +1,19 @@
 use std::fmt;
 
-use crate::model::{AlbumId, AssetId, ImageAssetId, ThumbnailFormat, ThumbnailType};
+use crate::model::{AlbumId, FileId, ThumbnailFormat, ThumbnailType};
 
 use super::image_conversion_target::{ImageConversionTarget, ImageFormatTarget};
 
-pub fn dash_file(asset_id: AssetId, filename: fmt::Arguments) -> String {
-    format!("dash/{}/{}", asset_id.0, filename)
+pub fn dash_file(file_id: FileId, filename: fmt::Arguments) -> String {
+    format!("dash/{}/{}", file_id.0, filename)
 }
 
 /// returned key is always in the set of keys returned by `dash_file`
-pub fn mpd_manifest(asset_id: AssetId) -> String {
-    dash_file(asset_id, format_args!("stream.mpd"))
+pub fn mpd_manifest(file_id: FileId) -> String {
+    dash_file(file_id, format_args!("stream.mpd"))
 }
 
-pub fn thumbnail(asset_id: AssetId, ty: ThumbnailType, format: ThumbnailFormat) -> String {
+pub fn thumbnail(asset_id: FileId, ty: ThumbnailType, format: ThumbnailFormat) -> String {
     let size = match ty {
         ThumbnailType::SmallSquare => format_args!("_sm"),
         ThumbnailType::LargeOrigAspect => format_args!(""),
@@ -28,11 +28,11 @@ pub fn thumbnail(asset_id: AssetId, ty: ThumbnailType, format: ThumbnailFormat) 
 // format_name is not really needed, and forces us to do a db query for every
 // image represenation API request
 // It can be removed at some point, but for now I like having the file extension
-pub fn image_representation(asset_id: ImageAssetId, target: &ImageConversionTarget) -> String {
+pub fn image_representation(file_id: FileId, target: &ImageConversionTarget) -> String {
     let ext = image_file_extension(&target.format);
     match target.scale {
-        None => format!("image/{}.{}", asset_id.0, ext),
-        Some(scale) => format!("image/{}_{}x.{}", asset_id.0, scale, ext),
+        None => format!("image/{}.{}", file_id.0, ext),
+        Some(scale) => format!("image/{}_{}x.{}", file_id.0, scale, ext),
     }
 }
 

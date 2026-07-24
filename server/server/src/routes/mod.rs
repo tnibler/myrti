@@ -18,6 +18,7 @@ pub mod album;
 pub mod asset;
 pub mod asset_roots;
 pub mod dash;
+pub mod file;
 pub mod jobs;
 pub mod map;
 pub mod photo_series;

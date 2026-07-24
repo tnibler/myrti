@@ -302,9 +302,9 @@ async fn asset_with_reprs(pool: DbPool, asset: model::Asset) -> eyre::Result<Ass
                 "jpeg" | "avif" | "png" => Vec::new(),
                 _ => {
                     let conn = pool.get().await?;
-                    let image_asset_id = image.image_asset_id;
+                    let file_id = image.file_id;
                     interact!(conn, move |conn| {
-                        repository::representation::get_image_representations(conn, image_asset_id)
+                        repository::representation::get_image_representations(conn, file_id)
                     })
                     .await??
                 }
@@ -327,7 +327,7 @@ async fn asset_with_reprs(pool: DbPool, asset: model::Asset) -> eyre::Result<Ass
         }),
     };
     Ok(AssetWithSpe {
-        asset: asset.into(),
+        asset: (&asset).into(),
         spe,
     })
 }
@@ -336,9 +336,9 @@ async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<Ass
     let conn = pool.get().await?;
     match &asset.sp {
         model::AssetSpe::Image(image) => {
-            let image_asset_id = image.image_asset_id;
+            let file_id = image.file_id;
             let reprs = interact!(conn, move |conn| {
-                repository::representation::get_image_representations(conn, image_asset_id)
+                repository::representation::get_image_representations(conn, file_id)
             })
             .await??;
             let api_reprs = reprs

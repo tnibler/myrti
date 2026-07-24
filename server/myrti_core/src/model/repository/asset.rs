@@ -7,11 +7,13 @@ use diesel::{insert_into, prelude::*};
 use eyre::{Context, Result, eyre};
 use tracing::instrument;
 
-use crate::model::repository::db_entity::{DbImageAsset, DbInsertVideoAsset, DbVideoAsset};
+use crate::model::repository::db_entity::{
+    DbAssetFile, DbImageFile, DbInsertAssetFile, DbInsertVideoFile, DbVideoFile,
+};
 use crate::model::{
-    self, Asset, AssetBase, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetThumbnail,
-    AssetThumbnailId, AssetType, CreateAsset, CreateAssetSpe, Image, ImageAssetId, TimestampInfo,
-    VideoAsset, VideoAssetId,
+    self, Asset, AssetBase, AssetFile, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe,
+    AssetThumbnail, AssetThumbnailId, AssetType, CreateAsset, CreateAssetSpe, FileId, Image,
+    TimestampInfo,
 };
 use crate::model::{
     repository::db_entity::{DbAssetPathOnDisk, DbAssetThumbnail, to_db_asset_ty},
@@ -23,59 +25,93 @@ use super::db_entity::{DbAsset, DbInsertAsset, to_db_timezone_info};
 use super::schema;
 
 pub fn get_asset(conn: &mut DbConn, id: AssetId) -> Result<Asset> {
-    let db_asset: DbAsset = schema::Asset::table
-        .select(DbAsset::as_select())
-        .find(id.0)
-        .first(conn)?;
-    let image_asset: Option<DbImageAsset> = DbImageAsset::belonging_to(&db_asset)
-        .select(DbImageAsset::as_select())
-        .get_result(conn)
-        .optional()?;
-    if let Some(image_asset) = image_asset {
-        return Ok(model::Asset {
-            base: db_asset.try_into()?,
-            sp: AssetSpe::Image(Image {
-                image_asset_id: ImageAssetId(image_asset.image_asset_id),
-                image_format_name: image_asset.image_format_name,
-            }),
-        });
-    }
-    let video_asset: Option<DbVideoAsset> = DbVideoAsset::belonging_to(&db_asset)
-        .select(DbVideoAsset::as_select())
-        .get_result(conn)
-        .optional()?;
-    if let Some(video_asset) = video_asset {
-        return Ok(Asset {
-            base: db_asset.try_into()?,
-            sp: AssetSpe::Video(video_asset.try_into()?),
-        });
-    }
-    panic!("asset is neither image nor video, db constraints disallow this")
+    use schema::{Asset, AssetFile};
+    conn.transaction(|conn| {
+        let (db_asset, db_file): (DbAsset, DbAssetFile) = Asset::table
+            .find(id.0)
+            .inner_join(AssetFile::table.on(AssetFile::file_id.eq(Asset::rep_file_id)))
+            .select((DbAsset::as_select(), DbAssetFile::as_select()))
+            .first(conn)?;
+        let image_asset: Option<DbImageFile> = DbImageFile::belonging_to(&db_file)
+            .select(DbImageFile::as_select())
+            .get_result(conn)
+            .optional()?;
+        if let Some(image_asset) = image_asset {
+            return Ok(model::Asset {
+                base: db_asset.try_into()?,
+                sp: AssetSpe::Image(Image {
+                    file_id: FileId(db_file.file_id),
+                    image_format_name: image_asset.image_format_name,
+                }),
+                rep_file: db_file.try_into()?,
+            });
+        }
+        let video_asset: Option<DbVideoFile> = DbVideoFile::belonging_to(&db_file)
+            .select(DbVideoFile::as_select())
+            .get_result(conn)
+            .optional()?;
+        if let Some(video_asset) = video_asset {
+            return Ok(model::Asset {
+                base: db_asset.try_into()?,
+                rep_file: db_file.try_into()?,
+                sp: AssetSpe::Video(video_asset.try_into()?),
+            });
+        }
+        panic!("asset is neither image nor video, db constraints disallow this")
+    })
 }
 
-pub fn get_asset_with_hash(conn: &mut DbConn, with_hash: u64) -> Result<Option<AssetId>> {
-    use schema::Asset::dsl::*;
+pub fn get_asset_file(conn: &mut DbConn, id: FileId) -> Result<model::AssetFile> {
+    schema::AssetFile::table
+        .find(id.0)
+        .select(DbAssetFile::as_select())
+        .get_result::<DbAssetFile>(conn)?
+        .try_into()
+}
+
+pub fn get_video_file(conn: &mut DbConn, id: FileId) -> Result<(model::Video, model::AssetFile)> {
+    use schema::{AssetFile, VideoFile};
+    let (db_video, db_file) = VideoFile::table
+        .find(id.0)
+        .inner_join(AssetFile::table)
+        .select((DbVideoFile::as_select(), DbAssetFile::as_select()))
+        .first::<(DbVideoFile, DbAssetFile)>(conn)?;
+    Ok((db_video.try_into()?, db_file.try_into()?))
+}
+
+pub fn get_image_file(conn: &mut DbConn, id: FileId) -> Result<(model::Image, model::AssetFile)> {
+    use schema::{AssetFile, ImageFile};
+    let (db_image, db_file) = ImageFile::table
+        .find(id.0)
+        .inner_join(AssetFile::table)
+        .select((DbImageFile::as_select(), DbAssetFile::as_select()))
+        .first::<(DbImageFile, DbAssetFile)>(conn)?;
+    Ok((db_image.try_into()?, db_file.try_into()?))
+}
+
+pub fn get_asset_with_hash(conn: &mut DbConn, with_hash: u64) -> Result<Option<FileId>> {
+    use schema::AssetFile;
     let with_hash = hash_u64_to_vec8(with_hash);
-    let maybe_id: Option<i64> = Asset
-        .select(asset_id)
-        .filter(hash.eq(Some(with_hash)))
+    let maybe_id: Option<i64> = AssetFile::table
+        .select(AssetFile::asset_id)
+        .filter(AssetFile::hash.eq(Some(with_hash)))
         .first(conn)
         .optional()?;
-    Ok(maybe_id.map(AssetId))
+    Ok(maybe_id.map(FileId))
 }
 
-pub fn get_asset_path_on_disk(conn: &mut DbConn, id: AssetId) -> Result<AssetPathOnDisk> {
-    use schema::Asset;
+pub fn get_asset_path_on_disk(conn: &mut DbConn, id: FileId) -> Result<AssetPathOnDisk> {
+    use schema::AssetFile;
     use schema::AssetRootDir;
-    let asset: DbAssetPathOnDisk = Asset::table
+    let row: DbAssetPathOnDisk = AssetFile::table
         .inner_join(AssetRootDir::table)
-        .filter(Asset::asset_id.eq(id.0))
-        .select((Asset::asset_id, Asset::file_path, AssetRootDir::path))
+        .filter(AssetFile::file_id.eq(id.0))
+        .select((AssetFile::file_id, AssetFile::file_path, AssetRootDir::path))
         .first(conn)?;
     Ok(AssetPathOnDisk {
-        id: AssetId(asset.asset_id),
-        path_in_asset_root: asset.path_in_asset_root.into(),
-        asset_root_path: asset.asset_root_path.into(),
+        file_id: FileId(row.file_id),
+        path_in_asset_root: row.path_in_asset_root.into(),
+        asset_root_path: row.asset_root_path.into(),
     })
 }
 
@@ -85,23 +121,23 @@ pub fn asset_or_duplicate_with_path_exists(
     path: &Path,
 ) -> Result<bool> {
     use diesel::sql_types::Integer;
-    use schema::Asset;
-    use schema::DuplicateAsset;
+    use schema::AssetFile;
+    use schema::DuplicateFile;
     let path = path.to_string();
-    let r: Vec<_> = Asset::table
+    let r: Vec<_> = AssetFile::table
         .filter(
-            Asset::root_dir_id
+            AssetFile::root_dir_id
                 .eq(asset_root_dir_id.0)
-                .and(Asset::file_path.eq(&path)),
+                .and(AssetFile::file_path.eq(&path)),
         )
         .select(1.into_sql::<Integer>())
         .limit(1)
         .union(
-            DuplicateAsset::table
+            DuplicateFile::table
                 .filter(
-                    DuplicateAsset::root_dir_id
+                    DuplicateFile::root_dir_id
                         .eq(asset_root_dir_id.0)
-                        .and(DuplicateAsset::file_path.eq(&path)),
+                        .and(DuplicateFile::file_path.eq(&path)),
                 )
                 .select(1.into_sql::<Integer>())
                 .limit(1),
@@ -111,26 +147,38 @@ pub fn asset_or_duplicate_with_path_exists(
 }
 
 pub fn get_assets(conn: &mut DbConn) -> Result<Vec<Asset>> {
-    use schema::{Asset, ImageAsset, VideoAsset};
+    use schema::{Asset, AssetFile, ImageFile, VideoFile};
     let images = Asset::table
-        .inner_join(ImageAsset::table)
-        .select((DbAsset::as_select(), DbImageAsset::as_select()))
+        .inner_join(AssetFile::table.on(Asset::rep_file_id.eq(AssetFile::file_id)))
+        .inner_join(ImageFile::table.on(Asset::rep_file_id.eq(ImageFile::file_id)))
+        .select((
+            DbAsset::as_select(),
+            DbAssetFile::as_select(),
+            DbImageFile::as_select(),
+        ))
         .load(conn)?
         .into_iter()
-        .map(|(base, image): (DbAsset, DbImageAsset)| {
+        .map(|(base, file, image): (DbAsset, DbAssetFile, DbImageFile)| {
             Ok(model::Asset {
                 base: base.try_into()?,
+                rep_file: file.try_into()?,
                 sp: AssetSpe::Image(image.try_into()?),
             })
         });
     let videos = Asset::table
-        .inner_join(VideoAsset::table)
-        .select((DbAsset::as_select(), DbVideoAsset::as_select()))
+        .inner_join(AssetFile::table.on(Asset::rep_file_id.eq(AssetFile::file_id)))
+        .inner_join(VideoFile::table.on(Asset::rep_file_id.eq(VideoFile::file_id)))
+        .select((
+            DbAsset::as_select(),
+            DbAssetFile::as_select(),
+            DbVideoFile::as_select(),
+        ))
         .load(conn)?
         .into_iter()
-        .map(|(base, video): (DbAsset, DbVideoAsset)| {
+        .map(|(base, file, video): (DbAsset, DbAssetFile, DbVideoFile)| {
             Ok(model::Asset {
                 base: base.try_into()?,
+                rep_file: file.try_into()?,
                 sp: AssetSpe::Video(video.try_into()?),
             })
         });
@@ -139,7 +187,7 @@ pub fn get_assets(conn: &mut DbConn) -> Result<Vec<Asset>> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AssetHasThumbnails {
-    pub asset_id: AssetId,
+    pub file_id: FileId,
     pub thumbnails: Vec<AssetThumbnail>,
 }
 
@@ -149,20 +197,20 @@ pub fn get_assets_with_missing_thumbnail(
     limit: Option<i64>,
 ) -> Result<Vec<AssetHasThumbnails>> {
     #[derive(Debug, Clone, Queryable, Selectable)]
-    #[diesel(table_name = super::schema::Asset)]
+    #[diesel(table_name = super::schema::AssetFile)]
     #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-    struct AssetIdRow {
+    struct FileIdRow {
         #[diesel(sql_type = diesel::sql_types::BigInt)]
-        pub asset_id: i64,
+        pub file_id: i64,
     }
-    let rows_zero_thumbnails: Vec<AssetIdRow> = {
+    let rows_zero_thumbnails: Vec<FileIdRow> = {
         use diesel::dsl::{exists, not};
-        use schema::{Asset, AssetThumbnail};
-        Asset::table
+        use schema::{AssetFile, AssetThumbnail};
+        AssetFile::table
             .filter(not(exists(
-                AssetThumbnail::table.filter(AssetThumbnail::asset_id.eq(Asset::asset_id)),
+                AssetThumbnail::table.filter(AssetThumbnail::file_id.eq(AssetFile::file_id)),
             )))
-            .select(AssetIdRow::as_select())
+            .select(FileIdRow::as_select())
             .load(conn)
             .wrap_err("error querying for Assets with zero thumbnails")?
     };
@@ -174,10 +222,10 @@ pub fn get_assets_with_missing_thumbnail(
     WHERE 
     (
         SELECT COUNT(*) FROM AssetThumbnail at
-        WHERE at.asset_id = AssetThumbnail.asset_id
-        GROUP BY at.asset_id
+        WHERE at.file_id = AssetThumbnail.file_id
+        GROUP BY at.file_id
     ) < $1
-    ORDER BY AssetThumbnail.asset_id;
+    ORDER BY AssetThumbnail.file_id;
     "#,
     )
     .bind::<diesel::sql_types::Integer, _>(NUM_THUMBNAILS_PER_ASSET)
@@ -186,7 +234,7 @@ pub fn get_assets_with_missing_thumbnail(
     let result_zero_thumbnails = rows_zero_thumbnails
         .into_iter()
         .map(|row| AssetHasThumbnails {
-            asset_id: AssetId(row.asset_id),
+            file_id: FileId(row.file_id),
             thumbnails: Vec::default(),
         });
 
@@ -201,15 +249,15 @@ pub fn get_assets_with_missing_thumbnail(
                 match acc.last_mut() {
                     None => {
                         acc.push(AssetHasThumbnails {
-                            asset_id: thumbnail.asset_id,
+                            file_id: thumbnail.file_id,
                             thumbnails: vec![thumbnail],
                         });
                     }
-                    Some(a) if a.asset_id == thumbnail.asset_id => a.thumbnails.push(thumbnail),
+                    Some(a) if a.file_id == thumbnail.file_id => a.thumbnails.push(thumbnail),
                     Some(a) => {
-                        debug_assert!(a.asset_id != thumbnail.asset_id);
+                        debug_assert!(a.file_id != thumbnail.file_id);
                         acc.push(AssetHasThumbnails {
-                            asset_id: thumbnail.asset_id,
+                            file_id: thumbnail.file_id,
                             thumbnails: vec![thumbnail],
                         });
                     }
@@ -225,11 +273,11 @@ pub fn get_assets_with_missing_thumbnail(
 #[instrument(skip(conn), level = "trace")]
 pub fn get_thumbnails_for_asset(
     conn: &mut DbConn,
-    asset_id: AssetId,
+    asset_id: FileId,
 ) -> Result<Vec<AssetThumbnail>> {
     use schema::AssetThumbnail;
     let rows: Vec<DbAssetThumbnail> = AssetThumbnail::table
-        .filter(AssetThumbnail::asset_id.eq(asset_id.0))
+        .filter(AssetThumbnail::file_id.eq(asset_id.0))
         .select(DbAssetThumbnail::as_select())
         .get_results(conn)?;
     rows.into_iter()
@@ -246,53 +294,73 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
         | TimestampInfo::TzGuessedLocal(tz) => Some(Cow::Owned(tz.to_string())),
         TimestampInfo::UtcCertain | TimestampInfo::NoTimestamp => None,
     };
-    let insertable: DbInsertAsset = DbInsertAsset {
-        asset_id: None,
-        asset_type: to_db_asset_ty(match &create_asset.spe {
-            CreateAssetSpe::Image(_) => AssetType::Image,
-            CreateAssetSpe::Video(_) => AssetType::Video,
-        }),
-        root_dir_id: create_asset.base.root_dir_id.0,
-        file_type: create_asset.base.file_type.into(),
-        file_path: create_asset.base.file_path.as_str().into(),
-        is_hidden: bool_to_int(create_asset.base.is_hidden),
-        hash: create_asset
-            .base
-            .hash
-            .map(|h| Cow::Owned(h.to_le_bytes().to_vec())),
-        added_at: datetime_to_db_repr(&Utc::now()),
-        taken_date: datetime_to_db_repr(&create_asset.base.taken_date),
-        timezone_offset,
-        timezone_info: to_db_timezone_info(&create_asset.base.timestamp_info),
-        width: create_asset.base.size.width,
-        height: create_asset.base.size.height,
-        rotation_correction: create_asset.base.rotation_correction,
-        exiftool_output: Cow::Borrowed(&create_asset.base.exiftool_output),
-        gps_latitude: create_asset.base.gps_coordinates.map(|c| c.lat),
-        gps_longitude: create_asset.base.gps_coordinates.map(|c| c.lon),
-    };
     conn.immediate_transaction(|conn| {
-        let id: i64 = insert_into(schema::Asset::table)
+        let insertable_file = DbInsertAssetFile {
+            file_id: None,
+            asset_id: Some(0),
+            asset_type: to_db_asset_ty(match &create_asset.spe {
+                CreateAssetSpe::Image(_) => AssetType::Image,
+                CreateAssetSpe::Video(_) => AssetType::Video,
+            }),
+            root_dir_id: create_asset.base.root_dir_id.0,
+            file_type: create_asset.base.file_type.into(),
+            file_path: create_asset.base.file_path.as_str().into(),
+            hash: create_asset
+                .base
+                .hash
+                .map(|h| Cow::Owned(h.to_le_bytes().to_vec())),
+            added_at: datetime_to_db_repr(&Utc::now()),
+            width: create_asset.base.size.width,
+            height: create_asset.base.size.height,
+            rotation_correction: create_asset.base.rotation_correction,
+            exiftool_output: Cow::Borrowed(&create_asset.base.exiftool_output),
+        };
+        let file_id: i64 = insert_into(schema::AssetFile::table)
+            .values(&insertable_file)
+            .returning(schema::AssetFile::file_id)
+            .get_result(conn)
+            .wrap_err("error inserting AssetFile")?;
+
+        let insertable: DbInsertAsset = DbInsertAsset {
+            asset_id: None,
+            asset_type: to_db_asset_ty(match &create_asset.spe {
+                CreateAssetSpe::Image(_) => AssetType::Image,
+                CreateAssetSpe::Video(_) => AssetType::Video,
+            }),
+            rep_file_id: Some(file_id),
+            is_hidden: bool_to_int(create_asset.base.is_hidden),
+            taken_date: datetime_to_db_repr(&create_asset.base.taken_date),
+            timezone_offset,
+            timezone_info: to_db_timezone_info(&create_asset.base.timestamp_info),
+            gps_latitude: create_asset.base.gps_coordinates.map(|c| c.lat),
+            gps_longitude: create_asset.base.gps_coordinates.map(|c| c.lon),
+        };
+        let asset_id: i64 = insert_into(schema::Asset::table)
             .values(&insertable)
             .returning(schema::Asset::asset_id)
             .get_result(conn)
             .wrap_err("error inserting Asset")?;
 
+        diesel::update(schema::AssetFile::table.find(file_id))
+            .set(schema::AssetFile::asset_id.eq(asset_id))
+            .execute(conn)
+            .wrap_err("Error updating AssetFile.asset_id")?;
+
         match create_asset.spe {
             CreateAssetSpe::Image(create_asset_image) => {
-                let _image_asset_id = insert_into(schema::ImageAsset::table)
+                let _file_id = insert_into(schema::ImageFile::table)
                     .values((
-                        schema::ImageAsset::asset_id.eq(id),
-                        schema::ImageAsset::image_format_name
+                        schema::ImageFile::file_id.eq(file_id),
+                        schema::ImageFile::image_format_name
                             .eq(&create_asset_image.image_format_name),
                     ))
                     .execute(conn)
-                    .wrap_err("error inserting ImageAsset")?;
+                    .wrap_err("error inserting ImageFile")?;
             }
             CreateAssetSpe::Video(create_asset_video) => {
-                let _video_asset_id = insert_into(schema::VideoAsset::table)
-                    .values(DbInsertVideoAsset {
-                        asset_id: id,
+                let _video_file_id = insert_into(schema::VideoFile::table)
+                    .values(DbInsertVideoFile {
+                        file_id,
                         ffprobe_output: Cow::Borrowed(&create_asset_video.ffprobe_output.0),
                         video_codec_name: create_asset_video.video_codec_name.as_str().into(),
                         video_bitrate: create_asset_video.video_bitrate,
@@ -314,7 +382,7 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
             }
         }
 
-        Ok(AssetId(id))
+        Ok(AssetId(asset_id))
     })
 }
 
@@ -326,7 +394,7 @@ pub fn insert_asset_thumbnail(
     use schema::AssetThumbnail;
     let id: i64 = diesel::insert_into(AssetThumbnail::table)
         .values((
-            AssetThumbnail::asset_id.eq(thumbnail.asset_id.0),
+            AssetThumbnail::file_id.eq(thumbnail.file_id.0),
             AssetThumbnail::ty.eq(to_db_thumbnail_type(thumbnail.ty)),
             AssetThumbnail::width.eq(thumbnail.size.width),
             AssetThumbnail::height.eq(thumbnail.size.height),
@@ -338,13 +406,13 @@ pub fn insert_asset_thumbnail(
     Ok(AssetThumbnailId(id))
 }
 
-pub fn get_asset_exiftool_output(conn: &mut DbConn, asset_id: AssetId) -> Result<Vec<u8>> {
-    use schema::Asset;
-    let exiftool_output: Vec<u8> = Asset::table
-        .filter(Asset::asset_id.eq(asset_id.0))
-        .select(Asset::exiftool_output)
+pub fn get_exiftool_output(conn: &mut DbConn, file_id: FileId) -> Result<Vec<u8>> {
+    use schema::AssetFile;
+    let exiftool_output: Vec<u8> = AssetFile::table
+        .filter(AssetFile::file_id.eq(file_id.0))
+        .select(AssetFile::exiftool_output)
         .get_result(conn)
-        .wrap_err("error querying table Asset")?;
+        .wrap_err("error querying table AssetFile")?;
     Ok(exiftool_output)
 }
 
@@ -427,31 +495,28 @@ pub fn get_video_assets_with_no_acceptable_repr(conn: &mut DbConn) -> Result<Vec
 pub fn get_image_assets_with_no_acceptable_repr(
     conn: &mut DbConn,
     acceptable_codecs: &[&str],
-) -> Result<Vec<(ImageAssetId, AssetId)>> {
+) -> Result<Vec<FileId>> {
     use diesel::dsl::{exists, not};
-    use schema::{ImageAsset, ImageRepresentation};
-    let asset_ids: Vec<(i64, i64)> = ImageAsset::table
-        .filter(not(ImageAsset::image_format_name.eq_any(acceptable_codecs)))
+    use schema::{ImageFile, ImageRepresentation};
+    let asset_ids: Vec<i64> = ImageFile::table
+        .filter(not(ImageFile::image_format_name.eq_any(acceptable_codecs)))
         .filter(not(exists(
             ImageRepresentation::table.filter(
-                ImageRepresentation::image_asset_id
-                    .eq(ImageAsset::image_asset_id)
+                ImageRepresentation::file_id
+                    .eq(ImageFile::file_id)
                     .and(ImageRepresentation::format_name.eq_any(acceptable_codecs)),
             ),
         )))
-        .select((ImageAsset::image_asset_id, ImageAsset::asset_id))
+        .select(ImageFile::file_id)
         .load(conn)?;
-    Ok(asset_ids
-        .into_iter()
-        .map(|(id, asset_id)| (ImageAssetId(id), AssetId(asset_id)))
-        .collect())
+    Ok(asset_ids.into_iter().map(FileId).collect())
 }
 
-pub fn get_ffprobe_output(conn: &mut DbConn, asset_id: AssetId) -> Result<Vec<u8>> {
-    use schema::VideoAsset;
-    let ffprobe_output: Vec<u8> = VideoAsset::table
-        .find(asset_id.0)
-        .select(VideoAsset::ffprobe_output)
+pub fn get_ffprobe_output(conn: &mut DbConn, video_file_id: FileId) -> Result<Vec<u8>> {
+    use schema::VideoFile;
+    let ffprobe_output: Vec<u8> = VideoFile::table
+        .find(video_file_id.0)
+        .select(VideoFile::ffprobe_output)
         .first(conn)?;
     Ok(ffprobe_output)
 }
@@ -467,14 +532,14 @@ pub fn set_assets_hidden(conn: &mut DbConn, set_hidden: bool, asset_ids: &[Asset
 
 pub fn set_asset_rotation_correction(
     conn: &mut DbConn,
-    asset_id: AssetId,
+    asset_id: FileId,
     rotation: Option<i32>,
 ) -> Result<()> {
-    use schema::Asset;
-    diesel::update(Asset::table.filter(Asset::asset_id.eq(asset_id.0)))
-        .set(Asset::rotation_correction.eq(rotation))
+    use schema::AssetFile;
+    diesel::update(AssetFile::table.filter(AssetFile::file_id.eq(asset_id.0)))
+        .set(AssetFile::rotation_correction.eq(rotation))
         .execute(conn)
-        .wrap_err("error updating column Asset.rotation_correction")?;
+        .wrap_err("error updating column AssetFile.rotation_correction")?;
     Ok(())
 }
 
@@ -514,31 +579,33 @@ pub fn set_asset_max_iframe_interval(
     // diesel::update(Asset::table.filter(Asset::asset_id.eq(asset_id.0))).set(Asset::h)
 }
 
-pub fn get_asset_has_ghi_index(conn: &mut DbConn, asset_id: VideoAssetId) -> Result<Option<i32>> {
-    use schema::VideoAsset;
-    let r: Option<i32> = VideoAsset::table
-        .find(asset_id.0)
-        .select(VideoAsset::has_ghi)
+pub fn get_asset_has_ghi_index(conn: &mut DbConn, file_id: FileId) -> Result<Option<i32>> {
+    use schema::VideoFile;
+    let r: Option<i32> = VideoFile::table
+        .find(file_id.0)
+        .select(VideoFile::has_ghi)
         .get_result(conn)
-        .context("querying Asset for has_ghi_index")?;
+        .context("querying VideoFile for has_ghi_index")?;
     Ok(r)
 }
 
 pub fn set_asset_has_ghi_index(
     conn: &mut DbConn,
-    asset_id: VideoAssetId,
+    file_id: FileId,
     has_ghi_index: i32,
 ) -> Result<()> {
-    use schema::VideoAsset;
-    let n_affected = diesel::update(VideoAsset::table.find(asset_id.0))
-        .set(VideoAsset::has_ghi.eq(has_ghi_index))
-        .execute(conn)
-        .context("error updating column Asset.has_ghi_index")?;
-    if n_affected == 1 {
-        Ok(())
-    } else {
-        Err(eyre!("error updating column Asset.has_ghi_index"))
-    }
+    use schema::VideoFile;
+    conn.immediate_transaction(|conn| {
+        let n_affected = diesel::update(VideoFile::table.find(file_id.0))
+            .set(VideoFile::has_ghi.eq(has_ghi_index))
+            .execute(conn)
+            .context("error updating column VideoFile.has_ghi_index")?;
+        if n_affected == 1 {
+            Ok(())
+        } else {
+            Err(eyre!("error updating column VideoFile.has_ghi_index"))
+        }
+    })
 }
 
 #[instrument(skip(conn), level = "debug")]

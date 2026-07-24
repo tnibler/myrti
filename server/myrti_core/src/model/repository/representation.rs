@@ -1,12 +1,12 @@
 use diesel::prelude::*;
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 use tracing::instrument;
 
 use crate::model::{
-    repository::db_entity::{DbAudioRepresentation, DbImageRepresentation, DbVideoRepresentation},
     AudioRepresentation, AudioRepresentationId, CreateAudioRepresentation,
-    CreateVideoRepresentation, ImageAssetId, ImageRepresentation, ImageRepresentationId,
-    VideoAssetId, VideoRepresentation, VideoRepresentationId,
+    CreateVideoRepresentation, FileId, ImageRepresentation, ImageRepresentationId,
+    VideoRepresentation, VideoRepresentationId,
+    repository::db_entity::{DbAudioRepresentation, DbImageRepresentation, DbVideoRepresentation},
 };
 
 use super::db::DbConn;
@@ -15,13 +15,13 @@ use super::schema;
 #[instrument(skip(conn), level = "trace")]
 pub fn get_video_representations(
     conn: &mut DbConn,
-    video_asset_id: VideoAssetId,
+    file_id: FileId,
 ) -> Result<Vec<VideoRepresentation>> {
     use schema::VideoRepresentation;
     let db_video_reprs: Vec<DbVideoRepresentation> = VideoRepresentation::table
         .filter(
-            VideoRepresentation::video_asset_id
-                .eq(video_asset_id.0)
+            VideoRepresentation::file_id
+                .eq(file_id.0)
                 .and(VideoRepresentation::created_status.eq(1)),
         )
         .load(conn)?;
@@ -41,7 +41,7 @@ pub fn insert_video_representation(
 
     let id = diesel::insert_into(VideoRepresentation::table)
         .values((
-            VideoRepresentation::video_asset_id.eq(repr.video_asset_id.0),
+            VideoRepresentation::file_id.eq(repr.file_id.0),
             VideoRepresentation::name.eq(&repr.name),
             VideoRepresentation::codec_name.eq(&repr.codec_name),
             VideoRepresentation::created_status.eq(0),
@@ -59,7 +59,7 @@ pub fn finalize_video_representation(conn: &mut DbConn, repr: &VideoRepresentati
         VideoRepresentation::table.filter(
             VideoRepresentation::video_repr_id
                 .eq(repr.id.0)
-                .and(VideoRepresentation::video_asset_id.eq(repr.video_asset_id.0))
+                .and(VideoRepresentation::file_id.eq(repr.file_id.0))
                 .and(VideoRepresentation::created_status.eq(0))
                 .and(VideoRepresentation::name.eq(&repr.name))
                 .and(VideoRepresentation::codec_name.eq(&repr.codec_name)),
@@ -89,7 +89,7 @@ pub fn insert_audio_representation(
 
     let id = diesel::insert_into(AudioRepresentation::table)
         .values((
-            AudioRepresentation::video_asset_id.eq(repr.video_asset_id.0),
+            AudioRepresentation::file_id.eq(repr.file_id.0),
             AudioRepresentation::codec_name.eq(&repr.codec_name),
             AudioRepresentation::name.eq(&repr.name),
             AudioRepresentation::created_status.eq(0),
@@ -130,7 +130,7 @@ pub fn insert_image_representation(
 
     let id = diesel::insert_into(ImageRepresentation::table)
         .values((
-            ImageRepresentation::image_asset_id.eq(repr.image_asset_id.0),
+            ImageRepresentation::file_id.eq(repr.file_id.0),
             ImageRepresentation::format_name.eq(&repr.format_name),
             ImageRepresentation::width.eq(repr.width),
             ImageRepresentation::height.eq(repr.height),
@@ -156,12 +156,12 @@ pub fn get_image_representation(
 #[tracing::instrument(skip(conn), level = "trace")]
 pub fn get_image_representations(
     conn: &mut DbConn,
-    asset_id: ImageAssetId,
+    file_id: FileId,
 ) -> Result<Vec<ImageRepresentation>> {
     use schema::ImageRepresentation;
 
     let db_irs: Vec<DbImageRepresentation> = ImageRepresentation::table
-        .filter(ImageRepresentation::image_asset_id.eq(asset_id.0))
+        .filter(ImageRepresentation::file_id.eq(file_id.0))
         .load(conn)?;
     db_irs
         .into_iter()
@@ -173,11 +173,11 @@ pub fn get_image_representations(
 #[tracing::instrument(skip(conn), level = "trace")]
 pub fn get_audio_representations(
     conn: &mut DbConn,
-    video_asset_id: VideoAssetId,
+    file_id: FileId,
 ) -> Result<Vec<AudioRepresentation>> {
     use schema::AudioRepresentation;
     let db_reprs: Vec<DbAudioRepresentation> = AudioRepresentation::table
-        .filter(AudioRepresentation::video_asset_id.eq(video_asset_id.0))
+        .filter(AudioRepresentation::file_id.eq(file_id.0))
         .load(conn)?;
     db_reprs
         .into_iter()

@@ -1,0 +1,326 @@
+use std::{collections::HashMap, ffi::OsString, ops::Deref, os::unix::ffi::OsStrExt};
+
+use axum::{
+    body::Body,
+    extract::{Path, Query, State},
+    http::{header, HeaderMap, HeaderValue, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, Router,
+};
+use axum_extra::body::AsyncReadBody;
+use eyre::{eyre, Context};
+use myrti_core::{
+    catalog::storage_key,
+    core::storage::{StorageProvider, StorageReadError},
+    deadpool_diesel,
+};
+use myrti_core::{
+    interact,
+    model::{self, repository},
+};
+use serde::{Deserialize, Serialize};
+use tokio_util::io::ReaderStream;
+use utoipa::ToSchema;
+
+use crate::{
+    app_state::SharedState,
+    http_error::{ApiResult, HttpError},
+    mime_type::{guess_mime_type, guess_mime_type_path},
+    schema::{FileId, ImageRepresentationId},
+};
+
+pub fn router() -> Router<SharedState> {
+    Router::new()
+        .route("/:id/details", get(get_file_details))
+        .route("/thumbnail/:id/:size/:format", get(get_thumbnail))
+        .route("/original/:id", get(get_original_file))
+        .route(
+            "/repr/:file_id/:repr_id",
+            get(get_image_asset_representation),
+        )
+        .route("/:id/rotation", post(set_asset_rotation_correction))
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetDetailsResponse {
+    pub exiftool_output: serde_json::Value,
+}
+
+#[utoipa::path(get, path = "/api/files/{id}/details",
+    responses(
+        (status = 200, body = AssetDetailsResponse),
+        (status = NOT_FOUND, description = "Asset not found")
+    ),
+    params(
+        ("id" = String, Path, description = "FileId")
+    )
+)]
+async fn get_file_details(
+    Path(file_id): Path<FileId>,
+    State(app_state): State<SharedState>,
+) -> ApiResult<Json<AssetDetailsResponse>> {
+    let file_id: model::FileId = file_id.try_into()?;
+    let conn = app_state.pool.get().await?;
+    let exiftool_output: Vec<u8> = interact!(conn, move |conn| {
+        repository::asset::get_exiftool_output(conn, file_id)
+    })
+    .await??;
+    let json = match serde_json::from_slice(&exiftool_output)
+        .wrap_err("failed to parse JSON exiftool_output")?
+    {
+        // raw exiftool output in db is an array with a single element [{/*...*/}],
+        // so remove that wrapping array
+        serde_json::Value::Array(mut inner) if inner.len() == 1 => {
+            Ok(inner.pop().expect("length was checked to be 1"))
+        }
+
+        other => Err(eyre!("unexpected in JSON exiftool output: {:?}", other)),
+    }?;
+    Ok(Json(AssetDetailsResponse {
+        exiftool_output: json,
+    }))
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ThumbnailSize {
+    Small,
+    Large,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum ThumbnailFormat {
+    Avif,
+    Webp,
+}
+
+#[utoipa::path(get, path = "/api/files/thumbnail/{id}/{size}/{format}",
+    responses(
+        (status = 200, body=String, content_type = "application/octet")
+    ),
+    params(
+        ("id" = String, Path, description = "FileId to get thumbnail for"),
+        ("size" = ThumbnailSize, Path, description = "Thumbnail size"),
+        ("format" = ThumbnailFormat, Path, description = "Image format for thumbnail")
+    )
+)]
+#[tracing::instrument(skip(app_state), level = "trace")]
+async fn get_thumbnail(
+    Path((file_id, size, format)): Path<(FileId, ThumbnailSize, ThumbnailFormat)>,
+    State(app_state): State<SharedState>,
+) -> ApiResult<Response> {
+    let file_id: model::FileId = file_id.try_into()?;
+    let (thumb_key, content_type) = match (size, format) {
+        (ThumbnailSize::Small, ThumbnailFormat::Avif) => (
+            storage_key::thumbnail(
+                file_id,
+                model::ThumbnailType::SmallSquare,
+                model::ThumbnailFormat::Avif,
+            ),
+            "image/avif",
+        ),
+        (ThumbnailSize::Small, ThumbnailFormat::Webp) => (
+            storage_key::thumbnail(
+                file_id,
+                model::ThumbnailType::SmallSquare,
+                model::ThumbnailFormat::Webp,
+            ),
+            "image/webp",
+        ),
+        (ThumbnailSize::Large, ThumbnailFormat::Avif) => (
+            storage_key::thumbnail(
+                file_id,
+                model::ThumbnailType::LargeOrigAspect,
+                model::ThumbnailFormat::Avif,
+            ),
+            "image/avif",
+        ),
+        (ThumbnailSize::Large, ThumbnailFormat::Webp) => (
+            storage_key::thumbnail(
+                file_id,
+                model::ThumbnailType::LargeOrigAspect,
+                model::ThumbnailFormat::Webp,
+            ),
+            "image/webp",
+        ),
+    };
+    let read = app_state.storage.open_read_stream(&thumb_key).await;
+    let read = match read {
+        Err(err) => match err {
+            StorageReadError::FileNotFound(_) => {
+                return Ok((
+                    StatusCode::NOT_FOUND,
+                    HttpError::from(eyre!("no such object")),
+                )
+                    .into_response());
+            }
+            _ => {
+                return Err(eyre!("could not open object for reading").into());
+            }
+        },
+        Ok(r) => r,
+    };
+    let headers = [(header::CONTENT_TYPE, content_type)];
+    let body = AsyncReadBody::new(read);
+    // TODO add size hint for files https://github.com/tokio-rs/axum/discussions/2074
+    return Ok((headers, body).into_response());
+}
+
+#[utoipa::path(get, path = "/api/files/original/{id}",
+    responses(
+        (status = 200, body=String, content_type = "application/octet"),
+        (status = NOT_FOUND, body=String, description = "File not found")
+    ),
+    params(
+        ("id" = String, Path, description = "FileId"),
+    )
+)]
+#[tracing::instrument(fields(request = true), skip(app_state))]
+async fn get_original_file(
+    Path(file_id): Path<FileId>,
+    Query(query): Query<HashMap<String, String>>,
+    State(app_state): State<SharedState>,
+) -> ApiResult<Response> {
+    let id: model::FileId = file_id.try_into()?;
+    let conn = app_state.pool.get().await?;
+    let path = interact!(conn, move |conn| {
+        repository::asset::get_asset_path_on_disk(conn, id)
+    })
+    .await??
+    .path_on_disk();
+    let file = tokio::fs::File::open(&path).await?;
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+    let download = query
+        .get("download")
+        .map(|s| s.to_lowercase() == "true")
+        .unwrap_or(false);
+    let mut headers = HeaderMap::new();
+    if let Some(file_name) = path.file_name() {
+        let mut s = match download {
+            true => OsString::from("attachment; filename=\""),
+            false => OsString::from("inline; filename=\""),
+        };
+        s.push(file_name);
+        s.push("\"");
+        headers.insert(
+            header::CONTENT_DISPOSITION,
+            HeaderValue::from_bytes(s.as_bytes())
+                .wrap_err("error setting content-disposition header")?,
+        );
+    }
+    let content_type = guess_mime_type_path(&path);
+    if let Some(content_type) = content_type {
+        headers.insert(
+            header::CONTENT_TYPE,
+            content_type
+                .deref()
+                .try_into()
+                .wrap_err("error setting content-type header")?,
+        );
+    }
+    Ok((headers, body).into_response())
+}
+
+#[utoipa::path(get, path = "/api/files/repr/{fileId}/{reprId}",
+    responses(
+        (status = 200, body=String, content_type = "application/octet"),
+        (status = NOT_FOUND, body=String, description = "File or Representation not found")
+    ),
+    params(
+        ("fileId" = String, Path, description = "FileId"),
+        ("reprId" = String, Path, description = "ImageRepresentationId"),
+    )
+)]
+#[tracing::instrument(fields(request = true), skip(app_state))]
+async fn get_image_asset_representation(
+    Path((file_id, repr_id)): Path<(FileId, ImageRepresentationId)>,
+    Query(query): Query<HashMap<String, String>>,
+    State(app_state): State<SharedState>,
+) -> ApiResult<Response> {
+    let repr_id: model::ImageRepresentationId = repr_id.try_into()?;
+    // removing format name/file extension from storage key would make this query unnecessary but
+    // it's nice to have for now
+    // Or maybe not since we need to set a MIME type?
+    let conn = app_state.pool.get().await?;
+    let repr = interact!(conn, move |conn| {
+        repository::representation::get_image_representation(conn, repr_id)
+    })
+    .await?
+    .wrap_err("no such repr_id")?;
+    let storage_key = repr.file_key;
+    let read_stream = app_state
+        .storage
+        .open_read_stream(&storage_key)
+        .await
+        .wrap_err("error opening read stream")?;
+    let stream = ReaderStream::new(read_stream);
+    let body = Body::from_stream(stream);
+    let download = query
+        .get("download")
+        .map(|s| s.to_lowercase() == "true")
+        .unwrap_or(false);
+    let mut headers = HeaderMap::new();
+
+    let file_name = format!("{}.{}", repr.file_id.0, &repr.format_name);
+    let mut s = match download {
+        true => OsString::from("attachment; filename=\""),
+        false => OsString::from("inline; filename=\""),
+    };
+    s.push(file_name);
+    s.push("\"");
+    headers.insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_bytes(s.as_bytes())
+            .wrap_err("error setting content-disposition header")?,
+    );
+
+    let content_type = guess_mime_type(&repr.format_name);
+    if let Some(content_type) = content_type {
+        headers.insert(
+            header::CONTENT_TYPE,
+            content_type
+                .deref()
+                .try_into()
+                .wrap_err("error setting content-type header")?,
+        );
+    }
+    Ok((headers, body).into_response())
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAssetRotationRequest {
+    pub rotation: Option<i32>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/files/{id}/rotation",
+    params(
+        ("id" = String, Path, description = "FileId")
+    ),
+    request_body=SetAssetRotationRequest,
+    responses((status=200))
+)]
+async fn set_asset_rotation_correction(
+    State(app_state): State<SharedState>,
+    Path(file_id): Path<FileId>,
+    Json(req): Json<SetAssetRotationRequest>,
+) -> ApiResult<()> {
+    match req.rotation {
+        Some(rot) if rot % 90 != 0 => Err(eyre!("Invalid rotation value").into()),
+        rotation => {
+            let file_id: model::FileId = file_id.try_into()?;
+            let conn = app_state.pool.get().await?;
+            interact!(conn, move |conn| {
+                repository::asset::set_asset_rotation_correction(conn, file_id, rotation)
+            })
+            .await??;
+            Ok(())
+        }
+    }
+}

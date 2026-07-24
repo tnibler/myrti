@@ -5,7 +5,7 @@ use crate::{
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
     interact,
     model::{
-        AssetId, ImageAssetId, ImageRepresentation, ImageRepresentationId, Size,
+        FileId, ImageRepresentation, ImageRepresentationId, Size,
         repository::{
             self,
             db::{DbPool, PooledDbConn},
@@ -16,8 +16,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct ConvertImage {
-    pub asset_id: AssetId,
-    pub image_asset_id: ImageAssetId,
+    pub file_id: FileId,
     pub target: ImageConversionTarget,
     pub output_file_key: String,
 }
@@ -29,7 +28,7 @@ pub async fn apply_convert_image(
 ) -> Result<()> {
     let image_representation = ImageRepresentation {
         id: ImageRepresentationId(0),
-        image_asset_id: op.image_asset_id,
+        file_id: op.file_id,
         format_name: image_format_name(&op.target.format).to_owned(),
         file_key: op.output_file_key.clone(),
         file_size: result.file_size,
@@ -57,12 +56,12 @@ pub async fn perform_side_effects_convert_image(
 ) -> Result<ImageConversionSideEffectResult> {
     let command_out_file = storage.new_command_out_file(&op.output_file_key).await?;
     let conn = pool.get().await?;
-    let asset_id = op.asset_id;
-    let (asset, asset_path) = interact!(conn, move |conn| {
+    let file_id = op.file_id;
+    let (file, asset_path) = interact!(conn, move |conn| {
         // FIXME (low) unnecessarily querying same row twice
-        let asset = repository::asset::get_asset(conn, asset_id)?;
-        let asset_path = repository::asset::get_asset_path_on_disk(conn, asset_id)?;
-        Ok((asset, asset_path))
+        let file = repository::asset::get_asset_file(conn, file_id)?;
+        let asset_path = repository::asset::get_asset_path_on_disk(conn, file_id)?;
+        Ok((file, asset_path))
     })
     .await??;
     let scaled_size = processing::image::image_conversion::ConvertImage::convert_image(
@@ -76,7 +75,7 @@ pub async fn perform_side_effects_convert_image(
     let file_size = command_out_file.size().await?;
     command_out_file.flush_to_storage().await?;
     Ok(ImageConversionSideEffectResult {
-        final_size: scaled_size.unwrap_or(asset.base.size),
+        final_size: scaled_size.unwrap_or(file.size),
         file_size: file_size as i64,
     })
 }

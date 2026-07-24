@@ -5,25 +5,34 @@ use chrono::{DateTime, FixedOffset, Utc};
 use eyre::eyre;
 use serde::Serialize;
 
+use crate::model::FileId;
+
 use super::{AssetId, AssetRootDirId, AssetType};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct AssetBase {
-    pub id: AssetId,
+pub struct AssetFile {
+    pub id: FileId,
     pub ty: AssetType,
     pub root_dir_id: AssetRootDirId,
     pub file_type: String,
     pub file_path: PathBuf,
-    pub is_hidden: bool,
     pub added_at: DateTime<Utc>,
-    pub taken_date: DateTime<Utc>,
-    pub timestamp_info: TimestampInfo,
     pub size: Size,
     /// degrees clockwise
     pub rotation_correction: Option<i32>,
-    pub gps_coordinates: Option<GpsCoordinates>,
     /// Seahash of the file, if already computed
     pub hash: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct AssetBase {
+    pub id: AssetId,
+    pub rep_file_id: FileId,
+    pub ty: AssetType,
+    pub is_hidden: bool,
+    pub taken_date: DateTime<Utc>,
+    pub timestamp_info: TimestampInfo,
+    pub gps_coordinates: Option<GpsCoordinates>,
 }
 
 /// Origin and reliability of the timezone for an asset's original creation date

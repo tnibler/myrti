@@ -1,14 +1,13 @@
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{Context, Report, Result};
 use futures::{TryStreamExt, stream::FuturesUnordered};
-use tracing::instrument;
 
 use crate::{
     core::storage::{CommandOutputFile, Storage, StorageCommandOutput, StorageProvider},
     interact,
     model::{
-        Asset, AssetId, AssetSpe, AssetThumbnail, AssetThumbnailId, AssetType, Size,
-        ThumbnailFormat, ThumbnailType,
+        Asset, AssetFile, AssetId, AssetSpe, AssetThumbnail, AssetThumbnailId, AssetType, FileId,
+        Size, ThumbnailFormat, ThumbnailType,
         repository::{
             self,
             db::{DbPool, PooledDbConn},
@@ -24,7 +23,7 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateAssetThumbnail {
-    pub asset_id: AssetId,
+    pub file_id: FileId,
     pub thumbnails: Vec<ThumbnailToCreate>,
 }
 
@@ -36,7 +35,7 @@ pub struct ThumbnailToCreate {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreateThumbnailWithPaths {
-    pub asset_id: AssetId,
+    pub file_id: FileId,
     pub thumbnails: Vec<ThumbnailToCreateWithPaths>,
 }
 
@@ -48,7 +47,7 @@ pub struct ThumbnailToCreateWithPaths {
 
 pub async fn apply_create_thumbnail(
     conn: &mut PooledDbConn,
-    asset_id: AssetId,
+    file_id: FileId,
     result: ThumbnailSideEffectSuccess,
 ) -> Result<()> {
     interact!(conn, move |conn| {
@@ -56,7 +55,7 @@ pub async fn apply_create_thumbnail(
             conn,
             AssetThumbnail {
                 id: AssetThumbnailId(0),
-                asset_id,
+                file_id,
                 ty: result.ty,
                 size: result.actual_size,
                 format: result.format,
@@ -77,7 +76,7 @@ pub struct ThumbnailSideEffectSuccess {
 
 #[derive(Debug)]
 pub struct ThumbnailSideEffectResult {
-    pub asset_id: AssetId,
+    pub file_id: FileId,
     pub succeeded: Vec<ThumbnailSideEffectSuccess>,
     pub failed: Vec<(ThumbnailToCreateWithPaths, Report)>,
 }
@@ -89,7 +88,7 @@ pub async fn perform_side_effects_create_thumbnail(
     control_recv: &mut ProcessControlReceiver,
 ) -> Result<ThumbnailSideEffectResult> {
     let mut result = ThumbnailSideEffectResult {
-        asset_id: op.asset_id,
+        file_id: op.file_id,
         succeeded: Vec::default(),
         failed: Vec::default(),
     };
@@ -97,15 +96,15 @@ pub async fn perform_side_effects_create_thumbnail(
         return Ok(result);
     }
     let conn = pool.get().await?;
-    let (in_path, asset) = interact!(conn, move |conn| {
-        let in_path = repository::asset::get_asset_path_on_disk(conn, op.asset_id)?.path_on_disk();
-        let asset = repository::asset::get_asset(conn, op.asset_id)?;
-        Ok::<_, eyre::Report>((in_path, asset))
+    let (in_path, file) = interact!(conn, move |conn| {
+        let in_path = repository::asset::get_asset_path_on_disk(conn, op.file_id)?.path_on_disk();
+        let file = repository::asset::get_asset_file(conn, op.file_id)?;
+        Ok::<_, eyre::Report>((in_path, file))
     })
     .await??;
     // TODO don't await sequentially. Not super bad because op.thumbnails is small but still
     for thumb in op.thumbnails {
-        match create_thumbnail(in_path.clone(), &asset, &thumb, storage, control_recv).await {
+        match create_thumbnail(in_path.clone(), &file, &thumb, storage, control_recv).await {
             Ok(res) => {
                 for (format, _file_key) in thumb.file_keys {
                     result.succeeded.push(ThumbnailSideEffectSuccess {
@@ -125,7 +124,7 @@ pub async fn perform_side_effects_create_thumbnail(
 
 async fn create_thumbnail(
     asset_path: PathBuf,
-    asset: &Asset,
+    file: &AssetFile,
     thumb: &ThumbnailToCreateWithPaths,
     storage: &Storage,
     control_recv: &mut ProcessControlReceiver,
@@ -144,8 +143,7 @@ async fn create_thumbnail(
             height: 200,
         },
         ThumbnailType::LargeOrigAspect => processing::image::OutDimension::KeepAspect {
-            width: (asset.base.size.width as f32 * (300.0 / asset.base.size.height as f32)).round()
-                as i32,
+            width: (file.size.width as f32 * (300.0 / file.size.height as f32)).round() as i32,
         },
     };
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -154,9 +152,9 @@ async fn create_thumbnail(
         outputs: out_files.iter().collect(),
         out_dimension,
     };
-    let res = match asset.sp {
-        AssetSpe::Image(_) => GenerateThumbnail::generate_thumbnail(thumbnail_params).await,
-        AssetSpe::Video(_) => {
+    let res = match file.ty {
+        AssetType::Image => GenerateThumbnail::generate_thumbnail(thumbnail_params).await,
+        AssetType::Video => {
             GenerateThumbnail::generate_video_thumbnail(thumbnail_params, control_recv).await
         }
     };

@@ -2,7 +2,7 @@ use diesel::{Queryable, QueryableByName, Selectable};
 use eyre::eyre;
 
 use crate::model::{
-    util::from_db_thumbnail_type, AssetId, AssetThumbnail, AssetThumbnailId, Size, ThumbnailFormat,
+    AssetThumbnail, AssetThumbnailId, FileId, Size, ThumbnailFormat, util::from_db_thumbnail_type,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Queryable, QueryableByName, Selectable)]
@@ -10,7 +10,7 @@ use crate::model::{
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct DbAssetThumbnail {
     pub thumbnail_id: i64,
-    pub asset_id: i64,
+    pub file_id: i64,
     pub ty: i32,
     pub format_name: String,
     pub width: i32,
@@ -30,7 +30,7 @@ impl TryFrom<&DbAssetThumbnail> for AssetThumbnail {
         };
         Ok(AssetThumbnail {
             id: AssetThumbnailId(value.thumbnail_id),
-            asset_id: AssetId(value.asset_id),
+            file_id: FileId(value.file_id),
             ty: from_db_thumbnail_type(value.ty)?,
             size: Size {
                 width: value.width,

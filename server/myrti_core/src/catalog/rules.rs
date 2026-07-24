@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use eyre::{Context, Result};
 use itertools::Itertools;
-use tracing::instrument;
 
 use crate::{
     catalog::{
@@ -12,7 +11,7 @@ use crate::{
     },
     config, interact,
     model::{
-        AlbumId, AssetId, AssetThumbnail, ThumbnailFormat, ThumbnailType,
+        AlbumId, AssetId, AssetThumbnail, FileId, ThumbnailFormat, ThumbnailType,
         repository::{self, asset::AssetHasThumbnails, db::PooledDbConn},
     },
 };
@@ -29,7 +28,7 @@ use super::{
 
 pub async fn required_video_packaging_for_asset(
     conn: &mut PooledDbConn,
-    asset_id: AssetId,
+    file_id: FileId,
     bin_paths: Option<&config::BinPaths>,
 ) -> Result<Vec<PackageVideo>> {
     let acceptable_video_codecs = ["h264", "av1", "vp9"];
@@ -42,26 +41,19 @@ pub async fn required_video_packaging_for_asset(
     })
     .await??;
 
-    let asset = interact!(conn, move |conn| {
-        repository::asset::get_asset(conn, asset_id)
+    let (video, file) = interact!(conn, move |conn| {
+        repository::asset::get_video_file(conn, file_id)
     })
     .await??;
-    let video = match asset.sp {
-        crate::model::AssetSpe::Image(_) => {
-            return Ok(Default::default());
-        }
-        crate::model::AssetSpe::Video(video) => video,
-    };
-    let video_asset_id = video.video_asset_id;
     let existing_video_reprs = interact!(conn, move |conn| {
-        repository::representation::get_video_representations(conn, video_asset_id)
+        repository::representation::get_video_representations(conn, file_id)
     })
     .await??;
     let has_acceptable_video_repr = existing_video_reprs
         .iter()
         .any(|repr| acceptable_video_codecs.contains(&repr.codec_name.as_str()));
     let audio_reprs = interact!(conn, move |conn| {
-        repository::representation::get_audio_representations(conn, video_asset_id)
+        repository::representation::get_audio_representations(conn, file_id)
     })
     .await??;
     let has_acceptable_audio_repr = video.audio_codec_name.is_none()
@@ -80,7 +72,7 @@ pub async fn required_video_packaging_for_asset(
 
     let has_ghi_index = interact!(
         conn,
-        move |conn| repository::asset::get_asset_has_ghi_index(conn, video_asset_id)
+        move |conn| repository::asset::get_asset_has_ghi_index(conn, file_id)
     )
     .await??;
 
@@ -93,7 +85,7 @@ pub async fn required_video_packaging_for_asset(
         if !orig_vid_streamable && !orig_audio_streamable {
             interact!(
                 conn,
-                move |conn| repository::asset::set_asset_has_ghi_index(conn, video_asset_id, 0)
+                move |conn| repository::asset::set_asset_has_ghi_index(conn, file_id, 0)
             )
             .await??;
         } else if let Some(max_iframe_interval) = video.max_iframe_interval
@@ -105,36 +97,34 @@ pub async fn required_video_packaging_for_asset(
                 (max_iframe_interval as f32 / frame_rate_num as f32) * frame_rate_denom as f32;
             let segment_duration = gop_time.clamp(1.0, 10.0).round() as i32;
             ops.push(PackageVideo {
-                asset_id,
-                video_asset_id: video.video_asset_id,
+                file_id,
                 repr_name: "original".to_owned(),
                 task: PackageVideoTask::CreateGHIIndex {
                     include_video: orig_vid_streamable,
                     include_audio: video.audio_codec_name.is_some() && orig_audio_streamable,
                     segment_duration,
                 },
-                output_key: storage_key::dash_file(asset_id, format_args!("original")),
+                output_key: storage_key::dash_file(file_id, format_args!("original")),
             });
         }
     }
 
     if !orig_vid_streamable && !has_acceptable_video_repr {
-        let repr_name = format!("{}x{}", asset.base.size.width, asset.base.size.height);
-        let video_out_key = storage_key::dash_file(asset.base.id, format_args!("{}", repr_name));
+        let repr_name = format!("{}x{}", file.size.width, file.size.height);
+        let video_out_key = storage_key::dash_file(file_id, format_args!("{}", repr_name));
         let keyframe_interval = match video.frame_rate {
             Some((num, denom)) if num > 0 && denom > 0 => {
                 let fr = (num as f32) / (denom as f32);
                 (fr.round() as i32).clamp(2, 240)
             }
             Some(_) => {
-                tracing::warn!(?asset_id, ?video.frame_rate, "garbage frame rate");
+                tracing::warn!(?file_id, ?video.frame_rate, "garbage frame rate");
                 30
             }
             None => 30,
         };
         ops.push(PackageVideo {
-            asset_id,
-            video_asset_id: video.video_asset_id,
+            file_id,
             repr_name,
             task: PackageVideoTask::TranscodeVideo(VideoEncodingTarget {
                 codec: CodecTarget::AV1(av1::AV1Target {
@@ -152,11 +142,10 @@ pub async fn required_video_packaging_for_asset(
     if !orig_audio_streamable && !orig_vid_streamable {
         let repr_name = audio_codec_name(&AudioEncodingTarget::AAC);
         ops.push(PackageVideo {
-            asset_id,
-            video_asset_id: video.video_asset_id,
+            file_id,
             repr_name,
             task: PackageVideoTask::TranscodeAudio(AudioEncodingTarget::AAC),
-            output_key: storage_key::dash_file(asset_id, format_args!("audio_aac.mp4")),
+            output_key: storage_key::dash_file(file_id, format_args!("audio_aac.mp4")),
         });
     };
     Ok(ops)
@@ -164,19 +153,14 @@ pub async fn required_video_packaging_for_asset(
 
 pub async fn required_image_conversion_for_asset(
     conn: &mut PooledDbConn,
-    asset_id: AssetId,
+    file_id: FileId,
 ) -> Result<Vec<ConvertImage>> {
-    let asset = interact!(conn, move |conn| {
-        repository::asset::get_asset(conn, asset_id)
+    let (image, file) = interact!(conn, move |conn| {
+        repository::asset::get_image_file(conn, file_id)
     })
     .await??;
-    let image = match asset.sp {
-        crate::model::AssetSpe::Image(image) => image,
-        crate::model::AssetSpe::Video(_) => return Ok(Default::default()),
-    };
-    let image_asset_id = image.image_asset_id;
     let existing_image_reprs = interact!(conn, move |conn| {
-        repository::representation::get_image_representations(conn, image_asset_id)
+        repository::representation::get_image_representations(conn, file_id)
     })
     .await??;
 
@@ -189,10 +173,9 @@ pub async fn required_image_conversion_for_asset(
             scale: None,
             format: super::image_conversion_target::ImageFormatTarget::AVIF(AvifTarget::default()),
         };
-        let output_file_key = storage_key::image_representation(image_asset_id, &target);
+        let output_file_key = storage_key::image_representation(file_id, &target);
         Ok(vec![ConvertImage {
-            image_asset_id,
-            asset_id,
+            file_id: image.file_id,
             target,
             output_file_key,
         }])
@@ -203,14 +186,14 @@ pub async fn required_image_conversion_for_asset(
 
 pub async fn required_thumbnails_for_asset(
     conn: &mut PooledDbConn,
-    asset_id: AssetId,
+    file_id: FileId,
 ) -> Result<CreateAssetThumbnail> {
     let have_thumbnails = interact!(conn, move |conn| {
-        repository::asset::get_thumbnails_for_asset(conn, asset_id)
+        repository::asset::get_thumbnails_for_asset(conn, file_id)
     })
     .await??;
     Ok(CreateAssetThumbnail {
-        asset_id,
+        file_id,
         thumbnails: missing_asset_thumbnails(have_thumbnails),
     })
 }
@@ -227,10 +210,10 @@ pub async fn thumbnails_to_create(conn: &mut PooledDbConn) -> Result<Vec<CreateA
         .into_iter()
         .map(
             |AssetHasThumbnails {
-                 asset_id,
+                 file_id,
                  thumbnails,
              }| CreateAssetThumbnail {
-                asset_id,
+                file_id,
                 thumbnails: missing_asset_thumbnails(thumbnails),
             },
         )
@@ -278,7 +261,7 @@ fn missing_asset_thumbnails(have_thumbnails: Vec<AssetThumbnail>) -> Vec<Thumbna
 pub async fn album_thumbnails_to_create(
     conn: &mut PooledDbConn,
 ) -> Result<Vec<CreateAlbumThumbnail>> {
-    let albums_assets: Vec<(AlbumId, AssetId)> = interact!(conn, move |conn| {
+    let albums_assets: Vec<(AlbumId, FileId)> = interact!(conn, move |conn| {
         let album_ids = repository::album_thumbnail::get_albums_with_missing_thumbnails(conn)?;
         album_ids
             .into_iter()
@@ -287,7 +270,7 @@ pub async fn album_thumbnails_to_create(
                     repository::album::get_assets_in_album(conn, album_id, Some(1))?;
                 Ok(first_asset_id
                     .first()
-                    .map(|asset| (album_id, asset.base.id)))
+                    .map(|asset| (album_id, asset.base.rep_file_id)))
             })
             .filter_map_ok(|r| r)
             .collect::<Result<Vec<_>>>()
@@ -295,9 +278,9 @@ pub async fn album_thumbnails_to_create(
     .await??;
     Ok(albums_assets
         .into_iter()
-        .map(|(album_id, asset_id)| CreateAlbumThumbnail {
+        .map(|(album_id, file_id)| CreateAlbumThumbnail {
             album_id,
-            asset_id,
+            file_id,
             size: 400,
         })
         .collect())
@@ -444,17 +427,16 @@ pub async fn image_conversion_due(conn: &mut PooledDbConn) -> Result<Vec<Convert
     );
     let ops = assets_no_good_repr
         .into_iter()
-        .map(|(image_asset_id, asset_id)| {
+        .map(|file_id| {
             let target = ImageConversionTarget {
                 scale: None,
                 format: super::image_conversion_target::ImageFormatTarget::AVIF(
                     AvifTarget::default(),
                 ),
             };
-            let output_file_key = storage_key::image_representation(image_asset_id, &target);
+            let output_file_key = storage_key::image_representation(file_id, &target);
             ConvertImage {
-                image_asset_id,
-                asset_id,
+                file_id,
                 target,
                 output_file_key,
             }

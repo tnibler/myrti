@@ -52,6 +52,8 @@ pub struct AlbumItemId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, ToSchema)]
 pub struct AssetRootDirId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, ToSchema)]
+pub struct FileId(pub String);
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, ToSchema)]
 pub struct ImageRepresentationId(pub String);
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, ToSchema)]
 pub struct TimelineGroupId(pub String);
@@ -61,6 +63,7 @@ pub struct AssetSeriesId(pub String);
 impl_api_id!(AlbumId);
 impl_api_id!(AlbumItemId);
 impl_api_id!(AssetId);
+impl_api_id!(FileId);
 impl_api_id!(AssetRootDirId);
 impl_api_id!(ImageRepresentationId);
 impl_api_id!(TimelineGroupId);

@@ -24,7 +24,7 @@ use crate::{
     config::Config,
     interact,
     model::{
-        AssetId, AssetRootDirId,
+        AssetId, AssetRootDirId, AssetSpe, FileId,
         repository::{self, db::DbPool},
     },
 };
@@ -169,7 +169,7 @@ async fn run_scheduler(
     mut image_conversion_recv: mpsc::UnboundedReceiver<MsgFromImageConversion>,
 ) {
     let mut reindex_interval = {
-        let mut int = tokio::time::interval(Duration::from_secs(60));
+        let mut int = tokio::time::interval(Duration::from_mins(60));
         int.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         int
     };
@@ -264,31 +264,42 @@ impl Scheduler {
 
     async fn on_new_asset_indexed(&self, asset_id: AssetId) -> Result<()> {
         let mut conn = self.db_pool.get().await.unwrap();
-        let thumbnails_required = rules::required_thumbnails_for_asset(&mut conn, asset_id).await?;
+        let asset = interact!(conn, move |conn| repository::asset::get_asset(
+            conn, asset_id
+        ))
+        .await??;
+        let thumbnails_required =
+            rules::required_thumbnails_for_asset(&mut conn, asset.base.rep_file_id).await?;
         if !thumbnails_required.thumbnails.is_empty() {
             self.thumbnail_actor
                 .msg_create_asset_thumbnail(thumbnails_required)
                 .expect("receiver must be alive");
         }
-        let video_packaging_required = rules::required_video_packaging_for_asset(
-            &mut conn,
-            asset_id,
-            self.config.bin_paths.as_ref(),
-        )
-        .await?;
-        for vid_pack in video_packaging_required {
-            self.video_packaging_actor
-                .msg_package_video(vid_pack)
-                .expect("receiver must be alive");
+        match &asset.sp {
+            AssetSpe::Video(video) => {
+                let video_packaging_required = rules::required_video_packaging_for_asset(
+                    &mut conn,
+                    video.file_id,
+                    self.config.bin_paths.as_ref(),
+                )
+                .await?;
+                for vid_pack in video_packaging_required {
+                    self.video_packaging_actor
+                        .msg_package_video(vid_pack)
+                        .expect("receiver must be alive");
+                }
+            }
+            AssetSpe::Image(image) => {
+                let image_conversion_required =
+                    rules::required_image_conversion_for_asset(&mut conn, image.file_id).await?;
+                for img_convert in image_conversion_required {
+                    self.image_conversion_actor
+                        .msg_convert_image(img_convert)
+                        .expect("receiver must be alive");
+                }
+            }
         }
 
-        let image_conversion_required =
-            rules::required_image_conversion_for_asset(&mut conn, asset_id).await?;
-        for img_convert in image_conversion_required {
-            self.image_conversion_actor
-                .msg_convert_image(img_convert)
-                .expect("receiver must be alive");
-        }
         Ok(())
     }
 

@@ -2,19 +2,17 @@ use camino::Utf8PathBuf as PathBuf;
 use chrono::{DateTime, Utc};
 use eyre::{Report, eyre};
 
-use super::{
-    AssetBase, AssetRootDirId, GpsCoordinates, ImageAssetId, Size, TimestampInfo, VideoAssetId,
-};
+use super::{AssetBase, AssetFile, AssetRootDirId, FileId, GpsCoordinates, Size, TimestampInfo};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Image {
-    pub image_asset_id: ImageAssetId,
+    pub file_id: FileId,
     pub image_format_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Video {
-    pub video_asset_id: VideoAssetId,
+    pub file_id: FileId,
     pub video_codec_name: String,
     pub video_bitrate: Option<i64>,
     pub audio_codec_name: Option<String>,
@@ -32,18 +30,21 @@ pub enum AssetSpe {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Asset {
     pub base: AssetBase,
+    pub rep_file: AssetFile,
     pub sp: AssetSpe,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VideoAsset {
     pub base: AssetBase,
+    pub rep_file: AssetFile,
     pub video: Video,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ImageAsset {
     pub base: AssetBase,
+    pub rep_file: AssetFile,
     pub image: Image,
 }
 
@@ -101,6 +102,7 @@ impl From<&ImageAsset> for Asset {
     fn from(value: &ImageAsset) -> Self {
         Asset {
             base: value.base.clone(),
+            rep_file: value.rep_file.clone(),
             sp: AssetSpe::Image(value.image.clone()),
         }
     }
@@ -110,6 +112,7 @@ impl From<&VideoAsset> for Asset {
     fn from(value: &VideoAsset) -> Self {
         Asset {
             base: value.base.clone(),
+            rep_file: value.rep_file.clone(),
             sp: AssetSpe::Video(value.video.clone()),
         }
     }
@@ -135,6 +138,7 @@ impl TryFrom<&Asset> for VideoAsset {
             AssetSpe::Image(_) => Err(eyre!("not a video")),
             AssetSpe::Video(video) => Ok(VideoAsset {
                 base: value.base.clone(),
+                rep_file: value.rep_file.clone(),
                 video: video.clone(),
             }),
         }
@@ -156,6 +160,7 @@ impl TryFrom<&Asset> for ImageAsset {
         match &value.sp {
             AssetSpe::Image(image) => Ok(ImageAsset {
                 base: value.base.clone(),
+                rep_file: value.rep_file.clone(),
                 image: image.clone(),
             }),
             AssetSpe::Video(_) => Err(eyre!("not an image")),

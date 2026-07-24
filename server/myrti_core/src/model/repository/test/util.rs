@@ -156,11 +156,11 @@ pub fn make_created_asset(create: &CreateAsset, inserted: &Asset) -> Asset {
         },
         sp: match (&create.spe, &inserted.sp) {
             (CreateAssetSpe::Image(create_img), AssetSpe::Image(img)) => AssetSpe::Image(Image {
-                image_asset_id: img.image_asset_id,
+                image_file_id: img.image_file_id,
                 image_format_name: create_img.image_format_name.clone(),
             }),
             (CreateAssetSpe::Video(create_vid), AssetSpe::Video(vid)) => AssetSpe::Video(Video {
-                video_asset_id: vid.video_asset_id,
+                video_file_id: vid.video_file_id,
                 video_codec_name: create_vid.video_codec_name.clone(),
                 video_bitrate: create_vid.video_bitrate,
                 audio_codec_name: create_vid.audio_codec_name.clone(),

@@ -26,7 +26,7 @@ use crate::{
     },
 };
 
-use super::asset::ThumbnailFormat;
+use super::file::ThumbnailFormat;
 
 pub fn router() -> Router<SharedState> {
     Router::new()
@@ -161,7 +161,7 @@ pub async fn get_album_details(
                                 has_dash: true, // FIXME: field doesn't exist anymore
                             }),
                         },
-                        asset: asset.into(),
+                        asset: (&asset).into(),
                     },
                 },
                 model::AlbumItemType::Text(text) => AlbumItemType::Text { text },

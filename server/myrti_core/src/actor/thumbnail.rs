@@ -1,5 +1,3 @@
-use chrono::Utc;
-use deadpool_diesel;
 use eyre::Result;
 use tokio::sync::{mpsc, oneshot};
 use tracing::Instrument;
@@ -18,15 +16,8 @@ use crate::{
         storage_key,
     },
     core::storage::Storage,
-    interact,
-    model::{
-        AssetId, FailedThumbnailJob, ThumbnailFormat,
-        repository::{
-            self,
-            db::{DbPool, PooledDbConn},
-        },
-    },
-    processing::{hash::hash_file, process_control::ProcessControlReceiver},
+    model::{ThumbnailFormat, repository::db::DbPool},
+    processing::process_control::ProcessControlReceiver,
 };
 
 use super::simple_queue_actor::{
@@ -122,14 +113,13 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
                             let mut conn = db_pool.get().await?;
                             if !result.failed.is_empty() {
                                 for (_thumbnail, report) in &result.failed {
-                                    tracing::warn!(?report, %result.asset_id, "failed to create thumbnail");
+                                    tracing::warn!(?report, %result.file_id, "failed to create thumbnail");
                                 }
-                                save_failed_thumbnail(&mut conn, result.asset_id).await?;
                             }
                             for succeeded in &result.succeeded {
                                 apply_create_thumbnail(
                                     &mut conn,
-                                    result.asset_id,
+                                    result.file_id,
                                     succeeded.clone(),
                                 )
                                 .await?;
@@ -226,12 +216,7 @@ fn resolve(op: &CreateAssetThumbnail) -> CreateThumbnailWithPaths {
                 .formats
                 .iter()
                 .copied()
-                .map(|format| {
-                    (
-                        format,
-                        storage_key::thumbnail(op.asset_id, thumb.ty, format),
-                    )
-                })
+                .map(|format| (format, storage_key::thumbnail(op.file_id, thumb.ty, format)))
                 .collect();
             ThumbnailToCreateWithPaths {
                 ty: thumb.ty,
@@ -240,7 +225,7 @@ fn resolve(op: &CreateAssetThumbnail) -> CreateThumbnailWithPaths {
         })
         .collect();
     CreateThumbnailWithPaths {
-        asset_id: op.asset_id,
+        file_id: op.file_id,
         thumbnails: thumbnails_to_create,
     }
 }
@@ -252,36 +237,29 @@ async fn do_asset_thumbnail_side_effects(
     op: CreateAssetThumbnail,
     control_recv: &mut ProcessControlReceiver,
 ) -> Result<ThumbnailSideEffectResult> {
-    let conn = db_pool.get().await?;
-    let asset_id = op.asset_id;
-    let past_failed_job = interact!(conn, move |conn| {
-        repository::failed_job::get_failed_thumbnail_job_for_asset(conn, asset_id)
-    })
-    .await??;
-    if let Some(past_failed_job) = past_failed_job {
-        let asset_path = interact!(conn, move |conn| {
-            repository::asset::get_asset_path_on_disk(conn, asset_id)
-        })
-        .await??
-        .path_on_disk();
-        let file = tokio::fs::File::open(&asset_path)
-            .await?
-            .try_into_std()
-            .expect("no operation has touched this file");
-        let current_hash = hash_file(file).await?;
-        if current_hash == past_failed_job.file_hash {
-            tracing::debug!(
-                asset_id = ?asset_id,
-                "skipping thumbnail that failed in the past"
-            );
-            // FIXME: we're not actually skipping anything here. return optional result and add
-            // flag to force retry (force if user asks to create thumbnail and on startup, don't
-            // force otherwise)
+    let op_resolved = {
+        let op = &op;
+        let thumbnails_to_create: Vec<ThumbnailToCreateWithPaths> = op
+            .thumbnails
+            .iter()
+            .map(|thumb| {
+                let file_keys = thumb
+                    .formats
+                    .iter()
+                    .copied()
+                    .map(|format| (format, storage_key::thumbnail(op.file_id, thumb.ty, format)))
+                    .collect();
+                ThumbnailToCreateWithPaths {
+                    ty: thumb.ty,
+                    file_keys,
+                }
+            })
+            .collect();
+        CreateThumbnailWithPaths {
+            file_id: op.file_id,
+            thumbnails: thumbnails_to_create,
         }
-    }
-    drop(conn); // don't hold connection over long operations that don't need it
-
-    let op_resolved = resolve(&op);
+    };
     perform_side_effects_create_thumbnail(
         &storage,
         db_pool.clone(),
@@ -304,7 +282,7 @@ async fn do_album_thumbnail_side_effects(
     let op_with_paths = CreateAlbumThumbnailWithPaths {
         album_id: op.album_id,
         size: op.size,
-        asset_id: op.asset_id,
+        file_id: op.file_id,
         avif_key,
         webp_key,
     };
@@ -316,29 +294,4 @@ async fn do_album_thumbnail_side_effects(
     )
     .await?;
     Ok(op_with_paths)
-}
-
-async fn save_failed_thumbnail(conn: &mut PooledDbConn, asset_id: AssetId) -> Result<()> {
-    let asset_path = interact!(conn, move |conn| {
-        repository::asset::get_asset_path_on_disk(conn, asset_id)
-    })
-    .await??
-    .path_on_disk();
-    let file = tokio::fs::File::open(&asset_path)
-        .await?
-        .try_into_std()
-        .expect("no operation has touched this file");
-    let hash = hash_file(file).await?;
-    interact!(conn, move |conn| {
-        repository::failed_job::insert_failed_thumbnail_job(
-            conn,
-            &FailedThumbnailJob {
-                asset_id,
-                file_hash: hash,
-                date: Utc::now(),
-            },
-        )
-    })
-    .await??;
-    Ok(())
 }

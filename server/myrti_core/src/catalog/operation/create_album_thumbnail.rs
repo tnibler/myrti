@@ -6,7 +6,7 @@ use crate::{
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
     interact,
     model::{
-        AlbumId, AlbumThumbnailId, Asset, AssetId, AssetSpe, AssetType,
+        AlbumId, AlbumThumbnailId, AssetFile, AssetId, AssetType, FileId,
         repository::{self, album_thumbnail::InsertAlbumThumbnail, db::PooledDbConn},
     },
     processing::{
@@ -20,14 +20,14 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct CreateAlbumThumbnail {
     pub album_id: AlbumId,
-    pub asset_id: AssetId,
+    pub file_id: FileId,
     pub size: i32,
 }
 
 #[derive(Debug, Clone)]
 pub struct CreateAlbumThumbnailWithPaths {
     pub album_id: AlbumId,
-    pub asset_id: AssetId,
+    pub file_id: FileId,
     pub size: i32,
     pub webp_key: String,
     pub avif_key: String,
@@ -40,15 +40,15 @@ pub async fn perform_side_effects_create_thumbnail(
     op: CreateAlbumThumbnailWithPaths,
     control_recv: &mut ProcessControlReceiver,
 ) -> Result<()> {
-    let (in_path, asset) = interact!(conn, move |conn| {
-        let in_path = repository::asset::get_asset_path_on_disk(conn, op.asset_id)?.path_on_disk();
-        let asset = repository::asset::get_asset(conn, op.asset_id)?;
-        Ok::<_, eyre::Report>((in_path, asset))
+    let (in_path, file) = interact!(conn, move |conn| {
+        let in_path = repository::asset::get_asset_path_on_disk(conn, op.file_id)?.path_on_disk();
+        let file = repository::asset::get_asset_file(conn, op.file_id)?;
+        Ok::<_, eyre::Report>((in_path, file))
     })
     .await??;
     create_thumbnail(
         in_path.clone(),
-        &asset,
+        &file,
         &op.webp_key,
         &op.avif_key,
         op.size,
@@ -94,7 +94,7 @@ pub async fn apply_create_thumbnail(
 #[instrument(skip(storage, control_recv))]
 async fn create_thumbnail(
     asset_path: PathBuf,
-    asset: &Asset,
+    file: &AssetFile,
     webp_key: &str,
     avif_key: &str,
     size: i32,
@@ -113,9 +113,9 @@ async fn create_thumbnail(
         outputs: out_paths,
         out_dimension,
     };
-    let _res = match &asset.sp {
-        AssetSpe::Image(_) => GenerateThumbnail::generate_thumbnail(thumbnail_params).await?,
-        AssetSpe::Video(_) => {
+    let _res = match &file.ty {
+        AssetType::Image => GenerateThumbnail::generate_thumbnail(thumbnail_params).await?,
+        AssetType::Video => {
             GenerateThumbnail::generate_video_thumbnail(thumbnail_params, control_recv).await?
         }
     };

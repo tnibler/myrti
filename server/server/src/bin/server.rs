@@ -289,6 +289,7 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .nest("/api/timeline", routes::timeline::router())
         .nest("/api/albums", routes::album::router())
+        .nest("/api/files", routes::file::router())
         .nest("/api/assets", routes::asset::router())
         .nest("/api/photoSeries", routes::photo_series::router())
         .nest("/api/assetRoots", routes::asset_roots::router())

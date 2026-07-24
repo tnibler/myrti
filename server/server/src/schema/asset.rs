@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 use myrti_core::model;
 use std::borrow::Cow;
 
-use crate::mime_type::guess_mime_type;
+use crate::{mime_type::guess_mime_type, schema::FileId};
 
 use super::{AssetId, AssetRootDirId};
 
@@ -18,16 +18,25 @@ pub enum AssetType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct Asset {
-    pub id: AssetId,
+pub struct AssetFile {
+    pub file_id: FileId,
     pub asset_root_id: AssetRootDirId,
     pub path_in_root: String,
     pub width: i32,
     pub height: i32,
     pub added_at: DateTime<Utc>,
-    pub taken_date: DateTime<Utc>,
-    pub mime_type: String,
     pub rotation_correction: Option<i32>,
+    pub mime_type: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Asset {
+    pub asset_id: AssetId,
+    pub taken_date: DateTime<Utc>,
+
+    // #[serde(flatten)]
+    pub rep_file: AssetFile,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -70,29 +79,38 @@ pub struct Video {
 
 impl From<&model::Asset> for Asset {
     fn from(value: &model::Asset) -> Self {
-        let mime_type = guess_mime_type(&value.base.file_type)
-            .unwrap_or(match value.base.ty {
+        Asset {
+            asset_id: value.base.id.into(),
+            taken_date: value.base.taken_date,
+            rep_file: value.rep_file.clone().into(),
+        }
+    }
+}
+
+impl From<&model::AssetFile> for AssetFile {
+    fn from(value: &model::AssetFile) -> Self {
+        let mime_type = guess_mime_type(&value.file_type)
+            .unwrap_or(match value.ty {
                 model::AssetType::Image => Cow::Borrowed("image"),
                 model::AssetType::Video => Cow::Borrowed("video"),
             })
             .into_owned();
 
-        Asset {
-            id: value.base.id.into(),
-            asset_root_id: value.base.root_dir_id.into(),
-            path_in_root: value.base.file_path.to_string(),
-            width: value.base.size.width,
-            height: value.base.size.height,
-            added_at: value.base.added_at,
-            taken_date: value.base.taken_date,
+        AssetFile {
+            file_id: value.id.into(),
+            asset_root_id: value.root_dir_id.into(),
+            path_in_root: value.file_path.to_string(),
+            width: value.size.width,
+            height: value.size.height,
+            added_at: value.added_at,
             mime_type,
-            rotation_correction: value.base.rotation_correction,
+            rotation_correction: value.rotation_correction,
         }
     }
 }
 
-impl From<model::Asset> for Asset {
-    fn from(value: model::Asset) -> Self {
+impl From<model::AssetFile> for AssetFile {
+    fn from(value: model::AssetFile) -> Self {
         (&value).into()
     }
 }

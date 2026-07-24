@@ -1,6 +1,8 @@
 use camino::Utf8PathBuf as PathBuf;
 use serde::Serialize;
 
+use crate::model::FileId;
+
 use super::AssetId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -12,7 +14,7 @@ pub struct AssetThumbnails {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AssetPathOnDisk {
-    pub id: AssetId,
+    pub file_id: FileId,
     pub path_in_asset_root: PathBuf,
     pub asset_root_path: PathBuf,
 }

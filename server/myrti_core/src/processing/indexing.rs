@@ -167,11 +167,11 @@ async fn index_file(
     let path_in_asset_root2 = path_in_asset_root.to_owned();
     let is_duplicate = interact!(conn, move |conn| {
         let existing_with_same_hash = repository::asset::get_asset_with_hash(conn, hash)?;
-        if let Some(existing_asset_id) = existing_with_same_hash {
+        if let Some(existing_file_id) = existing_with_same_hash {
             repository::duplicate_asset::insert_duplicate_asset(
                 conn,
                 NewDuplicateAsset {
-                    existing_asset_id,
+                    existing_file_id,
                     asset_root_dir_id: asset_root_id,
                     path_in_asset_root: &path_in_asset_root2,
                 },

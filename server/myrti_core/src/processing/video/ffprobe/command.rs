@@ -227,6 +227,7 @@ pub async fn ffprobe_get_max_iframe_interval(
         .wrap_err("ffprobe error")?;
     let timestamps: Vec<(i32, f64)> = String::from_utf8(ffprobe_result.stdout)?
         .lines()
+        .filter(|line| !line.is_empty()) // timecode or side data entries will produce blank lines
         .enumerate()
         .map(|(idx, line)| {
             let (pts, pict_type) = line

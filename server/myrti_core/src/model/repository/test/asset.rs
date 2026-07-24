@@ -15,7 +15,7 @@ use crate::model::{
     Asset, AssetId, AssetRootDir, AssetRootDirId, AssetSpe, AssetThumbnail, AssetThumbnailId,
     AudioRepresentation, AudioRepresentationId, CreateAsset, CreateAssetBase, CreateAssetImage,
     CreateAssetSpe, CreateAssetVideo, CreateAudioRepresentation, CreateVideoRepresentation,
-    FFProbeOutput, Size, ThumbnailFormat, ThumbnailType, TimestampInfo, VideoAsset, VideoAssetId,
+    FFProbeOutput, Size, ThumbnailFormat, ThumbnailType, TimestampInfo, VideoAsset, VideoFileId,
     VideoRepresentation, VideoRepresentationId, repository,
 };
 
@@ -123,7 +123,7 @@ fn prop_get_assets_with_missing_thumbnails() {
             .collect();
         let actual = repository::asset::get_assets_with_missing_thumbnail(&mut conn, None);
         prop_assert!(actual.is_ok());
-        let actual_ids: HashSet<AssetId> = actual.unwrap().iter().map(|asset| asset.asset_id).collect();
+        let actual_ids: HashSet<AssetId> = actual.unwrap().iter().map(|asset| asset.file_id).collect();
         prop_assert_eq!(actual_ids, expected_with_missing_thumb);
     });
 }
@@ -412,7 +412,7 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
         ) -> VideoRepresentation {
             VideoRepresentation {
                 id: VideoRepresentationId(0),
-                video_asset_id: VideoAssetId(0),
+                video_file_id: VideoFileId(0),
                 name: format!("{}x{}", width, height),
                 codec_name: codec_name.clone(),
                 bitrate,
@@ -430,7 +430,7 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
         ) -> AudioRepresentation {
             AudioRepresentation {
                 id: AudioRepresentationId(0),
-                video_asset_id: VideoAssetId(0),
+                video_file_id: VideoFileId(0),
                 codec_name: codec_name.clone(),
                 name: codec_name.clone(),
             }
@@ -503,7 +503,7 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
                     let repr_id = repository::representation::insert_video_representation(
                         conn,
                         &CreateVideoRepresentation {
-                            video_asset_id: asset_video.video_asset_id,
+                            video_file_id: asset_video.video_file_id,
                             name: repr.name.clone(),
                             codec_name: repr.codec_name.clone()
                     });
@@ -512,7 +512,7 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
                     let finalize_result = repository::representation::finalize_video_representation(
                         conn,
                         &VideoRepresentation {
-                            video_asset_id: asset_video.video_asset_id,
+                            video_file_id: asset_video.video_file_id,
                             id: repr_id,
                             ..repr.clone()
                     });
@@ -522,7 +522,7 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
                     let repr_id = repository::representation::insert_audio_representation(
                         conn,
                         &CreateAudioRepresentation {
-                            video_asset_id: asset_video.video_asset_id,
+                            video_file_id: asset_video.video_file_id,
                             name: repr.name.clone(),
                             codec_name: repr.codec_name.clone()
                     });
@@ -545,7 +545,7 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
                     AssetSpe::Video(video) => video,
                     AssetSpe::Image(_) => panic!(),
                 };
-                let has_ghi =  repository::asset::get_asset_has_ghi_index(&mut conn, video.video_asset_id);
+                let has_ghi =  repository::asset::get_asset_has_ghi_index(&mut conn, video.video_file_id);
                 // prop_assert!(has_ghi.is_ok());
                 let has_ghi = has_ghi.unwrap();
                 if video.is_original_streamable && matches!(has_ghi, Some(1) | Some(3)) {

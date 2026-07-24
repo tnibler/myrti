@@ -15,8 +15,7 @@ use crate::{
     core::storage::{Storage, StorageProvider},
     interact,
     model::{
-        AssetId, AudioRepresentation, AudioRepresentationId, CreateAudioRepresentation,
-        CreateVideoRepresentation, Size, VideoAssetId, VideoRepresentation,
+        CreateAudioRepresentation, CreateVideoRepresentation, FileId, Size, VideoRepresentation,
         repository::{self, db::DbPool},
     },
     processing::{
@@ -37,8 +36,7 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PackageVideo {
-    pub asset_id: AssetId,
-    pub video_asset_id: VideoAssetId,
+    pub file_id: FileId,
     pub repr_name: String,
     pub output_key: String,
     pub task: PackageVideoTask,
@@ -80,21 +78,16 @@ pub async fn do_package_video(
     bin_paths: Option<&config::BinPaths>,
     mut process_control_recv: mpsc::Receiver<ProcessControl>,
 ) -> Result<()> {
-    let asset_id = package_video.asset_id;
-    let video_asset_id = package_video.video_asset_id;
+    let file_id = package_video.file_id;
     let conn = pool.get().await?;
-    let asset_path = interact!(conn, move |conn| {
-        repository::asset::get_asset_path_on_disk(conn, asset_id)
+    let (video, file) = interact!(conn, move |conn| {
+        repository::asset::get_video_file(conn, file_id)
     })
     .await??;
-    let asset = interact!(conn, move |conn| {
-        repository::asset::get_asset(conn, asset_id)
+    let file_path = interact!(conn, move |conn| {
+        repository::asset::get_asset_path_on_disk(conn, video.file_id)
     })
     .await??;
-    let video = match asset.sp {
-        crate::model::AssetSpe::Image(_) => panic!(),
-        crate::model::AssetSpe::Video(video) => video,
-    };
 
     let ffmpeg_path = bin_paths.and_then(|bp| bp.ffmpeg.as_opt_path());
     let ffprobe_path = bin_paths.and_then(|bp| bp.ffprobe.as_opt_path());
@@ -103,7 +96,7 @@ pub async fn do_package_video(
     let asset_dash_dir = match storage {
         Storage::LocalFileStorage(local_file_storage) => local_file_storage
             .root
-            .join(storage_key::dash_file(asset_id, format_args!(""))),
+            .join(storage_key::dash_file(file_id, format_args!(""))),
     };
     tokio::fs::create_dir_all(&asset_dash_dir)
         .await
@@ -121,7 +114,7 @@ pub async fn do_package_video(
                 }
             };
             processing::video::gpac::create_ghi_and_manifest(
-                &asset_path.path_on_disk(),
+                &file_path.path_on_disk(),
                 &CreateGHIOptions {
                     segment_duration: *segment_duration,
                     video_rep_id: include_video.then(|| String::from("original_video")),
@@ -141,7 +134,7 @@ pub async fn do_package_video(
                 (false, false) => 0,
             };
             interact!(conn, move |conn| {
-                repository::asset::set_asset_has_ghi_index(conn, video_asset_id, has_ghi)
+                repository::asset::set_asset_has_ghi_index(conn, file_id, has_ghi)
             })
             .await??;
         }
@@ -154,7 +147,7 @@ pub async fn do_package_video(
                 repository::representation::insert_audio_representation(
                     conn,
                     &CreateAudioRepresentation {
-                        video_asset_id,
+                        file_id,
                         codec_name: codec_name2,
                         name: repr_name,
                     },
@@ -180,7 +173,7 @@ pub async fn do_package_video(
                     .collect(),
             )
             .run_with_local_output(
-                asset_path.path_on_disk().as_str(),
+                file_path.path_on_disk().as_str(),
                 &utf8_path,
                 ffmpeg_path,
                 &mut process_control_recv,
@@ -218,7 +211,7 @@ pub async fn do_package_video(
                 repository::representation::insert_video_representation(
                     conn,
                     &CreateVideoRepresentation {
-                        video_asset_id,
+                        file_id,
                         name: repr_name,
                         codec_name: codec_name2,
                     },
@@ -250,7 +243,7 @@ pub async fn do_package_video(
                     .collect(),
             )
             .run_with_local_output(
-                asset_path.path_on_disk().as_str(),
+                file_path.path_on_disk().as_str(),
                 &utf8_path,
                 ffmpeg_path,
                 &mut process_control_recv,
@@ -278,7 +271,7 @@ pub async fn do_package_video(
 
             if video.is_original_streamable {
                 copy_mp4_rotation_metadata(
-                    asset_path.path_on_disk().as_std_path(),
+                    file_path.path_on_disk().as_std_path(),
                     dash_result.mp4_path.as_std_path(),
                 )
                 .await
@@ -300,7 +293,7 @@ pub async fn do_package_video(
                     conn,
                     &VideoRepresentation {
                         id: repr_id,
-                        video_asset_id,
+                        file_id,
                         name: repr_name.to_owned(),
                         codec_name: codec_name.to_owned(),
                         width: streams.video.width,
@@ -315,11 +308,11 @@ pub async fn do_package_video(
 
     // merge MPD manifests
     let existing_video_reprs = interact!(conn, move |conn| {
-        repository::representation::get_video_representations(conn, video_asset_id)
+        repository::representation::get_video_representations(conn, file_id)
     })
     .await??;
     let existing_audio_reprs = interact!(conn, move |conn| {
-        repository::representation::get_audio_representations(conn, video_asset_id)
+        repository::representation::get_audio_representations(conn, file_id)
     })
     .await??;
 
@@ -337,7 +330,7 @@ pub async fn do_package_video(
 
     for (repr_id, repr_name) in repr_info {
         let mpd_key = storage_key::dash_file(
-            asset_id,
+            file_id,
             format_args!("{}-{}/stream.mpd", repr_id, repr_name),
         );
         let mut mpd_str = String::new();
@@ -371,11 +364,11 @@ pub async fn do_package_video(
         }
     }
     let has_ghi = interact!(conn, move |conn| {
-        repository::asset::get_asset_has_ghi_index(conn, video_asset_id)
+        repository::asset::get_asset_has_ghi_index(conn, file_id)
     })
     .await??;
     if has_ghi.is_some_and(|s| s != 0) {
-        let mpd_key = storage_key::dash_file(asset_id, format_args!("original/stream.mpd"));
+        let mpd_key = storage_key::dash_file(file_id, format_args!("original/stream.mpd"));
         let mut mpd_str = String::new();
         storage
             .open_read_stream(&mpd_key)
@@ -423,10 +416,7 @@ pub async fn do_package_video(
     let mut merged_manifest = merged_manifest.expect("at least one manifest was just created");
     merged_manifest.periods[0].adaptations = adaptation_sets;
     storage
-        .open_write_stream(&storage_key::dash_file(
-            asset_id,
-            format_args!("stream.mpd"),
-        ))
+        .open_write_stream(&storage_key::dash_file(file_id, format_args!("stream.mpd")))
         .await?
         .write_all(merged_manifest.to_string().as_bytes())
         .await?;

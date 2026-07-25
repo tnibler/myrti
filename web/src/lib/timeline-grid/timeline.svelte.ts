@@ -152,6 +152,8 @@ type TimelineState =
   | { state: 'justLooking' }
   | {
       state: 'creatingTimelineGroup';
+      sectionIndex: number;
+      segmentIndex: number;
       itemsInGroup: TimelineItem[];
       groupSortDate: string;
       previousItems: TimelineGridItem[];
@@ -470,14 +472,14 @@ export function createTimeline(
     for (const segment of segments) {
       for (const item of segment.items) {
         if (item.itemType === 'asset') {
-          assetsById.set(item.id, item);
+          assetsById.set(item.assetId, item);
         } else {
           for (const asset of item.assets) {
-            assetsById.set(asset.id, asset);
+            assetsById.set(asset.assetId, asset);
           }
           assetSeriesById.set(item.seriesId, {
             id: item.seriesId,
-            assetIds: item.assets.map((a) => a.id),
+            assetIds: item.assets.map((a) => a.assetId),
             selectionIndices: item.selectionIndices,
           });
         }
@@ -494,8 +496,8 @@ export function createTimeline(
           if (item.itemType === 'asset') {
             itemWithStacksSplitUp.push({
               itemType: 'asset',
-              assetId: item.id,
-              key: `a-${item.id}`,
+              assetId: item.assetId,
+              key: `a-${item.assetId}`,
               sortDate: item.takenDate,
               pos: { sectionIndex, segmentIndex, itemIndex },
             });
@@ -738,7 +740,7 @@ export function createTimeline(
       Array.from(selectedItems.values()),
       R.uniqueBy(({ item }) => (item.itemType === 'asset' ? item : item.series)),
       R.flatMap(({ item }) => (item.itemType === 'asset' ? [item] : item.series.assets)),
-      R.map((asset) => asset.id),
+      R.map((asset) => asset.assetId),
     );
     await setAssetsHidden({ what: 'hide', assetIds });
 
@@ -1076,7 +1078,6 @@ export function createTimeline(
       if (!sections[i].segments || sections[i].segments.length === 0) {
         return false;
       }
-      console.log(sections[i].segments.at(-1), sections[i].segments.at(0));
       return sections[i].segments.at(-1)!.sortDate <= groupSortDate;
     });
     console.assert(insertInSectionIndex !== undefined && insertInSectionIndex >= 0);
@@ -1135,6 +1136,8 @@ export function createTimeline(
       setAnimationsEnabled(false);
     }
     state = {
+      sectionIndex: insertInSectionIndex,
+      segmentIndex: insertBeforeSegmentIndex,
       state: 'creatingTimelineGroup',
       itemsInGroup: itemsInGroup,
       groupSortDate,
@@ -1162,37 +1165,24 @@ export function createTimeline(
     if (state.state !== 'creatingTimelineGroup') {
       return;
     }
-    clearSelection();
     const assetsInGroup = R.pipe(
       state.itemsInGroup,
       R.uniqueBy((it) => (it.itemType === 'asset' ? it : it.seriesId)),
       R.flatMap((it) =>
-        it.itemType === 'asset' ? [it.assetId] : assetSeriesById.get(it.seriesId)?.assetIds,
+        it.itemType === 'asset' ? [it.assetId] : assetSeriesById.get(it.seriesId).assetIds,
       ),
     );
+    const { sectionIndex, segmentIndex } = state;
     const response = createTimelineGroupResponse.parse(
       (await createTimelineGroup({ name: title, assets: assetsInGroup })).data,
     );
-    const { sectionIndex, segmentIndex } = (() => {
-      for (let i = 0; i < sections.length; i += 1) {
-        const segments = sections[i].segments;
-        if (segments === null) {
-          continue;
-        }
-        for (let j = 0; j < segments.length; j += 1) {
-          if (segments[j].type === 'creatingGroup') {
-            return { sectionIndex: i, segmentIndex: j };
-          }
-        }
-      }
-      return { sectionIndex: null, segmentIndex: null };
-    })();
-    if (sectionIndex === null || segmentIndex === null) {
+    clearSelection();
+    const oldSegment = sections[sectionIndex].segments![segmentIndex];
+    if (oldSegment.type !== 'creatingGroup') {
       state = { state: 'justLooking' };
       console.error('state is creatingTimelineGroup but did not find creatingGroup segment');
       return;
     }
-    const oldSegment = sections[sectionIndex].segments![segmentIndex];
     sections[sectionIndex].segments![segmentIndex] = {
       type: 'group' as const,
       items: oldSegment.items,

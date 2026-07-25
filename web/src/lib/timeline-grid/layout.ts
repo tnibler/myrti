@@ -57,10 +57,11 @@ export function layoutSegments(
           item.itemType === 'asset'
             ? getAsset(item.assetId)
             : getAsset(getAssetSeries(item.seriesId).assetIds[item.coverIndex]);
+        const file = asset.repFile;
         const assetSize =
-          (asset.rotationCorrection ?? 0) % 180 === 0
-            ? { width: asset.width, height: asset.height }
-            : { width: asset.height, height: asset.width };
+          (file.rotationCorrection ?? 0) % 180 === 0
+            ? { width: file.width, height: file.height }
+            : { width: file.height, height: file.width };
         const boxWidth = assetSize.width * (opts.targetRowHeight / assetSize.height);
         boxes.push({
           top: 0,
@@ -90,18 +91,10 @@ export function layoutSegments(
         item.itemType === 'asset'
           ? item.assetId
           : getAssetSeries(item.seriesId).assetIds[item.coverIndex];
-      const asset = getAsset(assetId);
-      if (asset.rotationCorrection && asset.rotationCorrection % 180 != 0) {
-        return {
-          width: asset.height,
-          height: asset.width,
-        };
-      } else {
-        return {
-          width: asset.width,
-          height: asset.height,
-        };
-      }
+        const file = getAsset(assetId).repFile;
+        return (file.rotationCorrection ?? 0) % 180 === 0
+            ? { width: file.width, height: file.height }
+            : { width: file.height, height: file.width };
     });
     // mergeable if all of:
     //  - previous segment does not fill at least one line

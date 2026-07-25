@@ -97,7 +97,7 @@
     <!-- svelte-ignore a11y_missing_attribute -->
     <img
       id={imgElId}
-      src="/api/assets/thumbnail/{asset.id}/large/avif"
+      src="/api/files/thumbnail/{asset.repFile.fileId}/large/avif"
       class="absolute bg-black transition-transform"
       class:rounded-xl={isSelected}
       class:scale-[0.85]={isSelected}

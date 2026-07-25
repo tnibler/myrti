@@ -173,7 +173,14 @@
       closeGallery();
     },
     onVerticalDrag: (ratio) => {
-      backgroundOpacity = 1 - ratio;
+      if (ratio > 0.2) {
+        backgroundOpacity = 0;
+      } else {
+        backgroundOpacity = 1;
+      }
+      // if (Math.abs(backgroundOpacity - 1 + ratio) > 0.02) {
+      //   backgroundOpacity = 1 - ratio;
+      // }
     },
   };
   const gestureController = newGestureController(gallery, () => {
@@ -404,8 +411,9 @@
     bind:clientWidth={viewport.width}
   >
     <div
-      class="w-full h-full top-0 left-0 bg-black z-0 transition-opacity duration-200 ease-in-out"
+      class="w-full h-full top-0 left-0 bg-black z-0 transition-opacity duration-300 ease-in-out"
       style:opacity={backgroundOpacity}
+      style:will-change="opacity"
       class:transition-opacity={backgroundOpacityTransition}
     ></div>
     {#if viewport.height > 0.0 && viewport.width > 0.0}

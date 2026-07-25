@@ -413,9 +413,10 @@
   style="
   	transform-origin: 0px 0px 0px;
 	transform: translate3d({pan.x + centerX}px, {pan.y +
-    centerY}px, 0) scale3d({cssTransformZoom}, {cssTransformZoom}, 1);"
+    centerY}px, 0) scale3d({cssTransformZoom}, {cssTransformZoom}, 1);
+    "
 >
-  {#key `${slideToDisplay.asset.id}, ${slideToDisplay.size.width}, ${slideToDisplay.size.height}`}
+  {#key `${slideToDisplay.asset.assetId}, ${slideToDisplay.size.width}, ${slideToDisplay.size.height}`}
     {#if slideToDisplay.assetType === 'image' && showContent}
       <SlideImage
         bind:this={slideImage}
@@ -493,14 +494,14 @@
               e.preventDefault();
               isContentVisible = false;
               contentHasLoaded = false;
-              goto('/timeline/' + asset.id);
+              goto('/timeline/' + asset.assetId);
               selectedSeriesIndex = indexInSeries;
             }}
             onpointerup={(e) => e.stopPropagation()}
             onpointerdown={(e) => e.stopPropagation()}
           >
             <img
-              src="/api/assets/thumbnail/{asset.id}/small/avif"
+              src="/api/files/thumbnail/{asset.repFile.fileId}/small/avif"
               class={'bg-black transition-transform max-h-full max-w-full object-cover rounded-sm ' +
                 (selectedSeriesIndex === indexInSeries ? 'border-solid border-3 border-white' : '')}
               style:max-width="none"

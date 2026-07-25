@@ -77,20 +77,25 @@ export interface AppendAssetsResponse {
 }
 
 export interface Asset {
-  addedAt: string;
-  assetRootId: AssetRootDirId;
-  height: number;
-  id: AssetId;
-  mimeType: string;
-  pathInRoot: string;
-  /** @nullable */
-  rotationCorrection?: number | null;
+  assetId: AssetId;
+  repFile: AssetFile;
   takenDate: string;
-  width: number;
 }
 
 export interface AssetDetailsResponse {
   exiftoolOutput: unknown;
+}
+
+export interface AssetFile {
+  addedAt: string;
+  assetRootId: AssetRootDirId;
+  fileId: FileId;
+  height: number;
+  mimeType: string;
+  pathInRoot: string;
+  /** @nullable */
+  rotationCorrection?: number | null;
+  width: number;
 }
 
 export type AssetId = string;
@@ -193,6 +198,8 @@ export interface EditTimelineGroupRequest {
   groupId: TimelineGroupId;
   operation: EditTimelineGroup;
 }
+
+export type FileId = string;
 
 export type HideAssetAction = (typeof HideAssetAction)[keyof typeof HideAssetAction];
 
@@ -465,47 +472,11 @@ export const getAlbumThumbnail = <TData = AxiosResponse<string>>(
   });
 };
 
-export const getAllAssets = <TData = AxiosResponse<Asset[]>>(
-  options?: AxiosRequestConfig,
-): Promise<TData> => {
-  return axios.get(`/api/assets`, options);
-};
-
 export const setAssetsHidden = <TData = AxiosResponse<void>>(
   hideAssetsRequest: HideAssetsRequest,
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
   return axios.post(`/api/assets/hidden`, hideAssetsRequest, options);
-};
-
-export const getAssetFile = <TData = AxiosResponse<string>>(
-  id: string,
-  options?: AxiosRequestConfig,
-): Promise<TData> => {
-  return axios.get(`/api/assets/original/${id}`, {
-    ...options,
-  });
-};
-
-export const getImageAssetRepresentation = <TData = AxiosResponse<string>>(
-  assetId: AssetId,
-  reprId: ImageRepresentationId,
-  options?: AxiosRequestConfig,
-): Promise<TData> => {
-  return axios.get(`/api/assets/repr/${assetId}/${reprId}`, {
-    ...options,
-  });
-};
-
-export const getThumbnail = <TData = AxiosResponse<string>>(
-  id: AssetId,
-  size: ThumbnailSize,
-  format: ThumbnailFormat,
-  options?: AxiosRequestConfig,
-): Promise<TData> => {
-  return axios.get(`/api/assets/thumbnail/${id}/${size}/${format}`, {
-    ...options,
-  });
 };
 
 export const getTimeline = <TData = AxiosResponse<TimelineChunk>>(
@@ -525,11 +496,49 @@ export const getAsset = <TData = AxiosResponse<Asset>>(
   return axios.get(`/api/assets/${id}`, options);
 };
 
-export const getAssetDetails = <TData = AxiosResponse<AssetDetailsResponse>>(
+export const setAssetIsSeriesSelection = <TData = AxiosResponse<SetAssetIsSeriesSelectionResponse>>(
+  id: string,
+  setAssetSeriesSelectionRequest: SetAssetSeriesSelectionRequest,
+  options?: AxiosRequestConfig,
+): Promise<TData> => {
+  return axios.post(`/api/assets/${id}/seriesSelection`, setAssetSeriesSelectionRequest, options);
+};
+
+export const getOriginalFile = <TData = AxiosResponse<string>>(
   id: string,
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
-  return axios.get(`/api/assets/${id}/details`, options);
+  return axios.get(`/api/files/original/${id}`, {
+    ...options,
+  });
+};
+
+export const getImageAssetRepresentation = <TData = AxiosResponse<string>>(
+  fileId: FileId,
+  reprId: ImageRepresentationId,
+  options?: AxiosRequestConfig,
+): Promise<TData> => {
+  return axios.get(`/api/files/repr/${fileId}/${reprId}`, {
+    ...options,
+  });
+};
+
+export const getThumbnail = <TData = AxiosResponse<string>>(
+  id: FileId,
+  size: ThumbnailSize,
+  format: ThumbnailFormat,
+  options?: AxiosRequestConfig,
+): Promise<TData> => {
+  return axios.get(`/api/files/thumbnail/${id}/${size}/${format}`, {
+    ...options,
+  });
+};
+
+export const getFileDetails = <TData = AxiosResponse<AssetDetailsResponse>>(
+  id: string,
+  options?: AxiosRequestConfig,
+): Promise<TData> => {
+  return axios.get(`/api/files/${id}/details`, options);
 };
 
 export const setAssetRotationCorrection = <TData = AxiosResponse<void>>(
@@ -537,15 +546,7 @@ export const setAssetRotationCorrection = <TData = AxiosResponse<void>>(
   setAssetRotationRequest: SetAssetRotationRequest,
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
-  return axios.post(`/api/assets/${id}/rotation`, setAssetRotationRequest, options);
-};
-
-export const setAssetIsSeriesSelection = <TData = AxiosResponse<SetAssetIsSeriesSelectionResponse>>(
-  id: string,
-  setAssetSeriesSelectionRequest: SetAssetSeriesSelectionRequest,
-  options?: AxiosRequestConfig,
-): Promise<TData> => {
-  return axios.post(`/api/assets/${id}/seriesSelection`, setAssetSeriesSelectionRequest, options);
+  return axios.post(`/api/files/${id}/rotation`, setAssetRotationRequest, options);
 };
 
 export const getAllAssetsGeojson = <TData = AxiosResponse<string>>(
@@ -610,16 +611,15 @@ export type GetAlbumDetailsResult = AxiosResponse<AlbumDetailsResponse>;
 export type AppendAssetsToAlbumResult = AxiosResponse<AppendAssetsResponse>;
 export type DeleteAlbumItemsResult = AxiosResponse<DeleteAlbumItems200>;
 export type GetAlbumThumbnailResult = AxiosResponse<string>;
-export type GetAllAssetsResult = AxiosResponse<Asset[]>;
 export type SetAssetsHiddenResult = AxiosResponse<void>;
-export type GetAssetFileResult = AxiosResponse<string>;
-export type GetImageAssetRepresentationResult = AxiosResponse<string>;
-export type GetThumbnailResult = AxiosResponse<string>;
 export type GetTimelineResult = AxiosResponse<TimelineChunk>;
 export type GetAssetResult = AxiosResponse<Asset>;
-export type GetAssetDetailsResult = AxiosResponse<AssetDetailsResponse>;
-export type SetAssetRotationCorrectionResult = AxiosResponse<void>;
 export type SetAssetIsSeriesSelectionResult = AxiosResponse<SetAssetIsSeriesSelectionResponse>;
+export type GetOriginalFileResult = AxiosResponse<string>;
+export type GetImageAssetRepresentationResult = AxiosResponse<string>;
+export type GetThumbnailResult = AxiosResponse<string>;
+export type GetFileDetailsResult = AxiosResponse<AssetDetailsResponse>;
+export type SetAssetRotationCorrectionResult = AxiosResponse<void>;
 export type GetAllAssetsGeojsonResult = AxiosResponse<string>;
 export type CreateSeriesResult = AxiosResponse<CreateSeriesResponse>;
 export type DeleteSeriesResult = AxiosResponse<DeleteSeries200>;

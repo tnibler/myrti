@@ -38,15 +38,18 @@ export const getAlbumDetailsResponse = zod.object({
         zod.object({
           asset: zod
             .object({
-              addedAt: zod.string().datetime({}),
-              assetRootId: zod.string(),
-              height: zod.number(),
-              id: zod.string(),
-              mimeType: zod.string(),
-              pathInRoot: zod.string(),
-              rotationCorrection: zod.number().nullish(),
+              assetId: zod.string(),
+              repFile: zod.object({
+                addedAt: zod.string().datetime({}),
+                assetRootId: zod.string(),
+                fileId: zod.string(),
+                height: zod.number(),
+                mimeType: zod.string(),
+                pathInRoot: zod.string(),
+                rotationCorrection: zod.number().nullish(),
+                width: zod.number(),
+              }),
               takenDate: zod.string().datetime({}),
-              width: zod.number(),
             })
             .and(
               zod.union([
@@ -125,37 +128,9 @@ export const getAlbumThumbnailParams = zod.object({
   format: zod.enum(['avif', 'webp']).describe('Image format for thumbnail'),
 });
 
-export const getAllAssetsResponseItem = zod.object({
-  addedAt: zod.string().datetime({}),
-  assetRootId: zod.string(),
-  height: zod.number(),
-  id: zod.string(),
-  mimeType: zod.string(),
-  pathInRoot: zod.string(),
-  rotationCorrection: zod.number().nullish(),
-  takenDate: zod.string().datetime({}),
-  width: zod.number(),
-});
-export const getAllAssetsResponse = zod.array(getAllAssetsResponseItem);
-
 export const setAssetsHiddenBody = zod.object({
   assetIds: zod.array(zod.string()),
   what: zod.enum(['hide', 'unhide']),
-});
-
-export const getAssetFileParams = zod.object({
-  id: zod.string().describe('AssetId'),
-});
-
-export const getImageAssetRepresentationParams = zod.object({
-  assetId: zod.string().describe('AssetId'),
-  reprId: zod.string().describe('ImageRepresentationId'),
-});
-
-export const getThumbnailParams = zod.object({
-  id: zod.string().describe('AssetId to get thumbnail for'),
-  size: zod.enum(['small', 'large']).describe('Thumbnail size'),
-  format: zod.enum(['avif', 'webp']).describe('Image format for thumbnail'),
 });
 
 export const getTimelineQueryParams = zod.object({
@@ -188,15 +163,18 @@ export const getTimelineResponse = zod
             assets: zod.array(
               zod
                 .object({
-                  addedAt: zod.string().datetime({}),
-                  assetRootId: zod.string(),
-                  height: zod.number(),
-                  id: zod.string(),
-                  mimeType: zod.string(),
-                  pathInRoot: zod.string(),
-                  rotationCorrection: zod.number().nullish(),
+                  assetId: zod.string(),
+                  repFile: zod.object({
+                    addedAt: zod.string().datetime({}),
+                    assetRootId: zod.string(),
+                    fileId: zod.string(),
+                    height: zod.number(),
+                    mimeType: zod.string(),
+                    pathInRoot: zod.string(),
+                    rotationCorrection: zod.number().nullish(),
+                    width: zod.number(),
+                  }),
                   takenDate: zod.string().datetime({}),
-                  width: zod.number(),
                 })
                 .and(
                   zod.union([
@@ -243,31 +221,18 @@ export const getAssetParams = zod.object({
 });
 
 export const getAssetResponse = zod.object({
-  addedAt: zod.string().datetime({}),
-  assetRootId: zod.string(),
-  height: zod.number(),
-  id: zod.string(),
-  mimeType: zod.string(),
-  pathInRoot: zod.string(),
-  rotationCorrection: zod.number().nullish(),
+  assetId: zod.string(),
+  repFile: zod.object({
+    addedAt: zod.string().datetime({}),
+    assetRootId: zod.string(),
+    fileId: zod.string(),
+    height: zod.number(),
+    mimeType: zod.string(),
+    pathInRoot: zod.string(),
+    rotationCorrection: zod.number().nullish(),
+    width: zod.number(),
+  }),
   takenDate: zod.string().datetime({}),
-  width: zod.number(),
-});
-
-export const getAssetDetailsParams = zod.object({
-  id: zod.string().describe('AssetId'),
-});
-
-export const getAssetDetailsResponse = zod.object({
-  exiftoolOutput: zod.unknown(),
-});
-
-export const setAssetRotationCorrectionParams = zod.object({
-  id: zod.string().describe('AssetId'),
-});
-
-export const setAssetRotationCorrectionBody = zod.object({
-  rotation: zod.number().nullish(),
 });
 
 export const setAssetIsSeriesSelectionParams = zod.object({
@@ -286,6 +251,37 @@ export const setAssetIsSeriesSelectionResponse = zod.object({
     zod.number().min(setAssetIsSeriesSelectionResponseSelectionIndicesItemMin),
   ),
   seriesId: zod.string(),
+});
+
+export const getOriginalFileParams = zod.object({
+  id: zod.string().describe('FileId'),
+});
+
+export const getImageAssetRepresentationParams = zod.object({
+  fileId: zod.string().describe('FileId'),
+  reprId: zod.string().describe('ImageRepresentationId'),
+});
+
+export const getThumbnailParams = zod.object({
+  id: zod.string().describe('FileId to get thumbnail for'),
+  size: zod.enum(['small', 'large']).describe('Thumbnail size'),
+  format: zod.enum(['avif', 'webp']).describe('Image format for thumbnail'),
+});
+
+export const getFileDetailsParams = zod.object({
+  id: zod.string().describe('FileId'),
+});
+
+export const getFileDetailsResponse = zod.object({
+  exiftoolOutput: zod.unknown(),
+});
+
+export const setAssetRotationCorrectionParams = zod.object({
+  id: zod.string().describe('FileId'),
+});
+
+export const setAssetRotationCorrectionBody = zod.object({
+  rotation: zod.number().nullish(),
 });
 
 export const createSeriesBody = zod.object({
@@ -361,15 +357,18 @@ export const getTimelineSegmentsResponse = zod.object({
             zod.union([
               zod
                 .object({
-                  addedAt: zod.string().datetime({}),
-                  assetRootId: zod.string(),
-                  height: zod.number(),
-                  id: zod.string(),
-                  mimeType: zod.string(),
-                  pathInRoot: zod.string(),
-                  rotationCorrection: zod.number().nullish(),
+                  assetId: zod.string(),
+                  repFile: zod.object({
+                    addedAt: zod.string().datetime({}),
+                    assetRootId: zod.string(),
+                    fileId: zod.string(),
+                    height: zod.number(),
+                    mimeType: zod.string(),
+                    pathInRoot: zod.string(),
+                    rotationCorrection: zod.number().nullish(),
+                    width: zod.number(),
+                  }),
                   takenDate: zod.string().datetime({}),
-                  width: zod.number(),
                 })
                 .and(
                   zod.union([
@@ -412,15 +411,18 @@ export const getTimelineSegmentsResponse = zod.object({
                   .array(
                     zod
                       .object({
-                        addedAt: zod.string().datetime({}),
-                        assetRootId: zod.string(),
-                        height: zod.number(),
-                        id: zod.string(),
-                        mimeType: zod.string(),
-                        pathInRoot: zod.string(),
-                        rotationCorrection: zod.number().nullish(),
+                        assetId: zod.string(),
+                        repFile: zod.object({
+                          addedAt: zod.string().datetime({}),
+                          assetRootId: zod.string(),
+                          fileId: zod.string(),
+                          height: zod.number(),
+                          mimeType: zod.string(),
+                          pathInRoot: zod.string(),
+                          rotationCorrection: zod.number().nullish(),
+                          width: zod.number(),
+                        }),
                         takenDate: zod.string().datetime({}),
-                        width: zod.number(),
                       })
                       .and(
                         zod.union([

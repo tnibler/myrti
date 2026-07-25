@@ -244,7 +244,7 @@
   function getSlideRef(item: TimelineItem): SlideRef {
     if (item.itemType === 'asset') {
       const asset = timeline.getAsset(item.assetId);
-      return { slideType: 'singleAsset', assetId: asset.id };
+      return { slideType: 'singleAsset', assetId: asset.assetId };
     } else {
       return {
         slideType: 'assetSeries',

@@ -223,29 +223,6 @@
         }
       }
     },
-    "/api/assets": {
-      "get": {
-        "tags": [
-          "crate::routes::asset"
-        ],
-        "operationId": "getAllAssets",
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Asset"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/assets/hidden": {
       "post": {
         "tags": [
@@ -265,146 +242,6 @@
         "responses": {
           "200": {
             "description": ""
-          }
-        }
-      }
-    },
-    "/api/assets/original/{id}": {
-      "get": {
-        "tags": [
-          "crate::routes::asset"
-        ],
-        "operationId": "getAssetFile",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "AssetId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/octet": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Asset not found",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/assets/repr/{assetId}/{reprId}": {
-      "get": {
-        "tags": [
-          "crate::routes::asset"
-        ],
-        "operationId": "getImageAssetRepresentation",
-        "parameters": [
-          {
-            "name": "assetId",
-            "in": "path",
-            "description": "AssetId",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/AssetId"
-            }
-          },
-          {
-            "name": "reprId",
-            "in": "path",
-            "description": "ImageRepresentationId",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/ImageRepresentationId"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/octet": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Asset or Representation not found",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/assets/thumbnail/{id}/{size}/{format}": {
-      "get": {
-        "tags": [
-          "crate::routes::asset"
-        ],
-        "operationId": "getThumbnail",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "AssetId to get thumbnail for",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/AssetId"
-            }
-          },
-          {
-            "name": "size",
-            "in": "path",
-            "description": "Thumbnail size",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/ThumbnailSize"
-            }
-          },
-          {
-            "name": "format",
-            "in": "path",
-            "description": "Image format for thumbnail",
-            "required": true,
-            "schema": {
-              "$ref": "#/components/schemas/ThumbnailFormat"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/octet": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
           }
         }
       }
@@ -496,74 +333,6 @@
         }
       }
     },
-    "/api/assets/{id}/details": {
-      "get": {
-        "tags": [
-          "crate::routes::asset"
-        ],
-        "operationId": "getAssetDetails",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "AssetId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AssetDetailsResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Asset not found"
-          }
-        }
-      }
-    },
-    "/api/assets/{id}/rotation": {
-      "post": {
-        "tags": [
-          "crate::routes::asset"
-        ],
-        "operationId": "setAssetRotationCorrection",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "description": "AssetId",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetAssetRotationRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        }
-      }
-    },
     "/api/assets/{id}/seriesSelection": {
       "post": {
         "tags": [
@@ -601,6 +370,214 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/files/original/{id}": {
+      "get": {
+        "tags": [
+          "crate::routes::file"
+        ],
+        "operationId": "getOriginalFile",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "FileId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/octet": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "File not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/repr/{fileId}/{reprId}": {
+      "get": {
+        "tags": [
+          "crate::routes::file"
+        ],
+        "operationId": "getImageAssetRepresentation",
+        "parameters": [
+          {
+            "name": "fileId",
+            "in": "path",
+            "description": "FileId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FileId"
+            }
+          },
+          {
+            "name": "reprId",
+            "in": "path",
+            "description": "ImageRepresentationId",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ImageRepresentationId"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/octet": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "File or Representation not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/thumbnail/{id}/{size}/{format}": {
+      "get": {
+        "tags": [
+          "crate::routes::file"
+        ],
+        "operationId": "getThumbnail",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "FileId to get thumbnail for",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/FileId"
+            }
+          },
+          {
+            "name": "size",
+            "in": "path",
+            "description": "Thumbnail size",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ThumbnailSize"
+            }
+          },
+          {
+            "name": "format",
+            "in": "path",
+            "description": "Image format for thumbnail",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ThumbnailFormat"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/octet": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/{id}/details": {
+      "get": {
+        "tags": [
+          "crate::routes::file"
+        ],
+        "operationId": "getFileDetails",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "FileId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetDetailsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Asset not found"
+          }
+        }
+      }
+    },
+    "/api/files/{id}/rotation": {
+      "post": {
+        "tags": [
+          "crate::routes::file"
+        ],
+        "operationId": "setAssetRotationCorrection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "FileId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAssetRotationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
           }
         }
       }
@@ -998,13 +975,41 @@
       "Asset": {
         "type": "object",
         "required": [
-          "id",
+          "assetId",
+          "takenDate",
+          "repFile"
+        ],
+        "properties": {
+          "assetId": {
+            "$ref": "#/components/schemas/AssetId"
+          },
+          "repFile": {
+            "$ref": "#/components/schemas/AssetFile"
+          },
+          "takenDate": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AssetDetailsResponse": {
+        "type": "object",
+        "required": [
+          "exiftoolOutput"
+        ],
+        "properties": {
+          "exiftoolOutput": {}
+        }
+      },
+      "AssetFile": {
+        "type": "object",
+        "required": [
+          "fileId",
           "assetRootId",
           "pathInRoot",
           "width",
           "height",
           "addedAt",
-          "takenDate",
           "mimeType"
         ],
         "properties": {
@@ -1015,12 +1020,12 @@
           "assetRootId": {
             "$ref": "#/components/schemas/AssetRootDirId"
           },
+          "fileId": {
+            "$ref": "#/components/schemas/FileId"
+          },
           "height": {
             "type": "integer",
             "format": "int32"
-          },
-          "id": {
-            "$ref": "#/components/schemas/AssetId"
           },
           "mimeType": {
             "type": "string"
@@ -1033,23 +1038,10 @@
             "format": "int32",
             "nullable": true
           },
-          "takenDate": {
-            "type": "string",
-            "format": "date-time"
-          },
           "width": {
             "type": "integer",
             "format": "int32"
           }
-        }
-      },
-      "AssetDetailsResponse": {
-        "type": "object",
-        "required": [
-          "exiftoolOutput"
-        ],
-        "properties": {
-          "exiftoolOutput": {}
         }
       },
       "AssetId": {
@@ -1291,6 +1283,9 @@
             "$ref": "#/components/schemas/EditTimelineGroup"
           }
         }
+      },
+      "FileId": {
+        "type": "string"
       },
       "HideAssetAction": {
         "type": "string",

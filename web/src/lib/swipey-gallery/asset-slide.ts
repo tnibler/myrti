@@ -9,33 +9,37 @@ export function slideForAsset(asset: AssetWithSpe): SingleAssetSlide {
         (repr) => supported.indexOf(repr.format) >= 0,
       );
       if (
-        supported.map((format) => 'image/' + format).indexOf(asset.mimeType) >= 0 ||
+        supported.map((format) => 'image/' + format).indexOf(asset.repFile.mimeType) >= 0 ||
         !supportedRepr
       ) {
-        return '/api/assets/original/' + asset.id;
+        return '/api/files/original/' + asset.repFile.fileId;
       }
-      return `/api/assets/repr/${asset.id}/${supportedRepr.id}`;
+      return `/api/files/repr/${asset.repFile.fileId}/${supportedRepr.id}`;
     })();
     return {
       assetType: 'image',
       asset,
-      size: { width: asset.width, height: asset.height },
+      size: { width: asset.repFile.width, height: asset.repFile.height },
       src,
-      placeholderSrc: '/api/assets/thumbnail/' + asset.id + '/large/avif',
+      placeholderSrc: '/api/files/thumbnail/' + asset.repFile.fileId + '/large/avif',
     };
   } else {
-    const videoSource = asset.hasDash
-      ? { videoSource: 'dash' as const, mpdManifestUrl: '/api/dash/' + asset.id + '/stream.mpd' }
-      : {
-          videoSource: 'original' as const,
-          mimeType: asset.mimeType,
-          src: '/api/assets/original/' + asset.id,
-        };
+    const videoSource =
+      asset.hasDash || true
+        ? {
+            videoSource: 'dash' as const,
+            mpdManifestUrl: '/api/dash/' + asset.repFile.fileId + '/stream.mpd',
+          }
+        : {
+            videoSource: 'original' as const,
+            mimeType: asset.repFile.mimeType,
+            src: '/api/files/original/' + asset.repFile.fileId,
+          };
     return {
       assetType: 'video',
       asset,
-      size: { width: asset.width, height: asset.height },
-      placeholderSrc: '/api/assets/thumbnail/' + asset.id + '/large/avif',
+      size: { width: asset.repFile.width, height: asset.repFile.height },
+      placeholderSrc: '/api/files/thumbnail/' + asset.repFile.fileId + '/large/avif',
       ...videoSource,
     };
   }

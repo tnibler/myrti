@@ -8,12 +8,13 @@
   import SlideImage from './SlideImage.svelte';
   import SlideVideo from './SlideVideo.svelte';
   import './slide.css';
-  import type { GalleryDataSource, SingleAssetSlide, SlideRef } from './gallery-types';
+  import type { GalleryDataSource, SlideData, SlideRef } from './gallery-types';
   import { mdiStar } from '@mdi/js';
   import { slideForAsset } from './asset-slide';
   import { getGalleryContext, type GalleryContext } from './context';
   import * as R from 'remeda';
   import { goto } from 'elegua';
+  import { transform } from 'zod/v4';
 
   export type OpenTransitionParams = {
     fromBounds: ThumbnailBounds;
@@ -62,7 +63,10 @@
   const slideToDisplay = $derived.by(() => {
     if (slide.slideType === 'singleAsset') {
       const asset = dataSource.getAsset(slide.assetId);
-      return { slideType: slide.slideType, ...slideForAsset(asset) };
+      return {
+        slideType: slide.slideType,
+        ...slideForAsset(asset),
+      };
     } else {
       const series = dataSource.getAssetSeries(slide.assetSeriesId);
       const indexInSeries = selectedSeriesIndex ?? slide.coverIndex;
@@ -74,7 +78,7 @@
 
   let zoomLevels: ZoomLevels = $derived(
     computeZoomLevels({
-      maxSize: slideToDisplay.size,
+      maxSize: slideToDisplay.rotatedSize,
       panAreaSize,
     }),
   );
@@ -84,10 +88,13 @@
 	after that zoom gets applied to the DOM element and transform scale is reset. */
   let cssTransformZoom: number = $state(1);
   const effectiveZoom = $derived(domZoom * cssTransformZoom);
-  const panBounds = $derived(computePanBounds(slideToDisplay.size, panAreaSize, effectiveZoom));
+  const panBounds = $derived(
+    computePanBounds(slideToDisplay.rotatedSize, panAreaSize, effectiveZoom),
+  );
   let slideImage: SlideImage | null = $state(null);
   let slideVideo: SlideVideo | null = $state(null);
   let placeholderEl: HTMLImageElement | null = $state(null);
+  const placeholderRotation = $derived(slideToDisplay.asset.repFile.rotationCorrection);
   let cursor: null | 'zoom-in' | 'grab' | 'grabbing' = $derived.by(() => {
     if (effectiveZoom <= zoomLevels.fit) {
       return 'zoom-in';
@@ -218,10 +225,17 @@
 
   let isGrabbing = $state(false);
   let transitionTransformClass = $state(false);
-  let { width, height } = $derived({
+  const { width, height } = $derived({
     width: slideToDisplay.size.width * domZoom,
     height: slideToDisplay.size.height * domZoom,
   });
+
+  const rotatedWidth = $derived(slideToDisplay.rotatedSize.width * domZoom);
+  const rotatedHeight = $derived(slideToDisplay.rotatedSize.height * domZoom);
+  // Image slides can be rotated in CSS, so DOM <img> size is not the same as the displayed size.
+  // Panning happens in DOM coordinates so compensate for the discrepancy here.
+  const panRotationAdjustX = $derived((rotatedWidth - width) * 0.5);
+  const panRotationAdjustY = $derived((rotatedHeight - height) * 0.5);
 
   $effect(() => {
     if (!isActive && slideToDisplay) {
@@ -251,12 +265,12 @@
     }
   });
 
-  function initializeForNewSlide(slide: SingleAssetSlide, panAreaSize: Size) {
+  function initializeForNewSlide(slide: SlideData, panAreaSize: Size) {
     const newZoomLevels = computeZoomLevels({
-      maxSize: untrack(() => slide.size),
+      maxSize: untrack(() => slide.rotatedSize),
       panAreaSize: untrack(() => panAreaSize),
     });
-    const newPanBounds = computePanBounds(slide.size, panAreaSize, newZoomLevels.fit);
+    const newPanBounds = computePanBounds(slide.rotatedSize, panAreaSize, newZoomLevels.fit);
     domZoom = newZoomLevels.fit;
     cssTransformZoom = 1;
     pan = {
@@ -265,9 +279,11 @@
     };
   }
 
+  const rotateTransform = $derived(`rotate(${placeholderRotation}deg)`);
+  let transitionTransform = $state('');
+
   function addOpenTransition(el: HTMLImageElement, t: OpenTransitionParams) {
-    const transform = getTransformToFitThumbnail(t.fromBounds);
-    el.style.transform = transform;
+    transitionTransform = getTransformToFitThumbnail(t.fromBounds);
     placeholderTransitionState = 'Running';
 
     requestAnimationFrame(() => {
@@ -286,7 +302,7 @@
       // saying that something doesn't work on firefox.
       // Can't reproduce, this works afaict.
       requestAnimationFrame(() => {
-        el.style.transform = '';
+        transitionTransform = '';
       });
     });
   }
@@ -295,22 +311,15 @@
     if (bounds.crop) {
       console.warn('TODO open anim with cropped bounds not implemented');
     }
-    const scaleX = bounds.rect.width / width;
-    const scaleY = bounds.rect.height / height;
+    const scaleX = bounds.rect.width / rotatedWidth;
+    const scaleY = bounds.rect.height / rotatedHeight;
+
     const translateY =
-      -viewportSize.height / 2 +
-      bounds.rect.height / 2 +
-      bounds.rect.y +
-      panBounds.center.y -
-      pan.y;
+      -centerY + bounds.rect.height / 2 + bounds.rect.y + panBounds.center.y - pan.y;
 
     const translateX =
-      -viewportSize.width / 2 +
-      bounds.rect.width / 2 +
-      bounds.rect.x +
-      (panBounds.center.x - pan.x);
-
-    return `translate3d(${translateX}px, ${translateY}px, 0) scale3d(${scaleX}, ${scaleY}, 1)`;
+      -centerX + bounds.rect.width / 2 + bounds.rect.x + panBounds.center.x - pan.x;
+    return `translate3d(${translateX}px, ${translateY}px, 0) scale3d(${scaleX}, ${scaleY}, 1) `;
   }
 
   function closeTransition(toBounds: ThumbnailBounds, onTransitionEnd: () => void) {
@@ -410,9 +419,10 @@
   class:cursor-zoom-in={cursor === 'zoom-in'}
   class:cursor-grab={cursor === 'grab'}
   class:cursor-grabbing={cursor === 'grabbing'}
-  style="
-  	transform-origin: 0px 0px 0px;
-	transform: translate3d({pan.x + centerX}px, {pan.y +
+  style="transform: translate3d({pan.x +
+    panRotationAdjustX * cssTransformZoom +
+    centerX}px, {pan.y +
+    panRotationAdjustY * cssTransformZoom +
     centerY}px, 0) scale3d({cssTransformZoom}, {cssTransformZoom}, 1);
     "
 >
@@ -437,7 +447,7 @@
     {/if}
   {/key}
   {#if placeholderVisible}
-    <!-- svelte-ignore a11y-missing-attribute -->
+    <!-- svelte-ignore a11y_missing_attribute -->
     <img
       class="placeholder max-w-none"
       bind:this={placeholderEl}
@@ -449,6 +459,8 @@
       style:height="{height}px"
       style:user-select="none"
       class:slide-transition-transform={placeholderTransitionState === 'Running'}
+      style:transform="{transitionTransform}
+      {rotateTransform}"
     />
   {/if}
 </div>

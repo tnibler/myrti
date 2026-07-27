@@ -66,10 +66,10 @@
     }
   }
 
-  const rotateImgMod180 = (asset.rotationCorrection ?? 0) % 180;
-  const imgTop = $derived(rotateImgMod180 == -90 ? box.height : 0);
-  const imgLeft = $derived(rotateImgMod180 == 90 ? box.width : 0);
-  const imgTransformOrigin = $derived(rotateImgMod180 != 0 ? 'top left' : 'center');
+  const rotateImg = $derived(asset.repFile.rotationCorrection);
+  const rotateImgMod180 = $derived(asset.repFile.rotationCorrection % 180);
+  const imgTop = $derived(rotateImgMod180 !== 0 ? (box.height - box.width) * 0.5 : 0);
+  const imgLeft = $derived(rotateImgMod180 !== 0 ? (box.width - box.height) * 0.5 : 0);
   const imgHeight = $derived(rotateImgMod180 != 0 ? box.width : box.height);
   const imgWidth = $derived(rotateImgMod180 != 0 ? box.height : box.width);
   const isHoverable = $derived(selectState.state !== 'unclickable');
@@ -103,11 +103,10 @@
       class:scale-[0.85]={isSelected}
       width={imgWidth}
       height={imgHeight}
-      style:transform-origin={imgTransformOrigin}
       style:top={imgTop + 'px'}
       style:left={imgLeft + 'px'}
       style:max-width="none"
-      style:rotate={asset.rotationCorrection ? asset.rotationCorrection + 'deg' : null}
+      style:rotate={rotateImg + 'deg'}
     />
     <div
       class={'absolute z-10 h-full w-full bg-gradient-to-b from-black/25 via-[transparent_25%] opacity-0 transition-opacity ' +

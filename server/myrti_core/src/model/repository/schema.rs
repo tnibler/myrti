@@ -47,7 +47,8 @@ diesel::table! {
         added_at -> BigInt,
         width -> Integer,
         height -> Integer,
-        rotation_correction -> Nullable<Integer>,
+        rotation_correction -> Integer,
+        mirror_correction -> Integer,
         thumb_hash -> Nullable<Blob>,
         exiftool_output -> Blob,
     }

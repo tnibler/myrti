@@ -28,7 +28,7 @@
   {#await assetMetadata then entries}
     <ul>
       <li>
-        {asset.pathInRoot}
+        {asset.repFile.pathInRoot}
       </li>
 
       <li>

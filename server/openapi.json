@@ -548,12 +548,12 @@
         }
       }
     },
-    "/api/files/{id}/rotation": {
+    "/api/files/{id}/transform": {
       "post": {
         "tags": [
           "crate::routes::file"
         ],
-        "operationId": "setAssetRotationCorrection",
+        "operationId": "setAssetTransformCorrection",
         "parameters": [
           {
             "name": "id",
@@ -577,7 +577,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetWithSpe"
+                }
+              }
+            }
           }
         }
       }
@@ -1010,6 +1017,8 @@
           "width",
           "height",
           "addedAt",
+          "rotationCorrection",
+          "mirrorCorrection",
           "mimeType"
         ],
         "properties": {
@@ -1030,13 +1039,15 @@
           "mimeType": {
             "type": "string"
           },
+          "mirrorCorrection": {
+            "$ref": "#/components/schemas/MirrorCorrection"
+          },
           "pathInRoot": {
             "type": "string"
           },
           "rotationCorrection": {
             "type": "integer",
-            "format": "int32",
-            "nullable": true
+            "format": "int32"
           },
           "width": {
             "type": "integer",
@@ -1359,6 +1370,14 @@
       "ImageRepresentationId": {
         "type": "string"
       },
+      "MirrorCorrection": {
+        "type": "string",
+        "enum": [
+          "None",
+          "Horizontal",
+          "Vertical"
+        ]
+      },
       "SegmentType": {
         "oneOf": [
           {
@@ -1441,9 +1460,18 @@
       "SetAssetRotationRequest": {
         "type": "object",
         "properties": {
+          "mirror": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MirrorCorrection"
+              }
+            ],
+            "nullable": true
+          },
           "rotation": {
             "type": "integer",
             "format": "int32",
+            "description": "One of 0, 90, 180, 270",
             "nullable": true
           }
         }

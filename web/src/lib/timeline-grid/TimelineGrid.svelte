@@ -84,7 +84,9 @@
     if (!scrollWrapper) {
       return;
     }
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     viewport.width;
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     viewport.height;
     if (resizeTimeout != null) {
       clearTimeout(resizeTimeout);
@@ -224,6 +226,10 @@
         ? sl.assetId
         : timeline.getAssetSeries(sl.assetSeriesId).assetIds[sl.coverIndex];
     const currentItem = timeline.getItemForAsset(assetId);
+    if (currentItem.itemType !== 'asset' && currentItem.itemType !== 'photoStack') {
+      return { rect: { x: 0, y: 0, width: 0, height: 0 } };
+    }
+    const asset = timeline.getAsset(assetId);
     const pos = currentItem.pos;
     const imgEl = document.getElementById(
       `thumb${pos.sectionIndex}-${pos.segmentIndex}-${pos.itemIndex}`,
@@ -231,14 +237,25 @@
     if (!imgEl || !(imgEl instanceof HTMLImageElement)) {
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     }
-    return {
-      rect: {
-        x: imgEl.x,
-        y: imgEl.y,
-        width: imgEl.width,
-        height: imgEl.height,
-      },
-    };
+    if (asset.repFile.rotationCorrection % 180 == 0) {
+      return {
+        rect: {
+          x: imgEl.x,
+          y: imgEl.y,
+          width: imgEl.width,
+          height: imgEl.height,
+        },
+      };
+    } else {
+      return {
+        rect: {
+          x: imgEl.x - (imgEl.height - imgEl.width) * 0.5,
+          y: imgEl.y + (imgEl.height - imgEl.width) * 0.5,
+          width: imgEl.height,
+          height: imgEl.width,
+        },
+      };
+    }
   }
 
   function getSlideRef(item: TimelineItem): SlideRef {
@@ -374,6 +391,9 @@
   {useOpenTransition}
   {onSlideNavigated}
   {getThumbnailBounds}
+  onRotateClicked={() => {
+    timeline.rotateAssetCW(currentSlide.assetId);
+  }}
   {scrollWrapper}
   {restoreScrollOnClose}
   closeGallery={() => {

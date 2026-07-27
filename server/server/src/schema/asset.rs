@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use myrti_core::model;
@@ -25,7 +25,8 @@ pub struct AssetFile {
     pub width: i32,
     pub height: i32,
     pub added_at: DateTime<Utc>,
-    pub rotation_correction: Option<i32>,
+    pub rotation_correction: i32,
+    pub mirror_correction: MirrorCorrection,
     pub mime_type: String,
 }
 
@@ -77,13 +78,46 @@ pub struct Video {
     pub has_dash: bool,
 }
 
-impl From<&model::Asset> for Asset {
-    fn from(value: &model::Asset) -> Self {
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
+pub enum MirrorCorrection {
+    None,
+    Horizontal,
+    Vertical,
+}
+
+impl From<model::MirrorCorrection> for MirrorCorrection {
+    fn from(value: model::MirrorCorrection) -> Self {
+        match value {
+            model::MirrorCorrection::None => MirrorCorrection::None,
+            model::MirrorCorrection::Horizontal => MirrorCorrection::Horizontal,
+            model::MirrorCorrection::Vertical => MirrorCorrection::Vertical,
+        }
+    }
+}
+
+impl From<MirrorCorrection> for model::MirrorCorrection {
+    fn from(value: MirrorCorrection) -> Self {
+        match value {
+            MirrorCorrection::None => model::MirrorCorrection::None,
+            MirrorCorrection::Horizontal => model::MirrorCorrection::Horizontal,
+            MirrorCorrection::Vertical => model::MirrorCorrection::Vertical,
+        }
+    }
+}
+
+impl From<model::Asset> for Asset {
+    fn from(value: model::Asset) -> Self {
         Asset {
             asset_id: value.base.id.into(),
             taken_date: value.base.taken_date,
             rep_file: value.rep_file.clone().into(),
         }
+    }
+}
+
+impl From<&model::Asset> for Asset {
+    fn from(value: &model::Asset) -> Self {
+        value.to_owned().into()
     }
 }
 
@@ -104,7 +138,13 @@ impl From<&model::AssetFile> for AssetFile {
             height: value.size.height,
             added_at: value.added_at,
             mime_type,
-            rotation_correction: value.rotation_correction,
+            rotation_correction: match value.rotation_correction {
+                model::RotationCorrection::CW0 => 0,
+                model::RotationCorrection::CW90 => 90,
+                model::RotationCorrection::CW180 => 180,
+                model::RotationCorrection::CW270 => 270,
+            },
+            mirror_correction: value.mirror_correction.into(),
         }
     }
 }

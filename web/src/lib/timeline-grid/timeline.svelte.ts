@@ -7,6 +7,7 @@ import type {
   TimelineItem as ApiTimelineItem,
   AssetSeriesId,
   TimelineGroupId,
+  FileId,
 } from '@api/myrti';
 import { dayjs } from '@lib/dayjs';
 import { klona } from 'klona/json';
@@ -21,6 +22,7 @@ import {
   setAssetsHidden,
   setAssetIsSeriesSelection,
   editTimelineGroup,
+  setAssetTransformCorrection,
 } from '../../api/myrti';
 import {
   createSeriesResponse,
@@ -177,11 +179,8 @@ export function createTimeline(
   const assetsById = (() => {
     const obj: { [id: AssetId]: AssetWithSpe } = $state({});
     return {
-      get: (id: AssetId): AssetWithSpe | null => {
-        if (id in obj) {
-          return obj[id];
-        }
-        return null;
+      get: (id: AssetId): AssetWithSpe => {
+        return obj[id];
       },
       set: (id: AssetId, asset: AssetWithSpe) => {
         obj[id] = asset;
@@ -192,11 +191,8 @@ export function createTimeline(
   const assetSeriesById = (() => {
     const obj: { [id: AssetSeriesId]: AssetSeriesRef } = $state({});
     return {
-      get: (id: AssetSeriesId): AssetSeriesRef | null => {
-        if (id in obj) {
-          return obj[id];
-        }
-        return null;
+      get: (id: AssetSeriesId): AssetSeriesRef => {
+        return obj[id];
       },
       set: (id: AssetSeriesId, asset: AssetSeriesRef) => {
         obj[id] = asset;
@@ -1566,6 +1562,16 @@ export function createTimeline(
     isItemSelected,
     clearSelection,
     hideSelectedAssets,
+    rotateAssetCW: async (assetId: AssetId) => {
+      const asset = assetsById.get(assetId);
+      const updatedAsset = (
+        await setAssetTransformCorrection(asset.repFile.fileId, {
+          rotation: (asset?.repFile.rotationCorrection + 90) % 360,
+        })
+      ).data;
+      asset.repFile.rotationCorrection = updatedAsset.repFile.rotationCorrection;
+      layoutSection(getItemForAsset(asset.assetId).pos.sectionIndex, 'noAdjustScroll');
+    },
   };
 }
 

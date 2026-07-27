@@ -77,7 +77,7 @@
         '';
       };
 
-      craneLib = crane.mkLib pkgs;
+      craneLib = (crane.mkLib pkgs).overrideToolchain fenix.packages.${system}.stable.toolchain;
       src = craneLib.cleanCargoSource ./server;
 
       # Common arguments can be set here to avoid repeating them later
@@ -95,6 +95,7 @@
             vips.dev
             glib.dev
             ffmpeg
+            exiftool
           ]
           ++ [gpac.packages.${system}.default];
 
@@ -115,7 +116,7 @@
           inherit (craneLib.crateNameFromCargoToml {inherit src;}) version;
 
           # help idk why this isn't inherited from commonArgs
-          nativeBuildInputs = with pkgs; [clang pkg-config llvmPackages.libclang];
+          nativeBuildInputs = with pkgs; [clang pkg-config llvmPackages.libclang makeBinaryWrapper];
 
           cargoToml = ./server/server/Cargo.toml;
           src = lib.fileset.toSource {
@@ -162,6 +163,8 @@
       apps = {
         server = let
           runServer = pkgs.writeShellScriptBin "run-server" ''
+            export PATH="${pkgs.lib.makeBinPath [pkgs.ffmpeg pkgs.exiftool gpac.packages.${system}.default]}:$PATH"
+            export LD_PRELOAD = "${pkgs.jemalloc}/lib/libjemalloc.so";
             exec ${server}/bin/server --serve-static ${myrtiWeb} "$@"
           '';
         in {
@@ -194,6 +197,8 @@
           prettier
         ];
 
+        JEMALLOC_PATH = "${pkgs.jemalloc}/lib/libjemalloc.so";
+        LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.glib pkgs.vips];
         LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
       };
     });

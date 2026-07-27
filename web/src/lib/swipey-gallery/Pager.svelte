@@ -15,6 +15,7 @@
     getThumbnailBounds: () => ThumbnailBounds;
     closeGallery: () => void;
     onOpenTransitionFinished: () => void;
+    onRotateClicked: () => void;
   };
 
   export type GalleryControls = {
@@ -60,6 +61,7 @@
     useOpenTransition,
     onOpenTransitionFinished,
     topOffset,
+    onRotateClicked,
   }: PagerProps = $props();
 
   let viewport = $state({ width: 0, height: 0 });
@@ -404,11 +406,12 @@
   style:cursor={uiVisible ? 'default' : 'none'}
   style:top={`${topOffset}px`}
 >
+  <!--I think offsetWidth/Height is correct? slides seem drawn over the scrollbar -->
   <div
     class="grow relative z-[100]"
     bind:this={pagerWrapper}
-    bind:clientHeight={viewport.height}
-    bind:clientWidth={viewport.width}
+    bind:offsetHeight={viewport.height}
+    bind:offsetWidth={viewport.width}
   >
     <div
       class="w-full h-full top-0 left-0 bg-black z-0 transition-opacity duration-300 ease-in-out"
@@ -467,7 +470,13 @@
           class="flex flex-row shrink-0 justify-end items-center
     h-16 px-2 gap-4 bg-gradient-to-b from-black/50 pointer-events-auto"
         >
-          <button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
+          <button
+            class="p-2"
+            class:button-visible={hasMouse}
+            onclick={() => {
+              onRotateClicked();
+            }}
+          >
             <RotateCw color="white" />
           </button>
           <button

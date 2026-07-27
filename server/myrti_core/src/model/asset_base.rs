@@ -5,7 +5,7 @@ use chrono::{DateTime, FixedOffset, Utc};
 use eyre::eyre;
 use serde::Serialize;
 
-use crate::model::FileId;
+use crate::model::{FileId, MirrorCorrection, RotationCorrection};
 
 use super::{AssetId, AssetRootDirId, AssetType};
 
@@ -18,8 +18,8 @@ pub struct AssetFile {
     pub file_path: PathBuf,
     pub added_at: DateTime<Utc>,
     pub size: Size,
-    /// degrees clockwise
-    pub rotation_correction: Option<i32>,
+    pub rotation_correction: RotationCorrection,
+    pub mirror_correction: MirrorCorrection,
     /// Seahash of the file, if already computed
     pub hash: Option<u64>,
 }

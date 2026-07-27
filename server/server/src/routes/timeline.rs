@@ -12,6 +12,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     app_state::SharedState,
+    asset_queries::get_full_asset,
     http_error::ApiResult,
     schema::{
         asset::{AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
@@ -58,14 +59,13 @@ pub async fn get_timeline(
     State(app_state): State<SharedState>,
     Query(req_body): Query<TimelineRequest>,
 ) -> ApiResult<Json<TimelineChunk>> {
-    debug!(?req_body);
     let local_tz = &chrono::Local; // TODO inject from config
     let now = Utc::now();
     let last_asset_id: Option<model::AssetId> = req_body
         .last_asset_id
         .map(model::AssetId::try_from)
         .transpose()?;
-    let conn = app_state.pool.get().await?;
+    let mut conn = app_state.pool.get().await?;
     let groups = interact!(conn, move |conn| {
         repository::timeline::get_timeline_chunk(conn, last_asset_id, req_body.max_count.into())
     })
@@ -82,7 +82,7 @@ pub async fn get_timeline(
             TimelineElement::Group { group: _, assets } => assets,
         };
         for asset in assets {
-            api_assets_with_spe.push(asset_with_spe(&app_state.pool, asset).await?);
+            api_assets_with_spe.push(get_full_asset(&mut conn, asset.clone()).await?);
         }
         let api_group = match group {
             TimelineElement::DayGrouped(assets) => TimelineGroup {
@@ -232,19 +232,18 @@ pub async fn get_timeline_segments(
         .ok_or(eyre!("invalid sectionId"))?;
     let segment_min: i64 = segment_min.parse().wrap_err("invalid sectionId")?;
     let segment_max: i64 = segment_max.parse().wrap_err("invalid sectionId")?;
-    let conn = app_state.pool.get().await?;
-    let pool = &app_state.pool;
-    let segments_result: Result<Vec<TimelineSegment>> = interact!(conn, move |conn| {
+    let mut conn = app_state.pool.get().await?;
+    let segments = interact!(conn, move |conn| {
         repository::timeline::get_segments_in_section(conn, segment_min, segment_max)
     })
-    .await??
-    .into_iter()
-    .map(|segment| async move {
+    .await??;
+    let mut result: Vec<TimelineSegment> = Vec::default();
+    for segment in segments {
         let mut timeline_items = Vec::default();
         for item in segment.items {
             match item {
                 AssetsInTimeline::Asset(asset) => {
-                    let asset_with_reprs = asset_with_reprs(pool.clone(), asset).await?;
+                    let asset_with_reprs = get_full_asset(&mut conn, asset).await?;
                     timeline_items.push(TimelineItem::Asset(asset_with_reprs));
                 }
                 AssetsInTimeline::AssetSeries {
@@ -254,12 +253,10 @@ pub async fn get_timeline_segments(
                     selection_indices,
                     total_series_size,
                 } => {
-                    let assets_with_reprs: Vec<AssetWithSpe> = assets
-                        .into_iter()
-                        .map(|asset| asset_with_reprs(pool.clone(), asset))
-                        .collect::<FuturesOrdered<_>>()
-                        .try_collect()
-                        .await?;
+                    let mut assets_with_reprs: Vec<AssetWithSpe> = Vec::default();
+                    for asset in assets {
+                        assets_with_reprs.push(get_full_asset(&mut conn, asset).await?);
+                    }
                     timeline_items.push(TimelineItem::AssetSeries {
                         series_id: series_id.into(),
                         assets: assets_with_reprs,
@@ -269,7 +266,7 @@ pub async fn get_timeline_segments(
                 }
             }
         }
-        Ok(TimelineSegment {
+        result.push(TimelineSegment {
             items: timeline_items,
             sort_date: segment.sort_date,
             segment: match segment.ty {
@@ -283,86 +280,7 @@ pub async fn get_timeline_segments(
                     SegmentType::DateRange { start, end }
                 }
             },
-        })
-    })
-    .collect::<FuturesOrdered<_>>()
-    .try_collect::<Vec<_>>()
-    .await;
-    let segments = segments_result?;
-
-    Ok(Json(TimelineSegmentsResponse { segments }))
-}
-
-#[tracing::instrument(level = "trace", skip(pool))]
-async fn asset_with_reprs(pool: DbPool, asset: model::Asset) -> eyre::Result<AssetWithSpe> {
-    let spe: AssetSpe = match &asset.sp {
-        model::AssetSpe::Image(image) => {
-            let reprs = match image.image_format_name.as_str() {
-                // TODO hardcoded list of client accepted image formats
-                "jpeg" | "avif" | "png" => Vec::new(),
-                _ => {
-                    let conn = pool.get().await?;
-                    let file_id = image.file_id;
-                    interact!(conn, move |conn| {
-                        repository::representation::get_image_representations(conn, file_id)
-                    })
-                    .await??
-                }
-            };
-            AssetSpe::Image(Image {
-                representations: reprs
-                    .into_iter()
-                    .map(|repr| ImageRepresentation {
-                        id: repr.id.0.to_string(),
-                        format: repr.format_name,
-                        width: repr.width,
-                        height: repr.height,
-                        size: repr.file_size,
-                    })
-                    .collect(),
-            })
-        }
-        model::AssetSpe::Video(video) => AssetSpe::Video(Video {
-            has_dash: true, // FIXME: field doesn't exist anymore
-        }),
-    };
-    Ok(AssetWithSpe {
-        asset: (&asset).into(),
-        spe,
-    })
-}
-
-async fn asset_with_spe(pool: &DbPool, asset: &model::Asset) -> eyre::Result<AssetWithSpe> {
-    let conn = pool.get().await?;
-    match &asset.sp {
-        model::AssetSpe::Image(image) => {
-            let file_id = image.file_id;
-            let reprs = interact!(conn, move |conn| {
-                repository::representation::get_image_representations(conn, file_id)
-            })
-            .await??;
-            let api_reprs = reprs
-                .into_iter()
-                .map(|repr| ImageRepresentation {
-                    id: repr.id.0.to_string(),
-                    format: repr.format_name,
-                    width: repr.width,
-                    height: repr.height,
-                    size: repr.file_size,
-                })
-                .collect();
-            Ok(AssetWithSpe {
-                asset: asset.into(),
-                spe: AssetSpe::Image(Image {
-                    representations: api_reprs,
-                }),
-            })
-        }
-        model::AssetSpe::Video(_video) => Ok(AssetWithSpe {
-            asset: asset.into(),
-            spe: AssetSpe::Video(Video {
-                has_dash: true, // FIXME: field doesn't exist anymore
-            }),
-        }),
+        });
     }
+    Ok(Json(TimelineSegmentsResponse { segments: result }))
 }

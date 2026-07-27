@@ -62,9 +62,6 @@ struct Cli {
     #[arg(long, default_value_t = false)]
     pause_video_processing: bool,
 
-    #[cfg(feature = "opentelemetry")]
-    #[arg(long)]
-    otel_endpoint: Option<String>,
 }
 
 async fn db_setup(dir: &Path) -> Result<DbPool> {
@@ -145,34 +142,7 @@ async fn main() -> Result<()> {
                 .with_span_events(FmtSpan::CLOSE)
                 .with_writer(non_blocking_appender),
         );
-    #[cfg(feature = "opentelemetry")]
-    {
-        use opentelemetry_otlp::WithExportConfig;
-        let telemetry = args.otel_endpoint.map(|otel_endpoint| {
-            let tracer = opentelemetry_otlp::new_pipeline()
-                .tracing()
-                .with_exporter(
-                    opentelemetry_otlp::new_exporter()
-                        .tonic()
-                        .with_endpoint(otel_endpoint),
-                )
-                .with_trace_config(opentelemetry_sdk::trace::config().with_resource(
-                    opentelemetry_sdk::Resource::new(vec![opentelemetry::KeyValue::new(
-                        opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                        "myrti",
-                    )]),
-                ))
-                .install_batch(opentelemetry_sdk::runtime::Tokio)
-                .unwrap();
-            let _tracer = opentelemetry::global::tracer("myrti");
-            tracing_opentelemetry::layer().with_tracer(tracer)
-        });
-        tracing.with(telemetry).init();
-    }
-    #[cfg(not(feature = "opentelemetry"))]
-    {
-        tracing.init();
-    }
+    tracing.init();
 
     myrti_core::global_init();
     // TODO make all paths in config absolute relative to config_dir if they're not already

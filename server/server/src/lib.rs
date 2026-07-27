@@ -1,4 +1,5 @@
 pub mod app_state;
+mod asset_queries;
 pub mod http_error;
 mod mime_type;
 pub mod openapi;

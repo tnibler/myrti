@@ -10,6 +10,10 @@ CREATE TABLE DataDir (
 
 CREATE TABLE AssetSeries (
   series_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  -- 0 unknown
+  -- 1 burst shot
+  -- 2 timelapse
+  series_type INTEGER NOT NULL,
   is_auto INTEGER NOT NULL CHECK (is_auto IN (0, 1))
 ) STRICT;
 
@@ -50,8 +54,10 @@ CREATE TABLE AssetFile (
   -- 1=Image, 2=Video
   asset_type INTEGER NOT NULL CHECK (asset_type IN (1, 2)),
   root_dir_id INTEGER NOT NULL,
+  asset_id INTEGER NOT NULL,
+  merge_reason INTEGER DEFAULT NULL,
   file_path TEXT NOT NULL,
-  file_type TEXT NOT NULL,
+  file_type TEXT NOT NULL, -- FileType from exiftool
   hash BLOB UNIQUE,
   -- UTC timestamp in milliseconds since UNIX epoch
   added_at INTEGER NOT NULL,
@@ -59,14 +65,25 @@ CREATE TABLE AssetFile (
   width INTEGER NOT NULL,
   height INTEGER NOT NULL,
   -- rotation correction applied after exif/metadata rotation if that's still wrong
-  rotation_correction INTEGER,
+  rotation_correction INTEGER NOT NULL DEFAULT 0 CHECK(rotation_correction IN (0, 1, 2, 3)),
+  -- 0: Nothing, 1: Horizontal, 2: Vertical, 3: Both
+  mirror_correction INTEGER NOT NULL DEFAULT 0 CHECK(mirror_correction IN (0, 1, 2, 3)),
   thumb_hash BLOB,
 
   -- Metadata
   -- exiftool -j -g
   exiftool_output BLOB NOT NULL,
+  file_name TEXT GENERATED ALWAYS AS (json_extract(exiftool_output, '$[0].File.FileName')) VIRTUAL,
+  dir_name TEXT GENERATED ALWAYS AS (json_extract(exiftool_output, '$[0].File.Directory')) VIRTUAL,
+  file_ext TEXT GENERATED ALWAYS AS (json_extract(exiftool_output, '$[0].File.FileTypeExtension')) VIRTUAL,
+  file_stem TEXT GENERATED ALWAYS AS (
+      CASE
+         WHEN file_name LIKE '%.' || file_ext
+         THEN substr(file_name, 1, length(file_name) - length(file_ext) - 1)
+         ELSE file_name
+       END
+    ) STORED,
 
-  asset_id INTEGER NOT NULL,
   FOREIGN KEY (asset_id, asset_type) REFERENCES Asset(asset_id, asset_type) DEFERRABLE INITIALLY DEFERRED,
   FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(asset_root_dir_id),
   UNIQUE(root_dir_id, file_path),

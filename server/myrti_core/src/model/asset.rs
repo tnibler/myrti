@@ -1,3 +1,5 @@
+use std::default;
+
 use camino::Utf8PathBuf as PathBuf;
 use chrono::{DateTime, Utc};
 use eyre::{Report, eyre};
@@ -60,6 +62,23 @@ pub enum CreateAssetSpe {
     Video(CreateAssetVideo),
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
+pub enum RotationCorrection {
+    #[default]
+    CW0,
+    CW90,
+    CW180,
+    CW270,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
+pub enum MirrorCorrection {
+    #[default]
+    None,
+    Horizontal,
+    Vertical,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CreateAssetBase {
     pub root_dir_id: AssetRootDirId,
@@ -69,8 +88,7 @@ pub struct CreateAssetBase {
     pub timestamp_info: TimestampInfo,
     pub size: Size,
     pub is_hidden: bool,
-    /// degrees clockwise
-    pub rotation_correction: Option<i32>,
+    pub rotation_correction: RotationCorrection,
     /// Seahash of the file, if already computed
     pub hash: Option<u64>,
     /// JSON output of exiftool

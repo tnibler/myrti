@@ -5,7 +5,7 @@
   import { onMount } from 'svelte';
 
   type SlideImageProps = {
-    /** size of the DOM element */
+    /** size of the DOM element, CSS rotation not considered */
     size: Size;
     /** Callback when image/video is loaded and the placeholder should disappear */
     slideData: ImageSlideData;
@@ -53,6 +53,8 @@
     };
   });
 
+  const rotateTransform = $derived(`rotate(${slideData.asset.repFile.rotationCorrection}deg)`);
+  let transitionTransform = $state('');
   export function closeTransition(transform: string, onTransitionEnd: () => void) {
     if (!imgEl) {
       console.error('SlideImage.closeTransition called, but <img> element is not bound');
@@ -74,7 +76,7 @@
       if (!imgEl) {
         return;
       }
-      imgEl.style.transform = transform;
+      transitionTransform = transform;
     });
   }
 </script>
@@ -90,6 +92,8 @@
   class:slide-transition-transform={isCloseTransitionRunning}
   class:slide-transition-opacity={!isCloseTransitionRunning}
   class:hidden={!isVisible}
+  style:transform="{transitionTransform}
+  {rotateTransform}"
 />
 
 <style>

@@ -45,8 +45,9 @@ export const getAlbumDetailsResponse = zod.object({
                 fileId: zod.string(),
                 height: zod.number(),
                 mimeType: zod.string(),
+                mirrorCorrection: zod.enum(['None', 'Horizontal', 'Vertical']),
                 pathInRoot: zod.string(),
-                rotationCorrection: zod.number().nullish(),
+                rotationCorrection: zod.number(),
                 width: zod.number(),
               }),
               takenDate: zod.string().datetime({}),
@@ -170,8 +171,9 @@ export const getTimelineResponse = zod
                     fileId: zod.string(),
                     height: zod.number(),
                     mimeType: zod.string(),
+                    mirrorCorrection: zod.enum(['None', 'Horizontal', 'Vertical']),
                     pathInRoot: zod.string(),
-                    rotationCorrection: zod.number().nullish(),
+                    rotationCorrection: zod.number(),
                     width: zod.number(),
                   }),
                   takenDate: zod.string().datetime({}),
@@ -228,8 +230,9 @@ export const getAssetResponse = zod.object({
     fileId: zod.string(),
     height: zod.number(),
     mimeType: zod.string(),
+    mirrorCorrection: zod.enum(['None', 'Horizontal', 'Vertical']),
     pathInRoot: zod.string(),
-    rotationCorrection: zod.number().nullish(),
+    rotationCorrection: zod.number(),
     width: zod.number(),
   }),
   takenDate: zod.string().datetime({}),
@@ -276,13 +279,62 @@ export const getFileDetailsResponse = zod.object({
   exiftoolOutput: zod.unknown(),
 });
 
-export const setAssetRotationCorrectionParams = zod.object({
+export const setAssetTransformCorrectionParams = zod.object({
   id: zod.string().describe('FileId'),
 });
 
-export const setAssetRotationCorrectionBody = zod.object({
-  rotation: zod.number().nullish(),
+export const setAssetTransformCorrectionBody = zod.object({
+  mirror: zod.enum(['None', 'Horizontal', 'Vertical']).nullish(),
+  rotation: zod.number().nullish().describe('One of 0, 90, 180, 270'),
 });
+
+export const setAssetTransformCorrectionResponse = zod
+  .object({
+    assetId: zod.string(),
+    repFile: zod.object({
+      addedAt: zod.string().datetime({}),
+      assetRootId: zod.string(),
+      fileId: zod.string(),
+      height: zod.number(),
+      mimeType: zod.string(),
+      mirrorCorrection: zod.enum(['None', 'Horizontal', 'Vertical']),
+      pathInRoot: zod.string(),
+      rotationCorrection: zod.number(),
+      width: zod.number(),
+    }),
+    takenDate: zod.string().datetime({}),
+  })
+  .and(
+    zod.union([
+      zod
+        .object({
+          representations: zod.array(
+            zod.object({
+              format: zod.string(),
+              height: zod.number(),
+              id: zod.string(),
+              size: zod.number(),
+              width: zod.number(),
+            }),
+          ),
+        })
+        .and(
+          zod.object({
+            assetType: zod.enum(['image']),
+          }),
+        ),
+      zod
+        .object({
+          hasDash: zod.boolean(),
+        })
+        .and(
+          zod.object({
+            assetType: zod.enum(['video']),
+          }),
+        ),
+    ]),
+  )
+  .and(zod.object({}));
 
 export const createSeriesBody = zod.object({
   assetIds: zod.array(zod.string()),
@@ -364,8 +416,9 @@ export const getTimelineSegmentsResponse = zod.object({
                     fileId: zod.string(),
                     height: zod.number(),
                     mimeType: zod.string(),
+                    mirrorCorrection: zod.enum(['None', 'Horizontal', 'Vertical']),
                     pathInRoot: zod.string(),
-                    rotationCorrection: zod.number().nullish(),
+                    rotationCorrection: zod.number(),
                     width: zod.number(),
                   }),
                   takenDate: zod.string().datetime({}),
@@ -418,8 +471,9 @@ export const getTimelineSegmentsResponse = zod.object({
                           fileId: zod.string(),
                           height: zod.number(),
                           mimeType: zod.string(),
+                          mirrorCorrection: zod.enum(['None', 'Horizontal', 'Vertical']),
                           pathInRoot: zod.string(),
-                          rotationCorrection: zod.number().nullish(),
+                          rotationCorrection: zod.number(),
                           width: zod.number(),
                         }),
                         takenDate: zod.string().datetime({}),

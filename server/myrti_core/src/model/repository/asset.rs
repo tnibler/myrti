@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use camino::Utf8Path as Path;
 use chrono::Utc;
 use color_eyre::eyre;
+use diesel::dsl::jsonb;
 use diesel::{insert_into, prelude::*};
 use eyre::{Context, Result, eyre};
 use tracing::instrument;
@@ -13,7 +14,7 @@ use crate::model::repository::db_entity::{
 use crate::model::{
     self, Asset, AssetBase, AssetFile, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe,
     AssetThumbnail, AssetThumbnailId, AssetType, CreateAsset, CreateAssetSpe, FileId, Image,
-    TimestampInfo,
+    MirrorCorrection, RotationCorrection, TimestampInfo,
 };
 use crate::model::{
     repository::db_entity::{DbAssetPathOnDisk, DbAssetThumbnail, to_db_asset_ty},
@@ -312,11 +313,16 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
             added_at: datetime_to_db_repr(&Utc::now()),
             width: create_asset.base.size.width,
             height: create_asset.base.size.height,
-            rotation_correction: create_asset.base.rotation_correction,
+            rotation_correction: match create_asset.base.rotation_correction {
+                RotationCorrection::CW0 => 0,
+                RotationCorrection::CW90 => 1,
+                RotationCorrection::CW180 => 2,
+                RotationCorrection::CW270 => 3,
+            },
             exiftool_output: Cow::Borrowed(&create_asset.base.exiftool_output),
         };
         let file_id: i64 = insert_into(schema::AssetFile::table)
-            .values(&insertable_file)
+            .values(insertable_file)
             .returning(schema::AssetFile::file_id)
             .get_result(conn)
             .wrap_err("error inserting AssetFile")?;
@@ -530,17 +536,53 @@ pub fn set_assets_hidden(conn: &mut DbConn, set_hidden: bool, asset_ids: &[Asset
     Ok(())
 }
 
-pub fn set_asset_rotation_correction(
+/// Sets rotation for all files belonging to the same Asset
+pub fn set_rotation_correction_all_asset_files(
     conn: &mut DbConn,
-    asset_id: FileId,
-    rotation: Option<i32>,
-) -> Result<()> {
+    file_id: FileId,
+    rotation: RotationCorrection,
+) -> Result<AssetId> {
     use schema::AssetFile;
-    diesel::update(AssetFile::table.filter(AssetFile::file_id.eq(asset_id.0)))
+    let rotation = match rotation {
+        RotationCorrection::CW0 => 0,
+        RotationCorrection::CW90 => 1,
+        RotationCorrection::CW180 => 2,
+        RotationCorrection::CW270 => 3,
+    };
+    let af2 = diesel::alias!(AssetFile as af2);
+    diesel::update(AssetFile::table)
+        .filter(
+            AssetFile::asset_id.eq_any(af2.find(file_id.0).select(af2.field(AssetFile::asset_id))),
+        )
         .set(AssetFile::rotation_correction.eq(rotation))
-        .execute(conn)
-        .wrap_err("error updating column AssetFile.rotation_correction")?;
-    Ok(())
+        .returning(AssetFile::asset_id)
+        .get_result(conn)
+        .map(AssetId)
+        .wrap_err("error updating column AssetFile.rotation_correction")
+}
+
+/// Sets mirror for all files belonging to the same Asset
+pub fn set_mirror_correction_all_asset_files(
+    conn: &mut DbConn,
+    file_id: FileId,
+    mirror: MirrorCorrection,
+) -> Result<AssetId> {
+    use schema::AssetFile;
+    let mirror = match mirror {
+        MirrorCorrection::None => 0,
+        MirrorCorrection::Horizontal => 1,
+        MirrorCorrection::Vertical => 2,
+    };
+    let af2 = diesel::alias!(AssetFile as af2);
+    diesel::update(AssetFile::table)
+        .filter(
+            AssetFile::asset_id.eq_any(af2.find(file_id.0).select(af2.field(AssetFile::asset_id))),
+        )
+        .set(AssetFile::mirror_correction.eq(mirror))
+        .returning(AssetFile::asset_id)
+        .get_result(conn)
+        .map(AssetId)
+        .wrap_err("error updating column AssetFile.mirror_correction")
 }
 
 #[instrument(skip(conn))]

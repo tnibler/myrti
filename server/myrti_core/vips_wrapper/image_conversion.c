@@ -30,7 +30,7 @@ ConvertHeifResult convert_heif(const char * in_path, const char * out_path, Heif
     .height = 0,
     .err = 0
   };
-  img = vips_image_new_from_file(in_path, NULL);
+  img = vips_image_new_from_file(in_path, "access", VIPS_ACCESS_SEQUENTIAL, NULL);
   if (img == NULL) {
     printf("libvips error: %s", vips_error_buffer());
     result.err = 1;
@@ -67,7 +67,7 @@ ConvertJpegResult convert_jpeg(const char * in_path, const char * out_path, Jpeg
     .height = 0,
     .err = 0
   };
-  img = vips_image_new_from_file(in_path, NULL);
+  img = vips_image_new_from_file(in_path, "access", VIPS_ACCESS_SEQUENTIAL, NULL);
   if (img == NULL) {
     printf("libvips error: %s", vips_error_buffer());
     result.err = 1;

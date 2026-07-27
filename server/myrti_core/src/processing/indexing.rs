@@ -216,7 +216,7 @@ async fn index_file(
         timestamp_info,
         size,
         is_hidden: false,
-        rotation_correction: None,
+        rotation_correction: Default::default(),
         exiftool_output: exiftool_json,
         hash: Some(hash),
         gps_coordinates: coordinates,

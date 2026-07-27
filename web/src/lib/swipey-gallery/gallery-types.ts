@@ -1,18 +1,6 @@
 import type { AssetId, AssetSeriesId, AssetWithSpe } from '@api/myrti';
-import type { AssetSeries } from '@lib/timeline-grid/timeline-types';
 import type { Size } from './util_types';
 import type { AssetSeriesRef } from '@lib/timeline-grid/timeline.svelte';
-
-export type GallerySlideData =
-  | ({
-      slideType: 'singleAsset';
-    } & SingleAssetSlide)
-  | {
-      slideType: 'assetSeries';
-      series: AssetSeries;
-      coverIndex: number;
-      coverSlide: SingleAssetSlide;
-    };
 
 export type ImageSlideData = {
   assetType: 'image';
@@ -21,7 +9,6 @@ export type ImageSlideData = {
   };
   src: string;
   placeholderSrc: string;
-  size: Size;
 };
 
 export type VideoSlideData = {
@@ -30,7 +17,6 @@ export type VideoSlideData = {
     assetType: 'video';
   };
   placeholderSrc: string;
-  size: Size;
 } & (
   | {
       videoSource: 'original';
@@ -43,7 +29,10 @@ export type VideoSlideData = {
     }
 );
 
-export type SingleAssetSlide = ImageSlideData | VideoSlideData;
+export type SlideData = {
+  size: Size;
+  rotatedSize: Size;
+} & (ImageSlideData | VideoSlideData);
 
 export type SlideRef =
   | {

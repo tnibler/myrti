@@ -10,14 +10,11 @@ use axum::{
 };
 use axum_extra::body::AsyncReadBody;
 use eyre::{eyre, Context};
+use myrti_core::model::{self, repository};
 use myrti_core::{
     catalog::storage_key,
     core::storage::{StorageProvider, StorageReadError},
-    deadpool_diesel,
-};
-use myrti_core::{
-    interact,
-    model::{self, repository},
+    deadpool_diesel, interact,
 };
 use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
@@ -25,9 +22,13 @@ use utoipa::ToSchema;
 
 use crate::{
     app_state::SharedState,
+    asset_queries::get_full_asset,
     http_error::{ApiResult, HttpError},
     mime_type::{guess_mime_type, guess_mime_type_path},
-    schema::{FileId, ImageRepresentationId},
+    schema::{
+        asset::{AssetWithSpe, MirrorCorrection},
+        FileId, ImageRepresentationId,
+    },
 };
 
 pub fn router() -> Router<SharedState> {
@@ -39,7 +40,7 @@ pub fn router() -> Router<SharedState> {
             "/repr/:file_id/:repr_id",
             get(get_image_asset_representation),
         )
-        .route("/:id/rotation", post(set_asset_rotation_correction))
+        .route("/:id/transform", post(set_asset_transform_correction))
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -294,33 +295,59 @@ async fn get_image_asset_representation(
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SetAssetRotationRequest {
+    /// One of 0, 90, 180, 270
     pub rotation: Option<i32>,
+    pub mirror: Option<MirrorCorrection>,
 }
 
 #[utoipa::path(
     post,
-    path = "/api/files/{id}/rotation",
+    path = "/api/files/{id}/transform",
     params(
         ("id" = String, Path, description = "FileId")
     ),
     request_body=SetAssetRotationRequest,
-    responses((status=200))
+    responses((status=200, body = AssetWithSpe))
 )]
-async fn set_asset_rotation_correction(
+async fn set_asset_transform_correction(
     State(app_state): State<SharedState>,
     Path(file_id): Path<FileId>,
     Json(req): Json<SetAssetRotationRequest>,
-) -> ApiResult<()> {
-    match req.rotation {
-        Some(rot) if rot % 90 != 0 => Err(eyre!("Invalid rotation value").into()),
-        rotation => {
-            let file_id: model::FileId = file_id.try_into()?;
-            let conn = app_state.pool.get().await?;
-            interact!(conn, move |conn| {
-                repository::asset::set_asset_rotation_correction(conn, file_id, rotation)
-            })
-            .await??;
-            Ok(())
-        }
+) -> ApiResult<Json<AssetWithSpe>> {
+    let file_id: model::FileId = file_id.try_into()?;
+    let mut conn = app_state.pool.get().await?;
+    if req.rotation.is_none() && req.mirror.is_none() {
+        return Err(eyre!("must set at least one field").into());
     }
+    let asset_id = if let Some(rotation) = req.rotation {
+        let rotation = match rotation {
+            0 => model::RotationCorrection::CW0,
+            90 => model::RotationCorrection::CW90,
+            180 => model::RotationCorrection::CW180,
+            270 => model::RotationCorrection::CW270,
+            _ => return Err(eyre!("Invalid rotation value").into()),
+        };
+        Some(
+            interact!(conn, move |conn| {
+                repository::asset::set_rotation_correction_all_asset_files(conn, file_id, rotation)
+            })
+            .await??,
+        )
+    } else {
+        None
+    };
+    let asset_id = if let Some(mirror) = req.mirror {
+        interact!(conn, move |conn| {
+            repository::asset::set_mirror_correction_all_asset_files(conn, file_id, mirror.into())
+        })
+        .await??
+    } else {
+        asset_id.expect("at least one query will run")
+    };
+    let asset = interact!(conn, move |conn| {
+        repository::asset::get_asset(conn, asset_id)
+    })
+    .await??;
+    let full_asset: AssetWithSpe = get_full_asset(&mut conn, asset).await?;
+    Ok(Json(full_asset))
 }

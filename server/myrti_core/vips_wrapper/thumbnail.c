@@ -10,9 +10,8 @@
 
 
 int init() {
-  printf("vips_init\n");
   int ret = VIPS_INIT("vips_wrapper"); 
-  printf("vips_init done\n");
+  vips_cache_set_max(0);
   return ret;
 }
 

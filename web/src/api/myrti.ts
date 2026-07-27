@@ -92,9 +92,9 @@ export interface AssetFile {
   fileId: FileId;
   height: number;
   mimeType: string;
+  mirrorCorrection: MirrorCorrection;
   pathInRoot: string;
-  /** @nullable */
-  rotationCorrection?: number | null;
+  rotationCorrection: number;
   width: number;
 }
 
@@ -228,6 +228,15 @@ export interface ImageRepresentation {
 
 export type ImageRepresentationId = string;
 
+export type MirrorCorrection = (typeof MirrorCorrection)[keyof typeof MirrorCorrection];
+
+// eslint-disable-next-line @typescript-eslint/no-redeclare
+export const MirrorCorrection = {
+  None: 'None',
+  Horizontal: 'Horizontal',
+  Vertical: 'Vertical',
+} as const;
+
 export type SegmentTypeOneOfType = (typeof SegmentTypeOneOfType)[keyof typeof SegmentTypeOneOfType];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
@@ -264,8 +273,18 @@ export interface SetAssetIsSeriesSelectionResponse {
   seriesId: AssetSeriesId;
 }
 
+/**
+ * @nullable
+ */
+export type SetAssetRotationRequestMirror = MirrorCorrection | null;
+
 export interface SetAssetRotationRequest {
   /** @nullable */
+  mirror?: SetAssetRotationRequestMirror;
+  /**
+   * One of 0, 90, 180, 270
+   * @nullable
+   */
   rotation?: number | null;
 }
 
@@ -541,12 +560,12 @@ export const getFileDetails = <TData = AxiosResponse<AssetDetailsResponse>>(
   return axios.get(`/api/files/${id}/details`, options);
 };
 
-export const setAssetRotationCorrection = <TData = AxiosResponse<void>>(
+export const setAssetTransformCorrection = <TData = AxiosResponse<AssetWithSpe>>(
   id: string,
   setAssetRotationRequest: SetAssetRotationRequest,
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
-  return axios.post(`/api/files/${id}/rotation`, setAssetRotationRequest, options);
+  return axios.post(`/api/files/${id}/transform`, setAssetRotationRequest, options);
 };
 
 export const getAllAssetsGeojson = <TData = AxiosResponse<string>>(
@@ -619,7 +638,7 @@ export type GetOriginalFileResult = AxiosResponse<string>;
 export type GetImageAssetRepresentationResult = AxiosResponse<string>;
 export type GetThumbnailResult = AxiosResponse<string>;
 export type GetFileDetailsResult = AxiosResponse<AssetDetailsResponse>;
-export type SetAssetRotationCorrectionResult = AxiosResponse<void>;
+export type SetAssetTransformCorrectionResult = AxiosResponse<AssetWithSpe>;
 export type GetAllAssetsGeojsonResult = AxiosResponse<string>;
 export type CreateSeriesResult = AxiosResponse<CreateSeriesResponse>;
 export type DeleteSeriesResult = AxiosResponse<DeleteSeries200>;

@@ -7,7 +7,7 @@ use eyre::{Context, Result, eyre};
 
 use crate::model::{
     AssetBase, AssetFile, AssetId, AssetPathOnDisk, AssetRootDirId, AssetType, FileId,
-    GpsCoordinates, Image, Size, TimestampInfo, Video,
+    GpsCoordinates, Image, MirrorCorrection, RotationCorrection, Size, TimestampInfo, Video,
     util::{datetime_from_db_repr, hash_vec8_to_u64},
 };
 
@@ -29,7 +29,8 @@ pub struct DbAssetFile {
     pub added_at: i64,
     pub width: i32,
     pub height: i32,
-    pub rotation_correction: Option<i32>,
+    pub rotation_correction: i32,
+    pub mirror_correction: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Identifiable, Queryable, QueryableByName, Selectable)]
@@ -96,7 +97,29 @@ impl TryFrom<DbAssetFile> for AssetFile {
                 width: value.width,
                 height: value.height,
             },
-            rotation_correction: value.rotation_correction,
+            rotation_correction: match value.rotation_correction {
+                0 => RotationCorrection::CW0,
+                1 => RotationCorrection::CW90,
+                2 => RotationCorrection::CW180,
+                3 => RotationCorrection::CW270,
+                other => {
+                    return Err(eyre!(
+                        "Invalid value {} in column AssetFile.rotation_correction",
+                        other
+                    ));
+                }
+            },
+            mirror_correction: match value.mirror_correction {
+                0 => MirrorCorrection::None,
+                1 => MirrorCorrection::Horizontal,
+                2 => MirrorCorrection::Vertical,
+                other => {
+                    return Err(eyre!(
+                        "Invalid value {} in column AssetFile.mirror_correction",
+                        other
+                    ));
+                }
+            },
         })
     }
 }
@@ -173,7 +196,7 @@ pub struct DbInsertAssetFile<'a> {
 
     pub width: i32,
     pub height: i32,
-    pub rotation_correction: Option<i32>,
+    pub rotation_correction: i32,
     pub exiftool_output: Cow<'a, [u8]>,
 }
 

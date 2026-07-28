@@ -8,6 +8,7 @@ import type {
   AssetSeriesId,
   TimelineGroupId,
   FileId,
+  MirrorCorrection,
 } from '@api/myrti';
 import { dayjs } from '@lib/dayjs';
 import { klona } from 'klona/json';
@@ -1570,6 +1571,31 @@ export function createTimeline(
         })
       ).data;
       asset.repFile.rotationCorrection = updatedAsset.repFile.rotationCorrection;
+      layoutSection(getItemForAsset(asset.assetId).pos.sectionIndex, 'noAdjustScroll');
+    },
+    mirrorAsset: async (assetId: AssetId, axis: 'horizontal' | 'vertical') => {
+      const asset = assetsById.get(assetId);
+      const rotation = asset.repFile.rotationCorrection;
+      const mirror = asset.repFile.mirrorCorrection;
+      const {
+        newMirror,
+        newRotation,
+      }: { newMirror: MirrorCorrection; newRotation?: number | undefined } = (() => {
+        if (mirror === 'none') {
+          return { newMirror: axis };
+        } else if (mirror != axis) {
+          return { newMirror: 'none', newRotation: (rotation + 180) % 360 };
+        } else {
+          return { newMirror: 'none' };
+        }
+      })();
+      const updatedAsset = (
+        await setAssetTransformCorrection(asset.repFile.fileId, {
+          mirror: newMirror,
+          rotation: newRotation,
+        })
+      ).data;
+      asset.repFile = updatedAsset.repFile;
       layoutSection(getItemForAsset(asset.assetId).pos.sectionIndex, 'noAdjustScroll');
     },
   };

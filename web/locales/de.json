@@ -18,5 +18,12 @@
   "remove_from_album": "Aus Album entfernen",
   "new_album": "Neues Album",
   "hide": "Verstecken",
-  "n_selected": "{{n}} ausgewählt"
+  "n_selected": "{{n}} ausgewählt",
+  "rotate_cw": "Drehen",
+  "flip_horizontal": "Horizontal spiegeln",
+  "flip_vertical": "Vertikal spiegeln",
+  "zoom_in": "Vergrößern",
+  "zoom_out": "Verkleinern",
+  "file_details": "Details",
+  "close_gallery": "Gallerie schließen"
 }

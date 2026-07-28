@@ -23,5 +23,12 @@
   "remove_from_album": "Remove from album",
   "new_album": "New album",
   "hide": "Hide",
-  "n_selected": "{{n}} selected"
+  "n_selected": "{{n}} selected",
+  "rotate_cw": "Rotate",
+  "flip_horizontal": "Flip horizontally",
+  "flip_vertical": "Flip vertically",
+  "zoom_in": "Zoom in",
+  "zoom_out": "Zoom out",
+  "file_details": "File details",
+  "close_gallery": "Close gallery"
 }

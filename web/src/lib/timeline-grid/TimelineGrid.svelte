@@ -394,6 +394,9 @@
   onRotateClicked={() => {
     timeline.rotateAssetCW(currentSlide.assetId);
   }}
+  onMirrorClicked={(axis) => {
+    timeline.mirrorAsset(currentSlide.assetId, axis);
+  }}
   {scrollWrapper}
   {restoreScrollOnClose}
   closeGallery={() => {

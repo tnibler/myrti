@@ -16,6 +16,7 @@
     closeGallery: () => void;
     onOpenTransitionFinished: () => void;
     onRotateClicked: () => void;
+    onMirrorClicked: (axis: 'horizontal' | 'vertical') => void;
   };
 
   export type GalleryControls = {
@@ -50,7 +51,17 @@
   import * as R from 'remeda';
   import InfoPanel from './InfoPanel.svelte';
   import Slide from './Slide.svelte';
-  import { EyeOff, Info, RotateCw, X, ZoomIn, ZoomOut } from '@lucide/svelte';
+  import {
+    EyeOff,
+    FlipHorizontal2,
+    FlipVertical2,
+    Info,
+    RotateCw,
+    X,
+    ZoomIn,
+    ZoomOut,
+  } from '@lucide/svelte';
+  import { intl } from '@lib/i18next';
 
   let {
     slides,
@@ -62,6 +73,7 @@
     onOpenTransitionFinished,
     topOffset,
     onRotateClicked,
+    onMirrorClicked,
   }: PagerProps = $props();
 
   let viewport = $state({ width: 0, height: 0 });
@@ -473,6 +485,7 @@
           <button
             class="p-2"
             class:button-visible={hasMouse}
+            title={intl('rotate_cw')}
             onclick={() => {
               onRotateClicked();
             }}
@@ -482,6 +495,27 @@
           <button
             class="p-2"
             class:button-visible={hasMouse}
+            title={intl('flip_horizontal')}
+            onclick={() => {
+              onMirrorClicked('horizontal');
+            }}
+          >
+            <FlipHorizontal2 color="white" />
+          </button>
+          <button
+            class="p-2"
+            class:button-visible={hasMouse}
+            title={intl('flip_vertical')}
+            onclick={() => {
+              onMirrorClicked('vertical');
+            }}
+          >
+            <FlipVertical2 color="white" />
+          </button>
+          <button
+            class="p-2"
+            title={intl('zoom_out')}
+            class:button-visible={hasMouse}
             onclick={() => onZoomOutClicked()}
             disabled={isZoomOutDisabled}
           >
@@ -489,18 +523,25 @@
           </button>
           <button
             class="p-2"
+            title={intl('zoom_in')}
             class:button-visible={hasMouse}
             onclick={() => onZoomInClicked()}
             disabled={isZoomInDisabled}
           >
             <ZoomIn color={isZoomInDisabled ? '#aaa' : 'white'} />
           </button>
-          <button class="p-2" class:button-visible={hasMouse} onclick={() => {}}>
+          <button
+            class="p-2"
+            class:button-visible={hasMouse}
+            title={intl('hide')}
+            onclick={() => {}}
+          >
             <EyeOff color="white" />
           </button>
           <button
             class="p-2"
             class:button-visible={hasMouse}
+            title={intl('file_details')}
             onclick={() => {
               isSidePanelOpen = !isSidePanelOpen;
               moveSlideAnimate('backToCenter');
@@ -508,7 +549,12 @@
           >
             <Info color="white" />
           </button>
-          <button class="p-4" class:button-visible={hasMouse} onclick={() => closeGallery()}>
+          <button
+            class="p-4"
+            title={intl('close_gallery')}
+            class:button-visible={hasMouse}
+            onclick={() => closeGallery()}
+          >
             <X color="white" />
           </button>
         </div>

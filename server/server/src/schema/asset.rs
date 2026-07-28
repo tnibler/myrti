@@ -79,6 +79,7 @@ pub struct Video {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub enum MirrorCorrection {
     None,
     Horizontal,

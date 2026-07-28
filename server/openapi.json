@@ -1373,9 +1373,9 @@
       "MirrorCorrection": {
         "type": "string",
         "enum": [
-          "None",
-          "Horizontal",
-          "Vertical"
+          "none",
+          "horizontal",
+          "vertical"
         ]
       },
       "SegmentType": {

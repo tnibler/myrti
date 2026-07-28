@@ -66,6 +66,7 @@
     }
   }
 
+  const mirrorImg = $derived(asset.repFile.mirrorCorrection);
   const rotateImg = $derived(asset.repFile.rotationCorrection);
   const rotateImgMod180 = $derived(asset.repFile.rotationCorrection % 180);
   const imgTop = $derived(rotateImgMod180 !== 0 ? (box.height - box.width) * 0.5 : 0);
@@ -106,7 +107,11 @@
       style:top={imgTop + 'px'}
       style:left={imgLeft + 'px'}
       style:max-width="none"
-      style:rotate={rotateImg + 'deg'}
+      style:transform="rotate({rotateImg}deg) {mirrorImg === 'vertical'
+        ? 'scaleY(-1)'
+        : mirrorImg === 'horizontal'
+          ? 'scaleX(-1)'
+          : ''}"
     />
     <div
       class={'absolute z-10 h-full w-full bg-gradient-to-b from-black/25 via-[transparent_25%] opacity-0 transition-opacity ' +

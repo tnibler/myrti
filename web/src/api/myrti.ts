@@ -232,9 +232,9 @@ export type MirrorCorrection = (typeof MirrorCorrection)[keyof typeof MirrorCorr
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const MirrorCorrection = {
-  None: 'None',
-  Horizontal: 'Horizontal',
-  Vertical: 'Vertical',
+  none: 'none',
+  horizontal: 'horizontal',
+  vertical: 'vertical',
 } as const;
 
 export type SegmentTypeOneOfType = (typeof SegmentTypeOneOfType)[keyof typeof SegmentTypeOneOfType];

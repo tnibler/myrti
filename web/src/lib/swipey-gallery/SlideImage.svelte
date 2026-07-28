@@ -53,7 +53,11 @@
     };
   });
 
-  const rotateTransform = $derived(`rotate(${slideData.asset.repFile.rotationCorrection}deg)`);
+  const rotation = $derived(slideData.asset.repFile.rotationCorrection);
+  const mirror = $derived(slideData.asset.repFile.mirrorCorrection);
+  const rotateTransform = $derived(
+    `rotate(${rotation}deg) ${mirror === 'vertical' ? 'scaleY(-1)' : mirror === 'horizontal' ? 'scaleX(-1)' : ''}`,
+  );
   let transitionTransform = $state('');
   export function closeTransition(transform: string, onTransitionEnd: () => void) {
     if (!imgEl) {

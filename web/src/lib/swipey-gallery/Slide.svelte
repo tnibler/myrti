@@ -95,6 +95,7 @@
   let slideVideo: SlideVideo | null = $state(null);
   let placeholderEl: HTMLImageElement | null = $state(null);
   const placeholderRotation = $derived(slideToDisplay.asset.repFile.rotationCorrection);
+  const placeholderMirror = $derived(slideToDisplay.asset.repFile.mirrorCorrection);
   let cursor: null | 'zoom-in' | 'grab' | 'grabbing' = $derived.by(() => {
     if (effectiveZoom <= zoomLevels.fit) {
       return 'zoom-in';
@@ -279,7 +280,9 @@
     };
   }
 
-  const rotateTransform = $derived(`rotate(${placeholderRotation}deg)`);
+  const rotateTransform = $derived(
+    `rotate(${placeholderRotation}deg) ${placeholderMirror === 'vertical' ? 'scaleY(-1)' : placeholderMirror === 'horizontal' ? 'scaleX(-1)' : ''}`,
+  );
   let transitionTransform = $state('');
 
   function addOpenTransition(el: HTMLImageElement, t: OpenTransitionParams) {

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
-use const_format::formatcp;
 use diesel::{
     RunQueryDsl, SelectableHelper,
+    connection::SimpleConnection,
     deserialize::QueryableByName,
     query_builder::{QueryBuilder, QueryFragment},
     sql_query,
@@ -20,6 +20,15 @@ use crate::model::{
 
 use super::{db::DbConn, db_entity::DbAsset, timeline_group::get_timeline_group};
 
+#[tracing::instrument(skip(conn), level = "debug")]
+pub fn rebuild_timeline(conn: &mut DbConn) -> Result<()> {
+    conn.immediate_transaction(|conn| {
+        conn.batch_execute(include_str!("timeline_query.sql"))
+            .wrap_err("error executing rebuild_timeline query")?;
+        Ok(())
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum TimelineElement {
     DayGrouped(Vec<Asset>),
@@ -36,134 +45,6 @@ impl TimelineElement {
             TimelineElement::Group { group: _, assets } => assets,
         }
     }
-}
-
-#[derive(Debug, Clone, QueryableByName)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-struct RowAssetGroupId {
-    #[diesel(embed)]
-    pub asset: DbAsset,
-    #[diesel(column_name = group_id)]
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::BigInt>)]
-    pub group_id: Option<i64>,
-    #[diesel(column_name = sort_group_date)]
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub sort_group_date: i64,
-}
-
-// TODO when the time comes: figure out how to handle dates of different timezones.
-// Right now assets are grouped by Asset::taken_date_local().date_naive() and sorted by timestamp,
-// which may or may not by what we want.
-#[tracing::instrument(level = "debug", skip(conn))]
-pub fn get_timeline_chunk(
-    conn: &mut DbConn,
-    last_id: Option<AssetId>,
-    max_count: i64,
-) -> Result<Vec<TimelineElement>> {
-    // timezone to calculate local dates in
-    let timezone = &chrono::Local;
-    let mut qb = SqliteQueryBuilder::new();
-    qb.push_sql(r#"
-    WITH last_asset AS
-    (
-        SELECT Asset.*,
-        CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.timeline_group_id ELSE 0 END AS album_id,
-        CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.display_date ELSE Asset.taken_date END AS sort_group_date
-        FROM Asset
-        LEFT JOIN TimelineGroupItem ON TimelineGroupItem.asset_id = Asset.asset_id
-        LEFT JOIN TimelineGroup ON TimelineGroupItem.group_id = TimelineGroup.timeline_group_id
-        WHERE Asset.asset_id = $1
-    )
-    SELECT
-    "#);
-    DbAsset::as_select().to_sql(&mut qb, &diesel::sqlite::Sqlite)?;
-    qb.push_sql(r#"
-    ,
-    CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.timeline_group_id ELSE NULL END AS group_id,
-    CASE WHEN TimelineGroup.timeline_group_id IS NOT NULL THEN TimelineGroup.display_date ELSE Asset.taken_date END AS sort_group_date
-    FROM Asset
-    LEFT JOIN TimelineGroupItem ON TimelineGroupItem.asset_id = Asset.asset_id
-    LEFT JOIN TimelineGroup ON TimelineGroupItem.group_id = TimelineGroup.timeline_group_id
-    WHERE
-    (
-        ($1 IS NULL)
-        OR
-        (sort_group_date, group_id, Asset.taken_date, Asset.asset_id) < (SELECT sort_group_date, album_id, taken_date, asset_id FROM last_asset)
-        OR
-        (
-        group_id IS NULL AND (SELECT album_id FROM last_asset) IS NULL
-        AND
-        (sort_group_date, Asset.taken_date, Asset.asset_id) < (SELECT sort_group_date, taken_date, asset_id FROM last_asset)
-        )
-    )
-    ORDER BY sort_group_date DESC, group_id DESC, Asset.taken_date DESC, Asset.asset_id DESC
-    LIMIT $2;
-    "#);
-    use diesel::sql_types::{BigInt, Nullable};
-    let query_start = Instant::now();
-    let assets_groupid: Vec<RowAssetGroupId> = sql_query(qb.finish())
-        .bind::<Nullable<BigInt>, _>(last_id.map(|id| id.0))
-        .bind::<BigInt, _>(max_count)
-        .load(conn)?;
-    let query_elapsed = query_start.elapsed();
-    let processing_start = Instant::now();
-    let mut timeline_els: Vec<TimelineElement> = Vec::default();
-    for row in assets_groupid {
-        // TODO: additional query per row is not great
-        let asset: Asset = repository::asset::get_asset(conn, AssetId(row.asset.asset_id))?;
-
-        let group_id = row.group_id.map(TimelineGroupId);
-        // let sort_group_date = datetime_from_db_repr(row.sort_group_date)?;
-        let mut last_el = timeline_els.last_mut();
-        match &mut last_el {
-            None => {
-                // create new TimelineElement
-                let new_el = if let Some(group_id) = group_id {
-                    let group = get_timeline_group(conn, group_id)?;
-                    TimelineElement::Group {
-                        group,
-                        assets: vec![asset],
-                    }
-                } else {
-                    TimelineElement::DayGrouped(vec![asset])
-                };
-                timeline_els.push(new_el);
-            }
-            Some(last_el) => match (last_el, group_id) {
-                // Matching cases: add this asset to last TimelineElement
-                (TimelineElement::DayGrouped(assets), None)
-                    if assets
-                        .last()
-                        .map(|a| {
-                            a.base.taken_date.with_timezone(timezone).date_naive()
-                                == asset.base.taken_date.with_timezone(timezone).date_naive()
-                        })
-                        // .unwrap_or(true)
-                        .expect("There should never be an empty DayGrouped") =>
-                {
-                    assets.push(asset);
-                }
-                (TimelineElement::Group { group, assets }, Some(group_id))
-                    if group.id == group_id =>
-                {
-                    assets.push(asset);
-                }
-                // Need to create new TimelineElement for these cases
-                (_, Some(group_id)) => {
-                    let group = get_timeline_group(conn, group_id)?;
-                    timeline_els.push(TimelineElement::Group {
-                        group,
-                        assets: vec![asset],
-                    });
-                }
-                // last DayGroup element does not match this date
-                (_, None) => timeline_els.push(TimelineElement::DayGrouped(vec![asset])),
-            },
-        };
-    }
-    let processing_elapsed = processing_start.elapsed();
-    tracing::debug!(?query_elapsed, ?processing_elapsed);
-    Ok(timeline_els)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -190,59 +71,18 @@ struct RowTimelineSection {
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub section_idx: i64,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub min_segment: i64,
+    pub start_segment: i64,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub max_segment: i64,
+    pub end_segment: i64,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub asset_count: i64,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub oldest_asset_taken_date: i64,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub newest_asset_taken_date: i64,
+    pub section_len: i64,
 }
 
 #[tracing::instrument(skip(conn), level = "debug")]
 pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
-    const SQL_SEGMENT_IDX: &str = include_str!("timeline_segment_idx.sql");
-    const QUERY: &str = formatcp!(
-        r#"
-    WITH tl_segment_idx AS ({SQL_SEGMENT_IDX}),
-    segment_size AS
-    (
-        SELECT *, COUNT(asset_id) AS segment_size FROM tl_segment_idx GROUP BY segment_idx
-    ),
-    cumsum_segment_size AS (
-        SELECT *, SUM(segment_size) OVER (PARTITION BY 1 ORDER BY segment_idx ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cum_segment_size FROM segment_size
-    ),
-    section_segments AS (
-        SELECT 
-        cum_segment_size / 100 as section_idx,
-        MIN(segment_idx) as min_segment,
-        MAX(segment_idx) as max_segment,
-        SUM(segment_size) as asset_count
-        FROM cumsum_segment_size
-        GROUP BY section_idx
-    )
-    SELECT
-    section_idx,
-    min_segment,
-    max_segment,
-    asset_count,
-    (
-        SELECT MAX(tl_segment_idx.sort_date)
-        FROM tl_segment_idx
-        WHERE section_segments.min_segment = tl_segment_idx.segment_idx
-        GROUP BY tl_segment_idx.segment_idx
-    ) AS newest_asset_taken_date,
-    (
-        SELECT MIN(tl_segment_idx.sort_date)
-        FROM tl_segment_idx
-        WHERE section_segments.max_segment = tl_segment_idx.segment_idx
-        GROUP BY tl_segment_idx.segment_idx
-    ) AS oldest_asset_taken_date
-    FROM section_segments;
-    "#
-    );
+    const QUERY: &str = r#"
+    SELECT section_idx, start_segment, end_segment, section_len FROM TimelineSection;
+    "#;
     let query_start = Instant::now();
     let rows: Vec<RowTimelineSection> = sql_query(QUERY).load(conn)?;
     let query_elapsed = query_start.elapsed();
@@ -251,12 +91,12 @@ pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
         .map(|row| {
             Ok(TimelineSection {
                 id: TimelineSectionId {
-                    segment_min: row.min_segment,
-                    segment_max: row.max_segment,
+                    segment_min: row.start_segment,
+                    segment_max: row.end_segment - 1, // FIXME: decide on exclusive or inclusive
                 },
-                start_date: datetime_from_db_repr(row.newest_asset_taken_date)?,
-                end_date: datetime_from_db_repr(row.oldest_asset_taken_date)?,
-                num_assets: row.asset_count,
+                start_date: datetime_from_db_repr(0)?,
+                end_date: datetime_from_db_repr(10)?,
+                num_assets: row.section_len,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -320,21 +160,19 @@ struct RowTimelineSegmentInSection {
     pub is_series_selection: Option<i32>,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub sort_date: i64,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
-    pub sort_date_day: Option<String>,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub segment_idx: i64,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
+    pub segment_split_idx: Option<i32>,
 }
 
-#[instrument(err, skip(conn), level = "debug")]
+#[instrument(err(Debug), skip(conn), level = "debug")]
 pub fn get_segments_in_section(
     conn: &mut DbConn,
     segment_min: i64,
     segment_max: i64,
 ) -> Result<Vec<TimelineSegment>> {
-    const SQL_SEGMENT_IDX: &str = include_str!("timeline_segment_idx.sql");
     let mut qb = SqliteQueryBuilder::new();
-    qb.push_sql(formatcp!(r#"WITH tl_segment_idx AS ({SQL_SEGMENT_IDX})"#));
     qb.push_sql(
         r#"
     SELECT
@@ -343,21 +181,23 @@ pub fn get_segments_in_section(
     DbAsset::as_select().to_sql(&mut qb, &diesel::sqlite::Sqlite)?;
     qb.push_sql(
         r#"
-    ,
-    tl_segment_idx.group_id as timeline_group_id,
-    tl_segment_idx.series_id as series_id,
-    tl_segment_idx.series_date as series_date,
-    tl_segment_idx.series_len as series_len,
-    Asset.is_series_selection as is_series_selection,
-    tl_segment_idx.sort_date as sort_date,
-    tl_segment_idx.sort_date_day as sort_date_day,
-    tl_segment_idx.segment_idx as segment_idx
+   , TimelineItem.group_id as timeline_group_id
+    , TimelineItem.series_id as series_id
+    , TimelineItem.series_date as series_date
+    , CASE WHEN TimelineItem.series_id IS NULL THEN NULL ELSE 1 END as series_len
+    , Asset.is_series_selection as is_series_selection
+    , TimelineItem.sort_date as sort_date
+    , TimelineItem.segment_idx as segment_idx
+    , TimelineItem.segment_split_idx as segment_split_idx
     FROM
-    tl_segment_idx INNER JOIN Asset ON Asset.asset_id = tl_segment_idx.asset_id
+    TimelineItem INNER JOIN Asset ON Asset.asset_id = TimelineItem.asset_id
     WHERE
-    ? <= segment_idx AND segment_idx <= ?
-    ORDER BY tl_segment_idx.sort_date DESC, tl_segment_idx.series_date DESC, tl_segment_idx.taken_date DESC,
-    tl_segment_idx.series_id, tl_segment_idx.group_id DESC, tl_segment_idx.asset_id;
+    ? <= TimelineItem.segment_idx AND TimelineItem.segment_idx <= ?
+    ORDER BY TimelineItem.sort_date DESC
+    , TimelineItem.taken_date DESC
+    , TimelineItem.series_id
+    , TimelineItem.group_id DESC
+    , TimelineItem.asset_id;
     "#,
     );
     let query = sql_query(qb.finish())

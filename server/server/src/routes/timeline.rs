@@ -1,11 +1,10 @@
 use axum::{
     extract::{Path, Query, State},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use chrono::{DateTime, Utc};
 use eyre::{eyre, Context, Result};
-use futures::{stream::FuturesOrdered, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument};
 use utoipa::{IntoParams, ToSchema};
@@ -13,12 +12,8 @@ use utoipa::{IntoParams, ToSchema};
 use crate::{
     app_state::SharedState,
     asset_queries::get_full_asset,
-    http_error::ApiResult,
-    schema::{
-        asset::{AssetSpe, AssetWithSpe, Image, ImageRepresentation, Video},
-        timeline::{TimelineChunk, TimelineGroup, TimelineGroupType},
-        AssetId, AssetSeriesId, TimelineGroupId,
-    },
+    http_error::{ApiResult, HttpErrorExt},
+    schema::{asset::AssetWithSpe, AssetSeriesId, TimelineGroupId},
 };
 use myrti_core::{
     deadpool_diesel, interact,
@@ -34,88 +29,9 @@ use myrti_core::{
 
 pub fn router() -> Router<SharedState> {
     Router::new()
+        .route("/rebuild", post(rebuild_timeline))
         .route("/sections", get(get_timeline_sections))
         .route("/sections/:id", get(get_timeline_segments))
-}
-
-#[derive(Debug, Clone, Deserialize, IntoParams)]
-#[serde(rename_all = "camelCase")]
-pub struct TimelineRequest {
-    pub last_asset_id: Option<AssetId>,
-    pub max_count: i32,
-    pub last_fetch: Option<String>,
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/assets/timeline",
-    params(TimelineRequest),
-    responses(
-    (status = 200, body=TimelineChunk)
-    )
-)]
-#[instrument(level = "debug", skip(app_state))]
-pub async fn get_timeline(
-    State(app_state): State<SharedState>,
-    Query(req_body): Query<TimelineRequest>,
-) -> ApiResult<Json<TimelineChunk>> {
-    let local_tz = &chrono::Local; // TODO inject from config
-    let now = Utc::now();
-    let last_asset_id: Option<model::AssetId> = req_body
-        .last_asset_id
-        .map(model::AssetId::try_from)
-        .transpose()?;
-    let mut conn = app_state.pool.get().await?;
-    let groups = interact!(conn, move |conn| {
-        repository::timeline::get_timeline_chunk(conn, last_asset_id, req_body.max_count.into())
-    })
-    .await??;
-    let filtered_nonempty_groups = groups.into_iter().filter(|group| match group {
-        TimelineElement::DayGrouped(assets) => !assets.is_empty(),
-        TimelineElement::Group { group: _, assets } => !assets.is_empty(),
-    });
-    let mut api_groups: Vec<TimelineGroup> = Vec::default();
-    for group in filtered_nonempty_groups {
-        let mut api_assets_with_spe: Vec<AssetWithSpe> = Vec::default();
-        let assets = match &group {
-            TimelineElement::DayGrouped(assets) => assets,
-            TimelineElement::Group { group: _, assets } => assets,
-        };
-        for asset in assets {
-            api_assets_with_spe.push(get_full_asset(&mut conn, asset.clone()).await?);
-        }
-        let api_group = match group {
-            TimelineElement::DayGrouped(assets) => TimelineGroup {
-                ty: TimelineGroupType::Day {
-                    date: assets
-                        .last()
-                        .unwrap() // groups are nonempty
-                        .base
-                        .taken_date
-                        .with_timezone(local_tz)
-                        .date_naive(),
-                },
-                assets: api_assets_with_spe,
-            },
-            TimelineElement::Group { group, assets } => TimelineGroup {
-                ty: TimelineGroupType::Group {
-                    group_title: group.name.unwrap_or(String::from("NONAME")),
-                    // unwrap is ok because empty asset vecs are filtered out above
-                    group_start_date: assets.first().unwrap().base.taken_date,
-                    // FIXME these should maybe not be UTC but local dates
-                    group_end_date: assets.last().unwrap().base.taken_date,
-                    group_id: group.id.0.to_string(),
-                },
-                assets: api_assets_with_spe,
-            },
-        };
-        api_groups.push(api_group);
-    }
-    Ok(Json(TimelineChunk {
-        date: now,
-        changed_since_last_fetch: false,
-        groups: api_groups,
-    }))
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -134,6 +50,23 @@ pub struct TimelineSection {
     pub start_date: DateTime<Utc>,
     /// date of *oldest* asset in range
     pub end_date: DateTime<Utc>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/timeline/rebuild",
+    responses(
+    (status = 200)
+    )
+)]
+#[instrument(skip(app_state))]
+pub async fn rebuild_timeline(State(app_state): State<SharedState>) -> ApiResult<()> {
+    let conn = app_state.pool.get().await?;
+    interact!(conn, move |conn| {
+        repository::timeline::rebuild_timeline(conn)
+    })
+    .await??;
+    Ok(())
 }
 
 #[utoipa::path(
@@ -229,7 +162,7 @@ pub async fn get_timeline_segments(
 ) -> ApiResult<Json<TimelineSegmentsResponse>> {
     let (segment_min, segment_max) = section_id
         .split_once('_')
-        .ok_or(eyre!("invalid sectionId"))?;
+        .ok_or(eyre!("invalid sectionId").into_404())?;
     let segment_min: i64 = segment_min.parse().wrap_err("invalid sectionId")?;
     let segment_max: i64 = segment_max.parse().wrap_err("invalid sectionId")?;
     let mut conn = app_state.pool.get().await?;

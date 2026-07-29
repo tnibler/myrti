@@ -14,14 +14,13 @@ use myrti_core::{
 
 use crate::{
     app_state::SharedState,
-    http_error::ApiResult,
+    http_error::{ApiResult, HttpErrorExt},
     schema::{asset::Asset, AssetId, AssetSeriesId},
 };
 
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/:id", get(get_asset))
-        .route("/timeline", get(super::timeline::get_timeline))
         .route("/hidden", post(set_assets_hidden))
         .route("/:id/seriesSelection", post(set_asset_is_series_selection))
 }
@@ -118,7 +117,7 @@ async fn set_asset_is_series_selection(
         repository::asset_series::get_series_for_asset(conn, asset_id)
     })
     .await??;
-    let series = series.ok_or(eyre!("Asset is not part of a series"))?;
+    let series = series.ok_or(eyre!("Asset is not part of a series").into_400())?;
     Ok(Json(SetAssetIsSeriesSelectionResponse {
         series_id: series.series_id.into(),
         asset_ids: series.asset_ids.into_iter().map(AssetId::from).collect(),

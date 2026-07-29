@@ -259,6 +259,34 @@ CREATE TABLE TimelineGroupItem (
   FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 
+CREATE TABLE TimelineItem (
+  asset_id INTEGER NOT NULL UNIQUE
+  , taken_date INTEGER NOT NULL
+  , series_id INTEGER
+  , series_date INTEGER
+  , group_id INTEGER
+  , group_date INTEGER
+  , sort_date INTEGER NOT NULL GENERATED ALWAYS AS (IFNULL(group_date, IFNULL(series_date, taken_date))) STORED
+  , segment_date TEXT NOT NULL GENERATED ALWAYS AS (date(sort_date / 1000, 'unixepoch')) STORED
+  , section_idx INTEGER NOT NULL
+  , segment_idx INTEGER NOT NULL
+  , segment_split_idx INTEGER
+  , FOREIGN KEY (asset_id) REFERENCES Asset(asset_id) ON DELETE CASCADE
+  , FOREIGN KEY (series_id) REFERENCES AssetSeries(series_id) ON DELETE CASCADE
+  , FOREIGN KEY (group_id) REFERENCES TimelineGroup(timeline_group_id) ON DELETE CASCADE
+  , CHECK ((series_id IS NULL) IS (series_date IS NULL))
+  , CHECK ((group_id IS NULL) IS (group_date IS NULL))
+) STRICT;
+
+CREATE TABLE TimelineSection (
+  section_idx INTEGER NOT NULL PRIMARY KEY
+  , start_segment INTEGER NOT NULL UNIQUE
+  , end_segment INTEGER NOT NULL UNIQUE
+  , section_len INTEGER NOT NULL
+  , CHECK (start_segment < end_segment)
+  , CHECK (0 < section_len)
+) STRICT;
+
 -- =================== Configuration =======================
 
 CREATE TABLE AcceptableVideoCodec (

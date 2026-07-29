@@ -61,16 +61,15 @@
         ]
       },
       "locked": {
-        "lastModified": 1784138926,
-        "narHash": "sha256-bl74EkPjJM1fniE1o7kmogRBatloSx/ZEeoVQphXgag=",
-        "owner": "tnibler",
+        "lastModified": 1785242872,
+        "narHash": "sha256-BPPcI/+cm5w0c6zqBcUCFljb0TqNNTPWR0MgvXlOTNg=",
+        "owner": "gpac",
         "repo": "gpac",
-        "rev": "038728c96e52b01d06afe8c403c7e78b277c9195",
+        "rev": "49dee5cad329cfed310c1682703df7daa47df31a",
         "type": "github"
       },
       "original": {
-        "owner": "tnibler",
-        "ref": "fix-bin-index-different-nb-segments",
+        "owner": "gpac",
         "repo": "gpac",
         "type": "github"
       }

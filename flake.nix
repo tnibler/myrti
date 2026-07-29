@@ -7,8 +7,7 @@
     crane.url = "github:ipetkov/crane";
 
     gpac = {
-      # url = "github:gpac/gpac";
-      url = "github:tnibler/gpac/fix-bin-index-different-nb-segments";
+      url = "github:gpac/gpac";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     fenix = {
@@ -164,7 +163,8 @@
         server = let
           runServer = pkgs.writeShellScriptBin "run-server" ''
             export PATH="${pkgs.lib.makeBinPath [pkgs.ffmpeg pkgs.exiftool gpac.packages.${system}.default]}:$PATH"
-            export LD_PRELOAD = "${pkgs.jemalloc}/lib/libjemalloc.so";
+            export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [pkgs.glib pkgs.vips]}"
+            export LD_PRELOAD="${pkgs.jemalloc}/lib/libjemalloc.so"
             exec ${server}/bin/server --serve-static ${myrtiWeb} "$@"
           '';
         in {

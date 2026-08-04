@@ -20,7 +20,7 @@
   bind:clientHeight={actualHeight}
   class={'absolute overflow-hidden whitespace-nowrap text-ellipsis' +
     ' ' +
-    className +
+    (className ?? '') +
     ' ' +
     (timelineItem.titleType === 'major' ? 'text-2xl' : 'text-lg')}
   style:top={timelineItem.top + 'px'}

@@ -7,15 +7,12 @@ import type {
 import type { Dayjs } from '@lib/dayjs';
 import type { TimelineGridItem } from './timeline.svelte';
 
-export type ItemRange = { startIdx: number; endIdx: number };
-
 /** Subdivision of the timeline that is fetched from API, contains segments. */
 export type TimelineSection = {
   top: number;
   height: number;
   data: ApiTimelineSection;
   segments: TimelineSegment[] | null;
-  items: ItemRange | null;
   /** Date of most recent asset in section */
   startDate: Dayjs;
   /** Date of oldest asset in section */
@@ -30,7 +27,7 @@ export type TimelineSegment = {
   sortDate: string;
   start: Dayjs;
   end: Dayjs;
-  itemRange: ItemRange | null;
+  gridItems: TimelineGridItem[] | null;
 } & (
   | {
       type: 'dateRange';
@@ -83,8 +80,11 @@ export type AssetSeries = {
 
 /** When creating a new group, existing groups become clickable to add the current selection to them */
 export type AddToGroupClickArea = {
-  gridItems: TimelineGridItem[];
   groupId: string;
+  top: number;
+  left: number;
+  width: number;
+  height: number;
 };
 
 export type OpenedSlide =

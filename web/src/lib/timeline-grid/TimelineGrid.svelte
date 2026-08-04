@@ -156,21 +156,6 @@
     };
   }
 
-  const visibleItems = $derived.by(() => {
-    const items = timeline.items
-      .slice(timeline.visibleItems.startIdx, timeline.visibleItems.endIdx)
-      .map((item, index) => {
-        return {
-          ...item,
-          /** index of Item in timeline before sorting */
-          originalItemIndex: index,
-        };
-      });
-    // sorted because keyed {#each} does not handle reordering items apparently
-    items.sort((a, b) => a.key.localeCompare(b.key));
-    return items;
-  });
-
   function getSelectState(item: TimelineItem): SelectState {
     if (timeline.state === 'justLooking' && timeline.numAssetsSelected > 0) {
       const isSelected = timeline.isItemSelected(item);
@@ -272,33 +257,30 @@
   }
 
   /** bound rectangles of grid items in timeline.addToGroupClickAreas */
-  const clickAreaRects = $derived(
-    timeline.addToGroupClickAreas.map((clickArea) => {
-      let currentTop = Infinity;
-      let currentBottom = -Infinity;
-      let currentLeft = viewport.width;
-      let currentRight = 0;
-      for (const item of clickArea.gridItems) {
-        currentTop = Math.min(item.top, currentTop);
-        currentBottom = Math.max(item.top + item.height, currentBottom);
-        if (
-          item.type === 'asset' ||
-          item.type === 'photoStack' ||
-          (item.type === 'segmentTitle' && item.titleType === 'day')
-        ) {
-          currentLeft = Math.min(item.left, currentLeft);
-          currentRight = Math.max(item.left + item.width, currentRight);
+  const clickAreaRects = $derived(timeline.addToGroupClickAreas);
+  const visibleItems = $derived.by(() => {
+    const ret = [];
+    for (
+      let sectionIdx = timeline.visibleSections.startIdx;
+      sectionIdx < timeline.visibleSections.endIdx;
+      sectionIdx += 1
+    ) {
+      const section = timeline.sections[sectionIdx];
+      if (section.segments === null) {
+        continue;
+      }
+      for (let segmentIdx = 0; segmentIdx < section.segments.length; segmentIdx += 1) {
+        const segment = section.segments[segmentIdx];
+        console.log(sectionIdx, segmentIdx, segment.gridItems === null);
+        for (let itemIdx = 0; itemIdx < segment.gridItems.length; itemIdx += 1) {
+          const item = segment.gridItems[itemIdx];
+          ret.push({ sectionIdx, segmentIdx, itemIdx, ...item, top: section.top + item.top });
         }
       }
-      return {
-        groupId: clickArea.groupId,
-        top: currentTop,
-        left: currentLeft,
-        width: currentRight - currentLeft,
-        height: currentBottom - currentTop,
-      };
-    }),
-  );
+    }
+    return ret;
+  });
+  $inspect(visibleItems.length);
 </script>
 
 <div class="scroll-wrapper" bind:this={scrollWrapper} bind:clientHeight={viewport.height}>
@@ -317,7 +299,7 @@
       ></div>
     {/each}
     {#each visibleItems as item (item.key)}
-      {@const itemIndex = timeline.visibleItems.startIdx + item.originalItemIndex}
+      {@const itemIndex = 0}
       {#if item.type === 'asset'}
         <GridTile
           href="/timeline/{item.assetId}"
@@ -356,7 +338,7 @@
           className={gridItemTransitionClass}
           timelineItem={item}
           onHeightTooSmall={(height) => {
-            timeline.setActualItemHeight(itemIndex, height);
+            timeline.setActualItemHeight(item.sectionIdx, item.segmentIdx, item.itemIdx, height);
           }}
         />
       {:else if item.type === 'createGroupTitleInput'}

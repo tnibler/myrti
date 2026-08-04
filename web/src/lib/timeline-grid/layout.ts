@@ -1,32 +1,28 @@
 import type { Dayjs } from 'dayjs';
 import type { AssetSeriesRef, TimelineGridItem, TimelineOptions } from './timeline.svelte';
 import createJustifiedLayout from 'justified-layout';
-import type { AssetSeries, ItemRange, TimelineSegment } from './timeline-types';
+import type { TimelineSegment } from './timeline-types';
 import * as R from 'remeda';
 import type { AssetId, AssetSeriesId, AssetWithSpe } from '@api/myrti';
+import { all } from 'axios';
 
 type Box = { top: number; left: number; width: number; height: number };
 
 export function layoutSegments(
   segments: TimelineSegment[],
   previousSectionEndDate: Dayjs | null,
-  baseTop: number,
-  baseAssetIndex: number,
   containerWidth: number,
   opts: TimelineOptions,
   getAsset: (id: AssetId) => AssetWithSpe,
   getAssetSeries: (id: AssetSeriesId) => AssetSeriesRef,
 ): {
-  items: TimelineGridItem[];
   totalHeight: number;
-  segmentItemRanges: ItemRange[];
 } {
   if (segments.length === 0) {
-    return {
-      items: [],
-      totalHeight: 0,
-      segmentItemRanges: [],
-    };
+    return { totalHeight: 0 };
+  }
+  for (const segment of segments) {
+    segment.gridItems = [];
   }
   // First, merge any segments (too short to fill a line) and compute their layouts
   const mergedSegments: {
@@ -91,10 +87,10 @@ export function layoutSegments(
         item.itemType === 'asset'
           ? item.assetId
           : getAssetSeries(item.seriesId).assetIds[item.coverIndex];
-        const file = getAsset(assetId).repFile;
-        return (file.rotationCorrection ?? 0) % 180 === 0
-            ? { width: file.width, height: file.height }
-            : { width: file.height, height: file.width };
+      const file = getAsset(assetId).repFile;
+      return (file.rotationCorrection ?? 0) % 180 === 0
+        ? { width: file.width, height: file.height }
+        : { width: file.height, height: file.width };
     });
     // mergeable if all of:
     //  - previous segment does not fill at least one line
@@ -108,30 +104,29 @@ export function layoutSegments(
         .reduce((acc, n) => acc + n, 0) +
       // with spacing between boxes
       (assetSizes.length - 1) * opts.boxSpacing;
-    const canMergeWithPrevious: boolean = (() => {
-      if (segmentIndex === 0 || candidateToMergeWith === null) {
-        return false;
-      }
+    const canMergeWithPrevious = (candidateToMergeWith: MergeCandidate) => {
       if (
+        segmentIndex === 0 ||
+        candidateToMergeWith === null ||
+        // creatingGroup can not merge nor be merged into
         segment.type === 'creatingGroup' ||
         candidateToMergeWith?.segments.at(-1)?.type === 'creatingGroup'
       ) {
-        // creatingGroup can not merge nor be merged into
         return false;
       }
       console.assert(candidateToMergeWith.segments.length > 0);
       const prevSegment = candidateToMergeWith.segments.at(-1)!;
-      const sameMonthAndYear =
-        segment.start.month() === prevSegment.start.month() &&
-        segment.start.year() === prevSegment.start.year();
       const fitsInWidth =
         candidateToMergeWith.width + segmentWidth + opts.segmentMargin <= containerWidth;
-      return sameMonthAndYear && fitsInWidth;
-    })();
-    if (canMergeWithPrevious) {
-      console.assert(candidateToMergeWith !== null && candidateToMergeWith.segments.length > 0);
-      candidateToMergeWith!.segments.push(segment);
-      candidateToMergeWith!.width += segmentWidth + opts.segmentMargin;
+      return (
+        segment.start.month() === prevSegment.start.month() &&
+        segment.start.year() === prevSegment.start.year() &&
+        fitsInWidth
+      );
+    };
+    if (candidateToMergeWith && canMergeWithPrevious(candidateToMergeWith)) {
+      candidateToMergeWith.segments.push(segment);
+      candidateToMergeWith.width += segmentWidth + opts.segmentMargin;
     } else {
       // can not merge with previous segments
       if (candidateToMergeWith !== null) {
@@ -140,8 +135,8 @@ export function layoutSegments(
         layoutAndPushMergeCandidate(candidateToMergeWith);
         candidateToMergeWith = null;
       }
-      const isMultiline = segmentWidth > containerWidth;
-      if (isMultiline) {
+      if (segmentWidth > containerWidth) {
+        // multiline segment
         // justified layout
         const geometry = createJustifiedLayout(assetSizes, {
           targetRowHeight: opts.targetRowHeight,
@@ -161,14 +156,11 @@ export function layoutSegments(
   }
   if (candidateToMergeWith !== null) {
     layoutAndPushMergeCandidate(candidateToMergeWith);
-    candidateToMergeWith = null;
   }
   console.assert(
-    segments.length === mergedSegments.reduce((acc, s) => (acc += s.segments.length), 0),
+    segments.length === mergedSegments.reduce((acc: number, s) => acc + s.segments.length, 0),
   );
-  const items: TimelineGridItem[] = [];
-  const segmentItemRanges: ItemRange[] = [];
-  let startTop = baseTop;
+  let startTop = 0;
   const minorTitleHeight = 10;
   let lastMajorTitleDate: Dayjs | null = previousSectionEndDate?.startOf('month') ?? null;
   let minorTitleRowIdx = 0;
@@ -185,7 +177,7 @@ export function layoutSegments(
         height: opts.headerHeight,
         key: 'createGroupTitleInput',
       };
-      items.push(titleInput);
+      segments[0].segment.gridItems.push(titleInput);
       startTop += titleInput.height;
       showMinorTitles = false;
     } else if (segments.length === 1 && segments[0].segment.type === 'group') {
@@ -202,7 +194,7 @@ export function layoutSegments(
             : ` (${group.end.format('MMMM YYYY')} - ${group.start.format('MMMM YYYY')})`),
         key: 'titleMajorGroup' + group.groupId,
       };
-      items.push(majorTitle);
+      segments[0].segment.gridItems.push(majorTitle);
       startTop += majorTitle.height;
       showMinorTitles = false;
     } else {
@@ -215,16 +207,15 @@ export function layoutSegments(
           top: startTop,
           height: opts.headerHeight,
           title: segments[0].segment.start.format('MMMM YYYY'),
-          key: 'titleMajor' + firstSegmentMonth.format('YYYY-MM'),
+          key: 'titleMajor' + firstSegmentMonth.format('YYYY-MM') + firstSegment.items[0].sortDate,
         };
-        items.push(majorTitle);
         startTop += majorTitle.height;
         lastMajorTitleDate = firstSegmentMonth;
+        segments[0].segment.gridItems?.push(majorTitle);
       }
     }
 
     for (const { segment, boxes } of segments) {
-      const startItemIndex = items.length + baseAssetIndex;
       let offsetByTitleHeight = 0;
       if (showMinorTitles) {
         const minorTitle: TimelineGridItem = {
@@ -241,9 +232,9 @@ export function layoutSegments(
             (segment.type === 'group' ? 'group' + segment.groupId : segment.start.format()),
         };
         offsetByTitleHeight = minorTitle.height;
-        items.push(minorTitle);
+        segment.gridItems.push(minorTitle);
       }
-      items.push(
+      segment.gridItems.push(
         ...boxes.map((box, idxInSegment) => {
           const item = segment.items[idxInSegment];
           if (item.itemType === 'asset') {
@@ -277,24 +268,18 @@ export function layoutSegments(
           }
         }),
       );
-      const endItemIndex = items.length;
-      segmentItemRanges.push({ startIdx: startItemIndex, endIdx: endItemIndex });
     }
     minorTitleRowIdx += 1;
     startTop += minorTitleHeight + height;
   }
-  const allKeys = items.map((i) => i.key);
-  const uniqueKeys = new Set(allKeys).size;
+  const allKeys = R.flatMap(segments, (seg) => R.map(seg.items, (item) => item.key));
+  const uniqueKeys = new Set(allKeys);
   console.assert(
-    uniqueKeys === items.length,
-    `Non-unique item keys: ${items.length} but ${uniqueKeys} keys. Duplicates: `,
+    uniqueKeys.size === allKeys.length,
+    `Non-unique item keys: ${allKeys.length} but ${uniqueKeys} keys. Duplicates: `,
     R.difference(allKeys, R.unique(allKeys)),
   );
-  console.assert(segmentItemRanges.length === segments.length);
-  console.assert(segmentItemRanges.at(-1)!.endIdx === items.length);
   return {
-    items,
-    segmentItemRanges,
-    totalHeight: startTop - baseTop,
+    totalHeight: startTop,
   };
 }

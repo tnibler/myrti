@@ -33,7 +33,7 @@ import {
 } from '../../api/myrti.zod';
 import type {
   AddToGroupClickArea,
-  AssetSeries,
+  TimelineGridItem,
   TimelineItem,
   TimelineSection,
   TimelineSegment,
@@ -41,42 +41,6 @@ import type {
 import { untrack } from 'svelte';
 
 export type AssetSeriesRef = { id: AssetSeriesId; assetIds: AssetId[]; selectionIndices: number[] };
-
-/** A component displayed in the timeline */
-export type TimelineGridItem = { key: string; top: number; height: number } & (
-  | {
-      type: 'asset';
-      left: number;
-      width: number;
-      assetId: AssetId;
-      timelineItem: TimelineItem;
-    }
-  | {
-      type: 'photoStack';
-      left: number;
-      width: number;
-      seriesId: AssetSeriesId;
-      coverIndex: number;
-      numAssets: number;
-      timelineItem: TimelineItem;
-    }
-  | {
-      type: 'segmentTitle';
-      titleType: 'major';
-      title: string;
-    }
-  | {
-      type: 'segmentTitle';
-      titleType: 'day';
-      title: string;
-      left: number;
-      width: number;
-      titleRowIndex: number;
-    }
-  | {
-      type: 'createGroupTitleInput';
-    }
-);
 
 /** Backlink from TimelineItem to its segment/section */
 export type PositionInTimeline = {
@@ -90,11 +54,10 @@ export type Viewport = { width: number; height: number };
 export interface ITimelineGrid {
   readonly state: 'justLooking' | 'creatingTimelineGroup';
   readonly totalNumAssets: number;
-  /** All items, in same order as sections with non-decreasing `top` */
   readonly sections: TimelineSection[];
-  readonly timelineHeight: number;
   /** Range of indices into items corresponding to currently visible section*/
   readonly visibleSections: { startIdx: number; endIdx: number };
+
   readonly options: TimelineOptions;
   readonly addToGroupClickAreas: AddToGroupClickArea[];
   readonly editGroupEnabled: 'none' | 'add' | 'remove';
@@ -178,6 +141,7 @@ export function createTimeline(
   let isInitialized = false;
   let viewport: Viewport = { width: 0, height: 0 };
   let state: TimelineState = $state({ state: 'justLooking' } as TimelineState);
+  let previousSections: TimelineSection[] = [];
 
   const assetsById = (() => {
     const obj: { [id: AssetId]: AssetWithSpe } = $state({});
@@ -205,8 +169,9 @@ export function createTimeline(
 
   let sections: TimelineSection[] = [];
   let sectionsPublic: TimelineSection[] = $state([]);
+  // $inspect(sectionsPublic);
   const timelineHeight: number = $derived(
-    sections.map((s) => s.height).reduce((acc, n) => acc + n, 0),
+    sectionsPublic.map((s) => s.height).reduce((acc, n) => acc + n, 0),
   );
   const addToGroupClickAreas: AddToGroupClickArea[] = $derived(
     state.state === 'creatingTimelineGroup'
@@ -277,18 +242,21 @@ export function createTimeline(
         segments: null,
         startDate: dayjs.utc(section.startDate),
         endDate: dayjs.utc(section.endDate),
+        blocks: null,
       });
       nextSectionTop += height;
     }
     sections = _sections;
+    sectionsPublic = sections;
   }
 
   function resize(newViewport: Viewport, scrollTop: number) {
     if (viewport === newViewport) {
       return;
     }
+    const forceRelayout = viewport.width !== newViewport.width;
     viewport = { ...newViewport };
-    onScrollChange(scrollTop, true);
+    onScrollChange(scrollTop, forceRelayout);
   }
 
   let lastScrollTime: number | null = null;
@@ -333,9 +301,8 @@ export function createTimeline(
     // after waiting for all sections to load. We could do this progressively after any one section loads, but that makes things more complicated for little reason
     // TODO: make the above irrelevant by adding an API call to load multiple sections at once, for the rare event that the user jumps exactly inbetween two sections.
     for (let i = firstVisibleSection; i <= lastVisibleSection; i += 1) {
-      // TODO: need some laid out flag
-      if (sections[i].segments.findIndex((s) => s.gridItems === null) >= 0 || forceRelayout) {
-        layoutSection(i, 'adjustScroll');
+      if (sections[i].blocks === null || forceRelayout) {
+        layoutSection(i, 'adjustScroll'); // FIXME: forceRelayout breaks. section tops are wrong
       }
     }
     visibleSections = {
@@ -343,7 +310,7 @@ export function createTimeline(
       startIdx: firstVisibleSection,
       endIdx: lastVisibleSection + 1,
     };
-    if (sectionLoads.length > 0) {
+    if (sectionLoads.length > 0 || forceRelayout) {
       sectionsPublic = sections;
     }
   }
@@ -356,7 +323,7 @@ export function createTimeline(
       return;
     }
     const lastSectionEndDate = sectionIndex === 0 ? null : sections[sectionIndex - 1].endDate;
-    const { totalHeight: sectionHeight } = layoutSegments(
+    const { totalHeight: sectionHeight, blocks } = layoutSegments(
       segments,
       lastSectionEndDate,
       viewport.width,
@@ -366,48 +333,13 @@ export function createTimeline(
     );
     const oldSectionHeight = sections[sectionIndex].height;
     section.height = sectionHeight;
-    for (const segment of segments) {
-      console.assert(segment.gridItems !== null);
-      // set group's click area
-      if (segment.type === 'group') {
-        let currentTop = Infinity;
-        let currentBottom = -Infinity;
-        let currentLeft = 0;
-        let currentRight = viewport.width;
-        for (const gridItem of segment.gridItems) {
-          currentTop = Math.min(gridItem.top, currentTop);
-          currentBottom = Math.max(gridItem.top + gridItem.height, currentBottom);
-          if (
-            gridItem.type === 'asset' ||
-            gridItem.type === 'photoStack' ||
-            (gridItem.type === 'segmentTitle' && gridItem.titleType === 'day')
-          ) {
-            currentLeft = Math.min(gridItem.left, currentLeft);
-            currentRight = Math.max(gridItem.left + gridItem.width, currentRight);
-          }
-        }
-        segment.clickArea = {
-          groupId: segment.groupId,
-          top: currentTop,
-          left: currentLeft,
-          width: currentRight - currentLeft,
-          height: currentBottom - currentTop,
-        };
-      }
-    }
+    section.blocks = blocks;
 
-    // Correct sections after newly inserted one: shift top and ItemRange indices
+    // Correct sections after newly inserted one
     const heightDelta = sectionHeight - oldSectionHeight;
     for (let i = sectionIndex + 1; i < sections.length; i += 1) {
       const s = sections[i];
       s.top += heightDelta;
-      if (s.segments) {
-        for (const segment of s.segments) {
-          for (const gridItem of segment.gridItems) {
-            gridItem.top += heightDelta;
-          }
-        }
-      }
     }
     if (adjustScroll === 'adjustScroll') {
       adjustScrollTop({
@@ -421,7 +353,7 @@ export function createTimeline(
 
   async function loadSection(sectionIndex: number, reload: 'reload' | undefined = undefined) {
     const section = sections[sectionIndex];
-    if (section.segments != null && reload === undefined) {
+    if (section.blocks && reload === undefined) {
       return;
     }
     const sectionId = section.data.id;
@@ -764,97 +696,24 @@ export function createTimeline(
     sectionsPublic = sections;
   }
 
-  function setActualItemHeight(
-    sectionIdx: number,
-    segmentIdx: number,
-    itemIdx: number,
-    newHeight: number,
-  ) {
-    const section = sections[sectionIdx];
-    if (section.segments === null) {
-      console.error('setActualItemHeight: sections[sectionIndex].items === null');
-      return;
-    }
-    const item = section.segments[segmentIdx].gridItems[itemIdx];
-    // remember probably header height so we don't have to guess next time
-    if (item.type === 'asset') {
-      console.error('setActualItemHeight does not work for Items of type=asset');
-      return;
-    } else if (item.height === newHeight) {
-      return;
-    } else if (item.type === 'segmentTitle') {
-      // here we assume that most segment titles are one line, and the smallest value of segmentTitle is probably one line height
-      if (initialHeightGuess.segmentTitle === null || newHeight < initialHeightGuess.segmentTitle) {
-        initialHeightGuess.segmentTitle = newHeight;
+  function setActualSectionHeight(sectionIdx: number, height: number) {
+    return;
+    if (height !== null && sections[sectionIdx].height !== height) {
+      const delta = height - sections[sectionIdx].height;
+      console.log(sections[sectionIdx]);
+      sections[sectionIdx].height = height;
+      for (let i = sectionIdx + 1; i < sections.length; i += 1) {
+        sections[i].top += delta;
       }
-    }
-
-    const heightDelta = newHeight - item.height;
-
-    if (heightDelta === 0) {
-      return;
-    }
-    section.height += heightDelta;
-    for (let i = sectionIdx + 1; i < sections.length; i += 1) {
-      const s = sections[i];
-      s.top += heightDelta;
-    }
-
-    if (
-      (item.type === 'segmentTitle' && item.titleType === 'major') ||
-      item.type === 'createGroupTitleInput'
-    ) {
-      // just shift down all items after this one
-      for (let i = itemIdx; i < section.segments[segmentIdx].gridItems.length; i += 1) {
-        section.segments[segmentIdx].gridItems[i].height += heightDelta;
-      }
-      for (let i = segmentIdx + 1; i < section.segments.length; i += 1) {
-        for (const item_ of section.segments[i].gridItems) {
-          item_.top += heightDelta;
-        }
-      }
-      adjustScrollTop({
-        what: 'scrollBy',
-        scroll: heightDelta,
-        ifScrollTopGt: item.top,
-        behavior: 'instant',
-      });
-    } else if (item.type === 'segmentTitle' && item.titleType === 'day') {
-      // find all minor titles with same row index, and set their height to this new height, shifting all items below
-      // TODO: keep minor title heights somewhere else, so items within the same row can just reference the same value
-      let seenTitle = false;
-      for (const segment of section.segments) {
-        for (const it of segment.gridItems) {
-          if (it.type === 'segmentTitle' && it.titleType === 'day') {
-            if (it.titleRowIndex === item.titleRowIndex) {
-              seenTitle = true;
-              it.height = newHeight;
-              // console.assert(it.height === item.height, item, it);
-            } else if (it.titleRowIndex > item.titleRowIndex) {
-              it.top += heightDelta;
-            }
-          } else if (seenTitle) {
-            // titles are always first, so we're after titles now. shift down
-            it.top += heightDelta;
-          }
-        }
-      }
-      adjustScrollTop({
-        what: 'scrollBy',
-        scroll: heightDelta,
-        ifScrollTopGt: item.top,
-        behavior: 'instant',
-      });
-    }
-    if (timeout !== null) {
-      clearTimeout(timeout);
-      timeout = null;
-    }
-    timeout = setTimeout(() => {
       sectionsPublic = sections;
-    }, 0);
+      adjustScrollTop({
+        what: 'scrollBy',
+        scroll: delta,
+        ifScrollTopGt: sections[sectionIdx].top,
+        behavior: 'instant',
+      });
+    }
   }
-  let timeout = null;
 
   async function getGridItemAtPosition(pos: PositionInTimeline): Promise<TimelineGridItem | null> {
     const section = sections[pos.sectionIndex];
@@ -892,7 +751,7 @@ export function createTimeline(
     if (selectedItems.size === 0) {
       return;
     }
-    const previousSections = klona(untrack(() => sections));
+    previousSections = klona(sections);
     const itemsInGroup: TimelineItem[] = [];
     const affectedSections: number[] = [];
     for (const [sectionIdx, section] of sections.entries()) {
@@ -950,7 +809,6 @@ export function createTimeline(
             sortDate: startDate,
             start: dayjs.utc(startDate),
             end: dayjs.utc(endDate),
-            gridItems: null,
           };
           newSegments.push(newSegment);
         } else {
@@ -982,7 +840,6 @@ export function createTimeline(
                   : items[0].sortDate,
               start: dayjs.utc(startDate),
               end: dayjs.utc(endDate),
-              gridItems: null,
             };
             newSegments.push(newSegment);
           }
@@ -993,7 +850,6 @@ export function createTimeline(
         affectedSections.push(sectionIdx);
       }
     }
-    console.log(affectedSections);
     const groupSortDate = itemsInGroup[0].sortDate; // most recent asset date in group
     if (!groupSortDate || affectedSections.length === 0) {
       return;
@@ -1037,7 +893,6 @@ export function createTimeline(
       sortDate: groupSortDate,
       start: dayjs.utc(startDate),
       end: dayjs.utc(endDate),
-      gridItems: null,
     };
     section.segments!.splice(insertBeforeSegmentIndex, 0, newSegment);
     if (setAnimationsEnabled) {
@@ -1046,13 +901,13 @@ export function createTimeline(
     for (const i of affectedSections) {
       layoutSection(i, 'noAdjustScroll');
     }
-    const scrollToItem = section.segments[insertBeforeSegmentIndex].gridItems[0].top;
-    adjustScrollTop({
-      what: 'scrollTo',
-      scroll: Math.max(0, scrollToItem.top - viewport.height / 2),
-      ifScrollTopGt: 0,
-      behavior: 'smooth',
-    });
+    // const scrollToItem = section.segments[insertBeforeSegmentIndex].gridItems[0].top;
+    // adjustScrollTop({
+    //   what: 'scrollTo',
+    //   scroll: Math.max(0, scrollToItem.top - viewport.height / 2),
+    //   ifScrollTopGt: 0,
+    //   behavior: 'smooth',
+    // });
     if (setAnimationsEnabled) {
       setAnimationsEnabled(false);
     }
@@ -1078,7 +933,6 @@ export function createTimeline(
       state: 'creatingTimelineGroup',
       itemsInGroup: itemsInGroup,
       groupSortDate,
-      previousSections,
     };
     sectionsPublic = sections;
   }
@@ -1090,9 +944,10 @@ export function createTimeline(
     if (setAnimationsEnabled) {
       await setAnimationsEnabled(true);
     }
-    sections = untrack(() => state.previousSections);
+    sections = previousSections;
     state = { state: 'justLooking' };
     sectionsPublic = sections;
+    previousSections = [];
     if (setAnimationsEnabled) {
       setAnimationsEnabled(false);
     }
@@ -1493,7 +1348,7 @@ export function createTimeline(
     resize,
     onScrollChange,
     getGridItemAtPosition,
-    setActualItemHeight,
+    setActualSectionHeight,
     getNextItemPosition,
     getItem,
     getItemMustBeLoaded,

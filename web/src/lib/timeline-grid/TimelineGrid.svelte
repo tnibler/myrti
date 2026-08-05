@@ -7,9 +7,15 @@
   import SegmentTitle from './SegmentTitle.svelte';
   import type { SelectState } from '@lib/ui/GridTile.svelte';
   import CreateGroupInput from './CreateGroupInput.svelte';
-  import type { PositionInTimeline, TimelineItem } from './timeline-types';
+  import type {
+    PositionInTimeline,
+    TimelineBlock,
+    TimelineItem,
+    TimelineSection,
+  } from './timeline-types';
   import type { SlideRef } from '@lib/swipey-gallery/gallery-types';
   import { path } from 'elegua';
+  import { SvelteMap } from 'svelte/reactivity';
 
   type TimelineGridProps = {
     timeline: ITimelineGrid;
@@ -21,7 +27,7 @@
   let gallery: Gallery;
 
   let { timeline, scrollWrapper = $bindable(), openedAssetId }: TimelineGridProps = $props();
-  let gridItemTransitionClass: string | undefined = $state();
+  let gridItemTransitionClass: string = $state('');
   let animationsDisabledToStart = true;
   let didMoveScrollToCurrentGalleryAsset = $state(false);
   let restoreScrollOnClose = $derived(!didMoveScrollToCurrentGalleryAsset);
@@ -215,10 +221,7 @@
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     }
     const asset = timeline.getAsset(assetId);
-    const pos = currentItem.pos;
-    const imgEl = document.getElementById(
-      `thumb${pos.sectionIndex}-${pos.segmentIndex}-${pos.itemIndex}`,
-    );
+    const imgEl = document.getElementById(`thumb-${assetId}`);
     if (!imgEl || !(imgEl instanceof HTMLImageElement)) {
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     }
@@ -258,29 +261,96 @@
 
   /** bound rectangles of grid items in timeline.addToGroupClickAreas */
   const clickAreaRects = $derived(timeline.addToGroupClickAreas);
-  const visibleItems = $derived.by(() => {
-    const ret = [];
+  const visibleSections: (TimelineSection & { blocks: TimelineBlock[] })[] = $derived.by(() => {
+    const ret: (TimelineSection & { blocks: TimelineBlock[] })[] = [];
     for (
       let sectionIdx = timeline.visibleSections.startIdx;
       sectionIdx < timeline.visibleSections.endIdx;
       sectionIdx += 1
     ) {
       const section = timeline.sections[sectionIdx];
-      if (section.segments === null) {
-        continue;
-      }
-      for (let segmentIdx = 0; segmentIdx < section.segments.length; segmentIdx += 1) {
-        const segment = section.segments[segmentIdx];
-        console.log(sectionIdx, segmentIdx, segment.gridItems === null);
-        for (let itemIdx = 0; itemIdx < segment.gridItems.length; itemIdx += 1) {
-          const item = segment.gridItems[itemIdx];
-          ret.push({ sectionIdx, segmentIdx, itemIdx, ...item, top: section.top + item.top });
-        }
+      if (section.segments !== null && section.blocks !== null) {
+        ret.push({ sectionIdx, ...section });
       }
     }
     return ret;
   });
-  $inspect(visibleItems.length);
+
+  const sectionTops = $derived.by(() => {
+    const ret = [];
+    let top = 0;
+    for (const section of timeline.sections) {
+      ret.push(top);
+      top += section.height;
+    }
+    return ret;
+  });
+
+  const imageEls: Map<string, HTMLImageElement> = new Map();
+  const registerAction = (el: HTMLImageElement) => {
+    imageEls.set(el.id, el);
+    return () => {
+      imageEls.delete(el.id);
+    };
+  };
+
+  $inspect(timeline.sections);
+
+  const previousRects = new Map<string, DOMRect>();
+  $effect.pre(() => {
+    timeline.sections;
+    previousRects.clear();
+    for (const [id, el] of imageEls) {
+      const rect = el.getBoundingClientRect();
+      previousRects.set(id, {
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      });
+    }
+  });
+
+  $effect(() => {
+    timeline.sections;
+    for (const [id, el] of imageEls) {
+      const before = previousRects.get(id);
+      if (!before) continue;
+      const after = el.getBoundingClientRect();
+      animateThumbMove(el, before, after);
+    }
+  });
+
+  function animateThumbMove(el: HTMLElement, before: DOMRect, after: DOMRect) {
+    const dx = before.left - after.left;
+    const dy = before.top - after.top;
+    const sx = before.width / after.width;
+    const sy = before.height / after.height;
+    if (
+      Math.abs(dx) < 0.5 &&
+      Math.abs(dy) < 0.5 &&
+      Math.abs(sx - 1) < 0.001 &&
+      Math.abs(sy - 1) < 0.001
+    ) {
+      return;
+    }
+    if (el.id === 'thumb-258') {
+      console.log(el.id, before, after);
+      console.log(el.getAnimations());
+    }
+    const anim = el.animate(
+      [
+        {
+          translate: `${dx}px ${dy}px`,
+        },
+        { translate: '0px' },
+      ],
+      { duration: 250, easing: 'ease' },
+    );
+    anim.onfinish = () => {
+      // anim.commitStyles();
+    };
+  }
 </script>
 
 <div class="scroll-wrapper" bind:this={scrollWrapper} bind:clientHeight={viewport.height}>
@@ -289,69 +359,100 @@
     bind:clientWidth={viewport.width}
     style:height={timeline.timelineHeight + 'px'}
   >
-    {#each timeline.sections as section, idx}
+    <!-- {#each timeline.sections as section (section.sectionIdx)} -->
+    <!-- {#if timeline.visibleSections.startIdx <= section.sectionIdx && section.sectionIdx < timeline.visibleSections.endIdx} -->
+    <!-- {/if} -->
+    <!-- {/each} -->
+    <!-- eslint-disable-next-line svelte/require-each-key -->
+    {#each visibleSections as section (section.sectionIdx)}
       <div
-        use:registerElementWithIntersectObserver
-        id="section-{idx}"
-        class="absolute w-full max-w-full"
-        style:top={section.top - timeline.options.loadWithinMargin + 'px'}
-        style:height={section.height + timeline.options.loadWithinMargin * 2 + 'px'}
-      ></div>
-    {/each}
-    {#each visibleItems as item (item.key)}
-      {@const itemIndex = 0}
-      {#if item.type === 'asset'}
-        <GridTile
-          href="/timeline/{item.assetId}"
-          className={gridItemTransitionClass}
-          asset={timeline.getAsset(item.assetId)}
-          box={item}
-          showStackIcon={false}
-          onAssetClick={() => {
-            onAssetClick(item.timelineItem);
-          }}
-          onSelectToggled={() => {
-            toggleItemSelected(item.timelineItem);
-          }}
-          imgElId={`thumb${item.timelineItem.pos.sectionIndex}-${item.timelineItem.pos.segmentIndex}-${item.timelineItem.pos.itemIndex}`}
-          selectState={getSelectState(item.timelineItem)}
-        />
-      {:else if item.type === 'photoStack'}
-        <GridTile
-          className={gridItemTransitionClass}
-          asset={timeline.getAsset(
-            timeline.getAssetSeries(item.seriesId).assetIds[item.coverIndex],
-          )}
-          box={item}
-          showStackIcon={true}
-          onAssetClick={() => {
-            onAssetClick(item.timelineItem);
-          }}
-          onSelectToggled={() => {
-            toggleItemSelected(item.timelineItem);
-          }}
-          imgElId={`thumb${item.timelineItem.pos.sectionIndex}-${item.timelineItem.pos.segmentIndex}-${item.timelineItem.pos.itemIndex}`}
-          selectState={getSelectState(item.timelineItem)}
-        />
-      {:else if item.type === 'segmentTitle'}
-        <SegmentTitle
-          className={gridItemTransitionClass}
-          timelineItem={item}
-          onHeightTooSmall={(height) => {
-            timeline.setActualItemHeight(item.sectionIdx, item.segmentIdx, item.itemIdx, height);
-          }}
-        />
-      {:else if item.type === 'createGroupTitleInput'}
-        <CreateGroupInput
-          {item}
-          onSubmit={(title) => {
-            timeline.confirmCreateGroup(title);
-          }}
-          onCancel={() => {
-            timeline.cancelCreateGroup();
-          }}
-        />
-      {/if}
+        class="w-full absolute contain-layout"
+        style:top="{sectionTops[section.sectionIdx]}px"
+        bind:clientHeight={
+          null,
+          (h) => {
+            timeline.setActualSectionHeight(section.sectionIdx, h);
+          }
+        }
+      >
+        <!-- eslint-disable-next-line svelte/require-each-key -->
+        {#each section.blocks as block}
+          {@const blockHeight = Math.max(...block.gridItems.map((it) => it.top + it.height))}
+          {#if block.blockType === 'default'}
+            {@const segmentMargin = timeline.options.segmentMargin}
+            {#if block.titleMajor !== null}
+              <h2 class="text-2xl">
+                {block.titleMajor.text}
+              </h2>
+            {/if}
+            <div
+              class="grid"
+              style:grid-template-columns={block.titlesMinor
+                .map(
+                  (title, idx) =>
+                    `${title.width + (idx === block.titlesMinor.length - 1 ? 0 : segmentMargin)}fr`,
+                )
+                .join(' ')}
+              style:width="{Math.max(...block.gridItems.map((it) => it.left + it.width))}px"
+            >
+              {#each block.titlesMinor as titleMinor}
+                <h3 class="text-lg">
+                  {titleMinor.text}
+                </h3>
+              {/each}
+            </div>
+          {:else if block.blockType === 'createGroup'}
+            <CreateGroupInput
+              onSubmit={(title) => {
+                timeline.confirmCreateGroup(title);
+              }}
+              onCancel={() => timeline.cancelCreateGroup()}
+            />
+          {/if}
+
+          <div style:height="{blockHeight}px;" class="w-full relative">
+            {#each block.gridItems as item (item.key)}
+              {#if item.type === 'asset'}
+                <GridTile
+                  imgElAction={registerAction}
+                  href="/timeline/{item.assetId}"
+                  className={gridItemTransitionClass}
+                  asset={timeline.getAsset(item.assetId)}
+                  box={item}
+                  showStackIcon={false}
+                  onAssetClick={() => {
+                    onAssetClick(item.timelineItem);
+                  }}
+                  onSelectToggled={() => {
+                    toggleItemSelected(item.timelineItem);
+                  }}
+                  imgElId={`thumb-${item.assetId}`}
+                  selectState={getSelectState(item.timelineItem)}
+                />
+              {:else if item.type === 'photoStack'}
+                {@const coverAsset = timeline.getAsset(
+                  timeline.getAssetSeries(item.seriesId).assetIds[item.coverIndex],
+                )}
+                <GridTile
+                  imgElAction={registerAction}
+                  className={gridItemTransitionClass}
+                  asset={coverAsset}
+                  box={item}
+                  showStackIcon={true}
+                  onAssetClick={() => {
+                    onAssetClick(item.timelineItem);
+                  }}
+                  onSelectToggled={() => {
+                    toggleItemSelected(item.timelineItem);
+                  }}
+                  imgElId={`thumb-${coverAsset.assetId}`}
+                  selectState={getSelectState(item.timelineItem)}
+                />
+              {/if}
+            {/each}
+          </div>
+        {/each}
+      </div>
     {/each}
     {#each clickAreaRects as area (area.groupId)}
       <button
@@ -363,6 +464,15 @@
       ></button>
     {/each}
   </section>
+  {#each timeline.sections as section, idx}
+    <div
+      use:registerElementWithIntersectObserver
+      id="section-{idx}"
+      class="absolute w-full max-w-full invisible"
+      style:top={sectionTops[idx] - timeline.options.loadWithinMargin + 'px'}
+      style:height={section.height + timeline.options.loadWithinMargin * 2 + 'px'}
+    ></div>
+  {/each}
 </div>
 
 <Gallery

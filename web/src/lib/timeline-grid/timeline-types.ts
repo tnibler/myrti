@@ -5,7 +5,6 @@ import type {
   AssetSeriesId,
 } from '@api/myrti';
 import type { Dayjs } from '@lib/dayjs';
-import type { TimelineGridItem } from './timeline.svelte';
 
 /** Subdivision of the timeline that is fetched from API, contains segments. */
 export type TimelineSection = {
@@ -17,7 +16,47 @@ export type TimelineSection = {
   startDate: Dayjs;
   /** Date of oldest asset in section */
   endDate: Dayjs;
+  blocks: TimelineBlock[] | null;
 };
+
+export type TimelineBlock = (
+  | {
+      blockType: 'default';
+      titleMajor: {
+        text: string;
+      } | null;
+      titlesMinor: {
+        left: number;
+        width: number;
+        text: string;
+      }[];
+    }
+  | {
+      blockType: 'createGroup';
+    }
+) & {
+  gridItems: TimelineGridItem[];
+};
+
+/** A component displayed in the timeline */
+export type TimelineGridItem = { key: string; top: number; height: number } & (
+  | {
+      type: 'asset';
+      left: number;
+      width: number;
+      assetId: AssetId;
+      timelineItem: TimelineItem;
+    }
+  | {
+      type: 'photoStack';
+      left: number;
+      width: number;
+      seriesId: AssetSeriesId;
+      coverIndex: number;
+      numAssets: number;
+      timelineItem: TimelineItem;
+    }
+);
 
 /** Logical group of assets (eg belonging to the same date, in the process of creating a group)
  * that are laid out together */
@@ -27,7 +66,6 @@ export type TimelineSegment = {
   sortDate: string;
   start: Dayjs;
   end: Dayjs;
-  gridItems: TimelineGridItem[] | null;
 } & (
   | {
       type: 'dateRange';

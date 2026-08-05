@@ -48,6 +48,7 @@
     onAssetClick,
     className,
     imgElId,
+    imgElAction,
   }: GridTileProps = $props();
   let isMouseOver = $state(false);
   const isSelected = $derived(selectState.state === 'select' && selectState.isSelected);
@@ -97,6 +98,7 @@
   <div class="h-full w-full bg-blue-100">
     <!-- svelte-ignore a11y_missing_attribute -->
     <img
+      use:imgElAction
       id={imgElId}
       src="/api/files/thumbnail/{asset.repFile.fileId}/large/avif"
       class="absolute bg-black transition-transform"

@@ -8,7 +8,6 @@ import type { Dayjs } from '@lib/dayjs';
 
 /** Subdivision of the timeline that is fetched from API, contains segments. */
 export type TimelineSection = {
-  top: number;
   height: number;
   data: ApiTimelineSection;
   segments: TimelineSegment[] | null;
@@ -24,11 +23,13 @@ export type TimelineBlock = (
       blockType: 'default';
       titleMajor: {
         text: string;
+        key: string;
       } | null;
       titlesMinor: {
         left: number;
         width: number;
         text: string;
+        key: string;
       }[];
     }
   | {

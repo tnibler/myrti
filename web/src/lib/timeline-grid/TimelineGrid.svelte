@@ -15,7 +15,7 @@
   } from './timeline-types';
   import type { SlideRef } from '@lib/swipey-gallery/gallery-types';
   import { path } from 'elegua';
-  import { SvelteMap } from 'svelte/reactivity';
+  import { fade } from 'svelte/transition';
 
   type TimelineGridProps = {
     timeline: ITimelineGrid;
@@ -28,6 +28,7 @@
 
   let { timeline, scrollWrapper = $bindable(), openedAssetId }: TimelineGridProps = $props();
   let gridItemTransitionClass: string = $state('');
+  let gridAnimationsEnabled = false;
   let animationsDisabledToStart = true;
   let didMoveScrollToCurrentGalleryAsset = $state(false);
   let restoreScrollOnClose = $derived(!didMoveScrollToCurrentGalleryAsset);
@@ -133,7 +134,7 @@
     }
     if (!enabled) {
       disableGridItemAnimationTimeout = setTimeout(() => {
-        // gridItemTransitionClass = '';
+        gridAnimationsEnabled = false;
       }, disableGridItemAnimationDelayMs);
     } else {
       if (disableGridItemAnimationTimeout) {
@@ -142,7 +143,7 @@
       }
       await new Promise<void>((resolve) => {
         setTimeout(() => {
-          gridItemTransitionClass = 'timeline-item-transition';
+          gridAnimationsEnabled = true;
           resolve();
         }, 0);
       });
@@ -261,20 +262,21 @@
 
   /** bound rectangles of grid items in timeline.addToGroupClickAreas */
   const clickAreaRects = $derived(timeline.addToGroupClickAreas);
-  const visibleSections: (TimelineSection & { blocks: TimelineBlock[] })[] = $derived.by(() => {
-    const ret: (TimelineSection & { blocks: TimelineBlock[] })[] = [];
-    for (
-      let sectionIdx = timeline.visibleSections.startIdx;
-      sectionIdx < timeline.visibleSections.endIdx;
-      sectionIdx += 1
-    ) {
-      const section = timeline.sections[sectionIdx];
-      if (section.segments !== null && section.blocks !== null) {
-        ret.push({ sectionIdx, ...section });
+  const visibleSections: (TimelineSection & { blocks: TimelineBlock[]; sectionIdx: number })[] =
+    $derived.by(() => {
+      const ret: (TimelineSection & { blocks: TimelineBlock[]; sectionIdx: number })[] = [];
+      for (
+        let sectionIdx = timeline.visibleSections.startIdx;
+        sectionIdx < timeline.visibleSections.endIdx;
+        sectionIdx += 1
+      ) {
+        const section = timeline.sections[sectionIdx];
+        if (section.segments !== null && section.blocks !== null) {
+          ret.push({ sectionIdx, ...section });
+        }
       }
-    }
-    return ret;
-  });
+      return ret;
+    });
 
   const sectionTops = $derived.by(() => {
     const ret = [];
@@ -286,38 +288,34 @@
     return ret;
   });
 
-  const imageEls: Map<string, HTMLImageElement> = new Map();
-  const registerAction = (el: HTMLImageElement) => {
+  const imageEls: Map<string, HTMLElement> = new Map();
+  const registerAction = (el: HTMLElement) => {
     imageEls.set(el.id, el);
     return () => {
       imageEls.delete(el.id);
     };
   };
 
-  $inspect(timeline.sections);
-
   const previousRects = new Map<string, DOMRect>();
   $effect.pre(() => {
     timeline.sections;
     previousRects.clear();
     for (const [id, el] of imageEls) {
-      const rect = el.getBoundingClientRect();
-      previousRects.set(id, {
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-      });
+      previousRects.set(id, el.getBoundingClientRect());
     }
   });
 
   $effect(() => {
     timeline.sections;
-    for (const [id, el] of imageEls) {
-      const before = previousRects.get(id);
-      if (!before) continue;
-      const after = el.getBoundingClientRect();
-      animateThumbMove(el, before, after);
+    if (gridAnimationsEnabled) {
+      for (const [id, el] of imageEls) {
+        const before = previousRects.get(id);
+        if (!before) {
+          continue;
+        }
+        const after = el.getBoundingClientRect();
+        animateThumbMove(el, before, after);
+      }
     }
   });
 
@@ -333,10 +331,6 @@
       Math.abs(sy - 1) < 0.001
     ) {
       return;
-    }
-    if (el.id === 'thumb-258') {
-      console.log(el.id, before, after);
-      console.log(el.getAnimations());
     }
     const anim = el.animate(
       [
@@ -359,10 +353,6 @@
     bind:clientWidth={viewport.width}
     style:height={timeline.timelineHeight + 'px'}
   >
-    <!-- {#each timeline.sections as section (section.sectionIdx)} -->
-    <!-- {#if timeline.visibleSections.startIdx <= section.sectionIdx && section.sectionIdx < timeline.visibleSections.endIdx} -->
-    <!-- {/if} -->
-    <!-- {/each} -->
     <!-- eslint-disable-next-line svelte/require-each-key -->
     {#each visibleSections as section (section.sectionIdx)}
       <div
@@ -378,10 +368,11 @@
         <!-- eslint-disable-next-line svelte/require-each-key -->
         {#each section.blocks as block}
           {@const blockHeight = Math.max(...block.gridItems.map((it) => it.top + it.height))}
+
           {#if block.blockType === 'default'}
             {@const segmentMargin = timeline.options.segmentMargin}
             {#if block.titleMajor !== null}
-              <h2 class="text-2xl">
+              <h2 {@attach registerAction} class="text-3xl mt-3" id={block.titleMajor.key} in:fade>
                 {block.titleMajor.text}
               </h2>
             {/if}
@@ -396,7 +387,7 @@
               style:width="{Math.max(...block.gridItems.map((it) => it.left + it.width))}px"
             >
               {#each block.titlesMinor as titleMinor}
-                <h3 class="text-lg">
+                <h3 {@attach registerAction} id={titleMinor.key} class="text-xl my-1" in:fade>
                   {titleMinor.text}
                 </h3>
               {/each}
@@ -410,7 +401,7 @@
             />
           {/if}
 
-          <div style:height="{blockHeight}px;" class="w-full relative">
+          <div style="height: {blockHeight}px;" class="w-full relative">
             {#each block.gridItems as item (item.key)}
               {#if item.type === 'asset'}
                 <GridTile

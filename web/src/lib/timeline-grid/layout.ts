@@ -16,10 +16,9 @@ export function layoutSegments(
   getAssetSeries: (id: AssetSeriesId) => AssetSeriesRef,
 ): {
   blocks: TimelineBlock[];
-  totalHeight: number;
 } {
   if (segments.length === 0) {
-    return { totalHeight: 0, blocks: [] };
+    return { blocks: [] };
   }
   // First, merge any segments (too short to fill a line) and compute their layouts
   const mergedSegments: {
@@ -158,7 +157,6 @@ export function layoutSegments(
   );
 
   const blocks: TimelineBlock[] = [];
-  let startTop = 0;
   let lastMajorTitleDate: Dayjs | null = previousSectionEndDate?.startOf('month') ?? null;
 
   for (const { segments, height } of mergedSegments) {
@@ -218,6 +216,7 @@ export function layoutSegments(
             (groupSegment.end.startOf('month') == groupSegment.start.startOf('month')
               ? ` (${groupSegment.end.format('MMMM YYYY')})`
               : ` (${groupSegment.end.format('MMMM YYYY')} - ${groupSegment.start.format('MMMM YYYY')})`),
+          key: `title-major-group-${groupSegment.groupId}`,
         },
         titlesMinor: [],
         gridItems,
@@ -228,7 +227,10 @@ export function layoutSegments(
       const titleMajor = (() => {
         if (lastMajorTitleDate === null || !lastMajorTitleDate.isSame(firstSegmentMonth)) {
           lastMajorTitleDate = segments[0].segment.start;
-          return { text: segments[0].segment.start.format('MMMM YYYY') };
+          return {
+            text: segments[0].segment.start.format('MMMM YYYY'),
+            key: segments[0].segment.items[0].sortDate,
+          };
         }
         return null;
       })();
@@ -249,6 +251,7 @@ export function layoutSegments(
           text,
           left: boxes[0].left,
           width: boxes.at(-1).left + boxes.at(-1).width - boxes[0].left,
+          key: segments[0].segment.items[0].sortDate,
         };
       });
       blocks.push({
@@ -258,8 +261,6 @@ export function layoutSegments(
         gridItems,
       });
     }
-
-    startTop += height;
   }
   const allKeys = R.flatMap(segments, (seg) => R.map(seg.items, (item) => item.key));
   const uniqueKeys = new Set(allKeys);
@@ -270,6 +271,5 @@ export function layoutSegments(
   );
   return {
     blocks,
-    totalHeight: startTop,
   };
 }

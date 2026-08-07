@@ -38,7 +38,6 @@ import type {
   TimelineSection,
   TimelineSegment,
 } from './timeline-types';
-import { untrack } from 'svelte';
 
 export type AssetSeriesRef = { id: AssetSeriesId; assetIds: AssetId[]; selectionIndices: number[] };
 
@@ -169,9 +168,22 @@ export function createTimeline(
 
   let sections: TimelineSection[] = [];
   let sectionsPublic: TimelineSection[] = $state([]);
-  // $inspect(sectionsPublic);
+
+  const getSectionTop = (idx: number) => {
+    return R.pipe(
+      sections,
+      R.take(idx),
+      R.map((s) => s.height),
+      R.sum(),
+    );
+  };
+
   const timelineHeight: number = $derived(
-    sectionsPublic.map((s) => s.height).reduce((acc, n) => acc + n, 0),
+    R.pipe(
+      sectionsPublic,
+      R.map((s) => s.height),
+      R.sum(),
+    ),
   );
   const addToGroupClickAreas: AddToGroupClickArea[] = $derived(
     state.state === 'creatingTimelineGroup'
@@ -193,11 +205,6 @@ export function createTimeline(
       return acc + section.data.numAssets;
     }, 0),
   );
-  /** Initially, values from TimelineOptions (e.g, headerHeight) are used to set the height of items like segment titles of which we don't know the real size of rendered text.
-   * When setRealItemHeight is called, we correct that guess and use it for future items of the same type so that setRealItemHeight needs to be called and relayout everything less often. */
-  const initialHeightGuess: Record<string, number | null> = {
-    segmentTitle: null,
-  };
 
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
   const inflightSegmentRequests: Map<string, Promise<ApiTimelineSegment[]>> = new Map();
@@ -232,19 +239,16 @@ export function createTimeline(
     const sectionData: ApiTimelineSection[] = sectionsResponse.sections;
 
     const _sections: TimelineSection[] = [];
-    let nextSectionTop = 0;
     for (const section of sectionData) {
       const height = estimateHeight(section, viewport.width, opts.targetRowHeight);
       _sections.push({
         data: section,
         height,
-        top: nextSectionTop,
         segments: null,
         startDate: dayjs.utc(section.startDate),
         endDate: dayjs.utc(section.endDate),
         blocks: null,
       });
-      nextSectionTop += height;
     }
     sections = _sections;
     sectionsPublic = sections;
@@ -266,9 +270,10 @@ export function createTimeline(
     let lastVisibleSection = null;
     for (let i = 0; i < sections.length; i += 1) {
       const s = sections[i];
+      const sectionTop = getSectionTop(i);
       const isVisible =
-        s.top <= top + viewport.height + loadWithinMargin &&
-        top - loadWithinMargin <= s.top + s.height;
+        sectionTop <= top + viewport.height + loadWithinMargin &&
+        top - loadWithinMargin <= sectionTop + s.height;
       if (firstVisibleSection == null && isVisible) {
         firstVisibleSection = i;
       } else if (i == sections.length - 1 && isVisible) {
@@ -302,7 +307,7 @@ export function createTimeline(
     // TODO: make the above irrelevant by adding an API call to load multiple sections at once, for the rare event that the user jumps exactly inbetween two sections.
     for (let i = firstVisibleSection; i <= lastVisibleSection; i += 1) {
       if (sections[i].blocks === null || forceRelayout) {
-        layoutSection(i, 'adjustScroll'); // FIXME: forceRelayout breaks. section tops are wrong
+        layoutSection(i, 'adjustScroll');
       }
     }
     visibleSections = {
@@ -323,7 +328,7 @@ export function createTimeline(
       return;
     }
     const lastSectionEndDate = sectionIndex === 0 ? null : sections[sectionIndex - 1].endDate;
-    const { totalHeight: sectionHeight, blocks } = layoutSegments(
+    const { blocks } = layoutSegments(
       segments,
       lastSectionEndDate,
       viewport.width,
@@ -331,24 +336,19 @@ export function createTimeline(
       assetsById.get,
       assetSeriesById.get,
     );
-    const oldSectionHeight = sections[sectionIndex].height;
-    section.height = sectionHeight;
+    // const oldSectionHeight = section.height;
+    // section.height = sectionHeight;
     section.blocks = blocks;
 
-    // Correct sections after newly inserted one
-    const heightDelta = sectionHeight - oldSectionHeight;
-    for (let i = sectionIndex + 1; i < sections.length; i += 1) {
-      const s = sections[i];
-      s.top += heightDelta;
-    }
-    if (adjustScroll === 'adjustScroll') {
-      adjustScrollTop({
-        what: 'scrollBy',
-        scroll: heightDelta,
-        ifScrollTopGt: sections[sectionIndex].top,
-        behavior: 'instant',
-      });
-    }
+    // const heightDelta = sectionHeight - oldSectionHeight;
+    // if (adjustScroll === 'adjustScroll') {
+    //   adjustScrollTop({
+    //     what: 'scrollBy',
+    //     scroll: heightDelta,
+    //     ifScrollTopGt: getSectionTop(sectionIndex),
+    //     behavior: 'instant',
+    //   });
+    // }
   }
 
   async function loadSection(sectionIndex: number, reload: 'reload' | undefined = undefined) {
@@ -474,7 +474,7 @@ export function createTimeline(
 
   /** Increasing number to track order in which assets are selected. Used for values of selectedAssets */
   let nextSelectionIndex = 0;
-  function setItemSelected(item: TimelineItem, selected: boolean) {
+  function setItemSelected(item: TimelineGridItem, selected: boolean) {
     if (item.itemType === 'photoStack') {
       // stack may be split into multiple grid items, and selecting one should select all of them
       const section = sections[item.pos.sectionIndex];
@@ -652,6 +652,13 @@ export function createTimeline(
         }
         const segment = segments[segmentIdx];
         const remainingItems: TimelineItem[] = [];
+        for (const item of segment.items) {
+          if (selectedItems.has(item.key)) {
+            untreatedItems.delete(item.key);
+          } else {
+            remainingItems.push(item);
+          }
+        }
         if (
           remainingItems.length != segment.items.length &&
           ((affectedSectionIdxs.length > 0 && affectedSectionIdxs.at(-1) != sectionIdx) ||
@@ -697,19 +704,14 @@ export function createTimeline(
   }
 
   function setActualSectionHeight(sectionIdx: number, height: number) {
-    return;
     if (height !== null && sections[sectionIdx].height !== height) {
       const delta = height - sections[sectionIdx].height;
-      console.log(sections[sectionIdx]);
       sections[sectionIdx].height = height;
-      for (let i = sectionIdx + 1; i < sections.length; i += 1) {
-        sections[i].top += delta;
-      }
       sectionsPublic = sections;
       adjustScrollTop({
         what: 'scrollBy',
         scroll: delta,
-        ifScrollTopGt: sections[sectionIdx].top,
+        ifScrollTopGt: getSectionTop(sectionIdx + 1),
         behavior: 'instant',
       });
     }
@@ -901,16 +903,16 @@ export function createTimeline(
     for (const i of affectedSections) {
       layoutSection(i, 'noAdjustScroll');
     }
-    // const scrollToItem = section.segments[insertBeforeSegmentIndex].gridItems[0].top;
-    // adjustScrollTop({
-    //   what: 'scrollTo',
-    //   scroll: Math.max(0, scrollToItem.top - viewport.height / 2),
-    //   ifScrollTopGt: 0,
-    //   behavior: 'smooth',
-    // });
-    if (setAnimationsEnabled) {
-      setAnimationsEnabled(false);
-    }
+    // TODO: all kinds of broken this scroll thing
+    // const scrollToItem = section.blocks.find((block) => block.blockType === 'createGroup');
+    // if (scrollToItem) {
+    //   adjustScrollTop({
+    //     what: 'scrollTo',
+    //     scroll: Math.max(0, getSectionTop(insertInSectionIndex) + scrollToItem.gridItems[0].top),
+    //     ifScrollTopGt: 0,
+    //     behavior: 'smooth',
+    //   });
+    // }
     for (let sectionIdx = 0; sectionIdx < sections.length; sectionIdx += 1) {
       const section = sections[sectionIdx];
       if (section.segments === null) {
@@ -935,6 +937,9 @@ export function createTimeline(
       groupSortDate,
     };
     sectionsPublic = sections;
+    if (setAnimationsEnabled) {
+      setAnimationsEnabled(false);
+    }
   }
 
   async function cancelCreateGroup() {

@@ -13,18 +13,27 @@ use tokio::time::Instant;
 use tracing::instrument;
 
 use crate::model::{
-    Asset, AssetBase, AssetId, AssetSeriesId, TimelineGroup, TimelineGroupId,
-    repository::{self, db_entity::from_db_asset_ty},
+    Asset, AssetId, AssetSeriesId, TimelineGroup, TimelineGroupId, TimelineSectionId,
+    repository::{self},
     util::datetime_from_db_repr,
 };
 
 use super::{db::DbConn, db_entity::DbAsset, timeline_group::get_timeline_group};
 
 #[tracing::instrument(skip(conn), level = "debug")]
-pub fn rebuild_timeline(conn: &mut DbConn) -> Result<()> {
+pub fn rebuild_timeline_full(conn: &mut DbConn) -> Result<()> {
     conn.immediate_transaction(|conn| {
-        conn.batch_execute(include_str!("timeline_query.sql"))
+        conn.batch_execute(include_str!("rebuild_timeline.sql"))
             .wrap_err("error executing rebuild_timeline query")?;
+        Ok(())
+    })
+}
+
+#[tracing::instrument(skip(conn), level = "debug")]
+pub fn update_timeline_dirty(conn: &mut DbConn) -> Result<()> {
+    conn.immediate_transaction(|conn| {
+        conn.batch_execute(include_str!("rebuild_dirty_sections.sql"))
+            .wrap_err("error executing rebuild_dirty_sections query")?;
         Ok(())
     })
 }
@@ -48,14 +57,6 @@ impl TimelineElement {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TimelineSectionId {
-    /// (inlusive): index of first segment in this section
-    pub segment_min: i64,
-    /// (inlusive): index of last segment in this section
-    pub segment_max: i64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TimelineSection {
     pub id: TimelineSectionId,
     pub num_assets: i64,
@@ -71,17 +72,13 @@ struct RowTimelineSection {
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub section_idx: i64,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub start_segment: i64,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub end_segment: i64,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub section_len: i64,
 }
 
 #[tracing::instrument(skip(conn), level = "debug")]
 pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
     const QUERY: &str = r#"
-    SELECT section_idx, start_segment, end_segment, section_len FROM TimelineSection;
+    SELECT section_idx, section_len FROM TimelineSection GROUP BY section_idx;
     "#;
     let query_start = Instant::now();
     let rows: Vec<RowTimelineSection> = sql_query(QUERY).load(conn)?;
@@ -90,10 +87,7 @@ pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
         .into_iter()
         .map(|row| {
             Ok(TimelineSection {
-                id: TimelineSectionId {
-                    segment_min: row.start_segment,
-                    segment_max: row.end_segment - 1, // FIXME: decide on exclusive or inclusive
-                },
+                id: TimelineSectionId(row.section_idx),
                 start_date: datetime_from_db_repr(0)?,
                 end_date: datetime_from_db_repr(10)?,
                 num_assets: row.section_len,
@@ -161,7 +155,7 @@ struct RowTimelineSegmentInSection {
     #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub sort_date: i64,
     #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub segment_idx: i64,
+    pub segment_id: i64,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
     pub segment_split_idx: Option<i32>,
 }
@@ -169,8 +163,7 @@ struct RowTimelineSegmentInSection {
 #[instrument(err(Debug), skip(conn), level = "debug")]
 pub fn get_segments_in_section(
     conn: &mut DbConn,
-    segment_min: i64,
-    segment_max: i64,
+    section_idx: TimelineSectionId,
 ) -> Result<Vec<TimelineSegment>> {
     let mut qb = SqliteQueryBuilder::new();
     qb.push_sql(
@@ -181,28 +174,27 @@ pub fn get_segments_in_section(
     DbAsset::as_select().to_sql(&mut qb, &diesel::sqlite::Sqlite)?;
     qb.push_sql(
         r#"
-   , TimelineItem.group_id as timeline_group_id
+    , TimelineItem.group_id as timeline_group_id
     , TimelineItem.series_id as series_id
     , TimelineItem.series_date as series_date
     , CASE WHEN TimelineItem.series_id IS NULL THEN NULL ELSE 1 END as series_len
     , Asset.is_series_selection as is_series_selection
     , TimelineItem.sort_date as sort_date
-    , TimelineItem.segment_idx as segment_idx
+    , TimelineItem.segment_id as segment_id
     , TimelineItem.segment_split_idx as segment_split_idx
     FROM
     TimelineItem INNER JOIN Asset ON Asset.asset_id = TimelineItem.asset_id
     WHERE
-    ? <= TimelineItem.segment_idx AND TimelineItem.segment_idx <= ?
+    TimelineItem.section_idx = ?
     ORDER BY TimelineItem.sort_date DESC
     , TimelineItem.taken_date DESC
+    , TimelineItem.segment_id
     , TimelineItem.series_id
     , TimelineItem.group_id DESC
     , TimelineItem.asset_id;
     "#,
     );
-    let query = sql_query(qb.finish())
-        .bind::<diesel::sql_types::BigInt, _>(segment_min)
-        .bind::<diesel::sql_types::BigInt, _>(segment_max);
+    let query = sql_query(qb.finish()).bind::<diesel::sql_types::BigInt, _>(section_idx.0);
     let query_start = Instant::now();
     let rows: Vec<RowTimelineSegmentInSection> = query
         .load(conn)
@@ -212,7 +204,7 @@ pub fn get_segments_in_section(
     let processing_start = Instant::now();
     let segments: Vec<TimelineSegment> = rows
         .into_iter()
-        .group_by(|row| row.segment_idx)
+        .group_by(|row| row.segment_id)
         .into_iter()
         .map(|(segment_idx, segment_rows)| {
             let mut first_row: Option<_> = None;

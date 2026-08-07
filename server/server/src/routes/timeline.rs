@@ -13,7 +13,7 @@ use crate::{
     app_state::SharedState,
     asset_queries::get_full_asset,
     http_error::{ApiResult, HttpErrorExt},
-    schema::{asset::AssetWithSpe, AssetSeriesId, TimelineGroupId},
+    schema::{asset::AssetWithSpe, AssetSeriesId, TimelineGroupId, TimelineSectionId},
 };
 use myrti_core::{
     deadpool_diesel, interact,
@@ -43,7 +43,7 @@ pub struct TimelineSectionsResponse {
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineSection {
-    pub id: String,
+    pub id: TimelineSectionId,
     pub num_assets: i64,
     pub avg_aspect_ratio: f32,
     /// date of *most recent* asset in range
@@ -63,7 +63,7 @@ pub struct TimelineSection {
 pub async fn rebuild_timeline(State(app_state): State<SharedState>) -> ApiResult<()> {
     let conn = app_state.pool.get().await?;
     interact!(conn, move |conn| {
-        repository::timeline::rebuild_timeline(conn)
+        repository::timeline::rebuild_timeline_full(conn)
     })
     .await??;
     Ok(())
@@ -87,7 +87,7 @@ pub async fn get_timeline_sections(
     .await??
     .into_iter()
     .map(|section| TimelineSection {
-        id: format!("{}_{}", section.id.segment_min, section.id.segment_max),
+        id: TimelineSectionId(section.id.0.to_string()),
         num_assets: section.num_assets,
         avg_aspect_ratio: 3.0 / 2.0,
         start_date: section.start_date,
@@ -157,17 +157,14 @@ pub struct TimelineSegmentsResponse {
 )]
 #[tracing::instrument(fields(request = true), skip(app_state))]
 pub async fn get_timeline_segments(
-    Path(section_id): Path<String>,
+    Path(section_id): Path<TimelineSectionId>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Json<TimelineSegmentsResponse>> {
-    let (segment_min, segment_max) = section_id
-        .split_once('_')
-        .ok_or(eyre!("invalid sectionId").into_404())?;
-    let segment_min: i64 = segment_min.parse().wrap_err("invalid sectionId")?;
-    let segment_max: i64 = segment_max.parse().wrap_err("invalid sectionId")?;
+    let section_id: model::TimelineSectionId =
+        section_id.try_into().wrap_err("invalid sectionId")?;
     let mut conn = app_state.pool.get().await?;
     let segments = interact!(conn, move |conn| {
-        repository::timeline::get_segments_in_section(conn, segment_min, segment_max)
+        repository::timeline::get_segments_in_section(conn, section_id)
     })
     .await??;
     let mut result: Vec<TimelineSegment> = Vec::default();

@@ -34,4 +34,5 @@ impl_id!(AudioRepresentationId);
 impl_id!(ImageRepresentationId);
 impl_id!(TimelineGroupItemId);
 impl_id!(TimelineGroupId);
+impl_id!(TimelineSectionId);
 impl_id!(AssetSeriesId);

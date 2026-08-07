@@ -282,8 +282,8 @@ async fn index_asset_root(
 ) {
     tracing::info!(path=%asset_root.path, "Start indexing");
     // TODO WalkDir is synchronous
-    // FIXME if a datadir is subdir of assetroot it should obviously not be indexed
     let mut new_asset_count = 0;
+    let mut stack: Vec<(PathBuf, i32)> = Default::default();
     for entry in WalkDir::new(asset_root.path.as_path())
         .follow_links(true)
         .into_iter()
@@ -310,6 +310,10 @@ async fn index_asset_root(
                         }
                         Ok(Some(asset_id)) => {
                             new_asset_count += 1;
+                            stack
+                                .last_mut()
+                                .expect("directory must be yielded before files inside id")
+                                .1 += 1;
                             MsgFromIndexing::NewAsset(asset_id)
                         }
                         Err(report) => MsgFromIndexing::IndexingError {
@@ -321,7 +325,43 @@ async fn index_asset_root(
                     let _ = send_result.send((asset_root.id, msg));
                 }
             }
-            Ok(_dir) => {}
+            Ok(dir) => {
+                let path = match PathBuf::try_from(dir.into_path()) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                if let Some((completed_dir, new_count)) =
+                    stack.pop_if(|(top, _)| !path.starts_with(top))
+                {
+                    debug_assert!(stack.last().is_none_or(|(top, _)| path.starts_with(top)));
+                    tracing::trace!(?completed_dir, "Completed indexing directory");
+                    if new_count > 0 {
+                        #[allow(clippy::redundant_closure_call)]
+                        if let Err(err) = (async || {
+                            let conn = pool.get().await?;
+                            interact!(conn, move |conn| {
+                                repository::asset::merge_image_assets(conn)
+                                    .wrap_err("error trying to merge assets")?;
+                                repository::asset::detect_image_sequences(conn)
+                                    .wrap_err("error trying to detect image sequences")?;
+                                // repository::timeline::update_timeline_dirty(conn)
+                                //     .wrap_err("error updating timeline")?;
+                                repository::timeline::rebuild_timeline_full(conn)
+                                    .wrap_err("error rebuilding timeline")?;
+                                Ok(())
+                            })
+                            .await??;
+                            Ok::<_, eyre::Error>(())
+                        })()
+                        .await
+                        {
+                            tracing::error!("{:?}", err);
+                        }
+                    }
+                } else {
+                    stack.push((path, 0));
+                }
+            }
             Err(e) => {
                 let _ = send_result.send((
                     asset_root.id,

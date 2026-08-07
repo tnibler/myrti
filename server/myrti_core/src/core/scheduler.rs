@@ -556,6 +556,15 @@ async fn on_startup(
         .await
         .expect("TODO how do we handle errors in scheduler");
 
+    if let Err(err) = interact!(conn, move |conn| {
+        repository::timeline::rebuild_timeline_full(conn)
+    })
+    .await
+    .flatten()
+    {
+        tracing::error!("Error rebuilding timeline:\n{:?}", (err));
+    }
+
     let video_packaging_required = rules::video_packaging_due(&mut conn).await.expect("TODO");
     let video_packaging_count = video_packaging_required.len();
     let image_conversion_required = rules::image_conversion_due(&mut conn).await.expect("TODO");

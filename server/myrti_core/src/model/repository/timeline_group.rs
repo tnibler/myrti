@@ -1,13 +1,13 @@
 use chrono::{DateTime, Utc};
 use diesel::prelude::*;
-use eyre::{eyre, Result};
+use eyre::{Context, Result, eyre};
 use tracing::instrument;
 
 use crate::model::{
+    AssetBase, AssetId, TimelineGroupId,
     repository::db_entity::{DbAsset, DbTimelineGroup},
     timeline_group::TimelineGroup,
     util::{datetime_from_db_repr, datetime_to_db_repr},
-    Asset, AssetBase, AssetId, TimelineGroupId,
 };
 
 use super::{db::DbConn, schema};
@@ -53,7 +53,7 @@ pub fn create_timeline_group(
 ) -> Result<TimelineGroupId> {
     use schema::{TimelineGroup, TimelineGroupItem};
     let now = Utc::now();
-    conn.transaction(|conn| {
+    let group_id = conn.immediate_transaction(|conn| {
         let group_id: i64 = diesel::insert_into(TimelineGroup::table)
             .values((
                 TimelineGroup::name.eq(ctg.name),
@@ -62,7 +62,8 @@ pub fn create_timeline_group(
                 TimelineGroup::changed_at.eq(datetime_to_db_repr(&now)),
             ))
             .returning(TimelineGroup::timeline_group_id)
-            .get_result(conn)?;
+            .get_result(conn)
+            .wrap_err("error inserting into TimelineGroup")?;
 
         for asset_id in &ctg.asset_ids {
             diesel::insert_into(TimelineGroupItem::table)
@@ -70,10 +71,15 @@ pub fn create_timeline_group(
                     TimelineGroupItem::group_id.eq(group_id),
                     TimelineGroupItem::asset_id.eq(asset_id.0),
                 ))
-                .execute(conn)?;
+                .execute(conn)
+                .wrap_err("error inserting into TimelineGroupItem")?;
         }
-        Ok(TimelineGroupId(group_id))
-    })
+        Ok::<_, eyre::Error>(TimelineGroupId(group_id))
+    })?;
+    if let Err(err) = super::timeline::update_timeline_dirty(conn) {
+        tracing::error!("Error updating dirty timeline:\n{:?}", err);
+    }
+    Ok(group_id)
 }
 
 pub fn get_newest_asset_date(
@@ -100,14 +106,15 @@ pub fn add_assets_to_group(
     if asset_ids.is_empty() {
         return Ok(());
     }
-    conn.transaction(|conn| {
+    conn.immediate_transaction(|conn| {
         for asset_id in asset_ids {
             diesel::insert_into(TimelineGroupItem::table)
                 .values((
                     TimelineGroupItem::group_id.eq(group_id.0),
                     TimelineGroupItem::asset_id.eq(asset_id.0),
                 ))
-                .execute(conn)?;
+                .execute(conn)
+                .wrap_err("error inserting into TimelineGroupItem")?;
         }
         // Update TimelineGroup.display_date to most recent asset in case it changed
         // no query builder sorry idk how subqueries work
@@ -124,9 +131,14 @@ pub fn add_assets_to_group(
         )
         .bind::<diesel::sql_types::BigInt, _>(group_id.0)
         .bind::<diesel::sql_types::BigInt, _>(group_id.0)
-        .execute(conn)?;
-        Ok(())
-    })
+        .execute(conn)
+        .wrap_err("error updating TimelineGroup display_date")?;
+        Ok::<_, eyre::Error>(())
+    })?;
+    if let Err(err) = super::timeline::update_timeline_dirty(conn) {
+        tracing::error!("Error updating dirty timeline:\n{:?}", err);
+    }
+    Ok(())
 }
 
 #[instrument(skip(conn))]
@@ -139,7 +151,7 @@ pub fn remove_assets_from_group(
     if asset_ids.is_empty() {
         return Ok(());
     }
-    conn.transaction(|conn| {
+    conn.immediate_transaction(|conn| {
         let affected_rows = diesel::delete(
             TimelineGroupItem::table.filter(
                 TimelineGroupItem::asset_id
@@ -155,7 +167,11 @@ pub fn remove_assets_from_group(
         } else {
             Ok(())
         }
-    })
+    })?;
+    if let Err(err) = super::timeline::update_timeline_dirty(conn) {
+        tracing::error!("Error updating dirty timeline:\n{:?}", err);
+    }
+    Ok(())
 }
 
 #[instrument(skip(conn))]

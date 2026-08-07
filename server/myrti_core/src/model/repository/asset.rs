@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use camino::Utf8Path as Path;
 use chrono::Utc;
 use color_eyre::eyre;
+use diesel::connection::SimpleConnection;
 use diesel::dsl::jsonb;
 use diesel::{insert_into, prelude::*};
 use eyre::{Context, Result, eyre};
@@ -679,4 +680,20 @@ pub fn get_all_assets_geojson(conn: &mut DbConn) -> Result<String> {
     )
     .get_result(conn)?;
     Ok(geojson.point_features)
+}
+
+#[instrument(skip(conn), level = "debug")]
+pub fn merge_image_assets(conn: &mut DbConn) -> Result<()> {
+    conn.immediate_transaction(|conn| {
+        conn.batch_execute(include_str!("merge_assets.sql"))
+            .wrap_err("error executing merge_assets query")
+    })
+}
+
+#[instrument(skip(conn), level = "debug")]
+pub fn detect_image_sequences(conn: &mut DbConn) -> Result<()> {
+    conn.immediate_transaction(|conn| {
+        conn.batch_execute(include_str!("detect_image_sequences.sql"))
+            .wrap_err("error executing detect_image_sequence query")
+    })
 }

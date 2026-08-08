@@ -226,7 +226,7 @@ export function layoutSegments(
       const firstSegmentMonth = firstSegment.end.startOf('month');
       const titleMajor = (() => {
         if (lastMajorTitleDate === null || !lastMajorTitleDate.isSame(firstSegmentMonth)) {
-          lastMajorTitleDate = segments[0].segment.start;
+          lastMajorTitleDate = segments[0].segment.start.startOf('month');
           return {
             text: segments[0].segment.start.format('MMMM YYYY'),
             key: segments[0].segment.items[0].sortDate,

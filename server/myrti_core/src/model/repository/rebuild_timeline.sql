@@ -1,3 +1,4 @@
+DELETE FROM TimelineMonth;
 DELETE FROM TimelineItem;
 DELETE FROM TimelineSegment;
 DELETE FROM TimelineSection;
@@ -28,16 +29,15 @@ SELECT Asset.asset_id
 , SeriesDate.series_id
 , SeriesDate.series_date
 , group_id
-, group_date
+, CASE WHEN group_id IS NOT NULL THEN MAX(Asset.taken_date) OVER (PARTITION BY group_id) ELSE NULL END
 , -1
 , -1
 , ''
 FROM Asset
 LEFT JOIN (
 	SELECT TimelineGroup.timeline_group_id AS group_id
-	, TimelineGroup.display_date AS group_date
 	, TimelineGroupItem.asset_id
-	FROM TimelineGroup INNER JOIN TimelineGroupItem 
+	FROM TimelineGroup INNER JOIN TimelineGroupItem
 	ON TimelineGroup.timeline_group_id = TimelineGroupItem.group_id
 ) tgi
 ON Asset.asset_id = tgi.asset_id
@@ -157,16 +157,27 @@ SET section_idx = SectionMap.section_idx
 FROM SectionMap
 WHERE TimelineItem.segment_id = SectionMap.segment_id;
 
+WITH SectionLen AS (
+	SELECT section_idx
+	, SUM(segment_len) as num_assets
+	FROM SectionMap
+	GROUP BY section_idx
+)
+, SectionWidth AS (
+	SELECT section_idx
+	, SUM(CAST(AssetFile.width AS REAL) / CAST(AssetFile.height AS REAL)) AS total_width
+	FROM TimelineItem INNER JOIN Asset ON TimelineItem.asset_id = Asset.asset_id
+	INNER JOIN AssetFile ON Asset.rep_file_id = AssetFile.file_id
+	WHERE Asset.series_id IS NULL OR Asset.is_series_selection = 1
+	GROUP BY TimelineItem.section_idx
+)
 INSERT INTO TimelineSection (
 	section_idx
 	, section_len
 	, total_width
 )
-SELECT SectionMap.section_idx
-, SUM(SectionMap.segment_len)
-, SUM(CAST(AssetFile.width AS REAL) / CAST(AssetFile.height AS REAL))
-FROM SectionMap INNER JOIN TimelineItem ON SectionMap.section_idx = TimelineItem.section_idx
-INNER JOIN Asset ON TimelineItem.asset_id = Asset.asset_id
-INNER JOIN AssetFile ON Asset.rep_file_id = AssetFile.file_id
-WHERE Asset.series_id IS NULL OR Asset.is_series_selection = 1
-GROUP BY SectionMap.section_idx;
+SELECT SectionLen.section_idx
+, SectionLen.num_assets
+, SectionWidth.total_width
+FROM SectionLen, SectionWidth
+WHERE SectionLen.section_idx = SectionWidth.section_idx;

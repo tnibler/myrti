@@ -3,10 +3,10 @@ use std::{
     sync::Arc,
 };
 
-use axum::{http::Method, Router};
+use axum::{Router, http::Method};
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use clap::Parser;
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 use myrti::{
     app_state::{AppState, SharedState},
     routes,
@@ -15,15 +15,15 @@ use myrti::{
 use tokio::{signal, sync::oneshot};
 use tower::ServiceBuilder;
 use tower_http::{
+    ServiceBuilderExt,
     cors::{Any, CorsLayer},
     request_id::MakeRequestUuid,
     services::{ServeDir, ServeFile},
     trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
-    ServiceBuilderExt,
 };
-use tracing::{info, Level};
+use tracing::{Level, info};
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{fmt::format::FmtSpan, prelude::*, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt::format::FmtSpan, prelude::*};
 
 use myrti_core::{
     config::Config,
@@ -33,11 +33,11 @@ use myrti_core::{
     },
     deadpool_diesel, interact,
     model::{
+        AssetRootDir, AssetRootDirId,
         repository::{
             self,
             db::{self, DbPool},
         },
-        AssetRootDir, AssetRootDirId,
     },
 };
 
@@ -61,7 +61,6 @@ struct Cli {
     /// Pause video processing on startup (for development)
     #[arg(long, default_value_t = false)]
     pause_video_processing: bool,
-
 }
 
 async fn db_setup(dir: &Path) -> Result<DbPool> {
@@ -114,11 +113,13 @@ async fn main() -> Result<()> {
     let args = Cli::parse();
 
     if std::env::var("RUST_SPANTRACE").is_err() {
-        std::env::set_var("RUST_SPANTRACE", "1");
+        unsafe {
+            std::env::set_var("RUST_SPANTRACE", "1");
+        }
     }
     color_eyre::install()?;
     if std::env::var("MYRTI_LOG").is_err() {
-        std::env::set_var("MYRTI_LOG", "info")
+        unsafe { std::env::set_var("MYRTI_LOG", "info") }
     }
     let file_appender = tracing_appender::rolling::never("/tmp/", "myrti.log");
     let (non_blocking_appender, _guard) = tracing_appender::non_blocking(file_appender);

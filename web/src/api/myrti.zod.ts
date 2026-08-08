@@ -134,90 +134,6 @@ export const setAssetsHiddenBody = zod.object({
   what: zod.enum(['hide', 'unhide']),
 });
 
-export const getTimelineQueryParams = zod.object({
-  lastAssetId: zod.string().nullish(),
-  maxCount: zod.number(),
-  lastFetch: zod.string().nullish(),
-});
-
-export const getTimelineResponse = zod
-  .object({
-    changedSinceLastFetch: zod.boolean(),
-    date: zod.string().datetime({}),
-    groups: zod.array(
-      zod
-        .union([
-          zod.object({
-            date: zod.string().date(),
-            type: zod.enum(['day']),
-          }),
-          zod.object({
-            groupEndDate: zod.string().datetime({}),
-            groupId: zod.string(),
-            groupStartDate: zod.string().datetime({}),
-            groupTitle: zod.string(),
-            type: zod.enum(['group']),
-          }),
-        ])
-        .and(
-          zod.object({
-            assets: zod.array(
-              zod
-                .object({
-                  assetId: zod.string(),
-                  repFile: zod.object({
-                    addedAt: zod.string().datetime({}),
-                    assetRootId: zod.string(),
-                    fileId: zod.string(),
-                    height: zod.number(),
-                    mimeType: zod.string(),
-                    mirrorCorrection: zod.enum(['none', 'horizontal', 'vertical']),
-                    pathInRoot: zod.string(),
-                    rotationCorrection: zod.number(),
-                    width: zod.number(),
-                  }),
-                  takenDate: zod.string().datetime({}),
-                })
-                .and(
-                  zod.union([
-                    zod
-                      .object({
-                        representations: zod.array(
-                          zod.object({
-                            format: zod.string(),
-                            height: zod.number(),
-                            id: zod.string(),
-                            size: zod.number(),
-                            width: zod.number(),
-                          }),
-                        ),
-                      })
-                      .and(
-                        zod.object({
-                          assetType: zod.enum(['image']),
-                        }),
-                      ),
-                    zod
-                      .object({
-                        hasDash: zod.boolean(),
-                      })
-                      .and(
-                        zod.object({
-                          assetType: zod.enum(['video']),
-                        }),
-                      ),
-                  ]),
-                )
-                .and(zod.object({})),
-            ),
-          }),
-        ),
-    ),
-  })
-  .describe(
-    'Response for a request for the next part of the timeline to display\n\n`groups` are always whole, not sliced in the middle. Either TimelineGroup or Day\n`date` is the date before queries are made',
-  );
-
 export const getAssetParams = zod.object({
   id: zod.string().describe('AssetId'),
 });
@@ -369,13 +285,23 @@ export const addAssetsToSeriesResponse = zod.object({
 });
 
 export const getTimelineSectionsResponse = zod.object({
+  monthsSummary: zod.array(
+    zod.array(
+      zod.object({
+        month: zod.number(),
+        numAssets: zod.number(),
+        totalNormalizedWidth: zod.number(),
+        year: zod.number(),
+      }),
+    ),
+  ),
   sections: zod.array(
     zod.object({
-      avgAspectRatio: zod.number(),
       endDate: zod.string().datetime({}).describe('date of \*oldest\* asset in range'),
       id: zod.string(),
       numAssets: zod.number(),
       startDate: zod.string().datetime({}).describe('date of \*most recent\* asset in range'),
+      totalNormalizedWidth: zod.number(),
     }),
   ),
 });

@@ -241,8 +241,6 @@ CREATE INDEX album_id_index ON AlbumItem(album_id);
 CREATE TABLE TimelineGroup (
   timeline_group_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   name TEXT,
-  -- UTC timestamp of date used to position the group in the timeline
-  display_date INTEGER NOT NULL,
   -- UTC timestamp in milliseconds since UNIX epoch
   created_at INTEGER NOT NULL,
   -- UTC timestamp in milliseconds since UNIX epoch

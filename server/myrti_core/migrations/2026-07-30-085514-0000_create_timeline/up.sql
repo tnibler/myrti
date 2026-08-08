@@ -26,9 +26,15 @@ CREATE TABLE TimelineSection (
 ) STRICT;
 
 CREATE TABLE TimelineMonth (
-  start_of_month INTEGER NOT NULL
+  timeline_month_id INTEGER PRIMARY KEY NOT NULL
+  , start_of_month INTEGER NOT NULL
+  -- one month can end up split over multiple sections. when one of those is loaded and the actual height is known,
+  -- we need to know what proportion of the estimated height is from this section to update height estimates for the scrollbar scrubber marks
+  , section_idx INTEGER NOT NULL
   , num_assets INTEGER NOT NULL CHECK(num_assets > 0)
   , total_width REAL NOT NULL
+  , UNIQUE(start_of_month, section_idx)
+  , FOREIGN KEY (section_idx) REFERENCES TimelineSection(section_idx)
 ) STRICT;
 
 CREATE TRIGGER Asset_Delete_TimelineDirty

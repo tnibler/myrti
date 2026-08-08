@@ -308,56 +308,7 @@ export const ThumbnailSize = {
   large: 'large',
 } as const;
 
-/**
- * Response for a request for the next part of the timeline to display
-
-`groups` are always whole, not sliced in the middle. Either TimelineGroup or Day
-`date` is the date before queries are made
- */
-export interface TimelineChunk {
-  changedSinceLastFetch: boolean;
-  date: string;
-  groups: TimelineGroup[];
-}
-
-export type TimelineGroupAllOf = {
-  assets: AssetWithSpe[];
-};
-
-export type TimelineGroup = TimelineGroupType & TimelineGroupAllOf;
-
 export type TimelineGroupId = string;
-
-export type TimelineGroupTypeOneOfType =
-  (typeof TimelineGroupTypeOneOfType)[keyof typeof TimelineGroupTypeOneOfType];
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const TimelineGroupTypeOneOfType = {
-  day: 'day',
-} as const;
-
-export type TimelineGroupTypeOneOf = {
-  date: string;
-  type: TimelineGroupTypeOneOfType;
-};
-
-export type TimelineGroupTypeOneOfThreeType =
-  (typeof TimelineGroupTypeOneOfThreeType)[keyof typeof TimelineGroupTypeOneOfThreeType];
-
-// eslint-disable-next-line @typescript-eslint/no-redeclare
-export const TimelineGroupTypeOneOfThreeType = {
-  group: 'group',
-} as const;
-
-export type TimelineGroupTypeOneOfThree = {
-  groupEndDate: string;
-  groupId: string;
-  groupStartDate: string;
-  groupTitle: string;
-  type: TimelineGroupTypeOneOfThreeType;
-};
-
-export type TimelineGroupType = TimelineGroupTypeOneOf | TimelineGroupTypeOneOfThree;
 
 export type TimelineItemOneOfAllOfItemType =
   (typeof TimelineItemOneOfAllOfItemType)[keyof typeof TimelineItemOneOfAllOfItemType];
@@ -393,17 +344,27 @@ export type TimelineItemOneOfFour = {
 
 export type TimelineItem = TimelineItemOneOf | TimelineItemOneOfFour;
 
+export interface TimelineMonthSlice {
+  month: number;
+  numAssets: number;
+  totalNormalizedWidth: number;
+  year: number;
+}
+
 export interface TimelineSection {
-  avgAspectRatio: number;
   /** date of *oldest* asset in range */
   endDate: string;
-  id: string;
+  id: TimelineSectionId;
   numAssets: number;
   /** date of *most recent* asset in range */
   startDate: string;
+  totalNormalizedWidth: number;
 }
 
+export type TimelineSectionId = string;
+
 export interface TimelineSectionsResponse {
+  monthsSummary: TimelineMonthSlice[][];
   sections: TimelineSection[];
 }
 
@@ -426,18 +387,6 @@ export interface Video {
  * @nullable
  */
 export type DeleteAlbumItems200 = unknown | null;
-
-export type GetTimelineParams = {
-  /**
-   * @nullable
-   */
-  lastAssetId?: AssetId | null;
-  maxCount: number;
-  /**
-   * @nullable
-   */
-  lastFetch?: string | null;
-};
 
 /**
  * @nullable
@@ -496,16 +445,6 @@ export const setAssetsHidden = <TData = AxiosResponse<void>>(
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
   return axios.post(`/api/assets/hidden`, hideAssetsRequest, options);
-};
-
-export const getTimeline = <TData = AxiosResponse<TimelineChunk>>(
-  params: GetTimelineParams,
-  options?: AxiosRequestConfig,
-): Promise<TData> => {
-  return axios.get(`/api/assets/timeline`, {
-    ...options,
-    params: { ...params, ...options?.params },
-  });
 };
 
 export const getAsset = <TData = AxiosResponse<Asset>>(
@@ -597,6 +536,12 @@ export const addAssetsToSeries = <TData = AxiosResponse<AssetSeries>>(
   return axios.patch(`/api/photoSeries/:id`, addAssetsToSeriesRequest, options);
 };
 
+export const rebuildTimeline = <TData = AxiosResponse<void>>(
+  options?: AxiosRequestConfig,
+): Promise<TData> => {
+  return axios.post(`/api/timeline/rebuild`, undefined, options);
+};
+
 export const getTimelineSections = <TData = AxiosResponse<TimelineSectionsResponse>>(
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
@@ -631,7 +576,6 @@ export type AppendAssetsToAlbumResult = AxiosResponse<AppendAssetsResponse>;
 export type DeleteAlbumItemsResult = AxiosResponse<DeleteAlbumItems200>;
 export type GetAlbumThumbnailResult = AxiosResponse<string>;
 export type SetAssetsHiddenResult = AxiosResponse<void>;
-export type GetTimelineResult = AxiosResponse<TimelineChunk>;
 export type GetAssetResult = AxiosResponse<Asset>;
 export type SetAssetIsSeriesSelectionResult = AxiosResponse<SetAssetIsSeriesSelectionResponse>;
 export type GetOriginalFileResult = AxiosResponse<string>;
@@ -643,6 +587,7 @@ export type GetAllAssetsGeojsonResult = AxiosResponse<string>;
 export type CreateSeriesResult = AxiosResponse<CreateSeriesResponse>;
 export type DeleteSeriesResult = AxiosResponse<DeleteSeries200>;
 export type AddAssetsToSeriesResult = AxiosResponse<AssetSeries>;
+export type RebuildTimelineResult = AxiosResponse<void>;
 export type GetTimelineSectionsResult = AxiosResponse<TimelineSectionsResponse>;
 export type GetTimelineSegmentsResult = AxiosResponse<TimelineSegmentsResponse>;
 export type CreateTimelineGroupResult = AxiosResponse<CreateTimelineGroupResponse>;

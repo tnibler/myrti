@@ -1,8 +1,9 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use diesel::{
-    RunQueryDsl, SelectableHelper,
+    RunQueryDsl, Selectable, SelectableHelper,
     connection::SimpleConnection,
-    deserialize::QueryableByName,
+    deserialize::{Queryable, QueryableByName},
+    prelude::*,
     query_builder::{QueryBuilder, QueryFragment},
     sql_query,
     sqlite::SqliteQueryBuilder,
@@ -13,8 +14,8 @@ use tokio::time::Instant;
 use tracing::instrument;
 
 use crate::model::{
-    Asset, AssetId, AssetSeriesId, TimelineGroup, TimelineGroupId, TimelineSectionId,
-    repository::{self},
+    self, Asset, AssetId, AssetSeriesId, TimelineGroup, TimelineGroupId, TimelineSectionId,
+    repository::{self, schema},
     util::datetime_from_db_repr,
 };
 
@@ -25,6 +26,8 @@ pub fn rebuild_timeline_full(conn: &mut DbConn) -> Result<()> {
     conn.immediate_transaction(|conn| {
         conn.batch_execute(include_str!("rebuild_timeline.sql"))
             .wrap_err("error executing rebuild_timeline query")?;
+        conn.batch_execute(include_str!("rebuild_timeline_months.sql"))
+            .wrap_err("error executing rebuild_timeline_months query")?;
         Ok(())
     })
 }
@@ -34,6 +37,8 @@ pub fn update_timeline_dirty(conn: &mut DbConn) -> Result<()> {
     conn.immediate_transaction(|conn| {
         conn.batch_execute(include_str!("rebuild_dirty_sections.sql"))
             .wrap_err("error executing rebuild_dirty_sections query")?;
+        conn.batch_execute(include_str!("rebuild_timeline_months.sql"))
+            .wrap_err("error executing rebuild_timeline_months query")?;
         Ok(())
     })
 }
@@ -56,33 +61,34 @@ impl TimelineElement {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TimelineSection {
     pub id: TimelineSectionId,
-    pub num_assets: i64,
+    pub num_assets: i32,
     /// date of *most recent* asset in section's segments
     pub start_date: DateTime<Utc>,
     /// date of *oldest* asset in section's segments
     pub end_date: DateTime<Utc>,
+    pub total_normalized_width: f64,
 }
 
-#[derive(Debug, Clone, QueryableByName)]
+#[derive(Debug, Clone, Selectable, Queryable)]
+#[diesel(table_name = super::schema::TimelineSection)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 struct RowTimelineSection {
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
     pub section_idx: i64,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub section_len: i64,
+    pub section_len: i32,
+    pub total_width: f64,
 }
 
 #[tracing::instrument(skip(conn), level = "debug")]
 pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
-    const QUERY: &str = r#"
-    SELECT section_idx, section_len FROM TimelineSection GROUP BY section_idx;
-    "#;
-    let query_start = Instant::now();
-    let rows: Vec<RowTimelineSection> = sql_query(QUERY).load(conn)?;
-    let query_elapsed = query_start.elapsed();
+    use schema::TimelineSection as Table;
+    let rows: Vec<RowTimelineSection> = Table::table
+        .group_by(Table::section_idx)
+        .select(RowTimelineSection::as_select())
+        .load(conn)
+        .wrap_err("error querying table TimelineSection")?;
     let sections = rows
         .into_iter()
         .map(|row| {
@@ -91,11 +97,60 @@ pub fn get_sections(conn: &mut DbConn) -> Result<Vec<TimelineSection>> {
                 start_date: datetime_from_db_repr(0)?,
                 end_date: datetime_from_db_repr(10)?,
                 num_assets: row.section_len,
+                total_normalized_width: row.total_width,
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    tracing::debug!(?query_elapsed);
     Ok(sections)
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct TimelineMonth {
+    pub year: i32,
+    pub month: i32,
+    pub section_idx: i64,
+    pub num_assets: i32,
+    pub total_normalized_width: f64,
+}
+
+#[derive(Debug, Clone, Selectable, Queryable)]
+#[diesel(table_name = super::schema::TimelineMonth)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+struct RowTimelineMonth {
+    pub start_of_month: i64,
+    pub section_idx: i64,
+    pub num_assets: i32,
+    pub total_width: f64,
+}
+
+#[tracing::instrument(skip(conn), level = "debug")]
+pub fn get_months(conn: &mut DbConn) -> Result<Vec<TimelineMonth>> {
+    use schema::TimelineMonth as Table;
+    let rows: Vec<RowTimelineMonth> = Table::table
+        .order_by((Table::section_idx, Table::start_of_month.desc()))
+        .select(RowTimelineMonth::as_select())
+        .load(conn)
+        .wrap_err("error querying table TimelineMonth")?;
+    rows.into_iter()
+        .map(|row| {
+            let date =
+                chrono::DateTime::from_timestamp(row.start_of_month, 0).ok_or_else(|| {
+                    eyre!(
+                        "could not convert timestamp {} to Utc DateTime",
+                        row.start_of_month
+                    )
+                })?;
+
+            Ok::<_, eyre::Error>(TimelineMonth {
+                year: date.year(),
+                month: date.month().try_into()?,
+                section_idx: row.section_idx,
+                num_assets: row.num_assets,
+                total_normalized_width: row.total_width,
+            })
+        })
+        .try_collect()
+        .wrap_err("error getting timeline month summaries")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -367,28 +422,28 @@ pub fn get_segments_in_section(
             .all(|b| b),
         "TimelineSegment assets must not be empty"
     );
-    debug_assert!(
-        segments
-            .iter()
-            .map(|segment| match segment
-                .items
-                .first()
-                .expect("segment assets must not be empty")
-            {
-                AssetsInTimeline::Asset(asset) => asset,
-                AssetsInTimeline::AssetSeries {
-                    assets,
-                    series_id: _,
-                    series_date: _,
-                    selection_indices: _,
-                    total_series_size: _,
-                } => assets.first().expect("can not be empty"),
-            }
-            .base
-            .taken_date
-                == segment.sort_date)
-            .all(|b| b),
-        "TimelineSegment sort_date is not taken_date of first (most recent) asset"
-    );
+    for segment in &segments {
+        let most_recent_date = match segment
+            .items
+            .first()
+            .expect("segment assets must not be empty")
+        {
+            AssetsInTimeline::Asset(asset) => asset,
+            AssetsInTimeline::AssetSeries {
+                assets,
+                series_id: _,
+                series_date: _,
+                selection_indices: _,
+                total_series_size: _,
+            } => assets.first().expect("can not be empty"),
+        }
+        .base
+        .taken_date;
+        debug_assert_eq!(
+            most_recent_date, segment.sort_date,
+            "TimelineSegment sort_date is not taken_date of first (most recent) asset:\n{:?}",
+            segment
+        );
+    }
     Ok(segments)
 }

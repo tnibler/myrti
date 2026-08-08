@@ -1,3 +1,5 @@
+DELETE FROM TimelineMonth;
+
 CREATE TEMP TABLE IF NOT EXISTS DirtySections (
 	section_idx INTEGER NOT NULL UNIQUE
 	, min_date INTEGER
@@ -22,12 +24,11 @@ UNION
 SELECT DISTINCT TimelineItem.section_idx, NULL, NULL
 FROM TimelineItem 
 WHERE TimelineItem.group_id IN (
-	SELECT DISTINCT ti2.group_id 
+	SELECT DISTINCT ti2.group_id
 	FROM TimelineItem ti2 INNER JOIN DirtySections
 	ON ti2.section_idx = DirtySections.section_idx
 )
-AND TimelineItem.section_idx NOT IN (SELECT section_idx FROM DirtySections)
-;
+AND TimelineItem.section_idx NOT IN (SELECT section_idx FROM DirtySections);
 
 WITH SectionDates AS (
 	SELECT DirtySections.section_idx
@@ -60,13 +61,12 @@ SeriesDate AS (
 			ELSE MAX(Asset.taken_date) OVER (PARTITION BY AssetSeries.series_id) -- most recent date becomes this series' sort date
 		END AS series_date
 		, tgi.group_id AS group_id
-		, tgi.group_date AS group_date
+		, CASE WHEN group_id IS NOT NULL THEN MAX(Asset.taken_date) OVER (PARTITION BY group_id) ELSE NULL END AS group_date
 	FROM Asset LEFT JOIN AssetSeries
 	ON Asset.series_id = AssetSeries.series_id
 	LEFT JOIN (
 		SELECT TimelineGroupItem.asset_id
 		, TimelineGroup.timeline_group_id AS group_id
-		, TimelineGroup.display_date AS group_date
 		FROM TimelineGroup INNER JOIN TimelineGroupItem
 		ON TimelineGroup.timeline_group_id = TimelineGroupItem.group_id
 	) tgi ON Asset.asset_id = tgi.asset_id
@@ -168,15 +168,16 @@ FROM DirtySections
 WHERE DirtySections.min_date <= TimelineItem.sort_date
 AND TimelineItem.sort_date <= DirtySections.max_date;
 
-INSERT INTO TimelineSection(
+INSERT INTO TimelineSection (
 	section_idx
 	, section_len
 	, total_width
 )
 SELECT section_idx
-, COUNT(DISTINCT TimelineItem.series_id) + SUM(CASE WHEN TimelineItem.series_id IS NULL THEN 1 ELSE 0 END)
-, SUM(CAST(AssetFile.width AS REAL) / CAST(AssetFile.height AS REAL))
+, COUNT(*) as num_assets
+, SUM(CAST(AssetFile.width AS REAL) / CAST(AssetFile.height AS REAL)) AS total_width
 FROM TimelineItem INNER JOIN Asset ON TimelineItem.asset_id = Asset.asset_id
 INNER JOIN AssetFile ON Asset.rep_file_id = AssetFile.file_id
-WHERE TimelineItem.section_idx IN (SELECT section_idx FROM DirtySections)
-GROUP BY section_idx;
+WHERE (Asset.series_id IS NULL OR Asset.is_series_selection = 1)
+AND TimelineItem.section_idx IN (SELECT section_idx FROM DirtySections)
+GROUP BY TimelineItem.section_idx;

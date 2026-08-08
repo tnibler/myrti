@@ -246,59 +246,6 @@
         }
       }
     },
-    "/api/assets/timeline": {
-      "get": {
-        "tags": [
-          "crate::routes::timeline"
-        ],
-        "operationId": "getTimeline",
-        "parameters": [
-          {
-            "name": "lastAssetId",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/AssetId"
-                }
-              ],
-              "nullable": true
-            }
-          },
-          {
-            "name": "maxCount",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "format": "int32"
-            }
-          },
-          {
-            "name": "lastFetch",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TimelineChunk"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/assets/{id}": {
       "get": {
         "tags": [
@@ -708,6 +655,19 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/timeline/rebuild": {
+      "post": {
+        "tags": [
+          "crate::routes::timeline"
+        ],
+        "operationId": "rebuildTimeline",
+        "responses": {
+          "200": {
+            "description": ""
           }
         }
       }
@@ -1501,111 +1461,8 @@
           "large"
         ]
       },
-      "TimelineChunk": {
-        "type": "object",
-        "description": "Response for a request for the next part of the timeline to display\n\n`groups` are always whole, not sliced in the middle. Either TimelineGroup or Day\n`date` is the date before queries are made",
-        "required": [
-          "date",
-          "changedSinceLastFetch",
-          "groups"
-        ],
-        "properties": {
-          "changedSinceLastFetch": {
-            "type": "boolean"
-          },
-          "date": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "groups": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TimelineGroup"
-            }
-          }
-        }
-      },
-      "TimelineGroup": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/TimelineGroupType"
-          },
-          {
-            "type": "object",
-            "required": [
-              "assets"
-            ],
-            "properties": {
-              "assets": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/components/schemas/AssetWithSpe"
-                }
-              }
-            }
-          }
-        ]
-      },
       "TimelineGroupId": {
         "type": "string"
-      },
-      "TimelineGroupType": {
-        "oneOf": [
-          {
-            "type": "object",
-            "required": [
-              "date",
-              "type"
-            ],
-            "properties": {
-              "date": {
-                "type": "string",
-                "format": "date"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "day"
-                ]
-              }
-            }
-          },
-          {
-            "type": "object",
-            "required": [
-              "groupTitle",
-              "groupStartDate",
-              "groupEndDate",
-              "groupId",
-              "type"
-            ],
-            "properties": {
-              "groupEndDate": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "groupId": {
-                "type": "string"
-              },
-              "groupStartDate": {
-                "type": "string",
-                "format": "date-time"
-              },
-              "groupTitle": {
-                "type": "string"
-              },
-              "type": {
-                "type": "string",
-                "enum": [
-                  "group"
-                ]
-              }
-            }
-          }
-        ],
-        "discriminator": {
-          "propertyName": "type"
-        }
       },
       "TimelineItem": {
         "oneOf": [
@@ -1674,45 +1531,85 @@
           "propertyName": "itemType"
         }
       },
+      "TimelineMonthSlice": {
+        "type": "object",
+        "required": [
+          "year",
+          "month",
+          "numAssets",
+          "totalNormalizedWidth"
+        ],
+        "properties": {
+          "month": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "numAssets": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "totalNormalizedWidth": {
+            "type": "number",
+            "format": "double"
+          },
+          "year": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
       "TimelineSection": {
         "type": "object",
         "required": [
           "id",
           "numAssets",
-          "avgAspectRatio",
+          "totalNormalizedWidth",
           "startDate",
           "endDate"
         ],
         "properties": {
-          "avgAspectRatio": {
-            "type": "number",
-            "format": "float"
-          },
           "endDate": {
             "type": "string",
             "format": "date-time",
             "description": "date of *oldest* asset in range"
           },
           "id": {
-            "type": "string"
+            "$ref": "#/components/schemas/TimelineSectionId"
           },
           "numAssets": {
             "type": "integer",
-            "format": "int64"
+            "format": "int32"
           },
           "startDate": {
             "type": "string",
             "format": "date-time",
             "description": "date of *most recent* asset in range"
+          },
+          "totalNormalizedWidth": {
+            "type": "number",
+            "format": "double"
           }
         }
+      },
+      "TimelineSectionId": {
+        "type": "string"
       },
       "TimelineSectionsResponse": {
         "type": "object",
         "required": [
-          "sections"
+          "sections",
+          "monthsSummary"
         ],
         "properties": {
+          "monthsSummary": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/TimelineMonthSlice"
+              }
+            }
+          },
           "sections": {
             "type": "array",
             "items": {

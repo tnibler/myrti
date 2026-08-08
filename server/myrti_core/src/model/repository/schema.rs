@@ -1,3 +1,5 @@
+use diesel::sql_types::BigInt;
+
 diesel::table! {
     Album (album_id) {
         album_id -> BigInt,
@@ -180,6 +182,24 @@ diesel::table! {
 }
 
 diesel::table! {
+    TimelineMonth(timeline_month_id)  {
+        timeline_month_id -> BigInt,
+        start_of_month -> BigInt,
+        section_idx -> BigInt,
+        num_assets -> Integer,
+        total_width -> Double,
+    }
+}
+
+diesel::table! {
+    TimelineSection (section_idx) {
+        section_idx -> BigInt,
+        section_len -> Integer,
+        total_width -> Double,
+    }
+}
+
+diesel::table! {
     VideoRepresentation (video_repr_id) {
         video_repr_id -> BigInt,
         file_id -> BigInt,
@@ -238,6 +258,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     TimelineGroupItem,
     AssetSeries,
     VideoRepresentation,
+    TimelineSection,
+    TimelineMonth,
     DeletedAutoAssetSeries,
     VideoFile,
 );

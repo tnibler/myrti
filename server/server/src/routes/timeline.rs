@@ -1,19 +1,22 @@
+use std::collections::HashMap;
+
 use axum::{
-    extract::{Path, Query, State},
-    routing::{get, post},
     Json, Router,
+    extract::{Path, State},
+    routing::{get, post},
 };
 use chrono::{DateTime, Utc};
-use eyre::{eyre, Context, Result};
+use eyre::Context;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, instrument};
+use tracing::instrument;
 use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     app_state::SharedState,
     asset_queries::get_full_asset,
     http_error::{ApiResult, HttpErrorExt},
-    schema::{asset::AssetWithSpe, AssetSeriesId, TimelineGroupId, TimelineSectionId},
+    schema::{AssetSeriesId, TimelineGroupId, TimelineSectionId, asset::AssetWithSpe},
 };
 use myrti_core::{
     deadpool_diesel, interact,
@@ -21,8 +24,7 @@ use myrti_core::{
         self,
         repository::{
             self,
-            db::DbPool,
-            timeline::{AssetsInTimeline, TimelineElement, TimelineSegmentType},
+            timeline::{AssetsInTimeline, TimelineSegmentType},
         },
     },
 };
@@ -38,25 +40,35 @@ pub fn router() -> Router<SharedState> {
 #[serde(rename_all = "camelCase")]
 pub struct TimelineSectionsResponse {
     pub sections: Vec<TimelineSection>,
+    pub months_summary: Vec<Vec<TimelineMonthSlice>>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineSection {
     pub id: TimelineSectionId,
-    pub num_assets: i64,
-    pub avg_aspect_ratio: f32,
+    pub num_assets: i32,
+    pub total_normalized_width: f64,
     /// date of *most recent* asset in range
     pub start_date: DateTime<Utc>,
     /// date of *oldest* asset in range
     pub end_date: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineMonthSlice {
+    pub year: i32,
+    pub month: i32,
+    pub num_assets: i32,
+    pub total_normalized_width: f64,
+}
+
 #[utoipa::path(
     post,
     path = "/api/timeline/rebuild",
     responses(
-    (status = 200)
+        (status = 200)
     )
 )]
 #[instrument(skip(app_state))]
@@ -73,7 +85,7 @@ pub async fn rebuild_timeline(State(app_state): State<SharedState>) -> ApiResult
     get,
     path = "/api/timeline/sections",
     responses(
-    (status = 200, body=TimelineSectionsResponse)
+        (status = 200, body=TimelineSectionsResponse)
     )
 )]
 #[instrument(skip(app_state))]
@@ -89,12 +101,45 @@ pub async fn get_timeline_sections(
     .map(|section| TimelineSection {
         id: TimelineSectionId(section.id.0.to_string()),
         num_assets: section.num_assets,
-        avg_aspect_ratio: 3.0 / 2.0,
+        total_normalized_width: section.total_normalized_width,
         start_date: section.start_date,
         end_date: section.end_date,
     })
     .collect();
-    Ok(Json(TimelineSectionsResponse { sections }))
+    let section_months: Vec<Vec<TimelineMonthSlice>> =
+        interact!(conn, move |conn| { repository::timeline::get_months(conn) })
+            .await??
+            .into_iter()
+            .map(|month| {
+                (
+                    month.section_idx,
+                    TimelineMonthSlice {
+                        year: month.year,
+                        month: month.month,
+                        num_assets: month.num_assets,
+                        total_normalized_width: month.total_normalized_width,
+                    },
+                )
+            })
+            .fold(
+                (-1, Vec::new()),
+                |(last_section_idx, mut acc): (i64, Vec<Vec<TimelineMonthSlice>>),
+                 (section_idx, month_slice): (i64, TimelineMonthSlice)| {
+                    if let Some(last) = acc.last_mut()
+                        && last_section_idx == section_idx
+                    {
+                        last.push(month_slice);
+                    } else {
+                        acc.push(Vec::from([month_slice]));
+                    }
+                    (section_idx, acc)
+                },
+            )
+            .1;
+    Ok(Json(TimelineSectionsResponse {
+        sections,
+        months_summary: section_months,
+    }))
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]

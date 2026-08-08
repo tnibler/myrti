@@ -108,10 +108,10 @@
     }, 200);
   });
 
-  const intersectionObserver = new IntersectionObserver(handleSectionIntersect, {
-    // I don't know how rootMargin works; using scrollWrapper, its child <section> or document does not work correctly, so we just make the intersection test divs larger to achieve the same effect
-    rootMargin: '0px',
-  });
+  // const intersectionObserver = new IntersectionObserver(handleSectionIntersect, {
+  //   // I don't know how rootMargin works; using scrollWrapper, its child <section> or document does not work correctly, so we just make the intersection test divs larger to achieve the same effect
+  //   rootMargin: '0px',
+  // });
 
   export async function scrollToTimelineItem(pos: PositionInTimeline) {
     const marginTop = 100;
@@ -222,26 +222,26 @@
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     }
     const asset = timeline.getAsset(assetId);
-    const imgEl = document.getElementById(`thumb-${assetId}`);
-    if (!imgEl || !(imgEl instanceof HTMLImageElement)) {
+    const img = document.getElementById(`thumb-${assetId}`)?.getBoundingClientRect();
+    if (!img) {
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     }
     if (asset.repFile.rotationCorrection % 180 == 0) {
       return {
         rect: {
-          x: imgEl.x,
-          y: imgEl.y,
-          width: imgEl.width,
-          height: imgEl.height,
+          x: img.x,
+          y: img.y,
+          width: img.width,
+          height: img.height,
         },
       };
     } else {
       return {
         rect: {
-          x: imgEl.x - (imgEl.height - imgEl.width) * 0.5,
-          y: imgEl.y + (imgEl.height - imgEl.width) * 0.5,
-          width: imgEl.height,
-          height: imgEl.width,
+          x: img.x - (img.height - img.width) * 0.5,
+          y: img.y + (img.height - img.width) * 0.5,
+          width: img.height,
+          height: img.width,
         },
       };
     }
@@ -345,9 +345,17 @@
       // anim.commitStyles();
     };
   }
+  function onScroll(e: UIEvent) {
+    timeline.onScrollChange(scrollWrapper.scrollTop);
+  }
 </script>
 
-<div class="scroll-wrapper" bind:this={scrollWrapper} bind:clientHeight={viewport.height}>
+<div
+  class="scroll-wrapper"
+  bind:this={scrollWrapper}
+  bind:clientHeight={viewport.height}
+  onscroll={onScroll}
+>
   <section
     id="grid"
     bind:clientWidth={viewport.width}
@@ -455,15 +463,6 @@
       ></button>
     {/each}
   </section>
-  {#each timeline.sections as section, idx}
-    <div
-      use:registerElementWithIntersectObserver
-      id="section-{idx}"
-      class="absolute w-full max-w-full invisible"
-      style:top={sectionTops[idx] - timeline.options.loadWithinMargin + 'px'}
-      style:height={section.height + timeline.options.loadWithinMargin * 2 + 'px'}
-    ></div>
-  {/each}
 </div>
 
 <Gallery

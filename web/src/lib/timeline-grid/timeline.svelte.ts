@@ -243,7 +243,7 @@ export function createTimeline(
       const height = estimateHeight(section, viewport.width, opts.targetRowHeight);
       _sections.push({
         data: section,
-        height,
+        height: estimateHeight(section.totalNormalizedWidth, viewport.width, opts.targetRowHeight),
         segments: null,
         startDate: dayjs.utc(section.startDate),
         endDate: dayjs.utc(section.endDate),
@@ -291,6 +291,12 @@ export function createTimeline(
     }
     if (firstVisibleSection == null || lastVisibleSection == null) {
       console.error('first and lastVisibleSection are null');
+      return;
+    }
+    if (
+      visibleSections.startIdx == firstVisibleSection &&
+      visibleSections.endIdx + 1 == lastVisibleSection
+    ) {
       return;
     }
     const sectionLoads = [];
@@ -1237,11 +1243,7 @@ export function createTimeline(
       }
       groupId = groupId_;
       assetIds.push(item.item.assetId);
-      const { sectionIdx } = getContainingSegment(item.item);
-      if (sectionIdx === null) {
-        console.error('containing section is null');
-        return;
-      }
+      const sectionIdx = item.item.pos.sectionIndex;
       if (affectedSections.indexOf(sectionIdx) < 0) {
         affectedSections.push(sectionIdx);
       }
@@ -1258,22 +1260,8 @@ export function createTimeline(
     }
   };
 
-  function getContainingSegment(
-    item: TimelineItem,
-  ):
-    | { segment: TimelineSegment; sectionIdx: number; segmentIdx: number }
-    | { segment: null; sectionIdx: null; segmentIdx: null } {
+  function getContainingSegment(item: TimelineItem): { segment: TimelineSegment | null } {
     return { segment: sections[item.pos.sectionIndex].segments[item.pos.segmentIndex] };
-    for (const [sectionIdx, section] of sectionsPublic.entries()) {
-      if (section.segments !== null) {
-        for (const [segmentIdx, segment] of section.segments.entries()) {
-          if (segment.items.indexOf(item) >= 0) {
-            return { sectionIdx, segmentIdx, segment };
-          }
-        }
-      }
-    }
-    return { segment: null };
   }
 
   function getContainingGroup(item: TimelineItem & { itemType: 'asset' }): TimelineGroupId | null {
@@ -1401,16 +1389,13 @@ export function createTimeline(
 }
 
 function estimateHeight(
-  section: ApiTimelineSection,
+  totalNormalizedWidth: number,
   lineWidth: number,
   targetRowHeight: number,
 ): number {
   if (lineWidth === 0) {
     return 0;
   }
-  const unwrappedWidth = section.avgAspectRatio * section.numAssets * targetRowHeight * (7 / 10);
-  const rows = Math.ceil(unwrappedWidth / (lineWidth * 0.3)); // avg line fill discount b/c we don't merge small segments yet
-  const height = rows * targetRowHeight;
-
-  return height;
+  const rows = Math.ceil((totalNormalizedWidth * targetRowHeight) / (lineWidth * 0.7)); // consider most rows as not  filled. arbitrary
+  return rows * targetRowHeight;
 }

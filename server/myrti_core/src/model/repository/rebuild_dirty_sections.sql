@@ -49,8 +49,6 @@ WHERE section_idx IN (SELECT section_idx FROM DirtySections);
 DELETE FROM TimelineItem
 WHERE (SELECT Asset.is_hidden FROM Asset WHERE Asset.asset_id = TimelineItem.asset_id) = 1;
 
-DELETE FROM TimelineSegment
-WHERE TimelineSegment.section_idx IN (SELECT section_idx FROM DirtySections);
 DELETE FROM TimelineSection
 WHERE TimelineSection.section_idx IN (SELECT section_idx FROM DirtySections);
 
@@ -91,26 +89,45 @@ DirtyTimelineItem AS (
 	SELECT asset_id
 	, taken_date
 	, group_id
+	, group_id IS NOT NULL AND lag(group_id) OVER w IS NOT group_id AS is_group_start
 	, series_id
 	, series_id IS NOT NULL AND lag(series_id) OVER w IS NOT series_id AS is_series_start
-	, segment_date
-	FROM DirtyTimelineItem
+	, date(COALESCE(group_date, taken_date) / 1000, 'unixepoch') AS group_or_taken_day
+	, group_date
+	FROM TimelineItem
 	WINDOW w AS (
-		ORDER BY segment_date DESC, taken_date DESC, asset_id DESC
+		ORDER BY segment_date DESC, taken_date DESC, group_id DESC, asset_id DESC
 		ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
 	)
+)
+-- 1 day segment can be split by groups within it. preceding_group_count logic does that
+, PrecedingGroupCount AS (
+	SELECT *
+	, SUM(is_group_start) OVER (
+		PARTITION BY group_or_taken_day
+		ORDER BY COALESCE(group_date, taken_date) DESC
+		ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+	) AS preceding_group_count
+	FROM NewSeriesStart
+)
+, SplitSegmentDates AS (
+	SELECT *
+	, MAX(COALESCE(group_date, taken_date)) OVER (
+		PARTITION BY group_or_taken_day, preceding_group_count
+	) AS segment_date
+	FROM PrecedingGroupCount
 )
 , RawSegmentRank AS (
 	SELECT *
 	, DENSE_RANK() OVER (
-		ORDER BY segment_date DESC
+		ORDER BY preceding_group_count DESC, segment_date DESC
 		, IFNULL(group_id, 0) DESC
 	)
 	AS raw_segment_id
 	, SUM(is_series_start) OVER w + SUM (CASE WHEN series_id IS NULL THEN 1 ELSE 0 END) OVER w AS cumul_segment_len
-	FROM NewSeriesStart
+	FROM SplitSegmentDates
 	WINDOW w AS (
-		PARTITION BY segment_date , IFNULL(group_id, 0) -- must be same as dense_rank() above
+		PARTITION BY preceding_group_count, segment_date , IFNULL(group_id, 0) -- must be same as dense_rank() above
 		ORDER BY segment_date DESC, taken_date DESC, asset_id DESC
 		ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
 	)
@@ -118,6 +135,7 @@ DirtyTimelineItem AS (
 , SegmentRank AS (
 	SELECT *
 	, cumul_segment_len / 100 AS segment_split_idx
+	, segment_date
 	, DENSE_RANK() OVER (
 		ORDER BY segment_date DESC
 		, IFNULL(group_id, 0) DESC
@@ -128,7 +146,8 @@ DirtyTimelineItem AS (
 )
 , SegmentWithSplit AS (
 	SELECT asset_id
-	, segment_id + (SELECT MAX(segment_id) FROM TimelineItem) AS segment_id --new unique id
+	, segment_id
+	, segment_date
 	, CASE WHEN (MAX(segment_split_idx) OVER (PARTITION BY raw_segment_id)) <> 0
 		THEN segment_split_idx
 		ELSE NULL
@@ -138,6 +157,7 @@ DirtyTimelineItem AS (
 UPDATE TimelineItem
 SET segment_id = SegmentWithSplit.segment_id
 , segment_split_idx = SegmentWithSplit.segment_split_idx
+, segment_date = SegmentWithSplit.segment_date
 , is_dirty = 0
 FROM SegmentWithSplit
 WHERE TimelineItem.asset_id = SegmentWithSplit.asset_id;
@@ -148,7 +168,11 @@ FROM DirtySections
 WHERE DirtySections.min_date <= TimelineItem.sort_date
 AND TimelineItem.sort_date <= DirtySections.max_date;
 
-INSERT INTO TimelineSection(section_idx, section_len, total_width)
+INSERT INTO TimelineSection(
+	section_idx
+	, section_len
+	, total_width
+)
 SELECT section_idx
 , COUNT(DISTINCT TimelineItem.series_id) + SUM(CASE WHEN TimelineItem.series_id IS NULL THEN 1 ELSE 0 END)
 , SUM(CAST(AssetFile.width AS REAL) / CAST(AssetFile.height AS REAL))
@@ -156,8 +180,3 @@ FROM TimelineItem INNER JOIN Asset ON TimelineItem.asset_id = Asset.asset_id
 INNER JOIN AssetFile ON Asset.rep_file_id = AssetFile.file_id
 WHERE TimelineItem.section_idx IN (SELECT section_idx FROM DirtySections)
 GROUP BY section_idx;
-
-INSERT INTO TimelineSegment(segment_id, section_idx)
-SELECT DISTINCT segment_id, TimelineItem.section_idx
-FROM TimelineItem INNER JOIN DirtySections 
-ON TimelineItem.section_idx = DirtySections.section_idx;

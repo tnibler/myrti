@@ -21,6 +21,7 @@ INSERT INTO TimelineItem(
 	, group_date
 	, section_idx
 	, segment_id
+	, segment_date
 )
 SELECT Asset.asset_id
 , Asset.taken_date
@@ -30,6 +31,7 @@ SELECT Asset.asset_id
 , group_date
 , -1
 , -1
+, ''
 FROM Asset
 LEFT JOIN (
 	SELECT TimelineGroup.timeline_group_id AS group_id
@@ -50,7 +52,6 @@ WITH NewSeriesStart AS (
 	, group_id IS NOT NULL AND lag(group_id) OVER w IS NOT group_id AS is_group_start
 	, series_id
 	, series_id IS NOT NULL AND lag(series_id) OVER w IS NOT series_id AS is_series_start
-	-- , segment_date
 	, date(COALESCE(group_date, taken_date) / 1000, 'unixepoch') AS group_or_taken_day
 	, group_date
 	FROM TimelineItem
@@ -59,6 +60,7 @@ WITH NewSeriesStart AS (
 		ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
 	)
 )
+-- 1 day segment can be split by groups within it. preceding_group_count logic does that
 , PrecedingGroupCount AS (
 	SELECT *
 	, SUM(is_group_start) OVER (
@@ -93,6 +95,7 @@ WITH NewSeriesStart AS (
 , SegmentRank AS (
 	SELECT *
 	, cumul_segment_len / 100 AS segment_split_idx
+	, segment_date
 	, DENSE_RANK() OVER (
 		ORDER BY segment_date DESC
 		, IFNULL(group_id, 0) DESC
@@ -104,6 +107,7 @@ WITH NewSeriesStart AS (
 , SegmentWithSplit AS (
 	SELECT asset_id
 	, segment_id
+	, segment_date
 	, CASE WHEN (MAX(segment_split_idx) OVER (PARTITION BY raw_segment_id)) <> 0
 		THEN segment_split_idx
 		ELSE NULL
@@ -113,6 +117,7 @@ WITH NewSeriesStart AS (
 UPDATE TimelineItem
 SET segment_id = SegmentWithSplit.segment_id
 , segment_split_idx = SegmentWithSplit.segment_split_idx
+, segment_date = SegmentWithSplit.segment_date
 FROM SegmentWithSplit
 WHERE TimelineItem.asset_id = SegmentWithSplit.asset_id;
 

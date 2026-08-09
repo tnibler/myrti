@@ -41,6 +41,7 @@ export type TimelineBlock = (
   /** Height including grid and titles. Measured and set from DOM */
   fullHeight: number;
   gridItems: TimelineGridItem[];
+  sortDate: Dayjs;
 };
 
 /** A component displayed in the timeline */
@@ -133,3 +134,12 @@ export type AddToGroupClickArea = {
 export type OpenedSlide =
   | (TimelineItem & { itemType: 'asset' })
   | (TimelineItem & { itemType: 'photoStack'; seriesIndex: number });
+
+export type ScrollbarMonth = {
+  year: number;
+  month: number;
+  top: number;
+  height: number;
+  showYear: boolean;
+  showMonth: boolean;
+};

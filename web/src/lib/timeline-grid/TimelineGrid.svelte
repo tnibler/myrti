@@ -108,10 +108,20 @@
     }, 200);
   });
 
-  // const intersectionObserver = new IntersectionObserver(handleSectionIntersect, {
-  //   // I don't know how rootMargin works; using scrollWrapper, its child <section> or document does not work correctly, so we just make the intersection test divs larger to achieve the same effect
-  //   rootMargin: '0px',
-  // });
+  function handleSectionIntersect() {
+    timeline.onSectionIntersectChanged(scrollWrapper.scrollTop);
+  }
+
+  const intersectionObserver = new IntersectionObserver(handleSectionIntersect, {
+    // I don't know how rootMargin works; using scrollWrapper, its child <section> or document does not work correctly, so we just make the intersection test divs larger to achieve the same effect
+    rootMargin: '0px',
+  });
+  function registerIntersectObserver(el: HTMLElement) {
+    intersectionObserver.observe(el);
+    return () => {
+      intersectionObserver.unobserve(el);
+    };
+  }
 
   export async function scrollToTimelineItem(pos: PositionInTimeline) {
     const marginTop = 100;
@@ -358,6 +368,28 @@
   bind:clientHeight={viewport.height}
   onscroll={onScroll}
 >
+  <div
+    role="scrollbar"
+    aria-valuenow={timeline.scrollbarY}
+    class="fixed h-screen w-16 bg-red-100 inset-e-3 z-1 select-none hover:cursor-row-resize"
+  >
+    {#each timeline.scrollbarMonths as month (`${month.year}-${month.month}`)}
+      {#if month.showYear || month.showMonth}
+        <div class="absolute w-full" style={`height: ${month.height}px; top: ${month.top}px;`}>
+          {#if month.showYear}
+            <div class="absolute h-full inset-e-6">
+              {month.year}
+            </div>
+          {/if}
+          {#if month.showMonth}
+            <div class="absolute inset-e-2 rounded-full size-2 bg-gray-500"></div>
+          {/if}
+        </div>
+      {/if}
+    {/each}
+    <div class="w-full absolute h-2 bg-red-400" style={`top: ${timeline.scrollbarY}px;`}></div>
+  </div>
+
   <section
     id="grid"
     bind:clientWidth={viewport.width}
@@ -365,7 +397,10 @@
   >
     <!-- eslint-disable-next-line svelte/require-each-key -->
     {#each visibleSections as section (section.sectionIdx)}
-      <div class="w-full absolute" style:top="{timeline.sectionTops[section.sectionIdx]}px">
+      <div
+        class="w-full absolute contain-layout"
+        style:top="{timeline.sectionTops[section.sectionIdx]}px"
+      >
         <!-- eslint-disable-next-line svelte/require-each-key -->
         {#each section.blocks as block, blockIdx (blockIdx)}
           <div
@@ -412,7 +447,7 @@
               />
             {/if}
 
-            <div style="height: {block.gridHeight}px;" class="w-full relative contain-layout">
+            <div style="height: {block.gridHeight}px;" class="w-full relative contain-strict">
               {#each block.gridItems as item (item.key)}
                 {#if item.type === 'asset'}
                   <GridTile
@@ -467,6 +502,15 @@
       ></button>
     {/each}
   </section>
+  {#each timeline.sections as section, idx}
+    <div
+      {@attach registerIntersectObserver}
+      id="section-{idx}"
+      class="absolute w-full max-w-full invisible"
+      style:top={timeline.sectionTops[idx] - timeline.options.loadWithinMargin + 'px'}
+      style:height={timeline.sectionHeights[idx] + timeline.options.loadWithinMargin * 2 + 'px'}
+    ></div>
+  {/each}
 </div>
 
 <Gallery

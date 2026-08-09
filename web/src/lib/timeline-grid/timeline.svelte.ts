@@ -9,8 +9,9 @@ import type {
   TimelineGroupId,
   FileId,
   MirrorCorrection,
+  TimelineMonthSlice,
 } from '@api/myrti';
-import { dayjs } from '@lib/dayjs';
+import { dayjs, type Dayjs } from '@lib/dayjs';
 import { klona } from 'klona/json';
 import { SvelteMap } from 'svelte/reactivity';
 import { layoutSegments } from './layout';
@@ -33,6 +34,7 @@ import {
 } from '../../api/myrti.zod';
 import type {
   AddToGroupClickArea,
+  ScrollbarMonth,
   TimelineGridItem,
   TimelineItem,
   TimelineSection,
@@ -102,6 +104,7 @@ export interface ITimelineGrid {
 
   getAsset: (id: AssetId) => AssetWithSpe;
   getAssetSeries: (id: AssetSeriesId) => AssetSeriesRef;
+  readonly scrollbarMonths: ScrollbarMonth[];
 }
 
 export type TimelineOptions = {
@@ -237,13 +240,84 @@ export function createTimeline(
     await loadSectionPlaceholders();
   }
 
-  async function loadSectionPlaceholders() {
-    const sectionsResponse = getTimelineSectionsResponse.parse((await getTimelineSections()).data);
-    const sectionData: ApiTimelineSection[] = sectionsResponse.sections;
+  let sectionMonthSlices: TimelineMonthSlice[][] = $state([]);
+  let scrollbarMonths: ScrollbarMonth[] = $state([]);
+  let scrollbarMonthHeights: { year: number; month: number; height: number; sectionIdx: number }[] =
+    [];
+  let scrollbarY = $state(0);
 
-    const _sections: TimelineSection[] = [];
-    for (const section of sectionData) {
-      _sections.push({
+  function computeScrollbarMonths() {
+    scrollbarMonthHeights = sectionMonthSlices.flatMap((sectionMonths, sectionIdx) => {
+      return sectionMonths.flatMap(({ year, month, totalNormalizedWidth }) => {
+        let height;
+        if (sectionsPublic[sectionIdx].blocks) {
+          height = R.pipe(
+            sectionsPublic[sectionIdx].blocks,
+            R.filter((block) => {
+              return block.sortDate.year() === year && block.sortDate.month() + 1 === month;
+            }),
+            R.map((block) => block.fullHeight),
+            R.sum(),
+          );
+        } else {
+          height = Math.max(
+            opts.targetRowHeight,
+            estimateHeight(totalNormalizedWidth, viewport.width, opts.targetRowHeight),
+          );
+        }
+        return {
+          sectionIdx,
+          month,
+          year,
+          height: (height / timelineHeight) * viewport.height,
+        };
+      });
+    });
+
+    let cumulHeight = 0;
+    const monthMarkers: ScrollbarMonth[] = [];
+    let lastMarkerTop = 0;
+    let lastYearTop = 0;
+    for (const { year, month, height } of scrollbarMonthHeights) {
+      let showYear = false;
+      if (
+        monthMarkers.length === 0 ||
+        (year !== monthMarkers[monthMarkers.length - 1].year && cumulHeight - lastYearTop > 10)
+      ) {
+        showYear = true;
+        lastYearTop = cumulHeight;
+      }
+      let showMonth = false;
+      if (
+        monthMarkers.length === 0 ||
+        (month !== monthMarkers[monthMarkers.length - 1].month && cumulHeight - lastMarkerTop > 6)
+      ) {
+        showMonth = true;
+        lastMarkerTop = cumulHeight;
+      }
+      if (showYear || showMonth || monthMarkers.length === 0) {
+        monthMarkers.push({
+          year,
+          month,
+          height,
+          showYear,
+          showMonth,
+          top: cumulHeight,
+        });
+      } else {
+        monthMarkers[monthMarkers.length - 1].height += height;
+      }
+      cumulHeight += height;
+    }
+    scrollbarMonths = monthMarkers;
+  }
+
+  async function loadSectionPlaceholders() {
+    const { sections: sectionData, monthsSummary } = (await getTimelineSections()).data;
+
+    sectionMonthSlices = monthsSummary;
+    sections = sectionData.map((section) => {
+      return {
         data: section,
         heightEstimate: estimateHeight(
           section.totalNormalizedWidth,
@@ -254,10 +328,10 @@ export function createTimeline(
         startDate: dayjs.utc(section.startDate),
         endDate: dayjs.utc(section.endDate),
         blocks: null,
-      });
-    }
-    sections = _sections;
+      };
+    });
     sectionsPublic = sections;
+    computeScrollbarMonths();
   }
 
   function resize(newViewport: Viewport, scrollTop: number) {
@@ -266,60 +340,68 @@ export function createTimeline(
     }
     const forceRelayout = viewport.width !== newViewport.width;
     viewport = { ...newViewport };
-    onScrollChange(scrollTop, forceRelayout);
+    onSectionIntersectChanged(scrollTop, forceRelayout);
+    computeScrollbarMonths();
   }
 
-  let lastScrollTime: number | null = null;
-  async function onScrollChange(top: number, forceRelayout: boolean = false) {
-    const loadWithinMargin = opts.loadWithinMargin;
+  async function onSectionIntersectChanged(scrollTop: number, forceRelayout: boolean = false) {
+    const renderWithinMargin = opts.loadWithinMargin;
+    const loadWithinMargin = 3000;
+    let firstLoadedSection = null;
+    let lastLoadedSection = null;
     let firstVisibleSection = null;
     let lastVisibleSection = null;
     for (let i = 0; i < sections.length; i += 1) {
       const sectionTop = sectionTops[i];
       const sectionHeight = sectionHeights[i];
       const isVisible =
-        sectionTop <= top + viewport.height + loadWithinMargin &&
-        top - loadWithinMargin <= sectionTop + sectionHeight;
+        sectionTop <= scrollTop + viewport.height + renderWithinMargin &&
+        scrollTop - renderWithinMargin <= sectionTop + sectionHeight;
       if (firstVisibleSection == null && isVisible) {
         firstVisibleSection = i;
-      } else if (i == sections.length - 1 && isVisible) {
-        // last section is visible
         lastVisibleSection = i;
-      } else if (firstVisibleSection != null && !isVisible) {
-        // this section is not visible anymore, previous is last visible one
-        // i is at least 1 here
-        lastVisibleSection = i - 1;
-        break;
+      } else if (isVisible) {
+        lastVisibleSection = i;
+      }
+
+      const isLoaded =
+        sectionTop <= scrollTop + viewport.height + loadWithinMargin &&
+        scrollTop - loadWithinMargin <= sectionTop + sectionHeight;
+      if (firstLoadedSection == null && isLoaded) {
+        firstLoadedSection = i;
+        lastLoadedSection = i;
+      } else if (isLoaded) {
+        lastLoadedSection = i;
       }
     }
-    if (lastVisibleSection == null) {
-      lastVisibleSection = firstVisibleSection;
-    }
-    if (firstVisibleSection == null || lastVisibleSection == null) {
-      console.error('first and lastVisibleSection are null');
-      return;
-    }
     if (
-      visibleSections.startIdx == firstVisibleSection &&
-      visibleSections.endIdx + 1 == lastVisibleSection
+      firstVisibleSection == null ||
+      firstLoadedSection === null ||
+      lastVisibleSection === null ||
+      lastLoadedSection === null
     ) {
       return;
     }
+
     const sectionLoads = [];
-    for (let i = firstVisibleSection; i <= lastVisibleSection; i += 1) {
-      sectionLoads.push(loadSection(i));
+    for (let i = firstLoadedSection; i <= lastLoadedSection; i += 1) {
+      if (sections[i].blocks === null) {
+        sectionLoads.push(loadSection(i));
+      }
     }
-    const now = Date.now();
-    lastScrollTime = now;
-    await Promise.all(sectionLoads);
-    if (lastScrollTime != now) {
-      return;
-    }
-    // after waiting for all sections to load. We could do this progressively after any one section loads, but that makes things more complicated for little reason
-    // TODO: make the above irrelevant by adding an API call to load multiple sections at once, for the rare event that the user jumps exactly inbetween two sections.
-    for (let i = firstVisibleSection; i <= lastVisibleSection; i += 1) {
-      if (sections[i].blocks === null || forceRelayout) {
-        layoutSection(i);
+    if (sectionLoads.length > 0) {
+      const now = Date.now();
+      lastScrollTime = now;
+      await Promise.all(sectionLoads);
+      if (lastScrollTime != now) {
+        return;
+      }
+      // after waiting for all sections to load. We could do this progressively after any one section loads, but that makes things more complicated for little reason
+      // TODO: make the above irrelevant by adding an API call to load multiple sections at once, for the rare event that the user jumps exactly inbetween two sections.
+      for (let i = firstLoadedSection; i <= lastLoadedSection; i += 1) {
+        if (sections[i].blocks === null || forceRelayout) {
+          layoutSection(i);
+        }
       }
     }
     visibleSections = {
@@ -328,6 +410,65 @@ export function createTimeline(
     };
     if (sectionLoads.length > 0 || forceRelayout) {
       sectionsPublic = sections;
+    }
+    onScrollChange(scrollTop);
+  }
+
+  let lastScrollTime: number | null = null;
+  async function onScrollChange(scrollTop: number) {
+    let firstVisibleMonth: Dayjs | null = null;
+    let thisMonthTop = 0;
+    let thisMonthHeight = 0;
+    for (const [sectionIdx, section] of sections.entries()) {
+      if (!section.blocks) {
+        continue;
+      }
+      let blockTop = sectionTops[sectionIdx];
+      for (const block of section.blocks) {
+        // oh no timezones. (year, month) tuple would be more correct than full dayjs logic
+        const blockMonth = block.sortDate.tz('utc').startOf('month');
+        if (
+          blockTop <= scrollTop &&
+          (firstVisibleMonth === null || !firstVisibleMonth.isSame(blockMonth))
+        ) {
+          firstVisibleMonth = blockMonth;
+          thisMonthHeight = 0;
+          thisMonthTop = blockTop;
+        }
+        if (firstVisibleMonth?.isSame(blockMonth)) {
+          // keep summing blocks belonging to same month of the first visible one even if they're not visible themselves
+          thisMonthHeight += block.fullHeight;
+        } else {
+          // past the end of the visible month
+          break;
+        }
+        blockTop += block.fullHeight;
+      }
+    }
+    if (firstVisibleMonth !== null) {
+      const firstMonthProgress = (scrollTop - thisMonthTop) / thisMonthHeight;
+      console.assert(
+        -1e-3 < firstMonthProgress && firstMonthProgress < 1 + 1e-3,
+        firstMonthProgress,
+      );
+      const clampedProgress = Math.max(Math.min(firstMonthProgress, 1.0), 0.0);
+      let scrollY = 0;
+      let foundMonth = false; // scrollbarMonthHeights keeps months split if they span multiple sections
+      let currentMonthHeight = 0;
+      for (const { year, month, height } of scrollbarMonthHeights) {
+        const monthEqual =
+          year === firstVisibleMonth.year() && month === firstVisibleMonth.month() + 1; // dayjs months are 0 indexed
+        if (monthEqual) {
+          currentMonthHeight += height;
+          foundMonth = true;
+        } else if (foundMonth && !monthEqual) {
+          scrollY += currentMonthHeight * clampedProgress;
+          break;
+        } else {
+          scrollY += height;
+        }
+      }
+      scrollbarY = scrollY;
     }
   }
 
@@ -717,6 +858,7 @@ export function createTimeline(
       }
     }
     if (totalSectionHeight !== section.heightEstimate) {
+      console.log(sectionIdx, totalSectionHeight, section.heightEstimate);
       const delta = totalSectionHeight - section.heightEstimate;
       sections[sectionIdx].heightEstimate = totalSectionHeight;
       sectionsPublic = sections;
@@ -1345,6 +1487,7 @@ export function createTimeline(
     initialize,
     resize,
     onScrollChange,
+    onSectionIntersectChanged,
     getGridItemAtPosition,
     setActualBlockHeight,
     getNextItemPosition,
@@ -1361,6 +1504,9 @@ export function createTimeline(
     get sectionHeights() {
       return sectionHeights;
     },
+    get scrollbarY() {
+      return scrollbarY;
+    },
     rotateAssetCW: async (assetId: AssetId) => {
       const asset = assetsById.get(assetId);
       const updatedAsset = (
@@ -1373,7 +1519,7 @@ export function createTimeline(
     },
     mirrorAsset: async (assetId: AssetId, axis: 'horizontal' | 'vertical') => {
       const asset = assetsById.get(assetId);
-      const rotation = asset.repFile.rotationCorrection;
+      const rotation = asset.repFile.rotationCorrecblock.sortDate;
       const mirror = asset.repFile.mirrorCorrection;
       const {
         newMirror,
@@ -1396,6 +1542,9 @@ export function createTimeline(
       asset.repFile = updatedAsset.repFile;
       layoutSection(getItemForAsset(asset.assetId).pos.sectionIndex);
     },
+    get scrollbarMonths() {
+      return scrollbarMonths;
+    },
   };
 }
 
@@ -1407,6 +1556,6 @@ function estimateHeight(
   if (lineWidth === 0) {
     return 0;
   }
-  const rows = Math.ceil((totalNormalizedWidth * targetRowHeight) / (lineWidth * 0.7)); // consider most rows as not  filled. arbitrary
+  const rows = Math.ceil((totalNormalizedWidth * targetRowHeight * 1.4) / (lineWidth * 0.8)); // consider most rows as not  filled. arbitrary
   return rows * targetRowHeight;
 }

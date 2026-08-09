@@ -4,6 +4,7 @@ import createJustifiedLayout from 'justified-layout';
 import type { TimelineSegment, TimelineBlock, TimelineGridItem } from './timeline-types';
 import * as R from 'remeda';
 import type { AssetId, AssetSeriesId, AssetWithSpe } from '@api/myrti';
+import dayjs from 'dayjs';
 
 type Box = { top: number; left: number; width: number; height: number };
 
@@ -138,6 +139,7 @@ export function layoutSegments(
           containerWidth,
           containerPadding: 0,
           boxSpacing: opts.boxSpacing,
+          targetRowHeightTolerance: 0.2,
         });
         mergedSegments.push({
           segments: [{ segment, boxes: geometry.boxes }],
@@ -207,6 +209,7 @@ export function layoutSegments(
         gridItems,
         gridHeight,
         fullHeight: gridHeight,
+        sortDate: dayjs(segments[0].segment.sortDate),
       });
     } else if (segments.length === 1 && segments[0].segment.type === 'group') {
       // segment with only 1 group gets a big title
@@ -225,6 +228,7 @@ export function layoutSegments(
         gridItems,
         gridHeight,
         fullHeight: gridHeight,
+        sortDate: dayjs(groupSegment.sortDate),
       });
     } else {
       const firstSegment = segments[0].segment;
@@ -266,6 +270,7 @@ export function layoutSegments(
         gridItems,
         gridHeight,
         fullHeight: gridHeight,
+        sortDate: dayjs(segments[0].segment.sortDate),
       });
     }
   }

@@ -196,6 +196,7 @@ export function layoutSegments(
       }),
     );
 
+    const gridHeight = Math.max(...gridItems.map((it) => it.top + it.height));
     if (segments[0].segment.type === 'creatingGroup') {
       console.assert(
         segments.length === 1,
@@ -204,6 +205,8 @@ export function layoutSegments(
       blocks.push({
         blockType: 'createGroup',
         gridItems,
+        gridHeight,
+        fullHeight: gridHeight,
       });
     } else if (segments.length === 1 && segments[0].segment.type === 'group') {
       // segment with only 1 group gets a big title
@@ -220,6 +223,8 @@ export function layoutSegments(
         },
         titlesMinor: [],
         gridItems,
+        gridHeight,
+        fullHeight: gridHeight,
       });
     } else {
       const firstSegment = segments[0].segment;
@@ -259,6 +264,8 @@ export function layoutSegments(
         titleMajor,
         titlesMinor,
         gridItems,
+        gridHeight,
+        fullHeight: gridHeight,
       });
     }
   }

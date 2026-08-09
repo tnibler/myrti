@@ -72,12 +72,7 @@ export interface ITimelineGrid {
   set setAnimationsEnabled(v: ((enabled: boolean) => Promise<void>) | null);
   onScrollChange: (top: number) => void;
   getGridItemAtPosition: (pos: PositionInTimeline) => Promise<TimelineGridItem | null>;
-  setActualItemHeight: (
-    sectionIdx: number,
-    segmentIdx: number,
-    itemIdx: number,
-    newHeight: number,
-  ) => void;
+  setActualBlockHeight: (sectionIdx: number, heights: number[][]) => void;
   getNextItemPosition: (
     pos: PositionInTimeline,
     dir: 'left' | 'right',
@@ -169,22 +164,30 @@ export function createTimeline(
   let sections: TimelineSection[] = [];
   let sectionsPublic: TimelineSection[] = $state([]);
 
-  const getSectionTop = (idx: number) => {
-    return R.pipe(
-      sections,
-      R.take(idx),
-      R.map((s) => s.height),
-      R.sum(),
-    );
-  };
-
-  const timelineHeight: number = $derived(
+  const sectionHeights: number[] = $derived(
     R.pipe(
       sectionsPublic,
-      R.map((s) => s.height),
-      R.sum(),
+      R.map((s) => s.heightEstimate),
+      // R.map((s) =>
+      //   s.blocks !== null ? R.sum(s.blocks.map((bl) => bl.fullHeight)) : s.heightEstimate,
+      // ),
     ),
   );
+  const sectionTops: number[] = $derived(
+    R.pipe(
+      sectionHeights,
+      R.dropLast(1),
+      R.reduce(
+        (acc: number[], height) => {
+          acc.push(acc[acc.length - 1] + height);
+          return acc;
+        },
+        [0],
+      ),
+    ),
+  );
+
+  const timelineHeight: number = $derived(R.sum(sectionHeights));
   const addToGroupClickAreas: AddToGroupClickArea[] = $derived(
     state.state === 'creatingTimelineGroup'
       ? R.pipe(
@@ -240,10 +243,13 @@ export function createTimeline(
 
     const _sections: TimelineSection[] = [];
     for (const section of sectionData) {
-      const height = estimateHeight(section, viewport.width, opts.targetRowHeight);
       _sections.push({
         data: section,
-        height: estimateHeight(section.totalNormalizedWidth, viewport.width, opts.targetRowHeight),
+        heightEstimate: estimateHeight(
+          section.totalNormalizedWidth,
+          viewport.width,
+          opts.targetRowHeight,
+        ),
         segments: null,
         startDate: dayjs.utc(section.startDate),
         endDate: dayjs.utc(section.endDate),
@@ -269,11 +275,11 @@ export function createTimeline(
     let firstVisibleSection = null;
     let lastVisibleSection = null;
     for (let i = 0; i < sections.length; i += 1) {
-      const s = sections[i];
-      const sectionTop = getSectionTop(i);
+      const sectionTop = sectionTops[i];
+      const sectionHeight = sectionHeights[i];
       const isVisible =
         sectionTop <= top + viewport.height + loadWithinMargin &&
-        top - loadWithinMargin <= sectionTop + s.height;
+        top - loadWithinMargin <= sectionTop + sectionHeight;
       if (firstVisibleSection == null && isVisible) {
         firstVisibleSection = i;
       } else if (i == sections.length - 1 && isVisible) {
@@ -313,11 +319,10 @@ export function createTimeline(
     // TODO: make the above irrelevant by adding an API call to load multiple sections at once, for the rare event that the user jumps exactly inbetween two sections.
     for (let i = firstVisibleSection; i <= lastVisibleSection; i += 1) {
       if (sections[i].blocks === null || forceRelayout) {
-        layoutSection(i, 'adjustScroll');
+        layoutSection(i);
       }
     }
     visibleSections = {
-      // layoutSection populates items, so the field is not null here
       startIdx: firstVisibleSection,
       endIdx: lastVisibleSection + 1,
     };
@@ -326,7 +331,7 @@ export function createTimeline(
     }
   }
 
-  function layoutSection(sectionIndex: number, adjustScroll: 'adjustScroll' | 'noAdjustScroll') {
+  function layoutSection(sectionIndex: number) {
     const section = sections[sectionIndex];
     const segments = section.segments;
     if (segments === null) {
@@ -334,6 +339,7 @@ export function createTimeline(
       return;
     }
     const lastSectionEndDate = sectionIndex === 0 ? null : sections[sectionIndex - 1].endDate;
+    const start = performance.now();
     const { blocks } = layoutSegments(
       segments,
       lastSectionEndDate,
@@ -342,19 +348,7 @@ export function createTimeline(
       assetsById.get,
       assetSeriesById.get,
     );
-    // const oldSectionHeight = section.height;
-    // section.height = sectionHeight;
     section.blocks = blocks;
-
-    // const heightDelta = sectionHeight - oldSectionHeight;
-    // if (adjustScroll === 'adjustScroll') {
-    //   adjustScrollTop({
-    //     what: 'scrollBy',
-    //     scroll: heightDelta,
-    //     ifScrollTopGt: getSectionTop(sectionIndex),
-    //     behavior: 'instant',
-    //   });
-    // }
   }
 
   async function loadSection(sectionIndex: number, reload: 'reload' | undefined = undefined) {
@@ -431,7 +425,6 @@ export function createTimeline(
             type: 'dateRange' as const,
             items: itemWithStacksSplitUp,
             sortDate: segment.sortDate,
-            itemRange: null,
             start: dayjs.utc(segment.start),
             end: dayjs.utc(segment.end),
             gridItems: null,
@@ -461,7 +454,6 @@ export function createTimeline(
             groupId: segment.id,
             items: itemWithStacksSplitUp,
             sortDate: segment.sortDate,
-            itemRange: null,
             clickArea: null,
             start: dayjs.utc(startDate),
             end: dayjs.utc(endDate),
@@ -701,7 +693,7 @@ export function createTimeline(
     selectedItems.clear();
     // reassign Items' asset index
     for (const sectionIdx of affectedSectionIdxs) {
-      layoutSection(sectionIdx, 'noAdjustScroll');
+      layoutSection(sectionIdx);
     }
     if (setAnimationsEnabled) {
       setAnimationsEnabled(false);
@@ -709,15 +701,29 @@ export function createTimeline(
     sectionsPublic = sections;
   }
 
-  function setActualSectionHeight(sectionIdx: number, height: number) {
-    if (height !== null && sections[sectionIdx].height !== height) {
-      const delta = height - sections[sectionIdx].height;
-      sections[sectionIdx].height = height;
+  function setActualBlockHeight(sectionIdx: number, heights: number[][]) {
+    let totalSectionHeight = 0;
+    const section = sections[sectionIdx];
+    console.assert(heights.length === section.blocks?.length);
+    for (const [blockIdx, height] of heights) {
+      const block = section.blocks?.at(blockIdx);
+      totalSectionHeight += height;
+      if (R.isNonNullish(block)) {
+        if (height !== block.fullHeight) {
+          block.fullHeight = height;
+        }
+      } else {
+        console.error('block is null');
+      }
+    }
+    if (totalSectionHeight !== section.heightEstimate) {
+      const delta = totalSectionHeight - section.heightEstimate;
+      sections[sectionIdx].heightEstimate = totalSectionHeight;
       sectionsPublic = sections;
       adjustScrollTop({
         what: 'scrollBy',
         scroll: delta,
-        ifScrollTopGt: getSectionTop(sectionIdx + 1),
+        ifScrollTopGt: sectionTops[sectionIdx],
         behavior: 'instant',
       });
     }
@@ -907,7 +913,7 @@ export function createTimeline(
       await setAnimationsEnabled(true);
     }
     for (const i of affectedSections) {
-      layoutSection(i, 'noAdjustScroll');
+      layoutSection(i);
     }
     // TODO: all kinds of broken this scroll thing
     // const scrollToItem = section.blocks.find((block) => block.blockType === 'createGroup');
@@ -990,14 +996,13 @@ export function createTimeline(
       type: 'group' as const,
       items: oldSegment.items,
       sortDate: response.displayDate,
-      itemRange: null,
       clickArea: null,
       groupId: response.timelineGroupId,
       title,
       start: oldSegment.start,
       end: oldSegment.end,
     };
-    layoutSection(sectionIndex, 'adjustScroll');
+    layoutSection(sectionIndex);
     state = { state: 'justLooking' };
     sectionsPublic = sections;
   }
@@ -1070,7 +1075,7 @@ export function createTimeline(
     mergeInto.items.push(...groupToAbsorb.items);
     mergeInto.items.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
     sections = newSections;
-    layoutSection(affectedSections[0], 'noAdjustScroll');
+    layoutSection(affectedSections[0]);
     if (affectedSections[0] !== affectedSections[1]) {
       layoutSection(affectedSections[1], 'noAdjustScroll');
     }
@@ -1114,7 +1119,7 @@ export function createTimeline(
                 return;
               }
               await loadSection(sectionIdx, 'reload');
-              layoutSection(sectionIdx, 'adjustScroll');
+              layoutSection(sectionIdx);
               break outer;
             }
           }
@@ -1256,7 +1261,7 @@ export function createTimeline(
     clearSelection();
     for (const sectionIdx of affectedSections) {
       await loadSection(sectionIdx, 'reload');
-      layoutSection(sectionIdx, 'adjustScroll');
+      layoutSection(sectionIdx);
     }
   };
 
@@ -1341,7 +1346,7 @@ export function createTimeline(
     resize,
     onScrollChange,
     getGridItemAtPosition,
-    setActualSectionHeight,
+    setActualBlockHeight,
     getNextItemPosition,
     getItem,
     getItemMustBeLoaded,
@@ -1350,6 +1355,12 @@ export function createTimeline(
     isItemSelected,
     clearSelection,
     hideSelectedAssets,
+    get sectionTops() {
+      return sectionTops;
+    },
+    get sectionHeights() {
+      return sectionHeights;
+    },
     rotateAssetCW: async (assetId: AssetId) => {
       const asset = assetsById.get(assetId);
       const updatedAsset = (
@@ -1358,7 +1369,7 @@ export function createTimeline(
         })
       ).data;
       asset.repFile.rotationCorrection = updatedAsset.repFile.rotationCorrection;
-      layoutSection(getItemForAsset(asset.assetId).pos.sectionIndex, 'noAdjustScroll');
+      layoutSection(getItemForAsset(asset.assetId).pos.sectionIndex);
     },
     mirrorAsset: async (assetId: AssetId, axis: 'horizontal' | 'vertical') => {
       const asset = assetsById.get(assetId);
@@ -1383,7 +1394,7 @@ export function createTimeline(
         })
       ).data;
       asset.repFile = updatedAsset.repFile;
-      layoutSection(getItemForAsset(asset.assetId).pos.sectionIndex, 'noAdjustScroll');
+      layoutSection(getItemForAsset(asset.assetId).pos.sectionIndex);
     },
   };
 }

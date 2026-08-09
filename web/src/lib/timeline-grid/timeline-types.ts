@@ -8,7 +8,7 @@ import type { Dayjs } from '@lib/dayjs';
 
 /** Subdivision of the timeline that is fetched from API, contains segments. */
 export type TimelineSection = {
-  height: number;
+  heightEstimate: number;
   data: ApiTimelineSection;
   segments: TimelineSegment[] | null;
   /** Date of most recent asset in section */
@@ -36,6 +36,10 @@ export type TimelineBlock = (
       blockType: 'createGroup';
     }
 ) & {
+  /** Height of absolute layout grid only */
+  gridHeight: number;
+  /** Height including grid and titles. Measured and set from DOM */
+  fullHeight: number;
   gridItems: TimelineGridItem[];
 };
 

@@ -189,6 +189,7 @@ export function createTimeline(
       ),
     ),
   );
+  $inspect(sectionHeights, sectionTops);
 
   const timelineHeight: number = $derived(R.sum(sectionHeights));
   const addToGroupClickAreas: AddToGroupClickArea[] = $derived(
@@ -240,7 +241,7 @@ export function createTimeline(
     await loadSectionPlaceholders();
   }
 
-  let sectionMonthSlices: TimelineMonthSlice[][] = $state([]);
+  let sectionMonthSlices: TimelineMonthSlice[][] = [];
   let scrollbarMonths: ScrollbarMonth[] = $state([]);
   let scrollbarMonthHeights: { year: number; month: number; height: number; sectionIdx: number }[] =
     [];
@@ -334,6 +335,45 @@ export function createTimeline(
     computeScrollbarMonths();
   }
 
+  const monthHeights: { year: number; month: number; top: number; height: number }[] = $derived.by(
+    () => {
+      const months: { year: number; month: number; top: number; height: number }[] = [];
+      const pushOrAdd = (year: number, month: number, height: number) => {
+        if (months.length > 0) {
+          const last = months[months.length - 1];
+          if (last.year === year && last.month === month) {
+            last.height += height;
+            return;
+          }
+        }
+        months.push({ year, month, height, top: 0 });
+      };
+      for (let sectionIdx = 0; sectionIdx < sectionsPublic.length; sectionIdx += 1) {
+        const section = sectionsPublic[sectionIdx];
+        if (section.blocks !== null) {
+          for (const block of section.blocks) {
+            const date = block.sortDate.tz('utc');
+            pushOrAdd(date.year(), date.month() + 1, block.fullHeight); // dayjs months are 0 indexed
+          }
+        } else {
+          for (const { year, month, totalNormalizedWidth } of sectionMonthSlices[sectionIdx]) {
+            const height = Math.max(
+              opts.targetRowHeight,
+              estimateHeight(totalNormalizedWidth, viewport.width, opts.targetRowHeight),
+            );
+            pushOrAdd(year, month, height);
+          }
+        }
+      }
+      let top = 0;
+      for (const month of months) {
+        month.top = top;
+        top += month.height;
+      }
+      return months;
+    },
+  );
+
   function resize(newViewport: Viewport, scrollTop: number) {
     if (viewport === newViewport) {
       return;
@@ -416,37 +456,11 @@ export function createTimeline(
 
   let lastScrollTime: number | null = null;
   async function onScrollChange(scrollTop: number) {
-    let firstVisibleMonth: Dayjs | null = null;
-    let thisMonthTop = 0;
-    let thisMonthHeight = 0;
-    for (const [sectionIdx, section] of sections.entries()) {
-      if (!section.blocks) {
-        continue;
-      }
-      let blockTop = sectionTops[sectionIdx];
-      for (const block of section.blocks) {
-        // oh no timezones. (year, month) tuple would be more correct than full dayjs logic
-        const blockMonth = block.sortDate.tz('utc').startOf('month');
-        if (
-          blockTop <= scrollTop &&
-          (firstVisibleMonth === null || !firstVisibleMonth.isSame(blockMonth))
-        ) {
-          firstVisibleMonth = blockMonth;
-          thisMonthHeight = 0;
-          thisMonthTop = blockTop;
-        }
-        if (firstVisibleMonth?.isSame(blockMonth)) {
-          // keep summing blocks belonging to same month of the first visible one even if they're not visible themselves
-          thisMonthHeight += block.fullHeight;
-        } else {
-          // past the end of the visible month
-          break;
-        }
-        blockTop += block.fullHeight;
-      }
-    }
-    if (firstVisibleMonth !== null) {
-      const firstMonthProgress = (scrollTop - thisMonthTop) / thisMonthHeight;
+    const firstVisibleMonth = monthHeights.find(
+      (m) => m.top < scrollTop + viewport.height && scrollTop < m.top + m.height,
+    );
+    if (firstVisibleMonth) {
+      const firstMonthProgress = (scrollTop - firstVisibleMonth.top) / firstVisibleMonth.height;
       console.assert(
         -1e-3 < firstMonthProgress && firstMonthProgress < 1 + 1e-3,
         firstMonthProgress,
@@ -456,8 +470,7 @@ export function createTimeline(
       let foundMonth = false; // scrollbarMonthHeights keeps months split if they span multiple sections
       let currentMonthHeight = 0;
       for (const { year, month, height } of scrollbarMonthHeights) {
-        const monthEqual =
-          year === firstVisibleMonth.year() && month === firstVisibleMonth.month() + 1; // dayjs months are 0 indexed
+        const monthEqual = year === firstVisibleMonth.year && month === firstVisibleMonth.month;
         if (monthEqual) {
           currentMonthHeight += height;
           foundMonth = true;
@@ -480,7 +493,6 @@ export function createTimeline(
       return;
     }
     const lastSectionEndDate = sectionIndex === 0 ? null : sections[sectionIndex - 1].endDate;
-    const start = performance.now();
     const { blocks } = layoutSegments(
       segments,
       lastSectionEndDate,
@@ -490,6 +502,7 @@ export function createTimeline(
       assetSeriesById.get,
     );
     section.blocks = blocks;
+    section.heightEstimate = R.sum(blocks.map((b) => b.fullHeight));
   }
 
   async function loadSection(sectionIndex: number, reload: 'reload' | undefined = undefined) {
@@ -843,28 +856,39 @@ export function createTimeline(
   }
 
   function setActualBlockHeight(sectionIdx: number, heights: number[][]) {
-    let totalSectionHeight = 0;
+    let totalDelta = 0;
+    let scrollAdjustDelta = 0;
     const section = sections[sectionIdx];
-    console.assert(heights.length === section.blocks?.length);
     for (const [blockIdx, height] of heights) {
       const block = section.blocks?.at(blockIdx);
-      totalSectionHeight += height;
       if (R.isNonNullish(block)) {
-        if (height !== block.fullHeight) {
-          block.fullHeight = height;
+        const delta = height - block.fullHeight;
+        totalDelta += delta;
+        if (!block.hasBeenMeasured) {
+          // Scroll only needs to be adjusted when switching from estimated to measured height.
+          // If block has already been laid out and changes we don't want to scroll.
+          scrollAdjustDelta += delta;
         }
+        block.fullHeight = height;
+        block.hasBeenMeasured = true;
       } else {
-        console.error('block is null');
+        console.error('block is null but measured its height somehow');
       }
     }
-    if (totalSectionHeight !== section.heightEstimate) {
-      console.log(sectionIdx, totalSectionHeight, section.heightEstimate);
-      const delta = totalSectionHeight - section.heightEstimate;
-      sections[sectionIdx].heightEstimate = totalSectionHeight;
-      sectionsPublic = sections;
+    let blockTop = 0;
+    for (const block of section.blocks) {
+      block.top = blockTop;
+      blockTop += block.fullHeight;
+    }
+    if (totalDelta !== 0) {
+      sections[sectionIdx].heightEstimate += totalDelta;
+      console.log(sectionIdx, totalDelta, section.heightEstimate);
+    }
+    sectionsPublic = sections;
+    if (scrollAdjustDelta !== 0) {
       adjustScrollTop({
         what: 'scrollBy',
-        scroll: delta,
+        scroll: scrollAdjustDelta,
         ifScrollTopGt: sectionTops[sectionIdx],
         behavior: 'instant',
       });
@@ -1062,7 +1086,7 @@ export function createTimeline(
     // if (scrollToItem) {
     //   adjustScrollTop({
     //     what: 'scrollTo',
-    //     scroll: Math.max(0, getSectionTop(insertInSectionIndex) + scrollToItem.gridItems[0].top),
+    //     scroll: Math.max(0, sectionTops[insertInSectionIndex] + scrollToItem.top),
     //     ifScrollTopGt: 0,
     //     behavior: 'smooth',
     //   });

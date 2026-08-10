@@ -332,9 +332,12 @@
       // anim.commitStyles();
     };
   }
+
+  let scrollTop = $state(0);
   function onScroll(e: UIEvent) {
     // console.log(scrollWrapper.scrollTop);
     timeline.onScrollChange(scrollWrapper.scrollTop);
+    scrollTop = scrollWrapper.scrollTop;
   }
 
   const observer = new ResizeObserver((entries) => {
@@ -402,7 +405,8 @@
         style:top="{timeline.sectionTops[section.sectionIdx]}px"
       >
         <!-- eslint-disable-next-line svelte/require-each-key -->
-        {#each section.blocks as block, blockIdx (blockIdx)}
+        {#each section.blocks as block, blockIdx (block.sortDate)}
+          {@const blockTop = block.top + timeline.sectionTops[section.sectionIdx]}
           <div
             class="relative w-full"
             data-section={section.sectionIdx}
@@ -448,45 +452,48 @@
             {/if}
 
             <div style="height: {block.gridHeight}px;" class="w-full relative contain-strict">
-              {#each block.gridItems as item (item.key)}
-                {#if item.type === 'asset'}
-                  <GridTile
-                    imgElAction={registerAction}
-                    href="/timeline/{item.assetId}"
-                    className={gridItemTransitionClass}
-                    asset={timeline.getAsset(item.assetId)}
-                    box={item}
-                    showStackIcon={false}
-                    onAssetClick={() => {
-                      onAssetClick(item.timelineItem);
-                    }}
-                    onSelectToggled={() => {
-                      toggleItemSelected(item.timelineItem);
-                    }}
-                    imgElId={`thumb-${item.assetId}`}
-                    selectState={getSelectState(item.timelineItem)}
-                  />
-                {:else if item.type === 'photoStack'}
-                  {@const coverAsset = timeline.getAsset(
-                    timeline.getAssetSeries(item.seriesId).assetIds[item.coverIndex],
-                  )}
-                  <GridTile
-                    imgElAction={registerAction}
-                    className={gridItemTransitionClass}
-                    asset={coverAsset}
-                    box={item}
-                    showStackIcon={true}
-                    onAssetClick={() => {
-                      onAssetClick(item.timelineItem);
-                    }}
-                    onSelectToggled={() => {
-                      toggleItemSelected(item.timelineItem);
-                    }}
-                    imgElId={`thumb-${coverAsset.assetId}`}
-                    selectState={getSelectState(item.timelineItem)}
-                  />
-                {/if}
-              {/each}
+              {#if blockTop < scrollTop + viewport.height + 1000 && scrollTop - 1000 < blockTop + block.fullHeight}
+                <!-- {#if true} -->
+                {#each block.gridItems as item (item.key)}
+                  {#if item.type === 'asset'}
+                    <GridTile
+                      imgElAction={registerAction}
+                      href="/timeline/{item.assetId}"
+                      className={gridItemTransitionClass}
+                      asset={timeline.getAsset(item.assetId)}
+                      box={item}
+                      showStackIcon={false}
+                      onAssetClick={() => {
+                        onAssetClick(item.timelineItem);
+                      }}
+                      onSelectToggled={() => {
+                        toggleItemSelected(item.timelineItem);
+                      }}
+                      imgElId={`thumb-${item.assetId}`}
+                      selectState={getSelectState(item.timelineItem)}
+                    />
+                  {:else if item.type === 'photoStack'}
+                    {@const coverAsset = timeline.getAsset(
+                      timeline.getAssetSeries(item.seriesId).assetIds[item.coverIndex],
+                    )}
+                    <GridTile
+                      imgElAction={registerAction}
+                      className={gridItemTransitionClass}
+                      asset={coverAsset}
+                      box={item}
+                      showStackIcon={true}
+                      onAssetClick={() => {
+                        onAssetClick(item.timelineItem);
+                      }}
+                      onSelectToggled={() => {
+                        toggleItemSelected(item.timelineItem);
+                      }}
+                      imgElId={`thumb-${coverAsset.assetId}`}
+                      selectState={getSelectState(item.timelineItem)}
+                    />
+                  {/if}
+                {/each}
+              {/if}
             </div>
           </div>
         {/each}

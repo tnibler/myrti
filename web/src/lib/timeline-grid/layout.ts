@@ -281,6 +281,11 @@ export function layoutSegments(
     `Non-unique item keys: ${allKeys.length} but ${uniqueKeys} keys. Duplicates: `,
     R.difference(allKeys, R.unique(allKeys)),
   );
+  let blockTop = 0;
+  for (const block of blocks) {
+    block.top = blockTop;
+    blockTop += block.fullHeight;
+  }
   return {
     blocks,
   };

@@ -1,5 +1,3 @@
-DELETE FROM TimelineMonth;
-
 WITH AssetMonth AS (
 	SELECT Asset.asset_id
 	, unixepoch(date(Asset.taken_date / 1000, 'unixepoch', 'start of month')) AS start_of_month

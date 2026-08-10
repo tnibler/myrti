@@ -24,8 +24,12 @@ use super::{db::DbConn, db_entity::DbAsset, timeline_group::get_timeline_group};
 #[tracing::instrument(skip(conn), level = "debug")]
 pub fn rebuild_timeline_full(conn: &mut DbConn) -> Result<()> {
     conn.immediate_transaction(|conn| {
-        conn.batch_execute(include_str!("rebuild_timeline.sql"))
-            .wrap_err("error executing rebuild_timeline query")?;
+        conn.batch_execute(include_str!("rebuild_timeline_prolog.sql"))
+            .wrap_err("error executing rebuild_timeline_prolog query")?;
+        conn.batch_execute(include_str!("rebuild_timeline_full.sql"))
+            .wrap_err("error executing rebuild_timeline_full query")?;
+        conn.batch_execute(include_str!("rebuild_timeline_common.sql"))
+            .wrap_err("error executing rebuild_timeline_common query")?;
         conn.batch_execute(include_str!("rebuild_timeline_months.sql"))
             .wrap_err("error executing rebuild_timeline_months query")?;
         Ok(())
@@ -35,8 +39,12 @@ pub fn rebuild_timeline_full(conn: &mut DbConn) -> Result<()> {
 #[tracing::instrument(skip(conn), level = "debug")]
 pub fn update_timeline_dirty(conn: &mut DbConn) -> Result<()> {
     conn.immediate_transaction(|conn| {
+        conn.batch_execute(include_str!("rebuild_timeline_prolog.sql"))
+            .wrap_err("error executing rebuild_timeline_prolog query")?;
         conn.batch_execute(include_str!("rebuild_dirty_sections.sql"))
             .wrap_err("error executing rebuild_dirty_sections query")?;
+        conn.batch_execute(include_str!("rebuild_timeline_common.sql"))
+            .wrap_err("error executing rebuild_timeline_common query")?;
         conn.batch_execute(include_str!("rebuild_timeline_months.sql"))
             .wrap_err("error executing rebuild_timeline_months query")?;
         Ok(())

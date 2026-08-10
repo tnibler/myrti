@@ -1,8 +1,3 @@
-DELETE FROM TimelineMonth;
-DELETE FROM TimelineItem;
-DELETE FROM TimelineSegment;
-DELETE FROM TimelineSection;
-
 WITH RECURSIVE
 SeriesDate AS (
 	SELECT Asset.*
@@ -18,6 +13,8 @@ SeriesDate AS (
 		, TimelineGroupItem.group_id
 	FROM Asset
 	LEFT JOIN TimelineGroupItem ON Asset.asset_id = TimelineGroupItem.asset_id
+	WHERE Asset.asset_id IN (SELECT asset_id FROM BuildTimelineStaging)
+	OR EXISTS (SELECT * FROM RebuildFullTimeline)
 )
 , AssetGroupDate AS (
 	SELECT *
@@ -148,7 +145,7 @@ SELECT asset_id
 	, series_date
 	, Sectioned.group_id
 	, group_date
-	, section_id
+	, section_id + COALESCE((SELECT MAX(section_idx) FROM BuildTimelineStaging), 1) - 1
 	, segment_id + COALESCE((SELECT MAX(TimelineItem.segment_id) FROM TimelineItem), 0)
 	, Sectioned.segment_day
 	, CASE 
@@ -162,10 +159,43 @@ AND Sectioned.segment_day = DaySplit.segment_day
 AND Sectioned.day_split_idx = DaySplit.day_split_idx
 ;
 
+-- Add difference between highest section_idx of old and new TimelineItems
+-- to all items after the recomputed sections
+CREATE TEMP TABLE IF NOT EXISTS ShiftedSections (
+	old_idx INTEGER NOT NULL UNIQUE
+	, new_idx INTEGER NOT NULl UNIQUE
+) STRICT;
+DELETE FROM ShiftedSections;
+
+WITH MaxRemovedSection AS (
+	SELECT MAX(section_idx) AS old_max FROM BuildTimelineStaging
+)
+INSERT INTO ShiftedSections(old_idx, new_idx)
+SELECT TimelineSection.section_idx
+, TimelineSection.section_idx + (
+	SELECT MAX(ti.section_idx) - (SELECT old_max FROM MaxRemovedSection) AS shift_amount
+	FROM TimelineItem ti
+	WHERE ti.asset_id IN (SELECT asset_id FROM BuildTimelineStaging)
+)
+FROM TimelineSection
+WHERE section_idx NOT IN (SELECT section_idx FROM BuildTimelineStaging)
+AND section_idx > (SELECT old_max FROM MaxRemovedSection)
+AND NOT EXISTS (SELECT * FROM RebuildFullTimeline);
+
+
+UPDATE TimelineItem
+SET section_idx = (SELECT new_idx FROM ShiftedSections WHERE ShiftedSections.old_idx = section_idx)
+WHERE section_idx IN (SELECT old_idx FROM ShiftedSections);
+UPDATE TimelineSection
+SET section_idx = (SELECT new_idx FROM ShiftedSections WHERE ShiftedSections.old_idx = section_idx)
+WHERE section_idx IN (SELECT old_idx FROM ShiftedSections);
+
 WITH SectionLen AS (
 	SELECT section_idx
 	, COUNT(*) as num_assets
 	FROM TimelineItem
+	WHERE TimelineItem.asset_id IN (SELECT asset_id FROM BuildTimelineStaging)
+	OR EXISTS (SELECT * FROM RebuildFullTimeline)
 	GROUP BY section_idx
 )
 , SectionWidth AS (
@@ -173,7 +203,9 @@ WITH SectionLen AS (
 	, SUM(CAST(AssetFile.width AS REAL) / CAST(AssetFile.height AS REAL)) AS total_width
 	FROM TimelineItem INNER JOIN Asset ON TimelineItem.asset_id = Asset.asset_id
 	INNER JOIN AssetFile ON Asset.rep_file_id = AssetFile.file_id
-	WHERE Asset.series_id IS NULL OR Asset.is_series_selection = 1
+	WHERE (Asset.asset_id IN (SELECT asset_id FROM BuildTimelineStaging)
+		OR EXISTS (SELECT * FROM RebuildFullTimeline))
+	AND (Asset.series_id IS NULL OR Asset.is_series_selection = 1)
 	GROUP BY TimelineItem.section_idx
 )
 INSERT INTO TimelineSection (

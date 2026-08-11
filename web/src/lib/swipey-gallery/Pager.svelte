@@ -412,7 +412,7 @@
 
 <div
   class="
-  absolute top-0 left-0 w-full h-dvh
+  fixed top-0 left-0 w-full h-dvh
   flex flex-row
   touch-none overflow-hidden z-20"
   style:cursor={uiVisible ? 'default' : 'none'}

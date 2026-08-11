@@ -16,6 +16,9 @@
   import type { SlideRef } from '@lib/swipey-gallery/gallery-types';
   import { path } from 'elegua';
   import { fade } from 'svelte/transition';
+  import dayjs, { Dayjs } from 'dayjs';
+  import { onMount } from 'svelte';
+  import { _jwt } from 'zod/v4/core';
 
   type TimelineGridProps = {
     timeline: ITimelineGrid;
@@ -333,12 +336,48 @@
     };
   }
 
+  let isUserScroll = true;
   let scrollTop = $state(0);
   function onScroll(e: UIEvent) {
-    // console.log(scrollWrapper.scrollTop);
+    if (isUserScroll) {
+      wantToScrollTo = null;
+    }
     timeline.onScrollChange(scrollWrapper.scrollTop);
     scrollTop = scrollWrapper.scrollTop;
   }
+
+  function scrollToProgrammatic(y: number) {
+    isUserScroll = false;
+    scrollWrapper.scrollTo(0, y);
+    requestAnimationFrame(() => {
+      isUserScroll = true;
+    });
+  }
+
+  function scrollByProgrammatic(opts: ScrollToOptions) {
+    isUserScroll = false;
+    scrollWrapper.scrollBy(opts);
+    requestAnimationFrame(() => {
+      isUserScroll = true;
+    });
+  }
+
+  function onAjustTimelineScroll(params: {
+    what: 'scrollBy';
+    scroll: number;
+    ifScrollTopGt: number;
+    behavior: 'smooth' | 'instant';
+  }) {
+    if (scrollWrapper && scrollWrapper.scrollTop > params.ifScrollTopGt) {
+      scrollByProgrammatic({ top: params.scroll, behavior: params.behavior });
+    }
+  }
+  onMount(() => {
+    timeline.adjustScrollTop = onAjustTimelineScroll;
+    return () => {
+      timeline.adjustScrollTop = null;
+    };
+  });
 
   const observer = new ResizeObserver((entries) => {
     const changedSections = new Map();
@@ -363,7 +402,121 @@
       },
     };
   }
+
+  /** Point in time user clicked/scrubbed to in the scrollbar. Actual scrollY position might not be known, so save user intent and adjust when everything is laid out */
+  let wantToScrollTo = $state(null);
+  $effect(() => {
+    if (wantToScrollTo !== null && !isDragging) {
+      const month = timeline.monthHeights.find(
+        (m) => m.year === wantToScrollTo.month.year && m.month === wantToScrollTo.month.month,
+      );
+      const progressInMonth = wantToScrollTo.progressInMonth;
+      const scrollToY = month.top + progressInMonth * month.height;
+
+      scrollToProgrammatic(scrollToY);
+    }
+  });
+
+  let scrollbarEl: HTMLElement = $state();
+  let scrubHover = $state(false);
+  let isDragging = $state(false);
+  let hoverY = $state(0);
+  let scrollHoverLabel: string = $state('');
+  function onMouseEvent(e: MouseEvent) {
+    if (!scrollbarEl) {
+      return;
+    }
+    const wasDragging = isDragging;
+    const rect = scrollbarEl.getBoundingClientRect();
+    const relativeY = e.clientY - rect.top;
+    if (scrubHover) {
+      hoverY = relativeY;
+      const month = timeline.monthForScrollY(relativeY / rect.height);
+      if (month) {
+        scrollHoverLabel = dayjs()
+          .utc()
+          .year(month.year)
+          .month(month.month - 1)
+          .format('MMM. YYYY');
+      }
+      if (!isDragging && e.type === 'mousedown') {
+        isDragging = true;
+      }
+    }
+    if (!isDragging) {
+      return;
+    }
+
+    const month = timeline.monthForScrollY(relativeY / rect.height);
+    if (!month) {
+      console.error('monthForScrollY not found');
+      return;
+    }
+    const scrollbarMonth = timeline.scrollbarMonths.find(
+      (m) => m.year === month.year && m.month === month.month,
+    );
+    if (!scrollbarMonth) {
+      return;
+    }
+    const progressInMonth = (relativeY - scrollbarMonth.top) / scrollbarMonth.height;
+
+    if (isDragging) {
+      const scrollToY = month.top + progressInMonth * month.height;
+      scrollToProgrammatic(scrollToY);
+      wantToScrollTo = null;
+
+      if (e.type === 'mouseup') {
+        wantToScrollTo = { month, progressInMonth };
+        isDragging = false;
+      }
+    }
+  }
 </script>
+
+<svelte:window onmousemove={onMouseEvent} onmousedown={onMouseEvent} onmouseup={onMouseEvent} />
+
+<div
+  bind:this={scrollbarEl}
+  role="scrollbar"
+  aria-valuenow={timeline.scrollbarY}
+  aria-valuemin="0"
+  aria-valuemax={timeline.scrollbarYMax}
+  tabindex="0"
+  class="absolute top-0 right-4 h-full w-16 bg-red-100 inset-e-3 z-1 select-none hover:cursor-row-resize"
+  onmouseenter={() => {
+    scrubHover = true;
+  }}
+  onmouseleave={() => {
+    scrubHover = false;
+  }}
+  onwheel={(e) => {
+    scrollWrapper.scrollTop += e.deltaY;
+  }}
+>
+  {#each timeline.scrollbarMonths as month (`${month.year}-${month.month}`)}
+    {#if month.showYear || month.showMonth}
+      <div class="absolute w-full" style={`height: ${month.height}px; top: ${month.top}px;`}>
+        {#if month.showYear}
+          <div class="absolute h-full inset-e-6">
+            {month.year}
+          </div>
+        {/if}
+        {#if month.showMonth}
+          <div class="absolute inset-e-2 rounded-full size-2 bg-gray-500"></div>
+        {/if}
+      </div>
+    {/if}
+  {/each}
+  {#if scrubHover}
+    <div
+      class="absolute inset-e-0 border-t-1 min-w-32 pointer-events-none p-1 text-lg opacity-80 bg-gray-200"
+      style:top="{hoverY - 2}px"
+    >
+      {scrollHoverLabel}
+    </div>
+  {/if}
+  <div class="w-full absolute h-2 bg-red-400" style={`top: ${timeline.scrollbarY}px;`}></div>
+</div>
 
 <div
   class="scroll-wrapper"
@@ -371,28 +524,6 @@
   bind:clientHeight={viewport.height}
   onscroll={onScroll}
 >
-  <div
-    role="scrollbar"
-    aria-valuenow={timeline.scrollbarY}
-    class="fixed h-screen w-16 bg-red-100 inset-e-3 z-1 select-none hover:cursor-row-resize"
-  >
-    {#each timeline.scrollbarMonths as month (`${month.year}-${month.month}`)}
-      {#if month.showYear || month.showMonth}
-        <div class="absolute w-full" style={`height: ${month.height}px; top: ${month.top}px;`}>
-          {#if month.showYear}
-            <div class="absolute h-full inset-e-6">
-              {month.year}
-            </div>
-          {/if}
-          {#if month.showMonth}
-            <div class="absolute inset-e-2 rounded-full size-2 bg-gray-500"></div>
-          {/if}
-        </div>
-      {/if}
-    {/each}
-    <div class="w-full absolute h-2 bg-red-400" style={`top: ${timeline.scrollbarY}px;`}></div>
-  </div>
-
   <section
     id="grid"
     bind:clientWidth={viewport.width}

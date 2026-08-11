@@ -27,13 +27,13 @@
           headerHeight: 50,
           segmentMargin: 16,
           boxSpacing: 4,
-          loadWithinMargin: 300,
+          loadWithinMargin: 500,
         },
   );
 
   const { openedAssetId } = $props();
 
-  const timeline: ITimelineGrid = $state(createTimeline(layoutConfig, onAjustTimelineScrollY));
+  const timeline: ITimelineGrid = $state(createTimeline(layoutConfig));
   const inSelectionMode = $derived(timeline.numAssetsSelected > 0);
   let timelineScrollWrapper: HTMLElement | null = $state(null);
 
@@ -100,7 +100,12 @@
 </script>
 
 {#snippet timelineGrid()}
-  <TimelineGrid {timeline} {openedAssetId} bind:scrollWrapper={timelineScrollWrapper} />
+  <div class="h-screen flex flex-col">
+    <div class="w-full flex-none h-32"></div>
+    <div class="relative w-full flex-1 min-h-1">
+      <TimelineGrid {timeline} {openedAssetId} bind:scrollWrapper={timelineScrollWrapper} />
+    </div>
+  </div>
 {/snippet}
 
 {#snippet timelineSelectAppBar()}

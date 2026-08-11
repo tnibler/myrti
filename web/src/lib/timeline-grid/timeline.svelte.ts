@@ -126,15 +126,15 @@ type TimelineState =
       previousSections: TimelineSection[];
     };
 
-export function createTimeline(
-  opts: TimelineOptions,
-  adjustScrollTop: (params: {
-    what: 'scrollBy' | 'scrollTo';
-    scroll: number;
-    ifScrollTopGt: number;
-    behavior: 'smooth' | 'instant';
-  }) => void,
-): ITimelineGrid {
+type ScrollCallback = (params: {
+  what: 'scrollBy';
+  scroll: number;
+  ifScrollTopGt: number;
+  behavior: 'smooth' | 'instant';
+}) => void;
+
+export function createTimeline(opts: TimelineOptions): ITimelineGrid {
+  let adjustScrollTop: ScrollCallback | null = null;
   let isInitialized = false;
   let viewport: Viewport = { width: 0, height: 0 };
   let state: TimelineState = $state({ state: 'justLooking' } as TimelineState);
@@ -189,7 +189,6 @@ export function createTimeline(
       ),
     ),
   );
-  $inspect(sectionHeights, sectionTops);
 
   const timelineHeight: number = $derived(R.sum(sectionHeights));
   const addToGroupClickAreas: AddToGroupClickArea[] = $derived(
@@ -246,6 +245,13 @@ export function createTimeline(
   let scrollbarMonthHeights: { year: number; month: number; height: number; sectionIdx: number }[] =
     [];
   let scrollbarY = $state(0);
+  let scrollbarYMax = $derived(
+    R.pipe(
+      scrollbarMonths,
+      R.map((m) => m.height),
+      R.sum(),
+    ),
+  );
 
   function computeScrollbarMonths() {
     scrollbarMonthHeights = sectionMonthSlices.flatMap((sectionMonths, sectionIdx) => {
@@ -296,18 +302,18 @@ export function createTimeline(
         showMonth = true;
         lastMarkerTop = cumulHeight;
       }
-      if (showYear || showMonth || monthMarkers.length === 0) {
-        monthMarkers.push({
-          year,
-          month,
-          height,
-          showYear,
-          showMonth,
-          top: cumulHeight,
-        });
-      } else {
-        monthMarkers[monthMarkers.length - 1].height += height;
-      }
+      // if (showYear || showMonth || monthMarkers.length === 0) {
+      monthMarkers.push({
+        year,
+        month,
+        height,
+        showYear,
+        showMonth,
+        top: cumulHeight,
+      });
+      // } else {
+      //   monthMarkers[monthMarkers.length - 1].height += height;
+      // }
       cumulHeight += height;
     }
     scrollbarMonths = monthMarkers;
@@ -427,8 +433,10 @@ export function createTimeline(
     for (let i = firstLoadedSection; i <= lastLoadedSection; i += 1) {
       if (sections[i].blocks === null) {
         sectionLoads.push(loadSection(i));
+        sections[i].isLoading = true;
       }
     }
+    sectionsPublic = sections;
     if (sectionLoads.length > 0) {
       const now = Date.now();
       lastScrollTime = now;
@@ -510,6 +518,7 @@ export function createTimeline(
     if (section.blocks && reload === undefined) {
       return;
     }
+
     const sectionId = section.data.id;
     const segments = await requestSegments(sectionId);
 
@@ -882,11 +891,10 @@ export function createTimeline(
     }
     if (totalDelta !== 0) {
       sections[sectionIdx].heightEstimate += totalDelta;
-      console.log(sectionIdx, totalDelta, section.heightEstimate);
     }
     sectionsPublic = sections;
     if (scrollAdjustDelta !== 0) {
-      adjustScrollTop({
+      adjustScrollTop?.({
         what: 'scrollBy',
         scroll: scrollAdjustDelta,
         ifScrollTopGt: sectionTops[sectionIdx],
@@ -1522,6 +1530,12 @@ export function createTimeline(
     isItemSelected,
     clearSelection,
     hideSelectedAssets,
+    get monthHeights() {
+      return monthHeights;
+    },
+    monthForScrollY: (scrollY: number) => {
+      return monthHeights.find((m) => scrollY * timelineHeight < m.top + m.height);
+    },
     get sectionTops() {
       return sectionTops;
     },
@@ -1530,6 +1544,12 @@ export function createTimeline(
     },
     get scrollbarY() {
       return scrollbarY;
+    },
+    get scrollbarYMax() {
+      return scrollbarYMax;
+    },
+    set adjustScrollTop(cb: ScrollCallback | null) {
+      adjustScrollTop = cb;
     },
     rotateAssetCW: async (assetId: AssetId) => {
       const asset = assetsById.get(assetId);

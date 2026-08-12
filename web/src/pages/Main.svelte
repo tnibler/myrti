@@ -76,21 +76,6 @@
     timeline.clearSelection();
   }
 
-  function onAjustTimelineScrollY(params: {
-    what: 'scrollTo' | 'scrollBy';
-    scroll: number;
-    ifScrollTopGt: number;
-    behavior: 'smooth' | 'instant';
-  }) {
-    if (timelineScrollWrapper && timelineScrollWrapper.scrollTop > params.ifScrollTopGt) {
-      if (params.what === 'scrollBy') {
-        timelineScrollWrapper?.scrollBy({ top: params.scroll, behavior: params.behavior });
-      } else if (params.what === 'scrollTo') {
-        timelineScrollWrapper?.scrollTo({ top: params.scroll, behavior: params.behavior });
-      }
-    }
-  }
-
   async function onHideAssetsClicked() {
     await timeline.hideSelectedAssets();
     timeline.clearSelection();
@@ -101,8 +86,19 @@
 
 {#snippet timelineGrid()}
   <div class="h-screen flex flex-col">
-    <div class="w-full flex-none h-32"></div>
-    <div class="relative w-full flex-1 min-h-1">
+    <div class="w-full flex-none h-16 relative py-2 px-4">
+      <div class="h-full">
+        <form>
+          <input
+            class="w-full rounded-xl bg-gray-200 text-xl py-2 px-2"
+            type="text"
+            role="combobox"
+            placeholder="search"
+          />
+        </form>
+      </div>
+    </div>
+    <div class="relative w-full flex-1 h-full">
       <TimelineGrid {timeline} {openedAssetId} bind:scrollWrapper={timelineScrollWrapper} />
     </div>
   </div>

@@ -411,7 +411,7 @@
         (m) => m.year === wantToScrollTo.month.year && m.month === wantToScrollTo.month.month,
       );
       const progressInMonth = wantToScrollTo.progressInMonth;
-      const scrollToY = month.top + progressInMonth * month.height;
+      const scrollToY = month.topInTimeline + progressInMonth * month.heightInTimeline;
 
       scrollToProgrammatic(scrollToY);
     }
@@ -426,12 +426,11 @@
     if (!scrollbarEl) {
       return;
     }
-    const wasDragging = isDragging;
     const rect = scrollbarEl.getBoundingClientRect();
     const relativeY = e.clientY - rect.top;
+    const month = timeline.monthForScrollY(relativeY / rect.height);
     if (scrubHover) {
       hoverY = relativeY;
-      const month = timeline.monthForScrollY(relativeY / rect.height);
       if (month) {
         scrollHoverLabel = dayjs()
           .utc()
@@ -447,7 +446,6 @@
       return;
     }
 
-    const month = timeline.monthForScrollY(relativeY / rect.height);
     if (!month) {
       console.error('monthForScrollY not found');
       return;
@@ -461,7 +459,7 @@
     const progressInMonth = (relativeY - scrollbarMonth.top) / scrollbarMonth.height;
 
     if (isDragging) {
-      const scrollToY = month.top + progressInMonth * month.height;
+      const scrollToY = month.topInTimeline + progressInMonth * month.heightInTimeline;
       scrollToProgrammatic(scrollToY);
       wantToScrollTo = null;
 

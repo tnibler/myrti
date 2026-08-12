@@ -133,6 +133,16 @@ type ScrollCallback = (params: {
   behavior: 'smooth' | 'instant';
 }) => void;
 
+type MonthHeight = {
+  year: number;
+  /** 1 based index */
+  month: number;
+  heightInScrollbar: number;
+  topInScrollbar: number;
+  heightInTimeline: number;
+  topInTimeline: number;
+};
+
 export function createTimeline(opts: TimelineOptions): ITimelineGrid {
   let adjustScrollTop: ScrollCallback | null = null;
   let isInitialized = false;
@@ -341,44 +351,60 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     computeScrollbarMonths();
   }
 
-  const monthHeights: { year: number; month: number; top: number; height: number }[] = $derived.by(
-    () => {
-      const months: { year: number; month: number; top: number; height: number }[] = [];
-      const pushOrAdd = (year: number, month: number, height: number) => {
-        if (months.length > 0) {
-          const last = months[months.length - 1];
-          if (last.year === year && last.month === month) {
-            last.height += height;
-            return;
-          }
-        }
-        months.push({ year, month, height, top: 0 });
-      };
-      for (let sectionIdx = 0; sectionIdx < sectionsPublic.length; sectionIdx += 1) {
-        const section = sectionsPublic[sectionIdx];
-        if (section.blocks !== null) {
-          for (const block of section.blocks) {
-            const date = block.sortDate.tz('utc');
-            pushOrAdd(date.year(), date.month() + 1, block.fullHeight); // dayjs months are 0 indexed
-          }
-        } else {
-          for (const { year, month, totalNormalizedWidth } of sectionMonthSlices[sectionIdx]) {
-            const height = Math.max(
-              opts.targetRowHeight,
-              estimateHeight(totalNormalizedWidth, viewport.width, opts.targetRowHeight),
-            );
-            pushOrAdd(year, month, height);
-          }
+  const monthHeights: MonthHeight[] = $derived.by(() => {
+    const months: MonthHeight[] = [];
+    const pushOrAdd = (year: number, month: number, heightInTimeline: number) => {
+      if (months.length > 0) {
+        const last = months[months.length - 1];
+        if (last.year === year && last.month === month) {
+          last.heightInTimeline += heightInTimeline;
+          return;
         }
       }
-      let top = 0;
-      for (const month of months) {
-        month.top = top;
-        top += month.height;
+      months.push({
+        year,
+        month,
+        heightInTimeline,
+        topInTimeline: 0,
+        heightInScrollbar: 0,
+        topInScrollbar: 0,
+      });
+    };
+    for (let sectionIdx = 0; sectionIdx < sectionsPublic.length; sectionIdx += 1) {
+      const section = sectionsPublic[sectionIdx];
+      if (section.blocks !== null) {
+        for (const block of section.blocks) {
+          const date = block.sortDate.tz('utc');
+          pushOrAdd(date.year(), date.month() + 1, block.fullHeight); // dayjs months are 0 indexed
+        }
+      } else {
+        for (const { year, month, totalNormalizedWidth } of sectionMonthSlices[sectionIdx]) {
+          const height = Math.max(
+            opts.targetRowHeight,
+            estimateHeight(totalNormalizedWidth, viewport.width, opts.targetRowHeight),
+          );
+          pushOrAdd(year, month, height);
+        }
       }
-      return months;
-    },
-  );
+    }
+    let top = 0;
+    for (const month of months) {
+      month.topInTimeline = top;
+      top += month.heightInTimeline;
+    }
+
+    console.assert(months.length === scrollbarMonths.length);
+    let scrollBarTop = 0;
+    for (let i = 0; i < months.length; i++) {
+      const m = months[i];
+      const sm = scrollbarMonths[i];
+      console.assert(m.year === sm.year && m.month === sm.month);
+      m.topInScrollbar = scrollBarTop;
+      m.heightInScrollbar = sm.height;
+      scrollBarTop += sm.height;
+    }
+    return months;
+  });
 
   function resize(newViewport: Viewport, scrollTop: number) {
     if (viewport === newViewport) {
@@ -465,10 +491,13 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
   let lastScrollTime: number | null = null;
   async function onScrollChange(scrollTop: number) {
     const firstVisibleMonth = monthHeights.find(
-      (m) => m.top < scrollTop + viewport.height && scrollTop < m.top + m.height,
+      (m) =>
+        m.topInTimeline < scrollTop + viewport.height &&
+        scrollTop < m.topInTimeline + m.heightInTimeline,
     );
     if (firstVisibleMonth) {
-      const firstMonthProgress = (scrollTop - firstVisibleMonth.top) / firstVisibleMonth.height;
+      const firstMonthProgress =
+        (scrollTop - firstVisibleMonth.topInTimeline) / firstVisibleMonth.heightInTimeline;
       console.assert(
         -1e-3 < firstMonthProgress && firstMonthProgress < 1 + 1e-3,
         firstMonthProgress,
@@ -1534,7 +1563,9 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       return monthHeights;
     },
     monthForScrollY: (scrollY: number) => {
-      return monthHeights.find((m) => scrollY * timelineHeight < m.top + m.height);
+      return monthHeights.find(
+        (m) => scrollY * timelineHeight < m.topInTimeline + m.heightInTimeline,
+      );
     },
     get sectionTops() {
       return sectionTops;
@@ -1563,7 +1594,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     },
     mirrorAsset: async (assetId: AssetId, axis: 'horizontal' | 'vertical') => {
       const asset = assetsById.get(assetId);
-      const rotation = asset.repFile.rotationCorrecblock.sortDate;
+      const rotation = asset.repFile.rotationCorrection;
       const mirror = asset.repFile.mirrorCorrection;
       const {
         newMirror,

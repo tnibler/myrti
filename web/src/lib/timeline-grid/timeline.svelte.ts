@@ -523,6 +523,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
   }
 
   function layoutSection(sectionIndex: number) {
+    console.log('layoutSection', sectionIndex)
     const section = sections[sectionIndex];
     const segments = section.segments;
     if (segments === null) {
@@ -543,6 +544,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
   }
 
   async function loadSection(sectionIndex: number, reload: 'reload' | undefined = undefined) {
+    console.log('loadSection', sectionIndex)
     const section = sections[sectionIndex];
     if (section.blocks && reload === undefined) {
       return;
@@ -1121,7 +1123,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     // TODO: all kinds of broken this scroll thing
     // const scrollToItem = section.blocks.find((block) => block.blockType === 'createGroup');
     // if (scrollToItem) {
-    //   adjustScrollTop({
+    //   adjustScrollTop?.({
     //     what: 'scrollTo',
     //     scroll: Math.max(0, sectionTops[insertInSectionIndex] + scrollToItem.top),
     //     ifScrollTopGt: 0,

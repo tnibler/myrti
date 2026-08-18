@@ -79,7 +79,10 @@
 
 <a
   {href}
-  class={'absolute group select-none ' + className + ' ' + (isHoverable ? '' : 'cursor-default')}
+  class={'absolute group select-none outline-none' +
+    className +
+    ' ' +
+    (isHoverable ? '' : 'cursor-default')}
   style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
   onclick={(e) => {
     e.preventDefault();

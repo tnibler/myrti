@@ -111,8 +111,17 @@
     }, 200);
   });
 
-  function handleSectionIntersect() {
-    timeline.onSectionIntersectChanged(scrollWrapper.scrollTop);
+  let visibleSectionEls = new Set();
+  function handleSectionIntersect(entries) {
+    let newVisible = new Set(entries.map((e) => e.target.id));
+    if (
+      newVisible.size !== visibleSectionEls.size ||
+      newVisible.size !== newVisible.union(visibleSectionEls).size
+    ) {
+      timeline.onSectionIntersectChanged(scrollWrapper.scrollTop);
+    }
+    console.log('intersect changed scrollTop', scrollWrapper.scrollTop, entries);
+    visibleSectionEls = newVisible;
   }
 
   const intersectionObserver = new IntersectionObserver(handleSectionIntersect, {
@@ -298,6 +307,7 @@
   $effect(() => {
     timeline.sections;
     if (gridAnimationsEnabled) {
+      console.log(imageEls.size);
       for (const [id, el] of imageEls) {
         const before = previousRects.get(id);
         if (!before) {
@@ -329,7 +339,7 @@
         },
         { translate: '0px' },
       ],
-      { duration: 250, easing: 'ease' },
+      { duration: 800, easing: 'ease', fill: 'both' },
     );
     anim.onfinish = () => {
       // anim.commitStyles();
@@ -346,9 +356,9 @@
     scrollTop = scrollWrapper.scrollTop;
   }
 
-  function scrollToProgrammatic(y: number) {
+  function scrollToProgrammatic(top: number, opts: ScrollToOptions = {}) {
     isUserScroll = false;
-    scrollWrapper.scrollTo(0, y);
+    scrollWrapper.scrollTo({ ...opts, top });
     requestAnimationFrame(() => {
       isUserScroll = true;
     });
@@ -363,13 +373,20 @@
   }
 
   function onAjustTimelineScroll(params: {
-    what: 'scrollBy';
+    what: 'scrollBy' | 'scrollTo';
     scroll: number;
     ifScrollTopGt: number;
     behavior: 'smooth' | 'instant';
   }) {
-    if (scrollWrapper && scrollWrapper.scrollTop > params.ifScrollTopGt) {
+    console.log(params);
+    if (!scrollWrapper || scrollWrapper.scrollTop < params.ifScrollTopGt) {
+      return;
+    }
+    if (params.what === 'scrollBy') {
       scrollByProgrammatic({ top: params.scroll, behavior: params.behavior });
+    } else if (params.what === 'scrollTo') {
+      scrollToProgrammatic(params.scroll, { top: params.scroll, behavior: params.behavior });
+      console.log(params);
     }
   }
   onMount(() => {
@@ -473,180 +490,182 @@
 
 <svelte:window onmousemove={onMouseEvent} onmousedown={onMouseEvent} onmouseup={onMouseEvent} />
 
-<div
-  bind:this={scrollbarEl}
-  role="scrollbar"
-  aria-valuenow={timeline.scrollbarY}
-  aria-valuemin="0"
-  aria-valuemax={timeline.scrollbarYMax}
-  tabindex="0"
-  class="absolute top-0 right-4 h-full w-16 bg-red-100 inset-e-3 z-1 select-none hover:cursor-row-resize"
-  onmouseenter={() => {
-    scrubHover = true;
-  }}
-  onmouseleave={() => {
-    scrubHover = false;
-  }}
-  onwheel={(e) => {
-    scrollWrapper.scrollTop += e.deltaY;
-  }}
->
-  {#each timeline.scrollbarMonths as month (`${month.year}-${month.month}`)}
-    {#if month.showYear || month.showMonth}
-      <div class="absolute w-full" style={`height: ${month.height}px; top: ${month.top}px;`}>
-        {#if month.showYear}
-          <div class="absolute h-full inset-e-6">
-            {month.year}
-          </div>
-        {/if}
-        {#if month.showMonth}
-          <div class="absolute inset-e-2 rounded-full size-2 bg-gray-500"></div>
-        {/if}
-      </div>
-    {/if}
-  {/each}
-  {#if scrubHover}
-    <div
-      class="absolute inset-e-0 border-t-1 min-w-32 pointer-events-none p-1 text-lg opacity-80 bg-gray-200"
-      style:top="{hoverY - 2}px"
-    >
-      {scrollHoverLabel}
-    </div>
-  {/if}
-  <div class="w-full absolute h-2 bg-red-400" style={`top: ${timeline.scrollbarY}px;`}></div>
-</div>
-
-<div
-  class="scroll-wrapper"
-  bind:this={scrollWrapper}
-  bind:clientHeight={viewport.height}
-  onscroll={onScroll}
->
-  <section
-    id="grid"
-    bind:clientWidth={viewport.width}
-    style:height={timeline.timelineHeight + 'px'}
+<div class=" flex flex-row h-full max-h-full">
+  <div
+    class="relative flex-1 overflow-y-scroll"
+    bind:this={scrollWrapper}
+    bind:clientHeight={viewport.height}
+    onscroll={onScroll}
   >
-    <!-- eslint-disable-next-line svelte/require-each-key -->
-    {#each visibleSections as section (section.sectionIdx)}
-      <div
-        class="w-full absolute contain-layout"
-        style:top="{timeline.sectionTops[section.sectionIdx]}px"
-      >
-        <!-- eslint-disable-next-line svelte/require-each-key -->
-        {#each section.blocks as block, blockIdx (block.sortDate)}
-          {@const blockTop = block.top + timeline.sectionTops[section.sectionIdx]}
-          <div
-            class="relative w-full"
-            data-section={section.sectionIdx}
-            data-block={blockIdx}
-            {@attach registerBlockResize}
-          >
-            {#if block.blockType === 'default'}
-              {@const segmentMargin = timeline.options.segmentMargin}
-              {#if block.titleMajor !== null}
-                <!-- NOTE: padding, not margins so clientHeight measures the correct thing -->
-                <h2
-                  {@attach registerAction}
-                  class="text-3xl pt-3"
-                  id={block.titleMajor.key}
-                  in:fade
+    <section
+      id="grid"
+      bind:clientWidth={viewport.width}
+      style:height={timeline.timelineHeight + 'px'}
+    >
+      <!-- eslint-disable-next-line svelte/require-each-key -->
+      {#each visibleSections as section (section.sectionIdx)}
+        <div
+          class="w-full absolute contain-layout"
+          style:top="{timeline.sectionTops[section.sectionIdx]}px"
+        >
+          <!-- eslint-disable-next-line svelte/require-each-key -->
+          {#each section.blocks as block, blockIdx (block.sortDate)}
+            {@const blockTop = block.top + timeline.sectionTops[section.sectionIdx]}
+            <div
+              class="relative w-full"
+              data-section={section.sectionIdx}
+              data-block={blockIdx}
+              {@attach registerBlockResize}
+            >
+              {#if block.blockType === 'default'}
+                {@const segmentMargin = timeline.options.segmentMargin}
+                {#if block.titleMajor !== null}
+                  <!-- NOTE: padding, not margins so clientHeight measures the correct thing -->
+                  <h2
+                    {@attach registerAction}
+                    class="text-3xl pt-3"
+                    id={block.titleMajor.key}
+                    in:fade
+                  >
+                    {block.titleMajor.text}
+                  </h2>
+                {/if}
+                <div
+                  class="grid"
+                  style:grid-template-columns={block.titlesMinor
+                    .map(
+                      (title, idx) =>
+                        `${title.width + (idx === block.titlesMinor.length - 1 ? 0 : segmentMargin)}fr`,
+                    )
+                    .join(' ')}
+                  style:width="{Math.max(...block.gridItems.map((it) => it.left + it.width))}px"
                 >
-                  {block.titleMajor.text}
-                </h2>
+                  {#each block.titlesMinor as titleMinor}
+                    <h3 {@attach registerAction} id={titleMinor.key} class="text-xl py-1" in:fade>
+                      {titleMinor.text}
+                    </h3>
+                  {/each}
+                </div>
+              {:else if block.blockType === 'createGroup'}
+                <CreateGroupInput
+                  onSubmit={(title) => {
+                    timeline.confirmCreateGroup(title);
+                  }}
+                  onCancel={() => timeline.cancelCreateGroup()}
+                />
               {/if}
-              <div
-                class="grid"
-                style:grid-template-columns={block.titlesMinor
-                  .map(
-                    (title, idx) =>
-                      `${title.width + (idx === block.titlesMinor.length - 1 ? 0 : segmentMargin)}fr`,
-                  )
-                  .join(' ')}
-                style:width="{Math.max(...block.gridItems.map((it) => it.left + it.width))}px"
-              >
-                {#each block.titlesMinor as titleMinor}
-                  <h3 {@attach registerAction} id={titleMinor.key} class="text-xl py-1" in:fade>
-                    {titleMinor.text}
-                  </h3>
-                {/each}
-              </div>
-            {:else if block.blockType === 'createGroup'}
-              <CreateGroupInput
-                onSubmit={(title) => {
-                  timeline.confirmCreateGroup(title);
-                }}
-                onCancel={() => timeline.cancelCreateGroup()}
-              />
-            {/if}
 
-            <div style="height: {block.gridHeight}px;" class="w-full relative contain-strict">
-              {#if blockTop < scrollTop + viewport.height + 1000 && scrollTop - 1000 < blockTop + block.fullHeight}
-                <!-- {#if true} -->
-                {#each block.gridItems as item (item.key)}
-                  {#if item.type === 'asset'}
-                    <GridTile
-                      imgElAction={registerAction}
-                      href="/timeline/{item.assetId}"
-                      className={gridItemTransitionClass}
-                      asset={timeline.getAsset(item.assetId)}
-                      box={item}
-                      showStackIcon={false}
-                      onAssetClick={() => {
-                        onAssetClick(item.timelineItem);
-                      }}
-                      onSelectToggled={() => {
-                        toggleItemSelected(item.timelineItem);
-                      }}
-                      imgElId={`thumb-${item.assetId}`}
-                      selectState={getSelectState(item.timelineItem)}
-                    />
-                  {:else if item.type === 'photoStack'}
-                    {@const coverAsset = timeline.getAsset(
-                      timeline.getAssetSeries(item.seriesId).assetIds[item.coverIndex],
-                    )}
-                    <GridTile
-                      imgElAction={registerAction}
-                      className={gridItemTransitionClass}
-                      asset={coverAsset}
-                      box={item}
-                      showStackIcon={true}
-                      onAssetClick={() => {
-                        onAssetClick(item.timelineItem);
-                      }}
-                      onSelectToggled={() => {
-                        toggleItemSelected(item.timelineItem);
-                      }}
-                      imgElId={`thumb-${coverAsset.assetId}`}
-                      selectState={getSelectState(item.timelineItem)}
-                    />
-                  {/if}
-                {/each}
-              {/if}
+              <div style="height: {block.gridHeight}px;" class="w-full relative contain-strict">
+                {#if blockTop < scrollTop + viewport.height + 1000 && scrollTop - 1000 < blockTop + block.fullHeight}
+                  <!-- {#if true} -->
+                  {#each block.gridItems as item (item.key)}
+                    {#if item.type === 'asset'}
+                      <GridTile
+                        imgElAction={registerAction}
+                        href="/timeline/{item.assetId}"
+                        className={gridItemTransitionClass}
+                        asset={timeline.getAsset(item.assetId)}
+                        box={item}
+                        showStackIcon={false}
+                        onAssetClick={() => {
+                          onAssetClick(item.timelineItem);
+                        }}
+                        onSelectToggled={() => {
+                          toggleItemSelected(item.timelineItem);
+                        }}
+                        imgElId={`thumb-${item.assetId}`}
+                        selectState={getSelectState(item.timelineItem)}
+                      />
+                    {:else if item.type === 'photoStack'}
+                      {@const coverAsset = timeline.getAsset(
+                        timeline.getAssetSeries(item.seriesId).assetIds[item.coverIndex],
+                      )}
+                      <GridTile
+                        imgElAction={registerAction}
+                        className={gridItemTransitionClass}
+                        asset={coverAsset}
+                        box={item}
+                        showStackIcon={true}
+                        onAssetClick={() => {
+                          onAssetClick(item.timelineItem);
+                        }}
+                        onSelectToggled={() => {
+                          toggleItemSelected(item.timelineItem);
+                        }}
+                        imgElId={`thumb-${coverAsset.assetId}`}
+                        selectState={getSelectState(item.timelineItem)}
+                      />
+                    {/if}
+                  {/each}
+                {/if}
+              </div>
             </div>
-          </div>
-        {/each}
-      </div>
+          {/each}
+        </div>
+      {/each}
+      <!-- {#each clickAreaRects as area (area.groupId)} -->
+      <!--   <button -->
+      <!--     class="absolute z-20 hover:bg-black/10 border-black/20 hover:border-black/40 border-2 rounded-lg" -->
+      <!--     style="top: {area.top}px;  height: {area.height}px; left: {area.left}px; width: {area.width}px;" -->
+      <!--     onclick={() => { -->
+      <!--       timeline.addSelectedToExistingGroup(area.groupId); -->
+      <!--     }} -->
+      <!--   ></button> -->
+      <!-- {/each} -->
+    </section>
+    {#each timeline.sections as section, idx}
+      <div
+        {@attach registerIntersectObserver}
+        id="section-{idx}"
+        class="absolute w-full max-w-full invisible"
+        style:top={timeline.sectionTops[idx] - timeline.options.loadWithinMargin + 'px'}
+        style:height={timeline.sectionHeights[idx] + timeline.options.loadWithinMargin * 2 + 'px'}
+      ></div>
     {/each}
-    {#each clickAreaRects as area (area.groupId)}
-      <button
-        class="absolute z-20 hover:bg-black/10 border-black/20 hover:border-black/40 border-2 rounded-lg"
-        style="top: {area.top}px;  height: {area.height}px; left: {area.left}px; width: {area.width}px;"
-        onclick={() => {
-          timeline.addSelectedToExistingGroup(area.groupId);
-        }}
-      ></button>
-    {/each}
-  </section>
-  {#each timeline.sections as section, idx}
-    <div
-      {@attach registerIntersectObserver}
-      id="section-{idx}"
-      class="absolute w-full max-w-full invisible"
-      style:top={timeline.sectionTops[idx] - timeline.options.loadWithinMargin + 'px'}
-      style:height={timeline.sectionHeights[idx] + timeline.options.loadWithinMargin * 2 + 'px'}
-    ></div>
-  {/each}
+  </div>
+
+  <!-- <div -->
+  <!--   bind:this={scrollbarEl} -->
+  <!--   role="scrollbar" -->
+  <!--   aria-valuenow={timeline.scrollbarY} -->
+  <!--   aria-valuemin="0" -->
+  <!--   aria-valuemax={timeline.scrollbarYMax} -->
+  <!--   tabindex="0" -->
+  <!--   class="relative flex-none h-full max-h-full w-16 max-w-16 bg-red-100 inset-e-0 z-1 select-none hover:cursor-row-resize" -->
+  <!--   onmouseenter={() => { -->
+  <!--     scrubHover = true; -->
+  <!--   }} -->
+  <!--   onmouseleave={() => { -->
+  <!--     scrubHover = false; -->
+  <!--   }} -->
+  <!--   onwheel={(e) => { -->
+  <!--     scrollWrapper.scrollTop += e.deltaY; -->
+  <!--   }} -->
+  <!-- > -->
+  <!--   {#each timeline.scrollbarMonths as month (`${month.year}-${month.month}`)} -->
+  <!--     {#if month.showYear || month.showMonth} -->
+  <!--       <div class="absolute w-full" style={`height: ${month.height}px; top: ${month.top}px;`}> -->
+  <!--         {#if month.showYear} -->
+  <!--           <div class="absolute h-full inset-e-6"> -->
+  <!--             {month.year} -->
+  <!--           </div> -->
+  <!--         {/if} -->
+  <!--         {#if month.showMonth} -->
+  <!--           <div class="absolute inset-e-2 rounded-full size-2 bg-gray-500"></div> -->
+  <!--         {/if} -->
+  <!--       </div> -->
+  <!--     {/if} -->
+  <!--   {/each} -->
+  <!--   {#if scrubHover} -->
+  <!--     <div -->
+  <!--       class="absolute inset-e-0 border-t-1 min-w-32 pointer-events-none p-1 text-lg opacity-80 bg-gray-200" -->
+  <!--       style:top="{hoverY - 2}px" -->
+  <!--     > -->
+  <!--       {scrollHoverLabel} -->
+  <!--     </div> -->
+  <!--   {/if} -->
+  <!--   <div class="w-full absolute h-2 bg-red-400" style={`top: ${timeline.scrollbarY}px;`}></div> -->
+  <!-- </div> -->
 </div>
 
 <Gallery
@@ -680,14 +699,5 @@
     transition-property: top, left;
     transition-timing-function: ease-in-out;
     transition-duration: 180ms;
-  }
-
-  .scroll-wrapper {
-    padding: 0px;
-    height: 100%;
-    width: 100%;
-    max-width: 100%;
-    position: relative;
-    overflow-y: scroll;
   }
 </style>

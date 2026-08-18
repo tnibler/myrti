@@ -23,7 +23,7 @@
           loadWithinMargin: 300,
         }
       : {
-          targetRowHeight: 160,
+          targetRowHeight: 200,
           headerHeight: 50,
           segmentMargin: 16,
           boxSpacing: 4,
@@ -85,7 +85,7 @@
 </script>
 
 {#snippet timelineGrid()}
-  <div class="h-screen flex flex-col">
+  <div class="h-full max-h-full flex flex-col">
     <div class="w-full flex-none h-16 relative py-2 px-4">
       <div class="h-full">
         <form>
@@ -98,7 +98,7 @@
         </form>
       </div>
     </div>
-    <div class="relative w-full flex-1 h-full">
+    <div class="w-full flex-1 max-h-full">
       <TimelineGrid {timeline} {openedAssetId} bind:scrollWrapper={timelineScrollWrapper} />
     </div>
   </div>

@@ -42,7 +42,7 @@
   // TODO: disable button if title input is empty
 </script>
 
-<div class=" w-full flex-row">
+<div class=" w-full flex flex-row">
   <input use:inputKeyBinds placeholder={intl('group_title_placeholder')} bind:this={input} />
   <Button
     text={intl('ok')}

@@ -26,7 +26,7 @@
     openedAssetId: string | null;
   };
 
-  let viewport = $state({ width: 0, height: 0 });
+  let viewport = $state({ width: 0, height: 0, scrollbarHeight: 0 });
   let gallery: Gallery;
 
   let { timeline, scrollWrapper = $bindable(), openedAssetId }: TimelineGridProps = $props();
@@ -120,7 +120,6 @@
     ) {
       timeline.onSectionIntersectChanged(scrollWrapper.scrollTop);
     }
-    console.log('intersect changed scrollTop', scrollWrapper.scrollTop, entries);
     visibleSectionEls = newVisible;
   }
 
@@ -307,7 +306,6 @@
   $effect(() => {
     timeline.sections;
     if (gridAnimationsEnabled) {
-      console.log(imageEls.size);
       for (const [id, el] of imageEls) {
         const before = previousRects.get(id);
         if (!before) {
@@ -339,7 +337,7 @@
         },
         { translate: '0px' },
       ],
-      { duration: 800, easing: 'ease', fill: 'both' },
+      { duration: 200, easing: 'ease', fill: 'forwards' },
     );
     anim.onfinish = () => {
       // anim.commitStyles();
@@ -348,7 +346,7 @@
 
   let isUserScroll = true;
   let scrollTop = $state(0);
-  function onScroll(e: UIEvent) {
+  function onScroll() {
     if (isUserScroll) {
       wantToScrollTo = null;
     }
@@ -378,15 +376,16 @@
     ifScrollTopGt: number;
     behavior: 'smooth' | 'instant';
   }) {
-    console.log(params);
     if (!scrollWrapper || scrollWrapper.scrollTop < params.ifScrollTopGt) {
       return;
     }
     if (params.what === 'scrollBy') {
       scrollByProgrammatic({ top: params.scroll, behavior: params.behavior });
     } else if (params.what === 'scrollTo') {
-      scrollToProgrammatic(params.scroll, { top: params.scroll, behavior: params.behavior });
-      console.log(params);
+      setTimeout(() => {
+        // FIXME:
+        scrollToProgrammatic(params.scroll, { top: params.scroll, behavior: params.behavior });
+      }, 50);
     }
   }
   onMount(() => {
@@ -413,10 +412,8 @@
 
   function registerBlockResize(node: HTMLElement) {
     observer.observe(node);
-    return {
-      destroy() {
-        observer.unobserve(node);
-      },
+    return () => {
+      observer.unobserve(node);
     };
   }
 
@@ -490,9 +487,9 @@
 
 <svelte:window onmousemove={onMouseEvent} onmousedown={onMouseEvent} onmouseup={onMouseEvent} />
 
-<div class=" flex flex-row h-full max-h-full">
+<div class="relative flex flex-row h-full max-h-full">
   <div
-    class="relative flex-1 overflow-y-scroll"
+    class="relative flex-1 overflow-y-scroll scrollbar-none"
     bind:this={scrollWrapper}
     bind:clientHeight={viewport.height}
     onscroll={onScroll}
@@ -512,7 +509,7 @@
           {#each section.blocks as block, blockIdx (block.sortDate)}
             {@const blockTop = block.top + timeline.sectionTops[section.sectionIdx]}
             <div
-              class="relative w-full"
+              class="relative w-full contain-layout"
               data-section={section.sectionIdx}
               data-block={blockIdx}
               {@attach registerBlockResize}
@@ -520,7 +517,8 @@
               {#if block.blockType === 'default'}
                 {@const segmentMargin = timeline.options.segmentMargin}
                 {#if block.titleMajor !== null}
-                  <!-- NOTE: padding, not margins so clientHeight measures the correct thing -->
+                  <!-- NOTE: padding, not margins so clientHeight measures the correct thing
+                -->
                   <h2
                     {@attach registerAction}
                     class="text-3xl pt-3"
@@ -555,15 +553,26 @@
                 />
               {/if}
 
-              <div style="height: {block.gridHeight}px;" class="w-full relative contain-strict">
+              <div style="height: {block.gridHeight}px;" class="w-full relative contain-layout">
                 {#if blockTop < scrollTop + viewport.height + 1000 && scrollTop - 1000 < blockTop + block.fullHeight}
-                  <!-- {#if true} -->
+                  {#if timeline.state === 'creatingTimelineGroup'}
+                    {#each block.groupClickAreas as area (area.groupId)}
+                      <button
+                        class="absolute z-30 -m-1 hover:bg-black/30 outline-black/30 hover:outline-black/50 outline-4 rounded-md"
+                        style="top: {area.top}px; left: {area.left}px; right: calc(100% - {area.left +
+                          area.width}px); bottom: calc(100% - {area.top + area.height}px);"
+                        onclick={() => {
+                          timeline.addSelectedToExistingGroup(area.groupId);
+                        }}
+                      ></button>
+                    {/each}
+                  {/if}
                   {#each block.gridItems as item (item.key)}
                     {#if item.type === 'asset'}
                       <GridTile
                         imgElAction={registerAction}
                         href="/timeline/{item.assetId}"
-                        className={gridItemTransitionClass}
+                        className={`${gridItemTransitionClass}`}
                         asset={timeline.getAsset(item.assetId)}
                         box={item}
                         showStackIcon={false}
@@ -603,15 +612,6 @@
           {/each}
         </div>
       {/each}
-      <!-- {#each clickAreaRects as area (area.groupId)} -->
-      <!--   <button -->
-      <!--     class="absolute z-20 hover:bg-black/10 border-black/20 hover:border-black/40 border-2 rounded-lg" -->
-      <!--     style="top: {area.top}px;  height: {area.height}px; left: {area.left}px; width: {area.width}px;" -->
-      <!--     onclick={() => { -->
-      <!--       timeline.addSelectedToExistingGroup(area.groupId); -->
-      <!--     }} -->
-      <!--   ></button> -->
-      <!-- {/each} -->
     </section>
     {#each timeline.sections as section, idx}
       <div
@@ -624,48 +624,49 @@
     {/each}
   </div>
 
-  <!-- <div -->
-  <!--   bind:this={scrollbarEl} -->
-  <!--   role="scrollbar" -->
-  <!--   aria-valuenow={timeline.scrollbarY} -->
-  <!--   aria-valuemin="0" -->
-  <!--   aria-valuemax={timeline.scrollbarYMax} -->
-  <!--   tabindex="0" -->
-  <!--   class="relative flex-none h-full max-h-full w-16 max-w-16 bg-red-100 inset-e-0 z-1 select-none hover:cursor-row-resize" -->
-  <!--   onmouseenter={() => { -->
-  <!--     scrubHover = true; -->
-  <!--   }} -->
-  <!--   onmouseleave={() => { -->
-  <!--     scrubHover = false; -->
-  <!--   }} -->
-  <!--   onwheel={(e) => { -->
-  <!--     scrollWrapper.scrollTop += e.deltaY; -->
-  <!--   }} -->
-  <!-- > -->
-  <!--   {#each timeline.scrollbarMonths as month (`${month.year}-${month.month}`)} -->
-  <!--     {#if month.showYear || month.showMonth} -->
-  <!--       <div class="absolute w-full" style={`height: ${month.height}px; top: ${month.top}px;`}> -->
-  <!--         {#if month.showYear} -->
-  <!--           <div class="absolute h-full inset-e-6"> -->
-  <!--             {month.year} -->
-  <!--           </div> -->
-  <!--         {/if} -->
-  <!--         {#if month.showMonth} -->
-  <!--           <div class="absolute inset-e-2 rounded-full size-2 bg-gray-500"></div> -->
-  <!--         {/if} -->
-  <!--       </div> -->
-  <!--     {/if} -->
-  <!--   {/each} -->
-  <!--   {#if scrubHover} -->
-  <!--     <div -->
-  <!--       class="absolute inset-e-0 border-t-1 min-w-32 pointer-events-none p-1 text-lg opacity-80 bg-gray-200" -->
-  <!--       style:top="{hoverY - 2}px" -->
-  <!--     > -->
-  <!--       {scrollHoverLabel} -->
-  <!--     </div> -->
-  <!--   {/if} -->
-  <!--   <div class="w-full absolute h-2 bg-red-400" style={`top: ${timeline.scrollbarY}px;`}></div> -->
-  <!-- </div> -->
+  <div
+    bind:this={scrollbarEl}
+    bind:clientHeight={viewport.scrollbarHeight}
+    role="scrollbar"
+    aria-valuenow={timeline.scrollbarY}
+    aria-valuemin="0"
+    aria-valuemax={timeline.scrollbarYMax}
+    tabindex="0"
+    class="relative flex-none min-h-0 max-h-[calc(100%-2*32px)] my-[32px] ml-2 w-14 inset-e-0 select-none hover:cursor-row-resize"
+    onmouseenter={() => {
+      scrubHover = true;
+    }}
+    onmouseleave={() => {
+      scrubHover = false;
+    }}
+    onwheel={(e) => {
+      scrollWrapper.scrollTop += e.deltaY;
+    }}
+  >
+    {#each timeline.scrollbarMonths as month (`${month.year}-${month.month}`)}
+      {#if month.showYear || month.showMonth}
+        <div class="absolute w-full" style={`height: ${month.height}px; top: ${month.top}px;`}>
+          {#if month.showYear}
+            <div class="absolute h-full inset-e-4">
+              {month.year}
+            </div>
+          {/if}
+          {#if month.showMonth}
+            <div class="absolute inset-e-2 rounded-full size-2 bg-gray-500"></div>
+          {/if}
+        </div>
+      {/if}
+    {/each}
+    {#if scrubHover}
+      <div
+        class="absolute inset-e-0 border-t-1 min-w-32 pointer-events-none p-1 text-lg opacity-80 bg-gray-200"
+        style:top="{hoverY - 2}px"
+      >
+        {scrollHoverLabel}
+      </div>
+    {/if}
+    <div class="w-full absolute h-1 bg-black" style={`top: ${timeline.scrollbarY}px;`}></div>
+  </div>
 </div>
 
 <Gallery
@@ -690,11 +691,6 @@
 />
 
 <style>
-  #grid {
-    position: relative;
-    contain: layout;
-  }
-
   :global(.timeline-item-transition) {
     transition-property: top, left;
     transition-timing-function: ease-in-out;

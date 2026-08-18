@@ -214,6 +214,7 @@ export function layoutSegments(
     } else if (segments.length === 1 && segments[0].segment.type === 'group') {
       // segment with only 1 group gets a big title
       const groupSegment = segments[0].segment;
+      const lastItem = gridItems[gridItems.length - 1];
       blocks.push({
         blockType: 'default',
         titleMajor: {
@@ -229,6 +230,15 @@ export function layoutSegments(
         gridHeight,
         fullHeight: gridHeight,
         sortDate: dayjs(groupSegment.sortDate),
+        groupClickAreas: [
+          {
+            groupId: groupSegment.groupId,
+            left: 0,
+            top: 0,
+            width: lastItem.left + lastItem.width,
+            height: gridHeight,
+          },
+        ],
       });
     } else {
       const firstSegment = segments[0].segment;
@@ -256,10 +266,11 @@ export function layoutSegments(
             return segment.start.format('MMMM Do');
           }
         })();
+        const lastBox = boxes[boxes.length - 1];
         return {
           text,
           left: boxes[0].left,
-          width: boxes.at(-1).left + boxes.at(-1).width - boxes[0].left,
+          width: lastBox.left + lastBox.width - boxes[0].left,
           key: segments[0].segment.items[0].sortDate,
         };
       });
@@ -271,6 +282,23 @@ export function layoutSegments(
         gridHeight,
         fullHeight: gridHeight,
         sortDate: dayjs(segments[0].segment.sortDate),
+        groupClickAreas: R.pipe(
+          segments,
+          R.map(({ segment, boxes }) => {
+            if (segment.type !== 'group') {
+              return null;
+            }
+            const lastBox = boxes[boxes.length - 1];
+            return {
+              groupId: segment.groupId,
+              left: boxes[0].left,
+              top: boxes[0].top,
+              width: lastBox.left + lastBox.width - boxes[0].left,
+              height: lastBox.top + lastBox.height - boxes[0].top,
+            };
+          }),
+          R.filter(R.isNonNull),
+        ),
       });
     }
   }

@@ -98,7 +98,7 @@
         </form>
       </div>
     </div>
-    <div class="w-full flex-1 max-h-full">
+    <div class="w-full flex-1 min-h-0">
       <TimelineGrid {timeline} {openedAssetId} bind:scrollWrapper={timelineScrollWrapper} />
     </div>
   </div>

@@ -50,7 +50,7 @@ export type PositionInTimeline = {
   itemIndex: number;
 };
 
-export type Viewport = { width: number; height: number };
+export type Viewport = { width: number; height: number; scrollbarHeight: number };
 
 export interface ITimelineGrid {
   readonly state: 'justLooking' | 'creatingTimelineGroup';
@@ -146,7 +146,7 @@ type MonthHeight = {
 export function createTimeline(opts: TimelineOptions): ITimelineGrid {
   let adjustScrollTop: ScrollCallback | null = null;
   let isInitialized = false;
-  let viewport: Viewport = { width: 0, height: 0 };
+  let viewport: Viewport = { width: 0, height: 0, scrollbarHeight: 0 };
   let state: TimelineState = $state({ state: 'justLooking' } as TimelineState);
   let previousSections: TimelineSection[] = [];
 
@@ -286,23 +286,28 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
           sectionIdx,
           month,
           year,
-          height: (height / timelineHeight) * viewport.height,
+          height,
         };
       });
     });
+    {
+      const totalHeight = R.pipe(
+        scrollbarMonthHeights,
+        R.map((m) => m.height),
+        R.sum(),
+      );
+      for (const m of scrollbarMonthHeights) {
+        m.height = (m.height / totalHeight) * viewport.scrollbarHeight;
+      }
+    }
 
     let cumulHeight = 0;
     const monthMarkers: ScrollbarMonth[] = [];
     let lastMarkerTop = 0;
-    let lastYearTop = 0;
     for (const { year, month, height } of scrollbarMonthHeights) {
       let showYear = false;
-      if (
-        monthMarkers.length === 0 ||
-        (year !== monthMarkers[monthMarkers.length - 1].year && cumulHeight - lastYearTop > 10)
-      ) {
+      if (monthMarkers.length === 0 || year !== monthMarkers[monthMarkers.length - 1].year) {
         showYear = true;
-        lastYearTop = cumulHeight;
       }
       let showMonth = false;
       if (
@@ -312,7 +317,6 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
         showMonth = true;
         lastMarkerTop = cumulHeight;
       }
-      // if (showYear || showMonth || monthMarkers.length === 0) {
       monthMarkers.push({
         year,
         month,
@@ -321,10 +325,32 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
         showMonth,
         top: cumulHeight,
       });
-      // } else {
-      //   monthMarkers[monthMarkers.length - 1].height += height;
-      // }
       cumulHeight += height;
+    }
+    const yearsGrouped = R.groupByProp(monthMarkers, 'year');
+    const yearHeights = R.pipe(
+      R.entries(yearsGrouped),
+      R.map(([year, months]) => {
+        return {
+          year,
+          height: R.sum(months.map((m) => m.height)),
+          yearMarker: months.find((m) => m.showYear),
+        };
+      }),
+      R.reverse(),
+    );
+    const keepYears = selectYearLabels(
+      yearHeights.map((m) => {
+        return { year: m.year, y: m.yearMarker.top };
+      }),
+      9,
+    );
+    for (const [i, keep] of keepYears.entries()) {
+      yearHeights[i].yearMarker.showYear = keep;
+    }
+    for (const m of monthMarkers) {
+      m.height = (m.height / cumulHeight) * viewport.scrollbarHeight;
+      m.top = (m.top / cumulHeight) * viewport.scrollbarHeight;
     }
     scrollbarMonths = monthMarkers;
   }
@@ -523,7 +549,6 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
   }
 
   function layoutSection(sectionIndex: number) {
-    console.log('layoutSection', sectionIndex)
     const section = sections[sectionIndex];
     const segments = section.segments;
     if (segments === null) {
@@ -544,7 +569,6 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
   }
 
   async function loadSection(sectionIndex: number, reload: 'reload' | undefined = undefined) {
-    console.log('loadSection', sectionIndex)
     const section = sections[sectionIndex];
     if (section.blocks && reload === undefined) {
       return;
@@ -898,6 +922,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
   function setActualBlockHeight(sectionIdx: number, heights: number[][]) {
     let totalDelta = 0;
     let scrollAdjustDelta = 0;
+    let anyChange = false;
     const section = sections[sectionIdx];
     for (const [blockIdx, height] of heights) {
       const block = section.blocks?.at(blockIdx);
@@ -911,9 +936,15 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
         }
         block.fullHeight = height;
         block.hasBeenMeasured = true;
+        if (delta !== 0) {
+          anyChange = true;
+        }
       } else {
         console.error('block is null but measured its height somehow');
       }
+    }
+    if (!anyChange) {
+      return;
     }
     let blockTop = 0;
     for (const block of section.blocks) {
@@ -925,12 +956,13 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     }
     sectionsPublic = sections;
     if (scrollAdjustDelta !== 0) {
-      adjustScrollTop?.({
-        what: 'scrollBy',
-        scroll: scrollAdjustDelta,
-        ifScrollTopGt: sectionTops[sectionIdx],
-        behavior: 'instant',
-      });
+      // FIXME: adjust by delta where block bottom is above scrollTop
+      // adjustScrollTop?.({
+      //   what: 'scrollBy',
+      //   scroll: scrollAdjustDelta,
+      //   ifScrollTopGt: sectionTops[sectionIdx],
+      //   behavior: 'instant',
+      // });
     }
   }
 
@@ -1121,15 +1153,15 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       layoutSection(i);
     }
     // TODO: all kinds of broken this scroll thing
-    // const scrollToItem = section.blocks.find((block) => block.blockType === 'createGroup');
-    // if (scrollToItem) {
-    //   adjustScrollTop?.({
-    //     what: 'scrollTo',
-    //     scroll: Math.max(0, sectionTops[insertInSectionIndex] + scrollToItem.top),
-    //     ifScrollTopGt: 0,
-    //     behavior: 'smooth',
-    //   });
-    // }
+    const scrollToItem = section.blocks.find((block) => block.blockType === 'createGroup');
+    if (scrollToItem) {
+      adjustScrollTop?.({
+        what: 'scrollTo',
+        scroll: Math.max(0, sectionTops[insertInSectionIndex] + scrollToItem.top),
+        ifScrollTopGt: 0,
+        behavior: 'smooth',
+      });
+    }
     for (let sectionIdx = 0; sectionIdx < sections.length; sectionIdx += 1) {
       const section = sections[sectionIdx];
       if (section.segments === null) {
@@ -1222,8 +1254,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     const affectedSections: number[] = [];
     let groupToAbsorb: (TimelineSegment & { type: 'creatingGroup' }) | null = null;
     let assetIdsInGroup: AssetId[] | null = null;
-    const newSections = klona(sections);
-    for (const [sectionIdx, section] of newSections.entries()) {
+    for (const [sectionIdx, section] of sections.entries()) {
       if (section.segments === null) {
         continue;
       }
@@ -1231,7 +1262,9 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       for (const segment of section.segments) {
         if (segment.type === 'creatingGroup') {
           groupToAbsorb = segment;
-          affectedSections.push(sectionIdx);
+          if (affectedSections.indexOf(sectionIdx) < 0) {
+            affectedSections.push(sectionIdx);
+          }
         } else {
           remainingSegments.push(segment);
         }
@@ -1260,13 +1293,15 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     await editTimelineGroup({ assets: assetIdsInGroup, groupId, operation: 'add' });
 
     let mergeInto: (TimelineSegment & { type: 'group' }) | null = null;
-    outer: for (const [sectionIdx, section] of newSections.entries()) {
+    outer: for (const [sectionIdx, section] of sections.entries()) {
       if (section.segments === null) {
         continue;
       }
       for (const segment of section.segments) {
         if (segment.type === 'group' && segment.groupId === groupId) {
-          affectedSections.push(sectionIdx);
+          if (affectedSections.indexOf(sectionIdx) < 0) {
+            affectedSections.push(sectionIdx);
+          }
           section.data.numAssets += assetIdsInGroup.length;
           mergeInto = segment;
           break outer;
@@ -1279,11 +1314,19 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     }
     mergeInto.items.push(...groupToAbsorb.items);
     mergeInto.items.sort((a, b) => b.sortDate.localeCompare(a.sortDate));
-    sections = newSections;
-    layoutSection(affectedSections[0]);
-    if (affectedSections[0] !== affectedSections[1]) {
-      layoutSection(affectedSections[1], 'noAdjustScroll');
+    for (const sectionIndex of affectedSections) {
+      layoutSection(sectionIndex);
+      if (!sections[sectionIndex].segments) {
+        continue;
+      }
+      // reassign item positions
+      for (const [segmentIndex, segment] of sections[sectionIndex].segments.entries()) {
+        for (const [itemIndex, item] of segment.items.entries()) {
+          item.pos = { sectionIndex, segmentIndex, itemIndex };
+        }
+      }
     }
+    sectionsPublic = sections;
     if (setAnimationsEnabled) {
       setAnimationsEnabled(false);
     }

@@ -79,7 +79,8 @@
 
 <a
   {href}
-  class={'absolute group select-none outline-none' +
+  id={'grid-a-' + asset.assetId}
+  class={'absolute block group select-none outline-none' +
     className +
     ' ' +
     (isHoverable ? '' : 'cursor-default')}
@@ -97,14 +98,14 @@
   onmouseleave={() => {
     isMouseOver = false;
   }}
+  {@attach imgElAction}
 >
   <div class="h-full w-full bg-blue-100">
     <!-- svelte-ignore a11y_missing_attribute -->
     <img
-      use:imgElAction
       id={imgElId}
       src="/api/files/thumbnail/{asset.repFile.fileId}/large/avif"
-      class="absolute bg-black transition-transform"
+      class="absolute bg-black"
       class:rounded-xl={isSelected}
       class:scale-[0.85]={isSelected}
       width={imgWidth}

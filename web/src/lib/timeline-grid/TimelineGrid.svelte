@@ -18,7 +18,7 @@
   import { fade } from 'svelte/transition';
   import dayjs, { Dayjs } from 'dayjs';
   import { onMount } from 'svelte';
-  import { _jwt } from 'zod/v4/core';
+  import * as R from 'remeda';
 
   type TimelineGridProps = {
     timeline: ITimelineGrid;
@@ -112,8 +112,14 @@
   });
 
   let visibleSectionEls = new Set();
-  function handleSectionIntersect(entries) {
-    let newVisible = new Set(entries.map((e) => e.target.id));
+  function handleSectionIntersect(entries: IntersectionObserverEntry[]) {
+    let newVisible = new Set(
+      R.pipe(
+        entries,
+        R.filter((e) => e.isIntersecting),
+        R.map((e) => e.target.id),
+      ),
+    );
     if (
       newVisible.size !== visibleSectionEls.size ||
       newVisible.size !== newVisible.union(visibleSectionEls).size
@@ -373,19 +379,15 @@
   function onAjustTimelineScroll(params: {
     what: 'scrollBy' | 'scrollTo';
     scroll: number;
-    ifScrollTopGt: number;
     behavior: 'smooth' | 'instant';
   }) {
-    if (!scrollWrapper || scrollWrapper.scrollTop < params.ifScrollTopGt) {
+    if (!scrollWrapper) {
       return;
     }
     if (params.what === 'scrollBy') {
       scrollByProgrammatic({ top: params.scroll, behavior: params.behavior });
     } else if (params.what === 'scrollTo') {
-      setTimeout(() => {
-        // FIXME:
-        scrollToProgrammatic(params.scroll, { top: params.scroll, behavior: params.behavior });
-      }, 50);
+      scrollToProgrammatic(params.scroll, { top: params.scroll, behavior: params.behavior });
     }
   }
   onMount(() => {

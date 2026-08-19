@@ -13,7 +13,7 @@
   let input: HTMLInputElement | null = null;
 
   onMount(() => {
-    input?.focus();
+    input?.focus({ preventScroll: true });
   });
 
   function trySubmit() {

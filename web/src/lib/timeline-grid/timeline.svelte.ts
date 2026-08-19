@@ -35,6 +35,7 @@ import {
 import type {
   AddToGroupClickArea,
   ScrollbarMonth,
+  TimelineBlock,
   TimelineGridItem,
   TimelineItem,
   TimelineSection,
@@ -127,9 +128,8 @@ type TimelineState =
     };
 
 type ScrollCallback = (params: {
-  what: 'scrollBy';
+  what: 'scrollBy' | 'scrollTo';
   scroll: number;
-  ifScrollTopGt: number;
   behavior: 'smooth' | 'instant';
 }) => void;
 
@@ -548,7 +548,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     }
   }
 
-  function layoutSection(sectionIndex: number) {
+  function layoutSection(sectionIndex: number, adjustScroll = 'adjustScroll') {
     const section = sections[sectionIndex];
     const segments = section.segments;
     if (segments === null) {
@@ -565,7 +565,19 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       assetSeriesById.get,
     );
     section.blocks = blocks;
+    // Scroll adjust will trigger again once DOM elements are measured.
+    // Could be done smarter to combine the two updates.
+    const oldHeight = section.heightEstimate;
     section.heightEstimate = R.sum(blocks.map((b) => b.fullHeight));
+    const delta = section.heightEstimate - oldHeight;
+    if (adjustScroll === 'adjustScroll') {
+      console.log('layout section, adjust', delta);
+      adjustScrollTop?.({
+        what: 'scrollBy',
+        scroll: delta,
+        behavior: 'instant',
+      });
+    }
   }
 
   async function loadSection(sectionIndex: number, reload: 'reload' | undefined = undefined) {
@@ -924,12 +936,18 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     let scrollAdjustDelta = 0;
     let anyChange = false;
     const section = sections[sectionIdx];
+    let scrollToBlock: TimelineBlock | null = null;
     for (const [blockIdx, height] of heights) {
       const block = section.blocks?.at(blockIdx);
       if (R.isNonNullish(block)) {
         const delta = height - block.fullHeight;
         totalDelta += delta;
-        if (!block.hasBeenMeasured) {
+        if (!block.hasBeenMeasured && block.blockType === 'createGroup') {
+          // FIXME: this is broken if you click create group and the new block
+          // appears in a section that's not displayed currently
+          scrollToBlock = block;
+        }
+        if (!block.hasBeenMeasured && block.top + block.fullHeight < currentScrollTop) {
           // Scroll only needs to be adjusted when switching from estimated to measured height.
           // If block has already been laid out and changes we don't want to scroll.
           scrollAdjustDelta += delta;
@@ -951,18 +969,24 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       block.top = blockTop;
       blockTop += block.fullHeight;
     }
+
     if (totalDelta !== 0) {
       sections[sectionIdx].heightEstimate += totalDelta;
     }
     sectionsPublic = sections;
-    if (scrollAdjustDelta !== 0) {
-      // FIXME: adjust by delta where block bottom is above scrollTop
-      // adjustScrollTop?.({
-      //   what: 'scrollBy',
-      //   scroll: scrollAdjustDelta,
-      //   ifScrollTopGt: sectionTops[sectionIdx],
-      //   behavior: 'instant',
-      // });
+    if (scrollToBlock !== null) {
+      adjustScrollTop?.({
+        what: 'scrollTo',
+        scroll: Math.max(0, sectionTops[sectionIdx] + scrollToBlock.top - viewport.height * 0.25),
+        behavior: 'smooth',
+      });
+      return;
+    } else if (scrollAdjustDelta !== 0) {
+      adjustScrollTop?.({
+        what: 'scrollBy',
+        scroll: scrollAdjustDelta,
+        behavior: 'instant',
+      });
     }
   }
 
@@ -1150,17 +1174,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       await setAnimationsEnabled(true);
     }
     for (const i of affectedSections) {
-      layoutSection(i);
-    }
-    // TODO: all kinds of broken this scroll thing
-    const scrollToItem = section.blocks.find((block) => block.blockType === 'createGroup');
-    if (scrollToItem) {
-      adjustScrollTop?.({
-        what: 'scrollTo',
-        scroll: Math.max(0, sectionTops[insertInSectionIndex] + scrollToItem.top),
-        ifScrollTopGt: 0,
-        behavior: 'smooth',
-      });
+      layoutSection(i, 'noAdjustScroll');
     }
     for (let sectionIdx = 0; sectionIdx < sections.length; sectionIdx += 1) {
       const section = sections[sectionIdx];

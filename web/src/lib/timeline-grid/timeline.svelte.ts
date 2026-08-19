@@ -13,7 +13,7 @@ import type {
 } from '@api/myrti';
 import { dayjs, type Dayjs } from '@lib/dayjs';
 import { klona } from 'klona/json';
-import { SvelteMap } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import { layoutSegments } from './layout';
 import * as R from 'remeda';
 import {
@@ -57,8 +57,7 @@ export interface ITimelineGrid {
   readonly state: 'justLooking' | 'creatingTimelineGroup';
   readonly totalNumAssets: number;
   readonly sections: TimelineSection[];
-  /** Range of indices into items corresponding to currently visible section*/
-  readonly visibleSections: { startIdx: number; endIdx: number };
+  readonly visibleSections: number[];
 
   readonly options: TimelineOptions;
   readonly addToGroupClickAreas: AddToGroupClickArea[];
@@ -212,7 +211,13 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
         )
       : [],
   );
-  let visibleSections = $state({ startIdx: 0, endIdx: 0 });
+  let sectionsInView: number[] = $state([]);
+  // createView segment always has to be visible so we can scroll to it
+  const visibleSections = $derived(
+    R.unique(
+      sectionsInView.concat(state.state === 'creatingTimelineGroup' ? [state.sectionIndex] : []),
+    ),
+  );
   let setAnimationsEnabled: ((enabled: boolean) => Promise<void>) | null = null;
   /** maps item key string to index in selection */
   const selectedItems: Map<string, { item: TimelineItem; idx: number }> = new SvelteMap();
@@ -305,16 +310,12 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     const monthMarkers: ScrollbarMonth[] = [];
     let lastMarkerTop = 0;
     for (const { year, month, height } of scrollbarMonthHeights) {
-      let showYear = false;
-      if (monthMarkers.length === 0 || year !== monthMarkers[monthMarkers.length - 1].year) {
-        showYear = true;
-      }
-      let showMonth = false;
-      if (
+      const showYear =
+        monthMarkers.length === 0 || year !== monthMarkers[monthMarkers.length - 1].year;
+      const showMonth =
         monthMarkers.length === 0 ||
-        (month !== monthMarkers[monthMarkers.length - 1].month && cumulHeight - lastMarkerTop > 6)
-      ) {
-        showMonth = true;
+        (month !== monthMarkers[monthMarkers.length - 1].month && cumulHeight - lastMarkerTop > 6);
+      if (showMonth) {
         lastMarkerTop = cumulHeight;
       }
       monthMarkers.push({
@@ -327,26 +328,11 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       });
       cumulHeight += height;
     }
-    const yearsGrouped = R.groupByProp(monthMarkers, 'year');
-    const yearHeights = R.pipe(
-      R.entries(yearsGrouped),
-      R.map(([year, months]) => {
-        return {
-          year,
-          height: R.sum(months.map((m) => m.height)),
-          yearMarker: months.find((m) => m.showYear),
-        };
-      }),
-      R.reverse(),
-    );
-    const keepYears = selectYearLabels(
-      yearHeights.map((m) => {
-        return { year: m.year, y: m.yearMarker.top };
-      }),
-      9,
-    );
-    for (const [i, keep] of keepYears.entries()) {
-      yearHeights[i].yearMarker.showYear = keep;
+    const yearMarkers = monthMarkers.filter((month) => month.showYear);
+    const yearStarts = yearMarkers.map((m) => m.top);
+    const keepYears = selectYearLabels(yearStarts, 8);
+    for (const [i, marker] of yearMarkers.entries()) {
+      marker.showYear = keepYears.has(i);
     }
     for (const m of monthMarkers) {
       m.height = (m.height / cumulHeight) * viewport.scrollbarHeight;
@@ -447,19 +433,15 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     const loadWithinMargin = 3000;
     let firstLoadedSection = null;
     let lastLoadedSection = null;
-    let firstVisibleSection = null;
-    let lastVisibleSection = null;
+    const visible: number[] = [];
     for (let i = 0; i < sections.length; i += 1) {
       const sectionTop = sectionTops[i];
       const sectionHeight = sectionHeights[i];
       const isVisible =
         sectionTop <= scrollTop + viewport.height + renderWithinMargin &&
         scrollTop - renderWithinMargin <= sectionTop + sectionHeight;
-      if (firstVisibleSection == null && isVisible) {
-        firstVisibleSection = i;
-        lastVisibleSection = i;
-      } else if (isVisible) {
-        lastVisibleSection = i;
+      if (isVisible) {
+        visible.push(i);
       }
 
       const isLoaded =
@@ -472,12 +454,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
         lastLoadedSection = i;
       }
     }
-    if (
-      firstVisibleSection == null ||
-      firstLoadedSection === null ||
-      lastVisibleSection === null ||
-      lastLoadedSection === null
-    ) {
+    if (visible.length === 0 || firstLoadedSection === null || lastLoadedSection === null) {
       return;
     }
 
@@ -504,18 +481,18 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
         }
       }
     }
-    visibleSections = {
-      startIdx: firstVisibleSection,
-      endIdx: lastVisibleSection + 1,
-    };
+    sectionsInView = visible;
     if (sectionLoads.length > 0 || forceRelayout) {
       sectionsPublic = sections;
     }
     onScrollChange(scrollTop);
   }
+  $inspect(visibleSections);
 
+  let currentScrollTop = 0;
   let lastScrollTime: number | null = null;
   async function onScrollChange(scrollTop: number) {
+    currentScrollTop = scrollTop;
     const firstVisibleMonth = monthHeights.find(
       (m) =>
         m.topInTimeline < scrollTop + viewport.height &&
@@ -571,7 +548,6 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     section.heightEstimate = R.sum(blocks.map((b) => b.fullHeight));
     const delta = section.heightEstimate - oldHeight;
     if (adjustScroll === 'adjustScroll') {
-      console.log('layout section, adjust', delta);
       adjustScrollTop?.({
         what: 'scrollBy',
         scroll: delta,
@@ -943,8 +919,6 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
         const delta = height - block.fullHeight;
         totalDelta += delta;
         if (!block.hasBeenMeasured && block.blockType === 'createGroup') {
-          // FIXME: this is broken if you click create group and the new block
-          // appears in a section that's not displayed currently
           scrollToBlock = block;
         }
         if (!block.hasBeenMeasured && block.top + block.fullHeight < currentScrollTop) {
@@ -1175,6 +1149,9 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     }
     for (const i of affectedSections) {
       layoutSection(i, 'noAdjustScroll');
+      if (!sectionsInView.includes(i)) {
+        sectionsInView.push(i);
+      }
     }
     for (let sectionIdx = 0; sectionIdx < sections.length; sectionIdx += 1) {
       const section = sections[sectionIdx];
@@ -1692,4 +1669,40 @@ function estimateHeight(
   }
   const rows = Math.ceil((totalNormalizedWidth * targetRowHeight * 1.4) / (lineWidth * 0.8)); // consider most rows as not  filled. arbitrary
   return rows * targetRowHeight;
+}
+
+/** Filter year labels so none overlap, removing the years that are smallest in height first.
+ * Simple weighted interval scheduling for very small arrays.
+ * @param ys tops of labels, sorted in ascending order
+ * */
+function selectYearLabels(ys: number[], labelHeight: number): Set<number> {
+  if (ys.length <= 2) {
+    return new Set(ys.map((_, i) => i));
+  }
+
+  // weight/goal is the height that a label represents
+  const weight = ys.map((y, i) => (i < ys.length - 1 ? ys[i + 1] - y : 0));
+  // initial: every label by itself
+  // (first label is always displayed)
+  const optim = weight;
+  // keep track of the path leading to the maximizer of optim
+  const previous = new Array(ys.length).fill(-1);
+
+  for (let i = 1; i < ys.length; i++) {
+    // compatible just means not overlapping
+    const j = ys.findLastIndex((y) => y <= ys[i] - labelHeight);
+    if (j >= 0) {
+      const cand = optim[j] + weight[i];
+      if (cand > optim[i]) {
+        optim[i] = cand;
+        previous[i] = j;
+      }
+    }
+  }
+
+  const keep = new Set<number>();
+  for (let i = ys.length - 1; i !== -1; i = previous[i]) {
+    keep.add(i);
+  }
+  return keep;
 }

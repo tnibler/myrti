@@ -279,11 +279,7 @@
   const visibleSections: (TimelineSection & { blocks: TimelineBlock[]; sectionIdx: number })[] =
     $derived.by(() => {
       const ret: (TimelineSection & { blocks: TimelineBlock[]; sectionIdx: number })[] = [];
-      for (
-        let sectionIdx = timeline.visibleSections.startIdx;
-        sectionIdx < timeline.visibleSections.endIdx;
-        sectionIdx += 1
-      ) {
+      for (const sectionIdx of timeline.visibleSections) {
         const section = timeline.sections[sectionIdx];
         if (section.segments !== null && section.blocks !== null) {
           ret.push({ sectionIdx, ...section });
@@ -350,9 +346,10 @@
     };
   }
 
+  let createGroupInput = $state(null);
   let isUserScroll = true;
   let scrollTop = $state(0);
-  function onScroll() {
+  function onScroll(e) {
     if (isUserScroll) {
       wantToScrollTo = null;
     }
@@ -376,18 +373,45 @@
     });
   }
 
+  let currentlyScrolling = false;
   function onAjustTimelineScroll(params: {
     what: 'scrollBy' | 'scrollTo';
     scroll: number;
     behavior: 'smooth' | 'instant';
   }) {
+    if (currentlyScrolling) {
+      return;
+    }
     if (!scrollWrapper) {
       return;
     }
     if (params.what === 'scrollBy') {
       scrollByProgrammatic({ top: params.scroll, behavior: params.behavior });
     } else if (params.what === 'scrollTo') {
-      scrollToProgrammatic(params.scroll, { top: params.scroll, behavior: params.behavior });
+      currentlyScrolling = true;
+      if (createGroupInput) {
+        // breaks when group input is lower and height changes during scrolling
+        const el: HTMLElement = createGroupInput;
+        setTimeout(() => {
+          const promise = el.scrollIntoView({ behavior: 'smooth' });
+          if (promise instanceof Promise) {
+            // very new browser feature
+            promise.then(({ interrupted: _ }) => {
+              currentlyScrolling = false;
+            });
+          } else {
+            scrollWrapper.addEventListener(
+              'scrollend',
+              (e) => {
+                currentlyScrolling = false;
+                console.log(e);
+              },
+              { once: true },
+            );
+          }
+        }, 50);
+      }
+      //   scrollToProgrammatic(params.scroll, { top: params.scroll, behavior: params.behavior });
     }
   }
   onMount(() => {
@@ -547,6 +571,7 @@
                   {/each}
                 </div>
               {:else if block.blockType === 'createGroup'}
+                <div bind:this={createGroupInput}></div>
                 <CreateGroupInput
                   onSubmit={(title) => {
                     timeline.confirmCreateGroup(title);
@@ -556,7 +581,7 @@
               {/if}
 
               <div style="height: {block.gridHeight}px;" class="w-full relative contain-layout">
-                {#if blockTop < scrollTop + viewport.height + 1000 && scrollTop - 1000 < blockTop + block.fullHeight}
+                {#if block.blockType === 'createGroup' || (blockTop < scrollTop + viewport.height + 1000 && scrollTop - 1000 < blockTop + block.fullHeight)}
                   {#if timeline.state === 'creatingTimelineGroup'}
                     {#each block.groupClickAreas as area (area.groupId)}
                       <button

@@ -349,7 +349,7 @@
   let createGroupInput = $state(null);
   let isUserScroll = true;
   let scrollTop = $state(0);
-  function onScroll(e) {
+  function onScroll() {
     if (isUserScroll) {
       wantToScrollTo = null;
     }
@@ -404,7 +404,6 @@
               'scrollend',
               (e) => {
                 currentlyScrolling = false;
-                console.log(e);
               },
               { once: true },
             );
@@ -448,7 +447,10 @@
   $effect(() => {
     if (wantToScrollTo !== null && !isDragging) {
       const month = timeline.monthHeights.find(
-        (m) => m.year === wantToScrollTo.month.year && m.month === wantToScrollTo.month.month,
+        (m) =>
+          m.year === wantToScrollTo.month.year &&
+          m.month === wantToScrollTo.month.month &&
+          m.sectionIdx == wantToScrollTo.month.sectionIdx,
       );
       const progressInMonth = wantToScrollTo.progressInMonth;
       const scrollToY = month.topInTimeline + progressInMonth * month.heightInTimeline;
@@ -466,9 +468,12 @@
     if (!scrollbarEl) {
       return;
     }
+    if (!scrubHover && !isDragging) {
+      return;
+    }
     const rect = scrollbarEl.getBoundingClientRect();
     const relativeY = e.clientY - rect.top;
-    const month = timeline.monthForScrollY(relativeY / rect.height);
+    const month = timeline.monthForScrollbarY(relativeY);
     if (scrubHover) {
       hoverY = relativeY;
       if (month) {
@@ -487,11 +492,11 @@
     }
 
     if (!month) {
-      console.error('monthForScrollY not found');
+      console.error('monthForScrollbarY not found');
       return;
     }
     const scrollbarMonth = timeline.scrollbarMonths.find(
-      (m) => m.year === month.year && m.month === month.month,
+      (m) => m.year === month.year && m.month === month.month && m.sectionIdx === month.sectionIdx,
     );
     if (!scrollbarMonth) {
       return;
@@ -670,7 +675,7 @@
       scrollWrapper.scrollTop += e.deltaY;
     }}
   >
-    {#each timeline.scrollbarMonths as month (`${month.year}-${month.month}`)}
+    {#each timeline.scrollbarMonths as month (`${month.sectionIdx}-${month.year}-${month.month}`)}
       {#if month.showYear || month.showMonth}
         <div class="absolute w-full" style={`height: ${month.height}px; top: ${month.top}px;`}>
           {#if month.showYear}

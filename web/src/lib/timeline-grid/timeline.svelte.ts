@@ -133,6 +133,7 @@ type ScrollCallback = (params: {
 }) => void;
 
 type MonthHeight = {
+  sectionIdx: number;
   year: number;
   /** 1 based index */
   month: number;
@@ -309,7 +310,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     let cumulHeight = 0;
     const monthMarkers: ScrollbarMonth[] = [];
     let lastMarkerTop = 0;
-    for (const { year, month, height } of scrollbarMonthHeights) {
+    for (const { sectionIdx, year, month, height } of scrollbarMonthHeights) {
       const showYear =
         monthMarkers.length === 0 || year !== monthMarkers[monthMarkers.length - 1].year;
       const showMonth =
@@ -319,6 +320,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
         lastMarkerTop = cumulHeight;
       }
       monthMarkers.push({
+        sectionIdx,
         year,
         month,
         height,
@@ -365,29 +367,37 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
 
   const monthHeights: MonthHeight[] = $derived.by(() => {
     const months: MonthHeight[] = [];
-    const pushOrAdd = (year: number, month: number, heightInTimeline: number) => {
+    const pushOrAdd = (m: MonthHeight) => {
       if (months.length > 0) {
         const last = months[months.length - 1];
-        if (last.year === year && last.month === month) {
-          last.heightInTimeline += heightInTimeline;
+        if (last.sectionIdx === m.sectionIdx && last.year === m.year && last.month === m.month) {
+          last.heightInTimeline += m.heightInTimeline;
           return;
         }
       }
-      months.push({
-        year,
-        month,
-        heightInTimeline,
-        topInTimeline: 0,
-        heightInScrollbar: 0,
-        topInScrollbar: 0,
-      });
+      months.push(m);
     };
     for (let sectionIdx = 0; sectionIdx < sectionsPublic.length; sectionIdx += 1) {
       const section = sectionsPublic[sectionIdx];
+      // restart/anchor the cumulative height sum at each section since section starts are the only y positions
+      // we always know. Month heights within a section are guessed and can be fixed when they're actually loaded,
+      // but for that we need to actually jump to the correct section.
+      // FIXME: summed month height estimates could become taller than the section and estimated y might jump to the wrong section which might not contain the target month anymore.
+      // summed heights must always == total section height, and keeping separate section + month heights doesn't make sense
+      let top = sectionTops[sectionIdx];
       if (section.blocks !== null) {
         for (const block of section.blocks) {
           const date = block.sortDate.tz('utc');
-          pushOrAdd(date.year(), date.month() + 1, block.fullHeight); // dayjs months are 0 indexed
+          pushOrAdd({
+            sectionIdx,
+            year: date.year(),
+            month: date.month() + 1, // dayjs months are 0 indexed
+            heightInTimeline: block.fullHeight,
+            topInTimeline: top,
+            heightInScrollbar: 0,
+            topInScrollbar: 0,
+          });
+          top += block.fullHeight;
         }
       } else {
         for (const { year, month, totalNormalizedWidth } of sectionMonthSlices[sectionIdx]) {
@@ -395,14 +405,18 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
             opts.targetRowHeight,
             estimateHeight(totalNormalizedWidth, viewport.width, opts.targetRowHeight),
           );
-          pushOrAdd(year, month, height);
+          pushOrAdd({
+            sectionIdx,
+            year,
+            month,
+            heightInTimeline: height,
+            topInTimeline: top,
+            heightInScrollbar: 0,
+            topInScrollbar: 0,
+          });
+          top += height;
         }
       }
-    }
-    let top = 0;
-    for (const month of months) {
-      month.topInTimeline = top;
-      top += month.heightInTimeline;
     }
 
     console.assert(months.length === scrollbarMonths.length);
@@ -487,7 +501,6 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     }
     onScrollChange(scrollTop);
   }
-  $inspect(visibleSections);
 
   let currentScrollTop = 0;
   let lastScrollTime: number | null = null;
@@ -509,8 +522,11 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       let scrollY = 0;
       let foundMonth = false; // scrollbarMonthHeights keeps months split if they span multiple sections
       let currentMonthHeight = 0;
-      for (const { year, month, height } of scrollbarMonthHeights) {
-        const monthEqual = year === firstVisibleMonth.year && month === firstVisibleMonth.month;
+      for (const { sectionIdx, year, month, height } of scrollbarMonthHeights) {
+        const monthEqual =
+          year === firstVisibleMonth.year &&
+          month === firstVisibleMonth.month &&
+          sectionIdx === firstVisibleMonth.sectionIdx;
         if (monthEqual) {
           currentMonthHeight += height;
           foundMonth = true;
@@ -547,7 +563,10 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     const oldHeight = section.heightEstimate;
     section.heightEstimate = R.sum(blocks.map((b) => b.fullHeight));
     const delta = section.heightEstimate - oldHeight;
-    if (adjustScroll === 'adjustScroll') {
+    if (
+      adjustScroll === 'adjustScroll' &&
+      sectionTops[sectionIndex] + section.heightEstimate < currentScrollTop
+    ) {
       adjustScrollTop?.({
         what: 'scrollBy',
         scroll: delta,
@@ -921,7 +940,10 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
         if (!block.hasBeenMeasured && block.blockType === 'createGroup') {
           scrollToBlock = block;
         }
-        if (!block.hasBeenMeasured && block.top + block.fullHeight < currentScrollTop) {
+        if (
+          !block.hasBeenMeasured &&
+          sectionTops[sectionIdx] + block.top + block.fullHeight < currentScrollTop
+        ) {
           // Scroll only needs to be adjusted when switching from estimated to measured height.
           // If block has already been laid out and changes we don't want to scroll.
           scrollAdjustDelta += delta;
@@ -1597,6 +1619,9 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     hideSelectedAssets,
     get monthHeights() {
       return monthHeights;
+    },
+    monthForScrollbarY: (scrollY: number) => {
+      return monthHeights.find((m) => scrollY < m.topInScrollbar + m.heightInScrollbar);
     },
     monthForScrollY: (scrollY: number) => {
       return monthHeights.find(

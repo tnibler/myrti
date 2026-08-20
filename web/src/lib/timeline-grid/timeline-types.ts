@@ -136,6 +136,7 @@ export type OpenedSlide =
   | (TimelineItem & { itemType: 'photoStack'; seriesIndex: number });
 
 export type ScrollbarMonth = {
+  sectionIdx: number;
   year: number;
   month: number;
   top: number;

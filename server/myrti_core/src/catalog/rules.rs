@@ -11,7 +11,8 @@ use crate::{
     },
     config, interact,
     model::{
-        AlbumId, AssetId, AssetThumbnail, FileId, ThumbnailFormat, ThumbnailType,
+        AlbumId, AssetId, AssetThumbnail, FileId, HasGhiIndex, ThumbnailFormat, ThumbnailType,
+        Video,
         repository::{self, asset::AssetHasThumbnails, db::PooledDbConn},
     },
 };
@@ -64,52 +65,12 @@ pub async fn required_video_packaging_for_asset(
         return Ok(Default::default());
     }
 
-    let orig_codec_ok = acceptable_video_codecs.contains(&video.video_codec_name.as_str());
-    let orig_audio_codec_ok = video
-        .audio_codec_name
-        .as_ref()
-        .is_none_or(|codec| acceptable_audio_codecs.contains(&codec.as_str()));
-
-    let has_ghi_index = interact!(
-        conn,
-        move |conn| repository::asset::get_asset_has_ghi_index(conn, file_id)
-    )
-    .await??;
-
     let mut ops = Vec::new();
 
-    let orig_audio_streamable = video.is_original_streamable && orig_audio_codec_ok;
-    let orig_vid_streamable = video.is_original_streamable && orig_codec_ok;
+    let (has_ghi_index, create_ghi) = check_create_ghi_task(conn, &video).await?;
+    ops.extend(create_ghi);
 
-    if has_ghi_index.is_none() {
-        if !orig_vid_streamable && !orig_audio_streamable {
-            interact!(
-                conn,
-                move |conn| repository::asset::set_asset_has_ghi_index(conn, file_id, 0)
-            )
-            .await??;
-        } else if let Some(max_iframe_interval) = video.max_iframe_interval
-            && let Some((frame_rate_num, frame_rate_denom)) = video.frame_rate
-            && frame_rate_denom > 0
-            && frame_rate_num > 0
-        {
-            let gop_time =
-                (max_iframe_interval as f32 / frame_rate_num as f32) * frame_rate_denom as f32;
-            let segment_duration = gop_time.clamp(1.0, 10.0).round() as i32;
-            ops.push(PackageVideo {
-                file_id,
-                repr_name: "original".to_owned(),
-                task: PackageVideoTask::CreateGHIIndex {
-                    include_video: orig_vid_streamable,
-                    include_audio: video.audio_codec_name.is_some() && orig_audio_streamable,
-                    segment_duration,
-                },
-                output_key: storage_key::dash_file(file_id, format_args!("original")),
-            });
-        }
-    }
-
-    if !orig_vid_streamable && !has_acceptable_video_repr {
+    if !has_ghi_index.includes_video() && !has_acceptable_video_repr {
         let repr_name = format!("{}x{}", file.size.width, file.size.height);
         let video_out_key = storage_key::dash_file(file_id, format_args!("{}", repr_name));
         let keyframe_interval = match video.frame_rate {
@@ -139,7 +100,7 @@ pub async fn required_video_packaging_for_asset(
             output_key: video_out_key,
         });
     };
-    if !orig_audio_streamable && !orig_vid_streamable {
+    if !has_ghi_index.includes_audio() && !has_acceptable_audio_repr {
         let repr_name = audio_codec_name(&AudioEncodingTarget::AAC);
         ops.push(PackageVideo {
             file_id,
@@ -313,101 +274,149 @@ pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageV
     })
     .await??;
 
-    // let acceptable_codecs_no_dash = interact!(conn, move |conn| {
-    //     repository::asset::get_videos_in_acceptable_codec_without_dash(conn)
-    // })
-    // .await??;
-    // let mut acceptable_codecs_no_dash_and_no_rotation_metadata: Vec<VideoAsset> = Vec::default();
-    // for asset in acceptable_codecs_no_dash {
-    // TODO: check iframe interval
-    // let ffprobe_output = interact!(conn, move |conn| repository::asset::get_ffprobe_output(
-    //     conn,
-    //     asset.base.id
-    // ))
-    // .await??;
-    // let streams = processing::video::ffprobe_get_streams_from_json(&ffprobe_output)
-    //     .wrap_err("failed to parse ffprobe output stored in db")?;
-    // acceptable_codecs_no_dash_and_no_rotation_metadata.push(asset);
-    // }
-    // let package_orig_tasks = std::iter::empty();
-    // let package_orig_tasks = acceptable_codecs_no_dash_and_no_rotation_metadata
-    //     .into_iter()
-    //     .map(|asset| {
-    //         // if there is no dash resource directory then there can not already be an audio
-    //         // representation, so create one if the video has audio
-    //         let create_audio_repr = if asset.video.audio_codec_name.is_some() {
-    //             Some(CreateAudioRepr::PackageOriginalFile {
-    //                 output_key: storage_key::dash_file(asset.base.id, format_args!("audio.mp4")),
-    //             })
-    //         } else {
-    //             // video does not have audio
-    //             None
-    //         };
-    //         // likewise for video representations
-    //         PackageVideo {
-    //             asset_id: asset.base.id,
-    //             create_video_repr: CreateVideoRepr::PackageOriginalFile {
-    //                 output_key: video_out_key,
-    //             },
-    //             create_audio_repr,
-    //             create_ghi: None,
-    //         }
-    //     });
+    let no_ghi_index = interact!(conn, move |conn| {
+        repository::asset::get_video_files_with_unknown_ghi(conn)
+    })
+    .await??;
+    let ghi_tasks = {
+        let mut tasks = Vec::default();
+        for video in no_ghi_index {
+            match check_create_ghi_task(conn, &video).await? {
+                (_, Some(create_ghi)) => tasks.push(create_ghi),
+                (HasGhiIndex::None, None) => {}
+                (has_ghi_index, None) => {
+                    tracing::error!(
+                        ?video,
+                        ?has_ghi_index,
+                        "file was included in video_files_with_unknown_ghi query but no create GHI task is due"
+                    );
+                }
+            }
+        }
+        tasks
+    };
 
-    // let no_good_reprs: Vec<VideoAsset> = interact!(conn, move |conn| {
-    //     repository::asset::get_video_assets_with_no_acceptable_repr(conn)
-    // })
-    // .await??;
-    return Ok(Default::default());
-    // let reencode_tasks = no_good_reprs.into_iter().map(|asset| {
-    //     let video_out_key = storage_key::dash_file(
-    //         asset.base.id,
-    //         format_args!("{}x{}.mp4", asset.base.size.width, asset.base.size.height),
-    //     );
-    //     let create_video_repr = match asset.video.video_codec_name.as_str() {
-    //         // TODO replace with target codec from config and only transcode if the
-    //         // original codec is unacceptable. Or maybe transcode anyway, provide a config
-    //         // option etc..
-    //         "av1" => CreateVideoRepr::PackageOriginalFile {
-    //             output_key: video_out_key,
-    //         },
-    //         _ => CreateVideoRepr::Transcode(VideoTranscode {
-    //             target: VideoEncodingTarget {
-    //                 codec: CodecTarget::AV1(av1::AV1Target {
-    //                     crf: av1::Crf::default(),
-    //                     fast_decode: None,
-    //                     preset: None,
-    //                     max_bitrate: None,
-    //                 }),
-    //                 scale: None,
-    //                 force_keyframe_interval: None,
-    //             },
-    //             output_key: video_out_key,
-    //         }),
-    //     };
-    //     let audio_out_key = storage_key::dash_file(asset.base.id, format_args!("audio.mp4"));
-    //     // TODO actually check existing reprs in database.
-    //     // maybe the acceptable video in config changed, making us reencode video
-    //     // but actually a suitable audio repr already exists (or vice versa)
-    //     let create_audio_repr = match asset.video.audio_codec_name.as_deref() {
-    //         Some("aac" | "opus" | "mp3") => Some(CreateAudioRepr::PackageOriginalFile {
-    //             output_key: audio_out_key,
-    //         }),
-    //         // TODO matching strings is ehh since we only allow a few codecs anyway
-    //         Some(_) => Some(CreateAudioRepr::Transcode(AudioTranscode {
-    //             target: AudioEncodingTarget::OPUS,
-    //             output_key: audio_out_key,
-    //         })),
-    //         None => None,
-    //     };
-    //     PackageVideo {
-    //         asset_id: asset.base.id,
-    //         create_video_repr,
-    //         create_audio_repr,
-    //         create_ghi: None,
-    //     }
-    // });
-    // Ok(package_orig_tasks.chain(reencode_tasks).collect())
+    let no_good_audio = interact!(conn, move |conn| {
+        repository::asset::get_video_files_with_no_acceptable_audio_repr(conn)
+    })
+    .await??;
+    let audio_tasks = no_good_audio.into_iter().map(|(asset_file, _video)| {
+        let repr_name = String::from("audio");
+        let audio_out_key = storage_key::dash_file(asset_file.id, format_args!("audio.mp4"));
+        let audio_target = AudioEncodingTarget::AAC;
+        PackageVideo {
+            file_id: asset_file.id,
+            task: PackageVideoTask::TranscodeAudio(audio_target),
+            repr_name,
+            output_key: audio_out_key,
+        }
+    });
+    let no_good_video = interact!(conn, move |conn| {
+        repository::asset::get_video_files_with_no_acceptable_video_repr(conn)
+    })
+    .await??;
+    let video_tasks = no_good_video.into_iter().map(|(asset_file, _video)| {
+        let repr_name = format!("{}x{}", asset_file.size.width, asset_file.size.height);
+        let video_out_key = storage_key::dash_file(
+            asset_file.id,
+            format_args!("{}x{}.mp4", asset_file.size.width, asset_file.size.height),
+        );
+        let video_target = VideoEncodingTarget {
+            codec: CodecTarget::AV1(av1::AV1Target {
+                crf: av1::Crf::default(),
+                fast_decode: None,
+                preset: None,
+                max_bitrate: None,
+            }),
+            scale: None,
+            force_keyframe_interval: None,
+        };
+        PackageVideo {
+            file_id: asset_file.id,
+            task: PackageVideoTask::TranscodeVideo(video_target),
+            repr_name,
+            output_key: video_out_key,
+        }
+    });
+    Ok(ghi_tasks
+        .into_iter()
+        .chain(video_tasks)
+        .chain(audio_tasks)
+        .collect())
+}
+
+/// Returns (existing_has_ghi, None) if GHI index already exists and there's nothing to do,
+/// or (to_be_created_ghi, Some(..)) if GHI index needs to be created.
+async fn check_create_ghi_task(
+    conn: &mut PooledDbConn,
+    video: &Video,
+) -> Result<(HasGhiIndex, Option<PackageVideo>)> {
+    let file_id = video.file_id;
+    let has_ghi_index = interact!(
+        conn,
+        move |conn| repository::asset::get_asset_has_ghi_index(conn, file_id)
+    )
+    .await??;
+    if let Some(has_ghi_index) = has_ghi_index {
+        return Ok((has_ghi_index, None));
+    }
+
+    let acceptable_video_codecs = interact!(conn, move |conn| {
+        repository::config::get_acceptable_video_codecs(conn)
+    })
+    .await??;
+    let acceptable_audio_codecs = interact!(conn, move |conn| {
+        repository::config::get_acceptable_audio_codecs(conn)
+    })
+    .await??;
+
+    let orig_codec_ok = acceptable_video_codecs.contains(&video.video_codec_name);
+    let orig_audio_codec_ok = video
+        .audio_codec_name
+        .as_ref()
+        .is_none_or(|codec| acceptable_audio_codecs.contains(codec));
+    let orig_audio_streamable = video.is_original_streamable && orig_audio_codec_ok;
+    let orig_vid_streamable = video.is_original_streamable && orig_codec_ok;
+    if (orig_vid_streamable || orig_audio_streamable)
+        && let Some(max_iframe_interval) = video.max_iframe_interval
+        && let Some((frame_rate_num, frame_rate_denom)) = video.frame_rate
+        && frame_rate_denom > 0
+        && frame_rate_num > 0
+    {
+        let has_ghi_index = match (orig_vid_streamable, orig_audio_streamable) {
+            (true, true) => HasGhiIndex::VideoAudio,
+            (true, false) => HasGhiIndex::VideoOnly,
+            (false, true) => HasGhiIndex::AudioOnly,
+            (false, false) => unreachable!(),
+        };
+        let gop_time =
+            (max_iframe_interval as f32 / frame_rate_num as f32) * frame_rate_denom as f32;
+        let segment_duration = gop_time.clamp(1.0, 10.0).round() as i32;
+        Ok((
+            has_ghi_index,
+            Some(PackageVideo {
+                file_id,
+                repr_name: "original".to_owned(),
+                task: PackageVideoTask::CreateGHIIndex {
+                    include_video: orig_vid_streamable,
+                    include_audio: video.audio_codec_name.is_some() && orig_audio_streamable,
+                    segment_duration,
+                },
+                output_key: storage_key::dash_file(file_id, format_args!("original")),
+            }),
+        ))
+    } else {
+        interact!(
+            conn,
+            move |conn| repository::asset::set_asset_has_ghi_index(
+                conn,
+                file_id,
+                HasGhiIndex::None
+            )
+        )
+        .await??;
+        Ok((HasGhiIndex::None, None))
+    }
 }
 
 pub async fn image_conversion_due(conn: &mut PooledDbConn) -> Result<Vec<ConvertImage>> {

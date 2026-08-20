@@ -268,7 +268,7 @@ CREATE TABLE GhiSegmentCache (
   , UNIQUE(audio_repr_id, file_name)
   , CHECK ((video_repr_id IS NULL) IS NOT (audio_repr_id IS NULL))
   , FOREIGN KEY (video_repr_id) REFERENCES VideoRepresentation(video_repr_id)
-  , FOREIGN KEY (audio_repr_id) REFERENCES VideoRepresentation(audio_repr_id)
+  , FOREIGN KEY (audio_repr_id) REFERENCES AudioRepresentation(audio_repr_id)
 ) STRICT;
 
 CREATE TRIGGER GhiSegmentCache_Update_Accessed

@@ -10,14 +10,16 @@ use crate::{
     actor::{
         TaskError,
         image_conversion::{
-            ImageConversionActorHandle, MsgFromImageConversion, start_image_conversion_actor,
+            ImageConversionActorHandle, ImageConversionTaskResult, MsgFromImageConversion,
+            start_image_conversion_actor,
         },
         indexing::{IndexingActorHandle, MsgFromIndexing},
         thumbnail::{
             MsgFromThumbnail, ThumbnailActorHandle, ThumbnailTaskResult, start_thumbnail_actor,
         },
         video_packaging::{
-            MsgFromVideoPackaging, VideoPackagingActorHandle, start_video_packaging_actor,
+            MsgFromVideoPackaging, VideoPackagingActorHandle, VideoPackagingTaskResult,
+            start_video_packaging_actor,
         },
     },
     catalog::rules,
@@ -398,14 +400,25 @@ impl Scheduler {
             MsgFromVideoPackaging::DroppedMessage => {
                 actor_state.has_dropped_msgs = true;
             }
-            MsgFromVideoPackaging::TaskResult(result) => {
-                let was_cancelled = matches!(result, Err(TaskError::Cancelled));
-                if was_cancelled {
-                    tracing::debug!("video packaging cancelled");
-                } else {
-                    tracing::trace!(?result);
+            MsgFromVideoPackaging::TaskResult(result) => match result {
+                Ok(VideoPackagingTaskResult::PackagingComplete(_)) => {}
+                Ok(VideoPackagingTaskResult::PackagingError {
+                    package_video,
+                    report,
+                }) => {
+                    tracing::warn!(
+                        ?package_video,
+                        ?report,
+                        "Error running video packaging task"
+                    );
                 }
-            }
+                Err(TaskError::Cancelled) => {
+                    tracing::trace!("video packaging task cancelled");
+                }
+                Err(err) => {
+                    tracing::error!(?err, "Error in image conversion");
+                }
+            },
         }
         Ok(())
     }
@@ -440,9 +453,25 @@ impl Scheduler {
             MsgFromImageConversion::DroppedMessage => {
                 actor_state.has_dropped_msgs = true;
             }
-            MsgFromImageConversion::TaskResult(result) => {
-                tracing::trace!(?result);
-            }
+            MsgFromImageConversion::TaskResult(result) => match result {
+                Ok(ImageConversionTaskResult::ConversionComplete(_)) => {}
+                Ok(ImageConversionTaskResult::ConversionError {
+                    convert_image,
+                    report,
+                }) => {
+                    tracing::warn!(
+                        ?convert_image,
+                        ?report,
+                        "Error running image conversion task"
+                    );
+                }
+                Err(TaskError::Cancelled) => {
+                    tracing::trace!("image conversion task cancelled");
+                }
+                Err(err) => {
+                    tracing::error!(?err, "Error in image conversion");
+                }
+            },
         }
         Ok(())
     }

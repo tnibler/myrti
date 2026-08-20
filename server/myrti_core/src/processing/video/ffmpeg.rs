@@ -2,13 +2,13 @@ use std::{ffi::OsString, process::Stdio};
 
 use async_trait::async_trait;
 use camino::Utf8Path as Path;
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 use tokio::process::Command;
 use tracing::{debug, instrument};
 
 use crate::{
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
-    processing::process_control::{run_process, ProcessControlReceiver},
+    processing::process_control::{ProcessControlReceiver, run_process},
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -52,7 +52,7 @@ pub struct FFmpeg {
 
 #[async_trait]
 impl FFmpegLocalOutputTrait for FFmpeg {
-    #[instrument(name = "ffmpeg", skip(self, control_recv))]
+    #[instrument(name = "ffmpeg", skip(self, control_recv), level = "debug")]
     async fn run_with_local_output(
         &self,
         input: &str,

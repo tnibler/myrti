@@ -262,4 +262,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     TimelineMonth,
     DeletedAutoAssetSeries,
     VideoFile,
+    AcceptableVideoCodec,
+    AcceptableAudioCodec,
 );

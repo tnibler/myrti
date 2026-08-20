@@ -566,7 +566,7 @@ fn prop_get_videos_with_no_acceptable_codec_repr() {
         })
             .map(|(asset, (_, _video_reprs, _audio_repr))| asset.base.id)
             .collect();
-        let actual = repository::asset::get_video_assets_with_no_acceptable_repr(
+        let actual = repository::asset::get_video_files_with_no_acceptable_video_repr(
             &mut conn,
         );
         prop_assert!(actual.is_ok(), "retrieving failed: {:?}", actual.unwrap_err());

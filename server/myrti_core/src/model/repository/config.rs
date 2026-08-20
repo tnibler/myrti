@@ -57,3 +57,19 @@ pub fn set_acceptable_audio_codecs(
     })?;
     Ok(())
 }
+
+pub fn get_acceptable_video_codecs(conn: &mut DbConn) -> Result<Vec<String>> {
+    use schema::AcceptableVideoCodec;
+    AcceptableVideoCodec::table
+        .select(AcceptableVideoCodec::codec_name)
+        .load(conn)
+        .wrap_err("error querying table AcceptableVideoCodec")
+}
+
+pub fn get_acceptable_audio_codecs(conn: &mut DbConn) -> Result<Vec<String>> {
+    use schema::AcceptableAudioCodec;
+    AcceptableAudioCodec::table
+        .select(AcceptableAudioCodec::codec_name)
+        .load(conn)
+        .wrap_err("error querying table AcceptableAudioCodec")
+}

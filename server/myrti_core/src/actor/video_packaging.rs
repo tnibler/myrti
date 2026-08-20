@@ -4,7 +4,7 @@ use tracing::Instrument;
 
 use crate::{
     actor::{misc::task_loop, simple_queue_actor::TaskError},
-    catalog::operation::package_video::{do_package_video, PackageVideo},
+    catalog::operation::package_video::{PackageVideo, do_package_video},
     config,
     core::storage::Storage,
     model::repository::db::DbPool,
@@ -68,7 +68,6 @@ struct VideoPackagingActor {
 }
 
 impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingActor {
-    #[tracing::instrument(skip_all)]
     async fn run_task(
         &mut self,
         msg: VideoPackagingTaskMsg,
@@ -104,7 +103,7 @@ impl Actor<VideoPackagingTaskMsg, VideoPackagingTaskResult> for VideoPackagingAc
                             }
                         };
                         match result {
-                            Ok(result) => {
+                            Ok(()) => {
                                 result_send
                                     .send((
                                         task_id,

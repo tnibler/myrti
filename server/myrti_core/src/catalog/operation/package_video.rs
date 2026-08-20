@@ -15,7 +15,8 @@ use crate::{
     core::storage::{Storage, StorageProvider},
     interact,
     model::{
-        CreateAudioRepresentation, CreateVideoRepresentation, FileId, Size, VideoRepresentation,
+        CreateAudioRepresentation, CreateVideoRepresentation, FileId, HasGhiIndex, Size,
+        VideoRepresentation,
         repository::{self, db::DbPool},
     },
     processing::{
@@ -70,7 +71,7 @@ pub enum AudioEncodingTarget {
     MP3,
 }
 
-// #[instrument(skip(pool, storage, process_control_recv), level = "debug")]
+#[tracing::instrument(skip(pool, storage, process_control_recv, bin_paths), level = "debug")]
 pub async fn do_package_video(
     pool: &DbPool,
     storage: &Storage,
@@ -100,7 +101,7 @@ pub async fn do_package_video(
     };
     tokio::fs::create_dir_all(&asset_dash_dir)
         .await
-        .wrap_err_with(|| format!("error creating directory {}", &asset_dash_dir))?;
+        .wrap_err_with(|| format!("error creating directory {}", asset_dash_dir))?;
 
     match &package_video.task {
         PackageVideoTask::CreateGHIIndex {
@@ -128,10 +129,13 @@ pub async fn do_package_video(
             )
             .await?;
             let has_ghi = match (include_video, include_audio) {
-                (true, true) => 3,
-                (false, true) => 2,
-                (true, false) => 1,
-                (false, false) => 0,
+                (true, true) => HasGhiIndex::VideoAudio,
+                (true, false) => HasGhiIndex::VideoOnly,
+                (false, true) => HasGhiIndex::AudioOnly,
+                (false, false) => {
+                    tracing::error!(?package_video, "noop PackageVideo task");
+                    HasGhiIndex::None
+                }
             };
             interact!(conn, move |conn| {
                 repository::asset::set_asset_has_ghi_index(conn, file_id, has_ghi)
@@ -204,6 +208,7 @@ pub async fn do_package_video(
             .await??;
         }
         PackageVideoTask::TranscodeVideo(transcode) => {
+            tracing::info!(?transcode, "video transcode");
             let repr_name = package_video.repr_name.clone();
             let codec_name = codec_name(&transcode.codec);
             let codec_name2 = codec_name.to_owned();
@@ -254,8 +259,9 @@ pub async fn do_package_video(
             let out_dir = asset_dash_dir.join(&repr_file_stem);
             tokio::fs::create_dir(&out_dir)
                 .await
-                .wrap_err_with(|| format!("error creating directory {}", &out_dir))?;
+                .wrap_err_with(|| format!("error creating directory {}", out_dir))?;
             let mpd_name = "stream.mpd";
+            tracing::debug!("running gpac dasher");
             let dash_result = processing::video::gpac::run_dasher(
                 &utf8_path,
                 &out_dir,
@@ -367,7 +373,7 @@ pub async fn do_package_video(
         repository::asset::get_asset_has_ghi_index(conn, file_id)
     })
     .await??;
-    if has_ghi.is_some_and(|s| s != 0) {
+    if has_ghi.is_some_and(|s| s != HasGhiIndex::None) {
         let mpd_key = storage_key::dash_file(file_id, format_args!("original/stream.mpd"));
         let mut mpd_str = String::new();
         storage

@@ -79,6 +79,53 @@ pub enum MirrorCorrection {
     Vertical,
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum HasGhiIndex {
+    None,
+    VideoOnly,
+    AudioOnly,
+    VideoAudio,
+}
+
+impl HasGhiIndex {
+    pub const fn includes_video(&self) -> bool {
+        match self {
+            Self::VideoOnly | Self::VideoAudio => true,
+            Self::AudioOnly | Self::None => false,
+        }
+    }
+    pub const fn includes_audio(&self) -> bool {
+        match self {
+            Self::AudioOnly | Self::VideoAudio => true,
+            Self::VideoOnly | Self::None => false,
+        }
+    }
+}
+
+impl TryFrom<i32> for HasGhiIndex {
+    type Error = eyre::Report;
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::None),
+            1 => Ok(Self::VideoOnly),
+            2 => Ok(Self::AudioOnly),
+            3 => Ok(Self::VideoAudio),
+            other => Err(eyre!("invalid HasGhiIndex value {}", other)),
+        }
+    }
+}
+
+impl From<HasGhiIndex> for i32 {
+    fn from(value: HasGhiIndex) -> Self {
+        match value {
+            HasGhiIndex::None => 0,
+            HasGhiIndex::VideoOnly => 1,
+            HasGhiIndex::AudioOnly => 2,
+            HasGhiIndex::VideoAudio => 3,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CreateAssetBase {
     pub root_dir_id: AssetRootDirId,

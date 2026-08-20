@@ -4,9 +4,9 @@ use camino::Utf8Path as Path;
 use chrono::Utc;
 use color_eyre::eyre;
 use diesel::connection::SimpleConnection;
-use diesel::dsl::jsonb;
 use diesel::{insert_into, prelude::*};
 use eyre::{Context, Result, eyre};
+use itertools::Itertools;
 use tracing::instrument;
 
 use crate::model::repository::db_entity::{
@@ -14,8 +14,8 @@ use crate::model::repository::db_entity::{
 };
 use crate::model::{
     self, Asset, AssetBase, AssetFile, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe,
-    AssetThumbnail, AssetThumbnailId, AssetType, CreateAsset, CreateAssetSpe, FileId, Image,
-    MirrorCorrection, RotationCorrection, TimestampInfo,
+    AssetThumbnail, AssetThumbnailId, AssetType, CreateAsset, CreateAssetSpe, FileId, HasGhiIndex,
+    Image, MirrorCorrection, RotationCorrection, TimestampInfo, Video,
 };
 use crate::model::{
     repository::db_entity::{DbAssetPathOnDisk, DbAssetThumbnail, to_db_asset_ty},
@@ -424,79 +424,89 @@ pub fn get_exiftool_output(conn: &mut DbConn, file_id: FileId) -> Result<Vec<u8>
 }
 
 #[instrument(skip(conn), level = "debug")]
-pub fn get_video_assets_with_no_acceptable_repr(conn: &mut DbConn) -> Result<Vec<AssetBase>> {
+pub fn get_video_files_with_no_acceptable_audio_repr(
+    conn: &mut DbConn,
+) -> Result<Vec<(AssetFile, Video)>> {
     let query = diesel::sql_query(
         r#"
-            SELECT Asset.* FROM Asset INNER JOIN VideoAsset ON Asset.asset_id = VideoAsset.asset_id
+            SELECT AssetFile.*, VideoFile.* 
+            FROM AssetFile INNER JOIN VideoFile ON AssetFile.file_id = VideoFile.file_id
             WHERE
+            VideoFile.audio_codec_name IS NOT NULL
+            AND
+            NOT EXISTS
             (
-            (
-                VideoAsset.audio_codec_name IS NOT NULL
-                AND
-                NOT EXISTS 
+                SELECT * FROM
                 (
-                    SELECT * FROM
-                    (
-                        SELECT ar.codec_name FROM AudioRepresentation ar WHERE ar.video_asset_id = VideoAsset.video_asset_id
-                        UNION
-                        SELECT VideoAsset.audio_codec_name WHERE VideoAsset.has_ghi = 2 OR VideoAsset.has_ghi = 3
-                    )
-                    INTERSECT SELECT * FROM AcceptableAudioCodec
+                    SELECT ar.codec_name FROM AudioRepresentation ar WHERE ar.file_id = VideoFile.file_id
+                    UNION
+                    SELECT VideoFile.audio_codec_name WHERE VideoFile.has_ghi = 2 OR VideoFile.has_ghi = 3
                 )
-            )
-            OR
-            (
-                NOT EXISTS
-                (
-                    SELECT * FROM
-                    (
-                        SELECT vr.codec_name FROM VideoRepresentation vr WHERE vr.video_asset_id = VideoAsset.video_asset_id
-                        UNION
-                        SELECT VideoAsset.video_codec_name WHERE VideoAsset.has_ghi = 1 OR VideoAsset.has_ghi = 3
-                    )
-                    INTERSECT SELECT * FROM AcceptableVideoCodec
-                )
-            )
+                INTERSECT SELECT * FROM AcceptableAudioCodec
             );
         "#,
     );
-    let db_assets: Vec<DbAsset> = query
+    let db_assets: Vec<(DbAssetFile, DbVideoFile)> = query
         .load(conn)
-        .wrap_err("error querying for VideoAssets with no acceptable codec representations")?;
+        .wrap_err("error querying for VideoFiles with no acceptable codec representations")?;
     db_assets
         .into_iter()
-        .map(|db_asset| model::AssetBase::try_from(db_asset))
+        .map(|(asset_file, video_file)| {
+            Ok((
+                model::AssetFile::try_from(asset_file)?,
+                model::Video::try_from(video_file)?,
+            ))
+        })
         .collect::<Result<Vec<_>>>()
 }
 
-// #[instrument(skip(conn))]
-// pub fn get_videos_in_acceptable_codec_without_dash(conn: &mut DbConn) -> Result<Vec<VideoAsset>> {
-//     use schema::Asset;
-//     let db_assets: Vec<DbAsset> = Asset::table
-//         .select(DbAsset::as_select())
-//         .filter(
-//             Asset::ty
-//                 .eq(to_db_asset_ty(AssetType::Video))
-//                 .and(Asset::has_dash.assume_not_null().eq(bool_to_int(false)))
-//                 .and(Asset::file_type.eq("mp4")),
-//         )
-//         .filter(
-//             sql::<Bool>(r#"
-//             (
-//                 Asset.audio_codec_name IS NULL
-//                 OR
-//                 EXISTS (SELECT codec_name FROM AcceptableAudioCodec WHERE codec_name = Asset.audio_codec_name)
-//             )
-//             AND
-//                 EXISTS (SELECT codec_name FROM AcceptableVideoCodec WHERE codec_name = Asset.video_codec_name)
-//             "#)
-//         )
-//         .load(conn)?;
-//     db_assets
-//         .into_iter()
-//         .map(|db_asset| model::Asset::try_from(db_asset)?.try_into())
-//         .collect::<Result<Vec<_>>>()
-// }
+#[instrument(skip(conn), level = "debug")]
+pub fn get_video_files_with_no_acceptable_video_repr(
+    conn: &mut DbConn,
+) -> Result<Vec<(AssetFile, Video)>> {
+    let query = diesel::sql_query(
+        r#"
+            SELECT AssetFile.*, VideoFile.* 
+            FROM AssetFile INNER JOIN VideoFile ON AssetFile.file_id = VideoFile.file_id
+            WHERE
+            NOT EXISTS
+            (
+                SELECT * FROM
+                (
+                    SELECT vr.codec_name FROM VideoRepresentation vr WHERE vr.file_id = VideoFile.file_id
+                    UNION
+                    SELECT VideoFile.video_codec_name WHERE VideoFile.has_ghi = 1 OR VideoFile.has_ghi = 3
+                )
+                INTERSECT SELECT * FROM AcceptableVideoCodec
+            );
+        "#,
+    );
+    let db_assets: Vec<(DbAssetFile, DbVideoFile)> = query
+        .load(conn)
+        .wrap_err("error querying for VideoFiles with no acceptable codec representations")?;
+    db_assets
+        .into_iter()
+        .map(|(asset_file, video_file)| {
+            Ok((
+                model::AssetFile::try_from(asset_file)?,
+                model::Video::try_from(video_file)?,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()
+}
+
+#[instrument(skip(conn))]
+pub fn get_video_files_with_unknown_ghi(conn: &mut DbConn) -> Result<Vec<Video>> {
+    use schema::VideoFile;
+    let rows: Vec<DbVideoFile> = VideoFile::table
+        .filter(VideoFile::has_ghi.is_null())
+        .select(DbVideoFile::as_select())
+        .load(conn)
+        .wrap_err("error querying table VideoFile")?;
+    rows.into_iter()
+        .map(|row| Video::try_from(row))
+        .try_collect()
+}
 
 #[instrument(skip(conn, acceptable_codecs), level = "debug")]
 pub fn get_image_assets_with_no_acceptable_repr(
@@ -622,25 +632,25 @@ pub fn set_asset_max_iframe_interval(
     // diesel::update(Asset::table.filter(Asset::asset_id.eq(asset_id.0))).set(Asset::h)
 }
 
-pub fn get_asset_has_ghi_index(conn: &mut DbConn, file_id: FileId) -> Result<Option<i32>> {
+pub fn get_asset_has_ghi_index(conn: &mut DbConn, file_id: FileId) -> Result<Option<HasGhiIndex>> {
     use schema::VideoFile;
     let r: Option<i32> = VideoFile::table
         .find(file_id.0)
         .select(VideoFile::has_ghi)
         .get_result(conn)
         .context("querying VideoFile for has_ghi_index")?;
-    Ok(r)
+    r.map(|r| HasGhiIndex::try_from(r)).transpose()
 }
 
 pub fn set_asset_has_ghi_index(
     conn: &mut DbConn,
     file_id: FileId,
-    has_ghi_index: i32,
+    has_ghi_index: HasGhiIndex,
 ) -> Result<()> {
     use schema::VideoFile;
     conn.immediate_transaction(|conn| {
         let n_affected = diesel::update(VideoFile::table.find(file_id.0))
-            .set(VideoFile::has_ghi.eq(has_ghi_index))
+            .set(VideoFile::has_ghi.eq(i32::from(has_ghi_index)))
             .execute(conn)
             .context("error updating column VideoFile.has_ghi_index")?;
         if n_affected == 1 {

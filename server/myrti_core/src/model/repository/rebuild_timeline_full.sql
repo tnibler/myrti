@@ -1,5 +1,5 @@
 DELETE FROM TimelineItem;
-DELETE FROM TimelineSegment;
+DELETE FROM TimelineMonth;
 DELETE FROM TimelineSection;
 
 INSERT INTO RebuildFullTimeline VALUES (1);

@@ -14,7 +14,7 @@ SeriesDate AS (
 	FROM Asset
 	LEFT JOIN TimelineGroupItem ON Asset.asset_id = TimelineGroupItem.asset_id
 	WHERE Asset.asset_id IN (SELECT asset_id FROM BuildTimelineStaging)
-	OR EXISTS (SELECT * FROM RebuildFullTimeline)
+	OR (EXISTS (SELECT * FROM RebuildFullTimeline) AND Asset.is_hidden = 0)
 )
 , AssetGroupDate AS (
 	SELECT *
@@ -218,3 +218,65 @@ SELECT SectionLen.section_idx
 , SectionWidth.total_width
 FROM SectionLen, SectionWidth
 WHERE SectionLen.section_idx = SectionWidth.section_idx;
+
+-- Insert assets in series that are not in the series selection, which were filtered out at the very start.
+-- Do this after sections and widths are computed since these do not appear in the grid.
+WITH SeriesSelIndex AS (
+	-- associate each asset with the selection asset its associated with
+	SELECT Asset.asset_id
+	, Asset.series_id
+	, Asset.is_series_selection
+	, MAX(Asset.taken_date) OVER (PARTITION BY Asset.series_id) AS series_date
+	, COALESCE(SUM(Asset.is_series_selection) OVER (
+		PARTITION BY Asset.series_id
+		ORDER BY Asset.taken_date
+		ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+	), 0) AS selection_index
+	, SUM(Asset.is_series_selection) OVER (PARTITION BY Asset.series_id) AS selection_count
+	FROM Asset
+	WHERE Asset.series_id IS NOT NULL
+	AND (
+		Asset.asset_id IN (SELECT asset_id FROM BuildTimelineStaging)
+		OR (EXISTS (SELECT * FROM RebuildFullTimeline) AND Asset.is_hidden = 0)
+	)
+	WINDOW w AS (PARTITION BY Asset.series_id ORDER BY Asset.taken_date)
+)
+, MatchSelectionIndex AS (
+	SELECT not_sel.asset_id AS asset_id
+	, sel.asset_id AS sel_asset_id
+	FROM SeriesSelIndex sel, SeriesSelIndex not_sel
+	WHERE sel.is_series_selection = 1 AND not_sel.is_series_selection = 0
+	AND sel.series_id = not_sel.series_id
+	AND CASE
+		-- the tail is special, there's no selection asset after the last one so include them in the last group
+		WHEN not_sel.selection_index = not_sel.selection_count THEN not_sel.selection_index = sel.selection_index + 1
+		ELSE sel.selection_index = not_sel.selection_index
+	END
+)
+INSERT INTO TimelineItem(
+	asset_id
+	, taken_date
+	, series_id
+	, series_date
+	, group_id
+	, group_date
+	, section_idx
+	, segment_id
+	, segment_date
+	, segment_split_idx
+)
+SELECT Asset.asset_id
+	, Asset.taken_date
+	, Asset.series_id
+	, ti.series_date
+	, ti.group_id
+	, ti.group_date -- series must always belong to the same group, so copy group info
+	, ti.section_idx
+	, ti.segment_id
+	, ti.segment_date
+	, ti.segment_split_idx
+FROM MatchSelectionIndex
+INNER JOIN Asset ON Asset.asset_id = MatchSelectionIndex.asset_id
+INNER JOIN TimelineItem ti ON ti.asset_id = MatchSelectionIndex.sel_asset_id
+;
+

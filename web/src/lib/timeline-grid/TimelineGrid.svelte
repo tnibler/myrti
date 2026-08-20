@@ -674,12 +674,12 @@
       {#if month.showYear || month.showMonth}
         <div class="absolute w-full" style={`height: ${month.height}px; top: ${month.top}px;`}>
           {#if month.showYear}
-            <div class="absolute h-full inset-e-4">
+            <div class="h-full inset-e-4">
               {month.year}
             </div>
           {/if}
           {#if month.showMonth}
-            <div class="absolute inset-e-2 rounded-full size-2 bg-gray-500"></div>
+            <div class="absolute inset-e-2 rounded-full size-2 -mb-1 bottom-0 bg-gray-500"></div>
           {/if}
         </div>
       {/if}
@@ -687,7 +687,7 @@
     {#if scrubHover}
       <div
         class="absolute inset-e-0 border-t-1 min-w-32 pointer-events-none p-1 text-lg opacity-80 bg-gray-200"
-        style:top="{hoverY - 2}px"
+        style:top="{hoverY}px"
       >
         {scrollHoverLabel}
       </div>

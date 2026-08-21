@@ -51,7 +51,7 @@
         src = ./web;
         pnpm = pkgs.pnpm_11;
         fetcherVersion = 3; # See https://nixos.org/manual/nixpkgs/stable/#javascript-pnpm-fetcherVersion
-        hash = "sha256-aS5zDaF9Vt+DUSt4D21T3y/nVV0i6H/zj3QTTbI/Lps=";
+        hash = "sha256-Wdoh3V3jTs0zipybwK2rYd4RoRoZ5mOKt1zuHaNTQxc=";
       };
 
       myrtiWeb = pkgs.stdenv.mkDerivation {
@@ -195,6 +195,7 @@
           typescript-language-server
           vscode-langservers-extracted
           prettier
+          diesel-cli
         ];
 
         JEMALLOC_PATH = "${pkgs.jemalloc}/lib/libjemalloc.so";

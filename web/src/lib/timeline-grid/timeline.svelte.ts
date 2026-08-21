@@ -480,7 +480,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       }
     }
     sectionsPublic = sections;
-    if (sectionLoads.length > 0) {
+    if (sectionLoads.length > 0 || forceRelayout) {
       const now = Date.now();
       lastScrollTime = now;
       await Promise.all(sectionLoads);
@@ -1652,6 +1652,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       ).data;
       asset.repFile.rotationCorrection = updatedAsset.repFile.rotationCorrection;
       layoutSection(getItemForAsset(asset.assetId).pos.sectionIndex);
+      sectionsPublic = sections;
     },
     mirrorAsset: async (assetId: AssetId, axis: 'horizontal' | 'vertical') => {
       const asset = assetsById.get(assetId);

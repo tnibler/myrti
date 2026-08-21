@@ -2,9 +2,7 @@
   import Gallery from '@lib/swipey-gallery/Gallery.svelte';
   import type { ThumbnailBounds } from '@lib/swipey-gallery/types';
   import type { ITimelineGrid } from '@lib/timeline-grid/timeline.svelte';
-  import type { ActionReturn } from 'svelte/action';
   import GridTile from '@lib/ui/GridTile.svelte';
-  import SegmentTitle from './SegmentTitle.svelte';
   import type { SelectState } from '@lib/ui/GridTile.svelte';
   import CreateGroupInput from './CreateGroupInput.svelte';
   import type {
@@ -240,25 +238,9 @@
     if (!img) {
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     }
-    if (asset.repFile.rotationCorrection % 180 == 0) {
-      return {
-        rect: {
-          x: img.x,
-          y: img.y,
-          width: img.width,
-          height: img.height,
-        },
-      };
-    } else {
-      return {
-        rect: {
-          x: img.x - (img.height - img.width) * 0.5,
-          y: img.y + (img.height - img.width) * 0.5,
-          width: img.height,
-          height: img.width,
-        },
-      };
-    }
+    return {
+      rect: img,
+    };
   }
 
   function getSlideRef(item: TimelineItem): SlideRef {

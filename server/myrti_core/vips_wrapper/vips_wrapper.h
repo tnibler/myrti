@@ -20,6 +20,13 @@ typedef struct ThumbnailResult {
   int actual_height;
 } ThumbnailResult;
 
+typedef struct ImageBuffer {
+  int width;
+  int height;
+  unsigned long size;
+  const char* buf;
+} ImageBuffer;
+
 int thumbnail(ThumbnailParams, ThumbnailResult *);
 
 typedef struct ImageInfo {
@@ -28,6 +35,9 @@ typedef struct ImageInfo {
 } ImageInfo;
 
 int read_image_info(const char *path, ImageInfo *out);
+
+int thumbnail_for_thumbhash(const char* path, int width, ImageBuffer* out);
+void free_image_buffer(ImageBuffer buf);
 
 typedef struct HeifSaveParams {
   int quality;

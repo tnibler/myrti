@@ -28,6 +28,11 @@ pub struct CreateAssetThumbnail {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateAssetThumbhash {
+    pub file_id: FileId,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThumbnailToCreate {
     pub ty: ThumbnailType,
     pub formats: Vec<ThumbnailFormat>,

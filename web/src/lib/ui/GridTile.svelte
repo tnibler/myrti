@@ -26,6 +26,8 @@
   } from '@mdi/js';
   import { Layers } from '@lucide/svelte';
   import { fade } from 'svelte/transition';
+  import { thumbHashToRGBA } from 'thumbhash';
+  import { base91Decode } from '@lib/base91';
 
   type GridTileProps = {
     href: string;
@@ -52,6 +54,7 @@
   }: GridTileProps = $props();
   let isMouseOver = $state(false);
   const isSelected = $derived(selectState.state === 'select' && selectState.isSelected);
+  let canvas: HTMLCanvasElement | null = $state(null);
 
   function onSelectButtonClick() {
     onSelectToggled();
@@ -67,6 +70,9 @@
     }
   }
 
+  const thumbhash = $derived(
+    asset.repFile.thumbhash ? base91Decode(asset.repFile.thumbhash) : null,
+  );
   const mirrorImg = $derived(asset.repFile.mirrorCorrection);
   const rotateImg = $derived(asset.repFile.rotationCorrection);
   const rotateImgMod180 = $derived(asset.repFile.rotationCorrection % 180);
@@ -75,6 +81,52 @@
   const imgHeight = $derived(rotateImgMod180 != 0 ? box.width : box.height);
   const imgWidth = $derived(rotateImgMod180 != 0 ? box.height : box.width);
   const isHoverable = $derived(selectState.state !== 'unclickable');
+
+  let thumbHashVisible = $state(false);
+
+  function thumbnailLoadOnce(node: HTMLImageElement) {
+    function onLoad() {
+      thumbHashVisible = false;
+      node.removeEventListener('load', onLoad);
+    }
+
+    // Check if image was already cached before action mounted
+    if (node.complete && node.naturalWidth > 0) {
+      onLoad();
+    } else {
+      thumbHashVisible = true;
+      node.addEventListener('load', onLoad);
+    }
+
+    return {
+      destroy() {
+        node.removeEventListener('load', onLoad);
+      },
+    };
+  }
+
+  $effect(() => {
+    const ctx = canvas?.getContext('2d');
+    const canvasTmp = document.createElement('canvas');
+    const ctxTmp = canvasTmp.getContext('2d');
+    if (!canvas || !ctx || !ctxTmp) {
+      return;
+    }
+    const { w, h, rgba } = thumbHashToRGBA(thumbhash);
+
+    const rotation = asset.repFile.rotationCorrection;
+    canvas.width = rotation % 180 == 0 ? w : h;
+    canvas.height = rotation % 180 == 0 ? h : w;
+    canvasTmp.width = w;
+    canvasTmp.height = h;
+
+    const pixels = new ImageData(new Uint8ClampedArray(rgba), w, h);
+    ctxTmp.putImageData(pixels, 0, 0);
+
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.drawImage(canvasTmp, -w / 2, -h / 2);
+  });
 </script>
 
 <a
@@ -102,14 +154,38 @@
 >
   <div class="h-full w-full bg-blue-100">
     <!-- svelte-ignore a11y_missing_attribute -->
+    <!-- <img -->
+    <!--   src={thumbhashUrl} -->
+    <!--   class="absolute" -->
+    <!--   class:rounded-xl={isSelected} -->
+    <!--   class:scale-[0.85]={isSelected} -->
+    <!--   style:width="{box.width}px" -->
+    <!--   style:height="{box.height}px" -->
+    <!--   style:transform={mirrorImg === 'vertical' -->
+    <!--     ? 'scaleY(-1)' -->
+    <!--     : mirrorImg === 'horizontal' -->
+    <!--       ? 'scaleX(-1)' -->
+    <!--       : ''} -->
+    <!-- /> -->
+    <!-- svelte-ignore a11y_missing_attribute -->
+    <canvas
+      bind:this={canvas}
+      class="absolute"
+      class:rounded-xl={isSelected}
+      class:scale-[0.85]={isSelected}
+      style:width="{box.width}px"
+      style:height="{box.height}px"
+    ></canvas>
     <img
+      {@attach thumbnailLoadOnce}
       id={imgElId}
       src="/api/files/thumbnail/{asset.repFile.fileId}/large/avif"
-      class="absolute bg-black"
+      class="absolute transition-opacity"
       class:rounded-xl={isSelected}
       class:scale-[0.85]={isSelected}
       width={imgWidth}
       height={imgHeight}
+      style:opacity={thumbHashVisible ? '0' : '1'}
       style:top={imgTop + 'px'}
       style:left={imgLeft + 'px'}
       style:max-width="none"
@@ -119,6 +195,7 @@
           ? 'scaleX(-1)'
           : ''}"
     />
+
     <div
       class={'absolute z-10 h-full w-full bg-gradient-to-b from-black/25 via-[transparent_25%] opacity-0 transition-opacity ' +
         (isHoverable ? 'group-hover:opacity-100' : '')}

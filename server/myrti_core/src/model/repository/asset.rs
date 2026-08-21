@@ -15,7 +15,7 @@ use crate::model::repository::db_entity::{
 use crate::model::{
     self, Asset, AssetBase, AssetFile, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe,
     AssetThumbnail, AssetThumbnailId, AssetType, CreateAsset, CreateAssetSpe, FileId, HasGhiIndex,
-    Image, MirrorCorrection, RotationCorrection, TimestampInfo, Video,
+    Image, MirrorCorrection, RotationCorrection, ThumbnailType, TimestampInfo, Video,
 };
 use crate::model::{
     repository::db_entity::{DbAssetPathOnDisk, DbAssetThumbnail, to_db_asset_ty},
@@ -536,6 +536,44 @@ pub fn get_ffprobe_output(conn: &mut DbConn, video_file_id: FileId) -> Result<Ve
         .select(VideoFile::ffprobe_output)
         .first(conn)?;
     Ok(ffprobe_output)
+}
+
+pub fn get_files_without_thumbhash(conn: &mut DbConn) -> Result<Vec<FileId>> {
+    use schema::{AssetFile, AssetThumbnail};
+    let rows = AssetFile::table
+        .inner_join(AssetThumbnail::table)
+        .filter(
+            AssetFile::thumb_hash.is_null().and(
+                AssetFile::asset_type
+                    .eq(to_db_asset_ty(AssetType::Image))
+                    // videos only if they already have usable a thumbnail in original aspect ratio
+                    // to create a thumbhash from
+                    .or(AssetFile::asset_type
+                        .eq(to_db_asset_ty(AssetType::Video))
+                        .and(
+                            AssetThumbnail::ty
+                                .eq(to_db_thumbnail_type(ThumbnailType::LargeOrigAspect)),
+                        )),
+            ),
+        )
+        .select(AssetFile::file_id)
+        .get_results(conn)
+        .wrap_err("error querying table AssetFile")?;
+    Ok(rows.into_iter().map(FileId).collect())
+}
+
+pub fn set_file_thumbhash(conn: &mut DbConn, file_id: FileId, thumbhash: &str) -> Result<()> {
+    use schema::AssetFile;
+    let n_affected = diesel::update(AssetFile::table)
+        .filter(AssetFile::file_id.eq(file_id.0))
+        .set(AssetFile::thumb_hash.eq(thumbhash.as_bytes()))
+        .execute(conn)
+        .wrap_err("error updating column AssetFile.thumb_hash")?;
+    if n_affected == 1 {
+        Ok(())
+    } else {
+        Err(eyre!("error updating column AssetFile.thumb_hash"))
+    }
 }
 
 pub fn set_assets_hidden(conn: &mut DbConn, set_hidden: bool, asset_ids: &[AssetId]) -> Result<()> {

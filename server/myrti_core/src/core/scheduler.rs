@@ -22,11 +22,11 @@ use crate::{
             start_video_packaging_actor,
         },
     },
-    catalog::rules,
+    catalog::{operation::create_thumbnail::CreateAssetThumbhash, rules},
     config::Config,
     interact,
     model::{
-        AssetId, AssetRootDirId, AssetSpe, FileId,
+        AssetId, AssetRootDirId, AssetSpe, AssetType, FileId,
         repository::{self, db::DbPool},
     },
 };
@@ -299,6 +299,11 @@ impl Scheduler {
                         .msg_convert_image(img_convert)
                         .expect("receiver must be alive");
                 }
+                self.thumbnail_actor
+                    .msg_create_thumbhash(CreateAssetThumbhash {
+                        file_id: asset.rep_file.id,
+                    })
+                    .expect("receiver must be alive");
             }
         }
 
@@ -318,11 +323,20 @@ impl Scheduler {
                     actor_state.has_dropped_msgs = false;
                     let mut conn = self.db_pool.get().await?;
                     let thumbnails_required = rules::thumbnails_to_create(&mut conn).await?;
-                    let any_work = !thumbnails_required.is_empty();
+                    let mut any_work = !thumbnails_required.is_empty();
                     for t in thumbnails_required {
                         self.thumbnail_actor
                             .msg_create_asset_thumbnail(t)
                             .expect("receiver must be alive");
+                    }
+                    let thumbhash_missing = rules::files_missing_thumbhash(&mut conn)
+                        .await
+                        .expect("TODO");
+                    any_work |= !thumbhash_missing.is_empty();
+                    for file_id in thumbhash_missing {
+                        let _ = self
+                            .thumbnail_actor
+                            .msg_create_thumbhash(CreateAssetThumbhash { file_id });
                     }
                     any_work
                 } else {
@@ -347,12 +361,24 @@ impl Scheduler {
                     Ok(r) => r,
                 };
                 match result {
-                    ThumbnailTaskResult::Asset(ref result) => match result {
+                    ThumbnailTaskResult::Asset(result) => match result {
                         Err(_) => {
                             // something weird went wrong
                             tracing::warn!(?result);
                         }
                         Ok(result) => {
+                            let conn = self.db_pool.get().await?;
+                            let file =
+                                interact!(conn, move |conn| repository::asset::get_asset_file(
+                                    conn,
+                                    result.file_id
+                                ))
+                                .await??;
+                            if file.ty == AssetType::Video && file.thumbhash.is_none() {
+                                self.thumbnail_actor
+                                    .msg_create_thumbhash(CreateAssetThumbhash { file_id: file.id })
+                                    .expect("receiver must be alive");
+                            }
                             result.failed.iter().for_each(|(create_thumbnail, err)| {
                                 tracing::warn!(?create_thumbnail, ?err)
                             });
@@ -363,6 +389,12 @@ impl Scheduler {
                             tracing::warn!(?err);
                         }
                         Ok(_result) => {}
+                    },
+                    ThumbnailTaskResult::Thumbhash(file_id, result) => match result {
+                        Err(err) => {
+                            tracing::warn!(?file_id, ?err, "error generating thumbhash");
+                        }
+                        Ok(()) => {}
                     },
                 };
             }
@@ -600,6 +632,12 @@ async fn on_startup(
     let image_conversion_count = image_conversion_required.len();
     let thumbnails_required = rules::thumbnails_to_create(&mut conn).await.expect("TODO");
     let thumbnail_count = thumbnails_required.len();
+    let thumbhash_missing = rules::files_missing_thumbhash(&mut conn)
+        .await
+        .expect("TODO");
+    for file_id in thumbhash_missing {
+        let _ = thumbnail_actor.msg_create_thumbhash(CreateAssetThumbhash { file_id });
+    }
     let album_thumbnails_required = rules::album_thumbnails_to_create(&mut conn)
         .await
         .expect("TODO");

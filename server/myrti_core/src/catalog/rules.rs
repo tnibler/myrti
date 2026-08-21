@@ -145,6 +145,13 @@ pub async fn required_image_conversion_for_asset(
     }
 }
 
+pub async fn files_missing_thumbhash(conn: &mut PooledDbConn) -> Result<Vec<FileId>> {
+    interact!(conn, move |conn| {
+        repository::asset::get_files_without_thumbhash(conn)
+    })
+    .await?
+}
+
 pub async fn required_thumbnails_for_asset(
     conn: &mut PooledDbConn,
     file_id: FileId,

@@ -113,6 +113,55 @@ pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<VipsThumbailRes
     Ok(VipsThumbailResult { actual_size })
 }
 
+pub struct VipsImageBuffer {
+    pub width: i32,
+    pub height: i32,
+    size: u64,
+    buf: *const i8,
+}
+
+impl VipsImageBuffer {
+    pub fn data(&self) -> &[u8] {
+        unsafe { core::slice::from_raw_parts(self.buf.cast(), self.size.try_into().unwrap()) }
+    }
+}
+
+impl Drop for VipsImageBuffer {
+    fn drop(&mut self) {
+        unsafe {
+            wrapper::free_image_buffer(wrapper::ImageBuffer {
+                width: self.width,
+                height: self.height,
+                size: self.size,
+                buf: self.buf,
+            });
+        }
+    }
+}
+
+pub fn generate_thumbnail_for_thumbhash(path: &Path) -> Result<VipsImageBuffer> {
+    let c_path = CString::new(path.as_os_str().as_bytes())
+        .wrap_err(format!("Could not convert path {} to bytes", path))?;
+    let mut out = wrapper::ImageBuffer {
+        width: 0,
+        height: 0,
+        size: 0,
+        buf: Default::default(),
+    };
+    let width = 80;
+    let ret = unsafe { wrapper::thumbnail_for_thumbhash(c_path.as_ptr(), width, &raw mut out) };
+    if ret == 0 {
+        Ok(VipsImageBuffer {
+            width: out.width,
+            height: out.height,
+            size: out.size,
+            buf: out.buf,
+        })
+    } else {
+        Err(eyre!("Error reading image to buffer with libvips"))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Size {
     pub width: i32,

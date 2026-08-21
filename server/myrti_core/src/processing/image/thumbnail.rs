@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use camino::Utf8PathBuf as PathBuf;
+use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use eyre::{Context, Result};
 
 use crate::{
@@ -125,4 +125,24 @@ impl GenerateThumbnailTrait for GenerateThumbnailMock {
             },
         })
     }
+}
+
+pub async fn generate_thumbhash(in_path: PathBuf) -> Result<String> {
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<_>>();
+    rayon::spawn(move || {
+        let image = match vips_wrapper::generate_thumbnail_for_thumbhash(&in_path) {
+            Ok(img) => img,
+            Err(e) => {
+                tx.send(Err(e)).unwrap();
+                return;
+            }
+        };
+        let thumbhash = fast_thumbhash::rgba_to_thumb_hash_b91(
+            image.width.try_into().unwrap(),
+            image.height.try_into().unwrap(),
+            image.data(),
+        );
+        tx.send(Ok(thumbhash)).unwrap();
+    });
+    rx.await?
 }

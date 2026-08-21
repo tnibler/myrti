@@ -1009,6 +1009,10 @@
             "type": "integer",
             "format": "int32"
           },
+          "thumbhash": {
+            "type": "string",
+            "nullable": true
+          },
           "width": {
             "type": "integer",
             "format": "int32"

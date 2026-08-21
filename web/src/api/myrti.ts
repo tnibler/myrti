@@ -95,6 +95,8 @@ export interface AssetFile {
   mirrorCorrection: MirrorCorrection;
   pathInRoot: string;
   rotationCorrection: number;
+  /** @nullable */
+  thumbhash?: string | null;
   width: number;
 }
 

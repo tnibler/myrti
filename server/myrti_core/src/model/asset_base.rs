@@ -22,6 +22,7 @@ pub struct AssetFile {
     pub mirror_correction: MirrorCorrection,
     /// Seahash of the file, if already computed
     pub hash: Option<u64>,
+    pub thumbhash: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

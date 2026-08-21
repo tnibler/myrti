@@ -51,3 +51,42 @@ int thumbnail(ThumbnailParams params, ThumbnailResult* result) {
   }
   return 0;
 }
+
+int thumbnail_for_thumbhash(const char* path, int width, ImageBuffer* out) {
+  if (path == NULL || out == NULL) {
+    return -1;
+  }
+  VipsImage* image = NULL;
+  int ret = 0;
+
+  if ((ret = vips_thumbnail(path, &image, width, NULL)) != 0) {
+    goto cleanup;
+  }
+
+  if (!vips_image_hasalpha(image)) {
+    VipsImage* image_alpha = NULL;
+    if ((ret = vips_addalpha(image, &image_alpha, NULL)) != 0) {
+      goto cleanup;
+    }
+    g_object_unref(image);
+    image = image_alpha;
+  }
+  unsigned long size;
+  const char* buf = vips_image_write_to_memory(image, &size);
+  if (buf == NULL) {
+      ret = -1;
+      goto cleanup;
+  }
+  out->width = image->Xsize;
+  out->height = image->Ysize;
+  out->size = size;
+  out->buf = buf;
+
+cleanup:
+  g_object_unref(image);
+  return ret;
+}
+
+void free_image_buffer(ImageBuffer buf) {
+  g_free((void*)buf.buf);
+}

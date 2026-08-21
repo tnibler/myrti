@@ -28,6 +28,7 @@ pub struct AssetFile {
     pub rotation_correction: i32,
     pub mirror_correction: MirrorCorrection,
     pub mime_type: String,
+    pub thumbhash: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
@@ -146,6 +147,7 @@ impl From<&model::AssetFile> for AssetFile {
                 model::RotationCorrection::CW270 => 270,
             },
             mirror_correction: value.mirror_correction.into(),
+            thumbhash: value.thumbhash.clone(),
         }
     }
 }

@@ -1,4 +1,4 @@
-use eyre::Result;
+use eyre::{Result, eyre};
 use tokio::sync::{mpsc, oneshot};
 use tracing::Instrument;
 
@@ -8,15 +8,19 @@ use crate::{
         operation::{
             create_album_thumbnail::{self, CreateAlbumThumbnail, CreateAlbumThumbnailWithPaths},
             create_thumbnail::{
-                CreateAssetThumbnail, CreateThumbnailWithPaths, ThumbnailSideEffectResult,
-                ThumbnailToCreateWithPaths, apply_create_thumbnail,
+                CreateAssetThumbhash, CreateAssetThumbnail, CreateThumbnailWithPaths,
+                ThumbnailSideEffectResult, ThumbnailToCreateWithPaths, apply_create_thumbnail,
                 perform_side_effects_create_thumbnail,
             },
         },
         storage_key,
     },
-    core::storage::Storage,
-    model::{ThumbnailFormat, repository::db::DbPool},
+    core::storage::{Storage, StorageProvider},
+    interact,
+    model::{
+        AssetType, FileId, ThumbnailFormat, ThumbnailType,
+        repository::{self, db::DbPool},
+    },
     processing::process_control::ProcessControlReceiver,
 };
 
@@ -30,11 +34,13 @@ pub type MsgFromThumbnail = MsgFrom<ThumbnailTaskResult>;
 #[derive(Debug, Clone)]
 pub enum ThumbnailTaskMsg {
     CreateAssetThumbnail(CreateAssetThumbnail),
+    CreateAssetThumbhash(CreateAssetThumbhash),
     CreateAlbumThumbnail(CreateAlbumThumbnail),
 }
 
 #[derive(Debug)]
 pub enum ThumbnailTaskResult {
+    Thumbhash(FileId, Result<()>),
     Asset(Result<ThumbnailSideEffectResult>),
     Album(Result<CreateAlbumThumbnailWithPaths>),
 }
@@ -59,6 +65,9 @@ pub fn start_thumbnail_actor(
 }
 
 impl QueuedActorHandle<ThumbnailTaskMsg> {
+    pub fn msg_create_thumbhash(&self, msg: CreateAssetThumbhash) -> Result<()> {
+        self.msg_do_task(ThumbnailTaskMsg::CreateAssetThumbhash(msg))
+    }
     pub fn msg_create_asset_thumbnail(&self, msg: CreateAssetThumbnail) -> Result<()> {
         self.msg_do_task(ThumbnailTaskMsg::CreateAssetThumbnail(msg))
     }
@@ -83,6 +92,20 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
     ) {
         let (process_control_send, mut process_control_recv) = mpsc::channel(1);
         match msg {
+            ThumbnailTaskMsg::CreateAssetThumbhash(CreateAssetThumbhash { file_id }) => {
+                let db_pool = self.db_pool.clone();
+                let storage = self.storage.clone();
+
+                tokio::task::spawn(
+                    async move {
+                        let result = generate_thumbhash(db_pool, storage, file_id).await;
+                        result_send
+                            .send((task_id, Ok(ThumbnailTaskResult::Thumbhash(file_id, result))))
+                            .unwrap();
+                    }
+                    .in_current_span(),
+                );
+            }
             ThumbnailTaskMsg::CreateAssetThumbnail(create_thumbnail) => {
                 let db_pool = self.db_pool.clone();
                 let storage = self.storage.clone();
@@ -294,4 +317,41 @@ async fn do_album_thumbnail_side_effects(
     )
     .await?;
     Ok(op_with_paths)
+}
+
+async fn generate_thumbhash(db_pool: DbPool, storage: Storage, file_id: FileId) -> Result<()> {
+    let conn = db_pool.get().await?;
+    let file = interact!(conn, move |conn| {
+        repository::asset::get_asset_file(conn, file_id)
+    })
+    .await??;
+    let input_path = match file.ty {
+        AssetType::Image => interact!(conn, move |conn| {
+            repository::asset::get_asset_path_on_disk(conn, file_id)
+        })
+        .await??
+        .path_on_disk(),
+        AssetType::Video => {
+            let thumbnail = interact!(conn, move |conn| {
+                repository::asset::get_thumbnails_for_asset(conn, file_id)
+            })
+            .await??
+            .into_iter()
+            .find(|thumb| thumb.ty == ThumbnailType::LargeOrigAspect)
+            .ok_or(eyre!(
+                "can't generate thumbhash for video with no suitable thumbnail yet"
+            ))?;
+            let thumbnail_key = storage_key::thumbnail(file_id, thumbnail.ty, thumbnail.format);
+            storage
+                .local_path(&thumbnail_key)
+                .await?
+                .ok_or(eyre!("thumbnail must be local file"))?
+        }
+    };
+    let thumbhash = crate::processing::image::thumbnail::generate_thumbhash(input_path).await?;
+    interact!(conn, move |conn| {
+        repository::asset::set_file_thumbhash(conn, file_id, &thumbhash)
+    })
+    .await??;
+    Ok(())
 }

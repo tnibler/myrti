@@ -109,7 +109,7 @@
     const ctx = canvas?.getContext('2d');
     const canvasTmp = document.createElement('canvas');
     const ctxTmp = canvasTmp.getContext('2d');
-    if (!canvas || !ctx || !ctxTmp) {
+    if (!canvas || !ctx || !ctxTmp || !thumbhash) {
       return;
     }
     const { w, h, rgba } = thumbHashToRGBA(thumbhash);

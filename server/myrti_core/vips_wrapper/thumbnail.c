@@ -52,6 +52,7 @@ int thumbnail(ThumbnailParams params, ThumbnailResult* result) {
   return 0;
 }
 
+// Create a thumbnail in RGBA, converting if necessary
 int thumbnail_for_thumbhash(const char* path, int width, ImageBuffer* out) {
   if (path == NULL || out == NULL) {
     return -1;
@@ -70,6 +71,14 @@ int thumbnail_for_thumbhash(const char* path, int width, ImageBuffer* out) {
     }
     g_object_unref(image);
     image = image_alpha;
+  }
+  if (vips_image_get_bands(image) != 4) {
+    VipsImage* image_rgba = NULL;
+    if ((ret = vips_colourspace(image, &image_rgba, VIPS_INTERPRETATION_sRGB, NULL)) != 0) {
+      goto cleanup;
+    }
+    g_object_unref(image);
+    image = image_rgba;
   }
   unsigned long size;
   const char* buf = vips_image_write_to_memory(image, &size);

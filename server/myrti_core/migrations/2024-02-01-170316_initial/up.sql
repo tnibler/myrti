@@ -302,3 +302,5 @@ CREATE INDEX index_asset_series ON Asset(series_id);
 CREATE INDEX index_assetfile_asset ON AssetFile(asset_id);
 CREATE INDEX index_timelinegroupitem_asset ON TimelineGroupItem(asset_id);
 CREATE INDEX index_timelinegroupitem_group ON TimelineGroupItem(group_id);
+CREATE INDEX index_imagerepresentation_file_id ON ImageRepresentation(file_id);
+CREATE INDEX index_videorepresentation_file_id ON VideoRepresentation(file_id);

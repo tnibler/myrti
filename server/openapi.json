@@ -528,7 +528,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AssetWithSpe"
+                  "$ref": "#/components/schemas/SetAssetRotationResponse"
                 }
               }
             }
@@ -1440,6 +1440,23 @@
           }
         }
       },
+      "SetAssetRotationResponse": {
+        "type": "object",
+        "required": [
+          "rotation",
+          "mirror"
+        ],
+        "properties": {
+          "mirror": {
+            "$ref": "#/components/schemas/MirrorCorrection"
+          },
+          "rotation": {
+            "type": "integer",
+            "format": "int32",
+            "description": "One of 0, 90, 180, 270"
+          }
+        }
+      },
       "SetAssetSeriesSelectionRequest": {
         "type": "object",
         "required": [
@@ -1497,7 +1514,6 @@
               "seriesId",
               "assets",
               "selectionIndices",
-              "totalSize",
               "itemType"
             ],
             "properties": {
@@ -1523,10 +1539,6 @@
               },
               "seriesId": {
                 "$ref": "#/components/schemas/AssetSeriesId"
-              },
-              "totalSize": {
-                "type": "integer",
-                "minimum": 0
               }
             }
           }

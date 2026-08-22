@@ -290,6 +290,12 @@ export interface SetAssetRotationRequest {
   rotation?: number | null;
 }
 
+export interface SetAssetRotationResponse {
+  mirror: MirrorCorrection;
+  /** One of 0, 90, 180, 270 */
+  rotation: number;
+}
+
 export interface SetAssetSeriesSelectionRequest {
   isSeriesSelection: boolean;
 }
@@ -340,8 +346,6 @@ export type TimelineItemOneOfFour = {
   itemType: TimelineItemOneOfFourItemType;
   selectionIndices: number[];
   seriesId: AssetSeriesId;
-  /** @minimum 0 */
-  totalSize: number;
 };
 
 export type TimelineItem = TimelineItemOneOf | TimelineItemOneOfFour;
@@ -501,7 +505,7 @@ export const getFileDetails = <TData = AxiosResponse<AssetDetailsResponse>>(
   return axios.get(`/api/files/${id}/details`, options);
 };
 
-export const setAssetTransformCorrection = <TData = AxiosResponse<AssetWithSpe>>(
+export const setAssetTransformCorrection = <TData = AxiosResponse<SetAssetRotationResponse>>(
   id: string,
   setAssetRotationRequest: SetAssetRotationRequest,
   options?: AxiosRequestConfig,
@@ -584,7 +588,7 @@ export type GetOriginalFileResult = AxiosResponse<string>;
 export type GetImageAssetRepresentationResult = AxiosResponse<string>;
 export type GetThumbnailResult = AxiosResponse<string>;
 export type GetFileDetailsResult = AxiosResponse<AssetDetailsResponse>;
-export type SetAssetTransformCorrectionResult = AxiosResponse<AssetWithSpe>;
+export type SetAssetTransformCorrectionResult = AxiosResponse<SetAssetRotationResponse>;
 export type GetAllAssetsGeojsonResult = AxiosResponse<string>;
 export type CreateSeriesResult = AxiosResponse<CreateSeriesResponse>;
 export type DeleteSeriesResult = AxiosResponse<DeleteSeries200>;

@@ -1,5 +1,5 @@
 CREATE TABLE TimelineItem (
-  asset_id INTEGER NOT NULL UNIQUE
+  asset_id INTEGER PRIMARY KEY NOT NULL
   , taken_date INTEGER NOT NULL
   , series_id INTEGER
   , series_date INTEGER

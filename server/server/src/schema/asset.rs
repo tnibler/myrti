@@ -41,7 +41,7 @@ pub struct Asset {
     pub rep_file: AssetFile,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetWithSpe {
     #[serde(flatten)]
@@ -50,17 +50,18 @@ pub struct AssetWithSpe {
     pub spe: AssetSpe,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase", tag = "assetType")]
 pub enum AssetSpe {
     Image(Image),
     Video(Video),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Image {
-    pub representations: Vec<ImageRepresentation>,
+    #[schema(value_type = Vec::<ImageRepresentation>)]
+    pub representations: Box<serde_json::value::RawValue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]

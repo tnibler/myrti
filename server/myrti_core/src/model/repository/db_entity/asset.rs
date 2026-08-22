@@ -6,8 +6,9 @@ use diesel::prelude::*;
 use eyre::{Context, Result, eyre};
 
 use crate::model::{
-    AssetBase, AssetFile, AssetId, AssetPathOnDisk, AssetRootDirId, AssetType, FileId,
-    GpsCoordinates, Image, MirrorCorrection, RotationCorrection, Size, TimestampInfo, Video,
+    AssetBase, AssetFile, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSeriesId, AssetType,
+    FileId, GpsCoordinates, Image, InSeries, MirrorCorrection, RotationCorrection, Size,
+    TimestampInfo, Video,
     util::{datetime_from_db_repr, hash_vec8_to_u64},
 };
 
@@ -42,6 +43,8 @@ pub struct DbAsset {
     pub asset_id: i64,
     pub asset_type: i32,
     pub rep_file_id: i64,
+    pub series_id: Option<i64>,
+    pub is_series_selection: Option<i32>,
     pub is_hidden: i32,
     pub taken_date: i64,
     pub timezone_offset: Option<String>,
@@ -143,6 +146,18 @@ impl TryFrom<DbAsset> for AssetBase {
                 panic!("Asset only has one of gps lat/lon, db constraints should disallow this")
             }
         };
+        let in_series = match (value.series_id, value.is_series_selection) {
+            (Some(series_id), Some(is_selection)) => Some(InSeries {
+                series_id: AssetSeriesId(series_id),
+                is_selection: is_selection != 0,
+            }),
+            (None, None) => None,
+            _ => {
+                panic!(
+                    "Asset only has one of series_id and is_series_selection, db constraints should disallow this"
+                )
+            }
+        };
         Ok(AssetBase {
             id: AssetId(value.asset_id),
             rep_file_id: FileId(value.rep_file_id),
@@ -151,6 +166,7 @@ impl TryFrom<DbAsset> for AssetBase {
             taken_date: datetime_from_db_repr(value.taken_date)?,
             timestamp_info,
             gps_coordinates: coords,
+            in_series,
         })
     }
 }

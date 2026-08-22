@@ -206,54 +206,10 @@ export const setAssetTransformCorrectionBody = zod.object({
   rotation: zod.number().nullish().describe('One of 0, 90, 180, 270'),
 });
 
-export const setAssetTransformCorrectionResponse = zod
-  .object({
-    assetId: zod.string(),
-    repFile: zod.object({
-      addedAt: zod.string().datetime({}),
-      assetRootId: zod.string(),
-      fileId: zod.string(),
-      height: zod.number(),
-      mimeType: zod.string(),
-      mirrorCorrection: zod.enum(['none', 'horizontal', 'vertical']),
-      pathInRoot: zod.string(),
-      rotationCorrection: zod.number(),
-      thumbhash: zod.string().nullish(),
-      width: zod.number(),
-    }),
-    takenDate: zod.string().datetime({}),
-  })
-  .and(
-    zod.union([
-      zod
-        .object({
-          representations: zod.array(
-            zod.object({
-              format: zod.string(),
-              height: zod.number(),
-              id: zod.string(),
-              size: zod.number(),
-              width: zod.number(),
-            }),
-          ),
-        })
-        .and(
-          zod.object({
-            assetType: zod.enum(['image']),
-          }),
-        ),
-      zod
-        .object({
-          hasDash: zod.boolean(),
-        })
-        .and(
-          zod.object({
-            assetType: zod.enum(['video']),
-          }),
-        ),
-    ]),
-  )
-  .and(zod.object({}));
+export const setAssetTransformCorrectionResponse = zod.object({
+  mirror: zod.enum(['none', 'horizontal', 'vertical']),
+  rotation: zod.number().describe('One of 0, 90, 180, 270'),
+});
 
 export const createSeriesBody = zod.object({
   assetIds: zod.array(zod.string()),
@@ -314,8 +270,6 @@ export const getTimelineSegmentsParams = zod.object({
 });
 
 export const getTimelineSegmentsResponseSegmentsItemItemsItemSelectionIndicesItemMin = 0;
-
-export const getTimelineSegmentsResponseSegmentsItemItemsItemTotalSizeMin = 0;
 
 export const getTimelineSegmentsResponse = zod.object({
   segments: zod.array(
@@ -449,9 +403,6 @@ export const getTimelineSegmentsResponse = zod.object({
                     .min(getTimelineSegmentsResponseSegmentsItemItemsItemSelectionIndicesItemMin),
                 ),
                 seriesId: zod.string(),
-                totalSize: zod
-                  .number()
-                  .min(getTimelineSegmentsResponseSegmentsItemItemsItemTotalSizeMin),
               }),
             ]),
           ),

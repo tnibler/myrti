@@ -1,21 +1,27 @@
+use std::time::{Duration, Instant};
+
 use chrono::{DateTime, Datelike, Utc};
 use diesel::{
     RunQueryDsl, Selectable, SelectableHelper,
     connection::SimpleConnection,
     deserialize::{Queryable, QueryableByName},
     prelude::*,
-    query_builder::{QueryBuilder, QueryFragment},
+    query_builder::{AsQuery, QueryBuilder, QueryFragment},
     sql_query,
     sqlite::SqliteQueryBuilder,
 };
 use eyre::{Context, Result, eyre};
 use itertools::Itertools;
-use tokio::time::Instant;
 use tracing::instrument;
 
 use crate::model::{
-    self, Asset, AssetId, AssetSeriesId, TimelineGroup, TimelineGroupId, TimelineSectionId,
-    repository::{self, schema},
+    self, Asset, AssetId, AssetSeriesId, AssetSpe, FileId, Image, InSeries, TimelineGroup,
+    TimelineGroupId, TimelineSectionId,
+    repository::{
+        self,
+        db_entity::{DbAssetFile, DbImageFile, DbVideoFile},
+        schema,
+    },
     util::datetime_from_db_repr,
 };
 
@@ -182,45 +188,63 @@ pub struct TimelineSegment {
     pub ty: TimelineSegmentType,
     pub sort_date: DateTime<Utc>,
     pub items: Vec<AssetsInTimeline>,
-    pub id: i64,
+    pub id: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum AssetInTimelineExtra {
+    Image { representations: String },
+    Video {},
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum AssetsInTimeline {
-    Asset(Asset),
+    Asset(Asset, AssetInTimelineExtra),
     AssetSeries {
-        assets: Vec<Asset>,
+        assets: Vec<(Asset, AssetInTimelineExtra)>,
         series_id: AssetSeriesId,
         series_date: DateTime<Utc>,
         selection_indices: Vec<usize>,
-        /// Total size of the series, not always equal to `assets.len()`.
-        /// AssetSeries can theoretically be split up in the timeline, for instance if some
-        /// but not all Assets in it are part of a TimelineGroup.
-        total_series_size: usize,
     },
 }
 
-#[derive(Debug, Clone, QueryableByName)]
+#[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+#[diesel(table_name = super::schema::TimelineItem)]
+struct DbTimelineItem {
+    pub asset_id: i64,
+    pub series_id: Option<i64>,
+    pub series_date: Option<i64>,
+    pub group_id: Option<i64>,
+    pub group_date: Option<i64>,
+    pub sort_date: i64,
+    pub section_idx: i32,
+    pub segment_id: i32,
+    pub segment_split_idx: Option<i32>,
+}
+
+#[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 struct RowTimelineSegmentInSection {
     #[diesel(embed)]
+    pub timeline_item: DbTimelineItem,
+    #[diesel(embed)]
     pub asset: DbAsset,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::BigInt>)]
-    pub timeline_group_id: Option<i64>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::BigInt>)]
-    pub series_id: Option<i64>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::BigInt>)]
-    pub series_date: Option<i64>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
-    pub series_len: Option<i32>,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
-    pub is_series_selection: Option<i32>,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub sort_date: i64,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    pub segment_id: i64,
-    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Integer>)]
-    pub segment_split_idx: Option<i32>,
+    #[diesel(embed)]
+    pub asset_file: DbAssetFile,
+    #[diesel(embed)]
+    pub video_file: Option<DbVideoFile>,
+    #[diesel(embed)]
+    pub image_file: Option<DbImageFile>,
+    // #[diesel(sql_type = diesel::sql_types::Nullable::<diesel::sql_types::Text>)]
+    // #[diesel(column_name = image_representations)]
+    // pub image_representations: Option<String>,
+}
+
+#[derive(Debug, Clone, Queryable, QueryableByName)]
+struct ImageReprColumn {
+    #[diesel(sql_type = diesel::sql_types::Nullable::<diesel::sql_types::Text>)]
+    pub image_representations: Option<String>,
 }
 
 #[instrument(err(Debug), skip(conn), level = "debug")]
@@ -234,19 +258,29 @@ pub fn get_segments_in_section(
     SELECT
     "#,
     );
-    DbAsset::as_select().to_sql(&mut qb, &diesel::sqlite::Sqlite)?;
+    RowTimelineSegmentInSection::as_select().to_sql(&mut qb, &diesel::sqlite::Sqlite)?;
     qb.push_sql(
         r#"
-    , TimelineItem.group_id as timeline_group_id
-    , TimelineItem.series_id as series_id
-    , TimelineItem.series_date as series_date
-    , CASE WHEN TimelineItem.series_id IS NULL THEN NULL ELSE 1 END as series_len
-    , Asset.is_series_selection as is_series_selection
-    , TimelineItem.sort_date as sort_date
-    , TimelineItem.segment_id as segment_id
-    , TimelineItem.segment_split_idx as segment_split_idx
+        , image_representations
     FROM
     TimelineItem INNER JOIN Asset ON Asset.asset_id = TimelineItem.asset_id
+    INNER JOIN AssetFile ON AssetFile.file_id = Asset.rep_file_id
+    LEFT JOIN ImageFile ON ImageFile.file_id = AssetFile.file_id
+    LEFT JOIN VideoFile ON VideoFile.file_id = AssetFile.file_id
+    LEFT JOIN (
+        SELECT ImageRepresentation.file_id
+        , json_group_array(
+            json_object(
+                'id', CAST(ImageRepresentation.image_repr_id AS TEXT)
+                , 'format', ImageRepresentation.format_name
+                , 'width', ImageRepresentation.width
+                , 'height', ImageRepresentation.height
+                , 'size', ImageRepresentation.file_size
+            )
+        ) AS image_representations
+        FROM ImageRepresentation
+        GROUP BY ImageRepresentation.file_id
+    ) json_sub ON json_sub.file_id = AssetFile.file_id
     WHERE
     TimelineItem.section_idx = ?
     ORDER BY TimelineItem.sort_date DESC
@@ -259,39 +293,54 @@ pub fn get_segments_in_section(
     );
     let query = sql_query(qb.finish()).bind::<diesel::sql_types::BigInt, _>(section_idx.0);
     let query_start = Instant::now();
-    let rows: Vec<RowTimelineSegmentInSection> = query
+    let rows: Vec<(RowTimelineSegmentInSection, ImageReprColumn)> = query
         .load(conn)
-        .wrap_err("error querying timeline segments in section")?;
+        .wrap_err("error querying timeline items in section")?;
     let query_elapsed = query_start.elapsed();
 
     let processing_start = Instant::now();
     let segments: Vec<TimelineSegment> = rows
         .into_iter()
-        .group_by(|row| row.segment_id)
+        .group_by(|(row, _)| row.timeline_item.segment_id)
         .into_iter()
-        .map(|(segment_idx, segment_rows)| {
+        .map(|(segment_id, segment_rows)| {
             let mut first_row: Option<_> = None;
             let mut items: Vec<AssetsInTimeline> = Vec::default();
-            for row in segment_rows {
+            for (row, image_repr_json) in segment_rows {
                 if first_row.is_none() {
                     first_row = Some(row.clone());
                 }
-                // TODO: additional query per row is not great
-                let asset: Asset = repository::asset::get_asset(conn, AssetId(row.asset.asset_id))?;
+                let asset_base: model::AssetBase = row.asset.try_into()?;
+                let (sp, extra) = match (row.image_file, row.video_file, image_repr_json.image_representations) {
+                    (Some(image), None, image_repr_json) => {
+                        let sp =AssetSpe::Image(Image {
+                            file_id: FileId(row.asset_file.file_id),
+                            image_format_name: image.image_format_name,
+                        });
+                        let extra = AssetInTimelineExtra::Image { representations: image_repr_json.unwrap_or("[]".to_owned()) };
+                        (sp, extra)
+                    }
+                    (None, Some(video), None) => {
+                        (AssetSpe::Video(video.try_into()?), AssetInTimelineExtra::Video {  })
+                    }
+                    _ => panic!("AssetFile row has no matching ImageFile or VideoFile row")
+                };
+
+                let asset = model::Asset {
+                    base: asset_base,
+                    rep_file: row.asset_file.try_into()?,
+                    sp,
+                };
                 match (
-                    row.series_id,
-                    row.series_date,
-                    row.series_len,
-                    row.is_series_selection,
+                    asset.base.in_series,
+                    row.timeline_item.series_date,
                 ) {
-                    (None, None, None, None) => {
-                        items.push(AssetsInTimeline::Asset(asset));
+                    (None, None) => {
+                        items.push(AssetsInTimeline::Asset(asset, extra));
                     }
                     (
-                        Some(series_id),
+                        Some(InSeries {series_id, is_selection}),
                         Some(series_date),
-                        Some(series_len),
-                        Some(is_series_selection),
                     ) => {
                         match items.last_mut() {
                             Some(AssetsInTimeline::AssetSeries {
@@ -299,28 +348,24 @@ pub fn get_segments_in_section(
                                 series_id: prev_series_id,
                                 series_date: _,
                                 selection_indices,
-                                total_series_size: _,
-                            }) if series_id == prev_series_id.0 => {
+                            }) if series_id == *prev_series_id => {
                                 // still same series, add this asset to it
-                                if is_series_selection != 0 {
+                                if is_selection {
                                     selection_indices.push(series_assets.len());
                                 }
-                                series_assets.push(asset);
+                                series_assets.push((asset, extra));
                             }
                             _ => {
                                 // new series
                                 items.push(AssetsInTimeline::AssetSeries {
-                                    assets: vec![asset],
-                                    series_id: AssetSeriesId(series_id),
+                                    assets: vec![(asset, extra)],
+                                    series_id ,
                                     series_date: datetime_from_db_repr(series_date)?,
-                                    selection_indices: if is_series_selection != 0 {
+                                    selection_indices: if is_selection  {
                                         vec![0]
                                     } else {
                                         vec![]
                                     },
-                                    total_series_size: series_len
-                                        .try_into()
-                                        .expect("COUNT(...) is >= 0"),
                                 });
                             }
                         }
@@ -336,26 +381,24 @@ pub fn get_segments_in_section(
                 "set to Some in first loop iteration, group_by does not produce empty lists",
             );
 
-            let segment_type = match first_row.timeline_group_id {
+            let segment_type = match first_row.timeline_item.group_id {
                 None => TimelineSegmentType::DateRange {
                     start: match items.first().expect("list can never by empty") {
-                        AssetsInTimeline::Asset(asset) => asset.base.taken_date,
+                        AssetsInTimeline::Asset(asset, _) => asset.base.taken_date,
                         AssetsInTimeline::AssetSeries {
                             assets: _,
                             series_id: _,
                             series_date,
                             selection_indices: _,
-                            total_series_size: _,
                         } => *series_date,
                     },
                     end: match items.last().expect("list can never by empty") {
-                        AssetsInTimeline::Asset(asset) => asset.base.taken_date,
+                        AssetsInTimeline::Asset(asset, _) => asset.base.taken_date,
                         AssetsInTimeline::AssetSeries {
                             assets: _,
                             series_id: _,
                             series_date,
                             selection_indices: _,
-                            total_series_size: _,
                         } => *series_date,
                     },
                 },
@@ -366,9 +409,9 @@ pub fn get_segments_in_section(
             };
             Ok(TimelineSegment {
                 ty: segment_type,
-                sort_date: datetime_from_db_repr(first_row.sort_date)?,
+                sort_date: datetime_from_db_repr(first_row.timeline_item.sort_date)?,
                 items,
-                id: segment_idx,
+                id: segment_id,
             })
         })
         .try_collect()?;
@@ -381,7 +424,7 @@ pub fn get_segments_in_section(
                 .iter()
                 .rev()
                 .is_sorted_by_key(|asset| match asset {
-                    AssetsInTimeline::Asset(asset) => asset.base.taken_date,
+                    AssetsInTimeline::Asset(asset, _) => asset.base.taken_date,
                     // assets withinin series can have any taken_date, but the series_date should be in
                     // sort order
                     AssetsInTimeline::AssetSeries {
@@ -389,7 +432,6 @@ pub fn get_segments_in_section(
                         series_id: _,
                         series_date,
                         selection_indices: _,
-                        total_series_size: _,
                     } => *series_date,
                 })
         ),
@@ -397,19 +439,18 @@ pub fn get_segments_in_section(
     );
     segments.iter().for_each(|segment| {
         segment.items.iter().for_each(|asset| match asset {
-            AssetsInTimeline::Asset(_) => {}
+            AssetsInTimeline::Asset(..) => {}
             AssetsInTimeline::AssetSeries {
                 assets,
                 series_id: _,
                 series_date: _,
                 selection_indices,
-                total_series_size: _,
             } => {
                 debug_assert!(
                     assets
                         .iter()
                         .rev()
-                        .is_sorted_by_key(|asset| asset.base.taken_date),
+                        .is_sorted_by_key(|(asset, _)| asset.base.taken_date),
                     "assets within AssetSeries are not sorted by taken_date descending"
                 );
                 debug_assert!(
@@ -436,14 +477,13 @@ pub fn get_segments_in_section(
             .first()
             .expect("segment assets must not be empty")
         {
-            AssetsInTimeline::Asset(asset) => asset,
+            AssetsInTimeline::Asset(asset, _) => asset,
             AssetsInTimeline::AssetSeries {
                 assets,
                 series_id: _,
                 series_date: _,
                 selection_indices: _,
-                total_series_size: _,
-            } => assets.first().expect("can not be empty"),
+            } => &assets.first().expect("can not be empty").0,
         }
         .base
         .taken_date;

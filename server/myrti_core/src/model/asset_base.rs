@@ -5,7 +5,7 @@ use chrono::{DateTime, FixedOffset, Utc};
 use eyre::eyre;
 use serde::Serialize;
 
-use crate::model::{FileId, MirrorCorrection, RotationCorrection};
+use crate::model::{AssetSeriesId, FileId, MirrorCorrection, RotationCorrection};
 
 use super::{AssetId, AssetRootDirId, AssetType};
 
@@ -34,6 +34,13 @@ pub struct AssetBase {
     pub taken_date: DateTime<Utc>,
     pub timestamp_info: TimestampInfo,
     pub gps_coordinates: Option<GpsCoordinates>,
+    pub in_series: Option<InSeries>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct InSeries {
+    pub series_id: AssetSeriesId,
+    pub is_selection: bool,
 }
 
 /// Origin and reliability of the timezone for an asset's original creation date

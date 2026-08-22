@@ -71,6 +71,17 @@ pub enum RotationCorrection {
     CW270,
 }
 
+impl RotationCorrection {
+    pub const fn degrees(&self) -> i32 {
+        match self {
+            RotationCorrection::CW0 => 0,
+            RotationCorrection::CW90 => 90,
+            RotationCorrection::CW180 => 180,
+            RotationCorrection::CW270 => 270,
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
 pub enum MirrorCorrection {
     #[default]

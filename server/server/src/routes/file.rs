@@ -1,15 +1,15 @@
 use std::{collections::HashMap, ffi::OsString, ops::Deref, os::unix::ffi::OsStrExt};
 
 use axum::{
+    Json, Router,
     body::Body,
     extract::{Path, Query, State},
-    http::{header, HeaderMap, HeaderValue, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
 use axum_extra::body::AsyncReadBody;
-use eyre::{eyre, Context};
+use eyre::{Context, eyre};
 use myrti_core::model::{self, repository};
 use myrti_core::{
     catalog::storage_key,
@@ -22,13 +22,9 @@ use utoipa::ToSchema;
 
 use crate::{
     app_state::SharedState,
-    asset_queries::get_full_asset,
     http_error::{ApiResult, HttpError},
     mime_type::{guess_mime_type, guess_mime_type_path},
-    schema::{
-        asset::{AssetWithSpe, MirrorCorrection},
-        FileId, ImageRepresentationId,
-    },
+    schema::{FileId, ImageRepresentationId, asset::MirrorCorrection},
 };
 
 pub fn router() -> Router<SharedState> {
@@ -300,6 +296,14 @@ pub struct SetAssetRotationRequest {
     pub mirror: Option<MirrorCorrection>,
 }
 
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SetAssetRotationResponse {
+    /// One of 0, 90, 180, 270
+    pub rotation: i32,
+    pub mirror: MirrorCorrection,
+}
+
 #[utoipa::path(
     post,
     path = "/api/files/{id}/transform",
@@ -307,15 +311,15 @@ pub struct SetAssetRotationRequest {
         ("id" = String, Path, description = "FileId")
     ),
     request_body=SetAssetRotationRequest,
-    responses((status=200, body = AssetWithSpe))
+    responses((status=200, body = SetAssetRotationResponse))
 )]
 async fn set_asset_transform_correction(
     State(app_state): State<SharedState>,
     Path(file_id): Path<FileId>,
     Json(req): Json<SetAssetRotationRequest>,
-) -> ApiResult<Json<AssetWithSpe>> {
+) -> ApiResult<Json<SetAssetRotationResponse>> {
     let file_id: model::FileId = file_id.try_into()?;
-    let mut conn = app_state.pool.get().await?;
+    let conn = app_state.pool.get().await?;
     if req.rotation.is_none() && req.mirror.is_none() {
         return Err(eyre!("must set at least one field").into());
     }
@@ -348,6 +352,8 @@ async fn set_asset_transform_correction(
         repository::asset::get_asset(conn, asset_id)
     })
     .await??;
-    let full_asset: AssetWithSpe = get_full_asset(&mut conn, asset).await?;
-    Ok(Json(full_asset))
+    Ok(Json(SetAssetRotationResponse {
+        rotation: asset.rep_file.rotation_correction.degrees(),
+        mirror: asset.rep_file.mirror_correction.into(),
+    }))
 }

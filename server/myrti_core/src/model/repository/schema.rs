@@ -1,5 +1,3 @@
-use diesel::sql_types::BigInt;
-
 diesel::table! {
     Album (album_id) {
         album_id -> BigInt,
@@ -213,6 +211,23 @@ diesel::table! {
 }
 
 diesel::table! {
+    TimelineItem(asset_id) {
+        asset_id -> BigInt,
+        taken_date -> BigInt,
+        series_id -> Nullable<BigInt>,
+        series_date -> Nullable<BigInt>,
+        group_id -> Nullable<BigInt>,
+        group_date -> Nullable<BigInt>,
+        sort_date -> BigInt,
+        segment_date -> Text,
+        section_idx -> Integer,
+        segment_id -> Integer,
+        segment_split_idx -> Nullable<Integer>,
+        is_dirty -> Integer,
+    }
+}
+
+diesel::table! {
     AcceptableVideoCodec (codec_name) {
         codec_name -> Text,
     }
@@ -262,6 +277,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     TimelineMonth,
     DeletedAutoAssetSeries,
     VideoFile,
+    TimelineItem,
     AcceptableVideoCodec,
     AcceptableAudioCodec,
 );

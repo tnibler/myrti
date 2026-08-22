@@ -1,12 +1,12 @@
 use axum::{
+    Json, Router,
     extract::{Path, State},
-    http::{header::CONTENT_TYPE, StatusCode},
+    http::{StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
     routing::{get, post, put},
-    Json, Router,
 };
 use axum_extra::body::AsyncReadBody;
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -21,8 +21,8 @@ use crate::{
     app_state::SharedState,
     http_error::{ApiResult, HttpError},
     schema::{
-        asset::{AssetSpe, AssetWithSpe, Image, Video},
         Album, AlbumId, AlbumItemId, AssetId,
+        asset::{AssetSpe, AssetWithSpe, Image, Video},
     },
 };
 
@@ -155,7 +155,10 @@ pub async fn get_album_details(
                     asset: AssetWithSpe {
                         spe: match &asset.sp {
                             model::AssetSpe::Image(_image) => AssetSpe::Image(Image {
-                                representations: Vec::default(), //FIXME
+                                representations: serde_json::value::RawValue::from_string(
+                                    "[]".to_owned(),
+                                )
+                                .expect("TODO"), //FIXME
                             }),
                             model::AssetSpe::Video(video) => AssetSpe::Video(Video {
                                 has_dash: true, // FIXME: field doesn't exist anymore

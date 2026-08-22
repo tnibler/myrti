@@ -927,6 +927,8 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
   }
 
   function setActualBlockHeight(sectionIdx: number, heights: number[][]) {
+    // FIXME: blocks need a stable identity so hasBeenMeasured flag survives relayout.
+    // is hasBeenMeasured has ever been set, don't adjust scroll anymore
     let totalDelta = 0;
     let scrollAdjustDelta = 0;
     let anyChange = false;
@@ -1645,12 +1647,13 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     },
     rotateAssetCW: async (assetId: AssetId) => {
       const asset = assetsById.get(assetId);
-      const updatedAsset = (
+      const updatedCorrection = (
         await setAssetTransformCorrection(asset.repFile.fileId, {
           rotation: (asset?.repFile.rotationCorrection + 90) % 360,
         })
       ).data;
-      asset.repFile.rotationCorrection = updatedAsset.repFile.rotationCorrection;
+      asset.repFile.rotationCorrection = updatedCorrection.rotation;
+      asset.repFile.mirrorCorrection = updatedCorrection.mirror;
       layoutSection(getItemForAsset(asset.assetId).pos.sectionIndex);
       sectionsPublic = sections;
     },

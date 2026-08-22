@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -14,7 +12,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::{
     app_state::SharedState,
-    asset_queries::get_full_asset,
+    asset_queries::make_api_asset,
     http_error::{ApiResult, HttpErrorExt},
     schema::{AssetSeriesId, TimelineGroupId, TimelineSectionId, asset::AssetWithSpe},
 };
@@ -175,7 +173,6 @@ pub enum TimelineItem {
         /// assets[0] is most recent, last is oldest asset
         assets: Vec<AssetWithSpe>,
         selection_indices: Vec<usize>,
-        total_size: usize,
     },
 }
 
@@ -207,7 +204,7 @@ pub async fn get_timeline_segments(
 ) -> ApiResult<Json<TimelineSegmentsResponse>> {
     let section_id: model::TimelineSectionId =
         section_id.try_into().wrap_err("invalid sectionId")?;
-    let mut conn = app_state.pool.get().await?;
+    let conn = app_state.pool.get().await?;
     let segments = interact!(conn, move |conn| {
         repository::timeline::get_segments_in_section(conn, section_id)
     })
@@ -217,8 +214,8 @@ pub async fn get_timeline_segments(
         let mut timeline_items = Vec::default();
         for item in segment.items {
             match item {
-                AssetsInTimeline::Asset(asset) => {
-                    let asset_with_reprs = get_full_asset(&mut conn, asset).await?;
+                AssetsInTimeline::Asset(asset, extra) => {
+                    let asset_with_reprs = make_api_asset(asset, extra);
                     timeline_items.push(TimelineItem::Asset(asset_with_reprs));
                 }
                 AssetsInTimeline::AssetSeries {
@@ -226,17 +223,15 @@ pub async fn get_timeline_segments(
                     series_id,
                     series_date: _,
                     selection_indices,
-                    total_series_size,
                 } => {
                     let mut assets_with_reprs: Vec<AssetWithSpe> = Vec::default();
-                    for asset in assets {
-                        assets_with_reprs.push(get_full_asset(&mut conn, asset).await?);
+                    for (asset, extra) in assets {
+                        assets_with_reprs.push(make_api_asset(asset, extra));
                     }
                     timeline_items.push(TimelineItem::AssetSeries {
                         series_id: series_id.into(),
                         assets: assets_with_reprs,
                         selection_indices,
-                        total_size: total_series_size,
                     });
                 }
             }

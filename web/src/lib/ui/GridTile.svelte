@@ -28,6 +28,8 @@
   import { fade } from 'svelte/transition';
   import { thumbHashToRGBA } from 'thumbhash';
   import { base91Decode } from '@lib/base91';
+  import { onDestroy, untrack } from 'svelte';
+  import { imageQueue } from '@lib/timeline-grid/image-fetch-queue';
 
   type GridTileProps = {
     href: string;
@@ -51,6 +53,7 @@
     className,
     imgElId,
     imgElAction,
+    viewportDistance,
   }: GridTileProps = $props();
   let isMouseOver = $state(false);
   const isSelected = $derived(selectState.state === 'select' && selectState.isSelected);
@@ -83,6 +86,31 @@
   const isHoverable = $derived(selectState.state !== 'unclickable');
 
   let thumbHashVisible = $state(false);
+  const thumbnailUrl = $derived(`/api/files/thumbnail/${asset.repFile.fileId}/large/avif`);
+  let dataUrl: string | null = $state(null);
+
+  $effect(() => {
+    imageQueue.updatePriority(thumbnailUrl, viewportDistance);
+  });
+
+  $effect(() => {
+    if (thumbnailUrl && viewportDistance < 400) {
+      imageQueue
+        .fetch(thumbnailUrl, viewportDistance)
+        .then((url) => {
+          dataUrl = url;
+        })
+        .catch(() => null);
+    } else if (thumbnailUrl) {
+      imageQueue.abort(thumbnailUrl);
+      dataUrl = null;
+    }
+  });
+
+  onDestroy(() => {
+    imageQueue.abort(thumbnailUrl);
+    dataUrl = null;
+  });
 
   function thumbnailLoadOnce(node: HTMLImageElement) {
     function onLoad() {
@@ -153,21 +181,6 @@
   {@attach imgElAction}
 >
   <div class="h-full w-full bg-blue-100">
-    <!-- svelte-ignore a11y_missing_attribute -->
-    <!-- <img -->
-    <!--   src={thumbhashUrl} -->
-    <!--   class="absolute" -->
-    <!--   class:rounded-xl={isSelected} -->
-    <!--   class:scale-[0.85]={isSelected} -->
-    <!--   style:width="{box.width}px" -->
-    <!--   style:height="{box.height}px" -->
-    <!--   style:transform={mirrorImg === 'vertical' -->
-    <!--     ? 'scaleY(-1)' -->
-    <!--     : mirrorImg === 'horizontal' -->
-    <!--       ? 'scaleX(-1)' -->
-    <!--       : ''} -->
-    <!-- /> -->
-    <!-- svelte-ignore a11y_missing_attribute -->
     <canvas
       bind:this={canvas}
       class="absolute"
@@ -175,26 +188,33 @@
       class:scale-[0.85]={isSelected}
       style:width="{box.width}px"
       style:height="{box.height}px"
-    ></canvas>
-    <img
-      {@attach thumbnailLoadOnce}
-      id={imgElId}
-      src="/api/files/thumbnail/{asset.repFile.fileId}/large/avif"
-      class="absolute transition-opacity"
-      class:rounded-xl={isSelected}
-      class:scale-[0.85]={isSelected}
-      width={imgWidth}
-      height={imgHeight}
-      style:opacity={thumbHashVisible ? '0' : '1'}
-      style:top={imgTop + 'px'}
-      style:left={imgLeft + 'px'}
-      style:max-width="none"
-      style:transform="rotate({rotateImg}deg) {mirrorImg === 'vertical'
+      style:transform={mirrorImg === 'vertical'
         ? 'scaleY(-1)'
         : mirrorImg === 'horizontal'
           ? 'scaleX(-1)'
-          : ''}"
-    />
+          : ''}
+    ></canvas>
+    {#if dataUrl}
+      <img
+        {@attach thumbnailLoadOnce}
+        id={imgElId}
+        src={dataUrl}
+        class="absolute transition-opacity"
+        class:rounded-xl={isSelected}
+        class:scale-[0.85]={isSelected}
+        width={imgWidth}
+        height={imgHeight}
+        style:opacity={thumbHashVisible ? '0' : '1'}
+        style:top={imgTop + 'px'}
+        style:left={imgLeft + 'px'}
+        style:max-width="none"
+        style:transform="rotate({rotateImg}deg) {mirrorImg === 'vertical'
+          ? 'scaleY(-1)'
+          : mirrorImg === 'horizontal'
+            ? 'scaleX(-1)'
+            : ''}"
+      />
+    {/if}
 
     <div
       class={'absolute z-10 h-full w-full bg-gradient-to-b from-black/25 via-[transparent_25%] opacity-0 transition-opacity ' +

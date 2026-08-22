@@ -15,8 +15,9 @@
   import { path } from 'elegua';
   import { fade } from 'svelte/transition';
   import dayjs, { Dayjs } from 'dayjs';
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import * as R from 'remeda';
+  import { imageQueue } from './image-fetch-queue';
 
   type TimelineGridProps = {
     timeline: ITimelineGrid;
@@ -107,6 +108,10 @@
       timeline.resize(viewport, scrollWrapper.scrollTop);
       resizeTimeout = null;
     }, 200);
+  });
+
+  onDestroy(() => {
+    imageQueue.clearAll();
   });
 
   let visibleSectionEls = new Set();
@@ -521,6 +526,11 @@
           <!-- eslint-disable-next-line svelte/require-each-key -->
           {#each section.blocks as block, blockIdx (block.sortDate)}
             {@const blockTop = block.top + timeline.sectionTops[section.sectionIdx]}
+            {@const gridTop =
+              block.top +
+              timeline.sectionTops[section.sectionIdx] +
+              block.fullHeight -
+              block.gridHeight}
             <div
               class="relative w-full contain-layout"
               data-section={section.sectionIdx}
@@ -568,7 +578,7 @@
               {/if}
 
               <div style="height: {block.gridHeight}px;" class="w-full relative contain-layout">
-                {#if block.blockType === 'createGroup' || (blockTop < scrollTop + viewport.height + 1000 && scrollTop - 1000 < blockTop + block.fullHeight)}
+                {#if block.blockType === 'createGroup' || (gridTop < scrollTop + viewport.height + 400 && scrollTop - 400 < gridTop + block.fullHeight)}
                   {#if timeline.state === 'creatingTimelineGroup'}
                     {#each block.groupClickAreas as area (area.groupId)}
                       <button
@@ -582,6 +592,12 @@
                     {/each}
                   {/if}
                   {#each block.gridItems as item (item.key)}
+                    {@const viewportDistance =
+                      gridTop + item.top + item.height < scrollTop
+                        ? scrollTop - gridTop - item.top - item.height
+                        : gridTop + item.top > scrollTop + viewport.height
+                          ? gridTop + item.top - scrollTop - viewport.height
+                          : 0}
                     {#if item.type === 'asset'}
                       <GridTile
                         imgElAction={registerAction}
@@ -598,6 +614,7 @@
                         }}
                         imgElId={`thumb-${item.assetId}`}
                         selectState={getSelectState(item.timelineItem)}
+                        {viewportDistance}
                       />
                     {:else if item.type === 'photoStack'}
                       {@const coverAsset = timeline.getAsset(
@@ -617,6 +634,7 @@
                         }}
                         imgElId={`thumb-${coverAsset.assetId}`}
                         selectState={getSelectState(item.timelineItem)}
+                        {viewportDistance}
                       />
                     {/if}
                   {/each}

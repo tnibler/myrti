@@ -36,20 +36,26 @@
   let restoreScrollOnClose = $derived(!didMoveScrollToCurrentGalleryAsset);
   let useOpenTransition = $state(false);
 
-  let currentSlide: SlideRef | null = $derived.by(() => {
+  // openedAssetId is passed as prop and set to from the current URL. Pager sets URL when navigating between slides which is then reflected here. kind of a roundabout way to do it?
+  const openedItem: TimelineItem | null = $derived.by(() => {
     if (openedAssetId === null) {
       return null;
     }
-    const item = timeline.getItemForAsset(openedAssetId);
-    if (item === null) {
+    return timeline.getItemForAsset(openedAssetId);
+  });
+  const currentSlide: SlideRef | null = $derived.by(() => {
+    if (openedItem === null) {
       return null;
-    } else if (item.itemType === 'asset') {
-      return { slideType: 'singleAsset', assetId: item.assetId };
+    }
+    if (openedItem === null) {
+      return null;
+    } else if (openedItem.itemType === 'asset') {
+      return { slideType: 'singleAsset', assetId: openedItem.assetId };
     } else {
       return {
         slideType: 'assetSeries',
-        assetSeriesId: item.seriesId,
-        coverIndex: item.coverIndex,
+        assetSeriesId: openedItem.seriesId,
+        coverIndex: openedItem.coverIndex,
       };
     }
   });
@@ -59,16 +65,11 @@
     current: SlideRef;
     right: SlideRef | null;
   } | null = $derived.by(() => {
-    if (currentSlide === null) {
+    if (openedItem === null) {
       return null;
     }
-    const assetId =
-      currentSlide.slideType === 'singleAsset'
-        ? currentSlide.assetId
-        : timeline.getAssetSeries(currentSlide.assetSeriesId).assetIds[currentSlide.coverIndex];
-    const currentItem = timeline.getItemForAsset(assetId);
-    const leftPos = timeline.getNextItemPosition(currentItem.pos, 'left');
-    const rightPos = timeline.getNextItemPosition(currentItem.pos, 'right');
+    const leftPos = timeline.getNextItemPosition(openedItem.pos, 'left');
+    const rightPos = timeline.getNextItemPosition(openedItem.pos, 'right');
     return {
       left: leftPos !== null ? getSlideRef(timeline.getItemMustBeLoaded(leftPos)) : null,
       current: currentSlide,
@@ -85,6 +86,13 @@
 
   $effect(() => {
     timeline.initialize(viewport);
+  });
+
+  $effect(() => {
+    if (!openedItem) {
+      return;
+    }
+    scrollToTimelineItem(openedItem);
   });
 
   // handle window resize (debounced)
@@ -143,15 +151,15 @@
     };
   }
 
-  export async function scrollToTimelineItem(pos: PositionInTimeline) {
+  export async function scrollToTimelineItem(item: TimelineItem) {
     const marginTop = 100;
-    const item = await timeline.getGridItemAtPosition(pos);
+    const scrollTo = await timeline.getGridItemTop(item);
     if (
-      item !== null &&
-      (item.top < scrollWrapper.scrollTop ||
-        scrollWrapper.scrollTop + scrollWrapper.clientHeight <= item.top + item.height)
+      scrollTo !== null &&
+      (scrollTo.top < scrollWrapper.scrollTop ||
+        scrollWrapper.scrollTop + scrollWrapper.clientHeight <= scrollTo.top + scrollTo.height)
     ) {
-      scrollWrapper.scrollTop = Math.max(0, item.top - marginTop);
+      scrollWrapper.scrollTop = Math.max(0, scrollTo.top - marginTop);
       didMoveScrollToCurrentGalleryAsset = true;
     }
   }
@@ -238,7 +246,6 @@
     if (currentItem.itemType !== 'asset' && currentItem.itemType !== 'photoStack') {
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };
     }
-    const asset = timeline.getAsset(assetId);
     const img = document.getElementById(`thumb-${assetId}`)?.getBoundingClientRect();
     if (!img) {
       return { rect: { x: 0, y: 0, width: 0, height: 0 } };

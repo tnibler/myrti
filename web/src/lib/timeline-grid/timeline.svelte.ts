@@ -73,7 +73,7 @@ export interface ITimelineGrid {
   resize: (viewport: Viewport, scrollTop: number) => void;
   set setAnimationsEnabled(v: ((enabled: boolean) => Promise<void>) | null);
   onScrollChange: (top: number) => void;
-  getGridItemAtPosition: (pos: PositionInTimeline) => Promise<TimelineGridItem | null>;
+  getGridItemTop: (item: TimelineItem) => Promise<{ top: number; height: number } | null>;
   setActualBlockHeight: (sectionIdx: number, heights: number[][]) => void;
   getNextItemPosition: (
     pos: PositionInTimeline,
@@ -988,34 +988,34 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     }
   }
 
-  async function getGridItemAtPosition(pos: PositionInTimeline): Promise<TimelineGridItem | null> {
-    const section = sections[pos.sectionIndex];
+  async function getGridItemTop(
+    item: TimelineItem,
+  ): Promise<{ top: number; height: number } | null> {
+    const section = sections[item.pos.sectionIndex];
     if (section.segments === null) {
-      await loadSection(pos.sectionIndex);
+      await loadSection(item.pos.sectionIndex);
     }
     if (section.segments === null) {
       throw new Error('error loading section');
     }
-    // FIXME: why was this called here. it mutates $state which can't happen anymore in a getter
-    // layoutSection(pos.sectionIndex, 'noAdjustScroll');
-    console.assert(section.items !== null);
-    if (section.items === null) {
+    if (section.blocks === null) {
+      layoutSection(item.pos.sectionIndex);
+    }
+    if (section.blocks === null) {
+      console.error('section.blocks is null after calling layoutSection');
       return null;
     }
-
-    // find item in items array
-    for (let i = section.items.startIdx; i < section.items.endIdx; i += 1) {
-      const item = items[i];
-      if (item.type === 'asset' || item.type === 'photoStack') {
-        if (
-          item.timelineItem.pos.sectionIndex === pos.sectionIndex &&
-          item.timelineItem.pos.segmentIndex === pos.segmentIndex &&
-          item.timelineItem.pos.itemIndex === pos.itemIndex
-        ) {
-          return items[i];
+    let blockTop = sectionTops[item.pos.sectionIndex];
+    for (const block of section.blocks) {
+      for (const gridItem of block.gridItems) {
+        if (gridItem.timelineItem.key === item.key) {
+          const gridTop = blockTop + block.fullHeight - block.gridHeight;
+          return { top: gridTop + gridItem.top, height: gridItem.height };
         }
       }
+      blockTop += block.fullHeight;
     }
+
     console.error('loaded and laid out section but did not find correct item');
     return null;
   }
@@ -1609,7 +1609,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     resize,
     onScrollChange,
     onSectionIntersectChanged,
-    getGridItemAtPosition,
+    getGridItemTop,
     setActualBlockHeight,
     getNextItemPosition,
     getItem,

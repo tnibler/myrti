@@ -1673,13 +1673,14 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
           return { newMirror: 'none' };
         }
       })();
-      const updatedAsset = (
+      const updatedCorrection = (
         await setAssetTransformCorrection(asset.repFile.fileId, {
           mirror: newMirror,
           rotation: newRotation,
         })
       ).data;
-      asset.repFile = updatedAsset.repFile;
+      asset.repFile.mirrorCorrection = updatedCorrection.mirror;
+      asset.repFile.rotationCorrection = updatedCorrection.rotation;
       layoutSection(getItemForAsset(asset.assetId).pos.sectionIndex);
     },
     get scrollbarMonths() {

@@ -1,3 +1,5 @@
+use std::os::unix::fs::MetadataExt;
+
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use eyre::{Context, Result, eyre};
 use tokio::process::Command;
@@ -55,9 +57,40 @@ pub async fn create_ghi_and_manifest(
     }
     tracing::debug!(?command);
     let child = command.spawn().context("error calling gpac")?;
-    run_process(child, RunProcessOpts::with_timeout_secs(300), control_recv)
+    if let Err(err) = run_process(child, RunProcessOpts::with_timeout_secs(300), control_recv)
         .await
-        .wrap_err("error writing MPD manifest and mp4 init segment with gpac")?;
+        .wrap_err("error writing MPD manifest and mp4 init segment with gpac")
+    {
+        // I don't even know *_* Sometimes gpac outputs this:
+        // [MP4Mux] PID configuration not known after EOS, aborting initial timing sync
+        // [MP4Mux] Unable to setup fragmentation for track ID 0: Bad Parameter
+        // which seems to only happen for video streams (some Pixel 4A HEVC files).
+        // Since the video representation is included even when we only need audio (see above),
+        // it will error out but ostensibly it has already written everything we need.
+        let base_dir = opts.mpd_out_path.parent().unwrap();
+        let video_ok = if let Some(rep_id) = &opts.video_rep_id {
+            tokio::fs::metadata(base_dir.join(format!("{}-init.mp4", rep_id)))
+                .await
+                .is_ok_and(|md| md.size() > 100)
+        } else {
+            true
+        };
+        let audio_ok = if let Some(rep_id) = &opts.audio_rep_id {
+            tokio::fs::metadata(base_dir.join(format!("{}-init.mp4", rep_id)))
+                .await
+                .is_ok_and(|md| md.size() > 100)
+        } else {
+            true
+        };
+        let worked_despite_error = tokio::fs::try_exists(&opts.mpd_out_path)
+            .await
+            .is_ok_and(|b| b)
+            && video_ok
+            && audio_ok;
+        if !worked_despite_error {
+            return Err(err);
+        }
+    }
     Ok(())
 }
 

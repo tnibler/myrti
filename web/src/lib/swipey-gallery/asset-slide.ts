@@ -20,7 +20,7 @@ export function slideForAsset(asset: AssetWithSpe): SlideData {
       ) {
         return '/api/files/' + asset.repFile.fileId + '/original';
       }
-      return `/api/files/repr/${asset.repFile.fileId}/${supportedRepr.id}`;
+      return `/api/files/${asset.repFile.fileId}/repr/${supportedRepr.id}`;
     })();
     return {
       assetType: 'image',

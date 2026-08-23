@@ -94,7 +94,7 @@ pub async fn create_ghi_and_manifest(
     Ok(())
 }
 
-#[tracing::instrument(skip(control_recv), err)]
+#[tracing::instrument(skip(control_recv), err, level = "trace")]
 pub async fn create_segment(
     ghi_path: &Path,
     out_dir: &Path,
@@ -115,7 +115,7 @@ pub async fn create_segment(
         "-o",
         out_dir.join("unused.mpd").as_str(),
     ]);
-    tracing::debug!(?command);
+    tracing::trace!(?command);
     let child = command.spawn().context("error calling gpac")?;
     run_process(child, RunProcessOpts::with_timeout_secs(60), control_recv)
         .await

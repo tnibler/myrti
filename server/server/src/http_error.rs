@@ -31,7 +31,7 @@ pub type ApiResult<T> = Result<T, HttpError>;
 
 impl std::fmt::Display for HttpError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.1)
     }
 }
 

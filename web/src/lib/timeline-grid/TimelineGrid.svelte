@@ -551,7 +551,7 @@
                 -->
                   <h2
                     {@attach registerAction}
-                    class="text-3xl pt-3"
+                    class="text-3xl pt-2 pb-1"
                     id={block.titleMajor.key}
                     in:fade
                   >
@@ -559,7 +559,7 @@
                   </h2>
                 {/if}
                 <div
-                  class="grid"
+                  class="grid py-1"
                   style:grid-template-columns={block.titlesMinor
                     .map(
                       (title, idx) =>
@@ -569,7 +569,7 @@
                   style:width="{Math.max(...block.gridItems.map((it) => it.left + it.width))}px"
                 >
                   {#each block.titlesMinor as titleMinor}
-                    <h3 {@attach registerAction} id={titleMinor.key} class="text-xl py-1" in:fade>
+                    <h3 {@attach registerAction} id={titleMinor.key} class="text-2xl" in:fade>
                       {titleMinor.text}
                     </h3>
                   {/each}

@@ -18,7 +18,7 @@ export function slideForAsset(asset: AssetWithSpe): SlideData {
         supported.map((format) => 'image/' + format).indexOf(asset.repFile.mimeType) >= 0 ||
         !supportedRepr
       ) {
-        return '/api/files/original/' + asset.repFile.fileId;
+        return '/api/files/' + asset.repFile.fileId + '/original';
       }
       return `/api/files/repr/${asset.repFile.fileId}/${supportedRepr.id}`;
     })();
@@ -28,7 +28,7 @@ export function slideForAsset(asset: AssetWithSpe): SlideData {
       size,
       rotatedSize,
       src,
-      placeholderSrc: '/api/files/thumbnail/' + asset.repFile.fileId + '/large/avif',
+      placeholderSrc: '/api/files/' + asset.repFile.fileId + '/thumbnail/large/avif',
     };
   } else {
     const videoSource =
@@ -40,14 +40,14 @@ export function slideForAsset(asset: AssetWithSpe): SlideData {
         : {
             videoSource: 'original' as const,
             mimeType: asset.repFile.mimeType,
-            src: '/api/files/original/' + asset.repFile.fileId,
+            src: '/api/files/' + asset.repFile.fileId + '/original',
           };
     return {
       assetType: 'video',
       asset,
       size,
       rotatedSize,
-      placeholderSrc: '/api/files/thumbnail/' + asset.repFile.fileId + '/large/avif',
+      placeholderSrc: '/api/files/' + asset.repFile.fileId + '/thumbnail/large/avif',
       ...videoSource,
     };
   }

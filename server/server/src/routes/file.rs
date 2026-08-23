@@ -10,11 +10,15 @@ use axum::{
 };
 use axum_extra::body::AsyncReadBody;
 use eyre::{Context, eyre};
-use myrti_core::model::{self, repository};
+use itertools::Itertools;
 use myrti_core::{
     catalog::storage_key,
     core::storage::{StorageProvider, StorageReadError},
     deadpool_diesel, interact,
+};
+use myrti_core::{
+    core::scheduler::{SchedulerMessage, UserRequest},
+    model::{self, repository},
 };
 use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
@@ -29,14 +33,16 @@ use crate::{
 
 pub fn router() -> Router<SharedState> {
     Router::new()
-        .route("/:id/details", get(get_file_details))
-        .route("/thumbnail/:id/:size/:format", get(get_thumbnail))
-        .route("/original/:id", get(get_original_file))
-        .route(
-            "/repr/:file_id/:repr_id",
-            get(get_image_asset_representation),
+        .route("/thumbnails/regenerate", post(regenerate_thumbnail))
+        .nest(
+            "/:id/",
+            Router::new()
+                .route("/repr/:repr_id", get(get_image_asset_representation))
+                .route("/details", get(get_file_details))
+                .route("/thumbnail/:size/:format", get(get_thumbnail))
+                .route("/original", get(get_original_file))
+                .route("/transform", post(set_asset_transform_correction)),
         )
-        .route("/:id/transform", post(set_asset_transform_correction))
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -94,7 +100,7 @@ pub enum ThumbnailFormat {
     Webp,
 }
 
-#[utoipa::path(get, path = "/api/files/thumbnail/{id}/{size}/{format}",
+#[utoipa::path(get, path = "/api/files/{id}/thumbnail/{size}/{format}",
     responses(
         (status = 200, body=String, content_type = "application/octet")
     ),
@@ -166,7 +172,40 @@ async fn get_thumbnail(
     return Ok((headers, body).into_response());
 }
 
-#[utoipa::path(get, path = "/api/files/original/{id}",
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RegenerateThumbnailsRequest {
+    /// List of FileId, or null to regenerate thumbnails for all files
+    file_ids: Option<Vec<FileId>>,
+}
+
+#[utoipa::path(post, path = "/api/files/thumbnails/regenerate",
+    responses(
+        (status = 200, body=()),
+    ),
+    request_body = RegenerateThumbnailsRequest,
+)]
+#[tracing::instrument(skip(app_state), level = "trace")]
+async fn regenerate_thumbnail(
+    State(app_state): State<SharedState>,
+    Json(request): Json<RegenerateThumbnailsRequest>,
+) -> ApiResult<Response> {
+    let ids: Option<Vec<model::FileId>> = request
+        .file_ids
+        .map(|ids| ids.into_iter().map(model::FileId::try_from).try_collect())
+        .transpose()?;
+    app_state
+        .scheduler
+        .send
+        .send(SchedulerMessage::UserRequest(
+            UserRequest::RegenerateThumbnails(ids),
+        ))
+        .await
+        .expect("receiver must be alive");
+    Ok(().into_response())
+}
+
+#[utoipa::path(get, path = "/api/files/{id}/original",
     responses(
         (status = 200, body=String, content_type = "application/octet"),
         (status = NOT_FOUND, body=String, description = "File not found")
@@ -222,7 +261,7 @@ async fn get_original_file(
     Ok((headers, body).into_response())
 }
 
-#[utoipa::path(get, path = "/api/files/repr/{fileId}/{reprId}",
+#[utoipa::path(get, path = "/api/files/{fileId}/repr/{reprId}",
     responses(
         (status = 200, body=String, content_type = "application/octet"),
         (status = NOT_FOUND, body=String, description = "File or Representation not found")

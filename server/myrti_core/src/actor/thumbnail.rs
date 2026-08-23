@@ -10,16 +10,18 @@ use crate::{
             create_thumbnail::{
                 CreateAssetThumbhash, CreateAssetThumbnail, CreateThumbnailWithPaths,
                 ThumbnailSideEffectResult, ThumbnailToCreateWithPaths, apply_create_thumbnail,
-                perform_side_effects_create_thumbnail,
             },
         },
-        storage_key,
+        rules, storage_key,
     },
     core::storage::{Storage, StorageProvider},
     interact,
     model::{
-        AssetType, FileId, ThumbnailFormat, ThumbnailType,
-        repository::{self, db::DbPool},
+        AssetThumbnail, AssetThumbnailId, AssetType, FileId, ThumbnailFormat, ThumbnailType,
+        repository::{
+            self,
+            db::{DbPool, PooledDbConn},
+        },
     },
     processing::process_control::ProcessControlReceiver,
 };
@@ -31,7 +33,7 @@ use super::simple_queue_actor::{
 pub type ThumbnailActorHandle = QueuedActorHandle<ThumbnailTaskMsg>;
 pub type MsgFromThumbnail = MsgFrom<ThumbnailTaskResult>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum ThumbnailTaskMsg {
     CreateAssetThumbnail(CreateAssetThumbnail),
     CreateAssetThumbhash(CreateAssetThumbhash),
@@ -111,10 +113,11 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
                 let storage = self.storage.clone();
                 tokio::task::spawn(
                     async move {
+                        let mut conn = db_pool.get().await.expect("todo");
                         // ugly, rewrite this with try blocks one day hopefuly
-                        let result_fut = do_asset_thumbnail_side_effects(
-                            db_pool.clone(),
-                            storage,
+                        let result_fut = generate_asset_thumbnail(
+                            &mut conn,
+                            &storage,
                             create_thumbnail,
                             &mut process_control_recv,
                         );
@@ -129,43 +132,9 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
                                 return;
                             }
                         };
-                        async fn apply_result(
-                            db_pool: DbPool,
-                            result: ThumbnailSideEffectResult,
-                        ) -> Result<ThumbnailSideEffectResult> {
-                            let mut conn = db_pool.get().await?;
-                            if !result.failed.is_empty() {
-                                for (_thumbnail, report) in &result.failed {
-                                    tracing::warn!(?report, %result.file_id, "failed to create thumbnail");
-                                }
-                            }
-                            for succeeded in &result.succeeded {
-                                apply_create_thumbnail(
-                                    &mut conn,
-                                    result.file_id,
-                                    succeeded.clone(),
-                                )
-                                .await?;
-                            }
-                            Ok(result)
-                        }
-                        if let Ok(result) = result {
-                            let apply_result = apply_result(db_pool, result).await;
-                            if let Ok(result) = apply_result {
-                                result_send
-                                    .send((task_id, Ok(ThumbnailTaskResult::Asset(Ok(result)))))
-                                    .expect("Receiver must be alive");
-                            } else {
-                                // error applying to db
-                                result_send
-                                    .send((task_id, Ok(ThumbnailTaskResult::Asset(apply_result))))
-                                    .expect("Receiver must be alive");
-                            }
-                        } else {
-                            result_send
-                                .send((task_id, Ok(ThumbnailTaskResult::Asset(result))))
-                                .expect("Receiver must be alive");
-                        }
+                        result_send
+                            .send((task_id, Ok(ThumbnailTaskResult::Asset(result))))
+                            .expect("Receiver must be alive");
                     }
                     .in_current_span(),
                 );
@@ -230,66 +199,67 @@ impl Actor<ThumbnailTaskMsg, ThumbnailTaskResult> for ThumbnailActor {
     }
 }
 
-fn resolve(op: &CreateAssetThumbnail) -> CreateThumbnailWithPaths {
-    let thumbnails_to_create: Vec<ThumbnailToCreateWithPaths> = op
-        .thumbnails
-        .iter()
-        .map(|thumb| {
-            let file_keys = thumb
-                .formats
-                .iter()
-                .copied()
-                .map(|format| (format, storage_key::thumbnail(op.file_id, thumb.ty, format)))
-                .collect();
-            ThumbnailToCreateWithPaths {
-                ty: thumb.ty,
-                file_keys,
-            }
-        })
-        .collect();
-    CreateThumbnailWithPaths {
-        file_id: op.file_id,
-        thumbnails: thumbnails_to_create,
-    }
-}
-
-#[tracing::instrument(skip(db_pool, storage), level = "trace")]
-async fn do_asset_thumbnail_side_effects(
-    db_pool: DbPool,
-    storage: Storage,
+async fn generate_asset_thumbnail(
+    conn: &mut PooledDbConn,
+    storage: &Storage,
     op: CreateAssetThumbnail,
     control_recv: &mut ProcessControlReceiver,
 ) -> Result<ThumbnailSideEffectResult> {
-    let op_resolved = {
-        let op = &op;
-        let thumbnails_to_create: Vec<ThumbnailToCreateWithPaths> = op
-            .thumbnails
-            .iter()
-            .map(|thumb| {
-                let file_keys = thumb
-                    .formats
-                    .iter()
-                    .copied()
-                    .map(|format| (format, storage_key::thumbnail(op.file_id, thumb.ty, format)))
-                    .collect();
-                ThumbnailToCreateWithPaths {
-                    ty: thumb.ty,
-                    file_keys,
-                }
-            })
-            .collect();
-        CreateThumbnailWithPaths {
-            file_id: op.file_id,
-            thumbnails: thumbnails_to_create,
-        }
+    let (in_path, file) = interact!(conn, move |conn| {
+        let in_path = repository::asset::get_asset_path_on_disk(conn, op.file_id)?.path_on_disk();
+        let file = repository::asset::get_asset_file(conn, op.file_id)?;
+        Ok::<_, eyre::Report>((in_path, file))
+    })
+    .await??;
+
+    let mut result = ThumbnailSideEffectResult {
+        file_id: op.file_id,
+        succeeded: Vec::default(),
+        failed: Vec::default(),
     };
-    perform_side_effects_create_thumbnail(
-        &storage,
-        db_pool.clone(),
-        op_resolved.clone(),
-        control_recv,
-    )
-    .await
+    for thumb in op.thumbnails {
+        let file_keys = thumb
+            .formats
+            .iter()
+            .copied()
+            .map(|format| (format, storage_key::thumbnail(op.file_id, thumb.ty, format)))
+            .collect();
+        let thumb_with_path = ThumbnailToCreateWithPaths {
+            ty: thumb.ty,
+            file_keys,
+        };
+        match crate::catalog::operation::create_thumbnail::create_thumbnail(
+            in_path.clone(),
+            &file,
+            &thumb_with_path,
+            storage,
+            control_recv,
+        )
+        .await
+        {
+            Ok(result) => {
+                for format in thumb.formats.iter().copied() {
+                    interact!(conn, move |conn| {
+                        repository::asset::insert_asset_thumbnail(
+                            conn,
+                            AssetThumbnail {
+                                id: AssetThumbnailId(0),
+                                file_id: op.file_id,
+                                ty: thumb.ty,
+                                size: result.actual_size,
+                                format,
+                            },
+                        )
+                    })
+                    .await??;
+                }
+            }
+            Err(err) => {
+                result.failed.push((thumb_with_path.clone(), err));
+            }
+        }
+    }
+    Ok(result)
 }
 
 #[tracing::instrument(skip(db_pool, storage), level = "trace")]

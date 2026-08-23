@@ -152,14 +152,14 @@
 {#each Object.entries(markers) as [id, marker] (id)}
   <Marker {map} lnglat={marker.coords}>
     {#snippet content()}
-      <img src="/api/files/thumbnail/{id}/small/avif" class="rounded-lg" style="width: 100px;" />
+      <img src="/api/files/{id}/thumbnail/small/avif" class="rounded-lg" style="width: 100px;" />
     {/snippet}
   </Marker>
 {/each}
 {#each Object.entries(clusterMarkers) as [id, marker] (id)}
   <Marker {map} lnglat={marker.coords}>
     {#snippet content()}
-      <img src="/api/files/thumbnail/{id}/small/avif" class="rounded-lg" style="width: 100px;" />
+      <img src="/api/files/{id}/thumbnail/small/avif" class="rounded-lg" style="width: 100px;" />
     {/snippet}
   </Marker>
 {/each}

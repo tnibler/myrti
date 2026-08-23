@@ -239,6 +239,14 @@ export const MirrorCorrection = {
   vertical: 'vertical',
 } as const;
 
+export interface RegenerateThumbnailsRequest {
+  /**
+   * List of FileId, or null to regenerate thumbnails for all files
+   * @nullable
+   */
+  fileIds?: FileId[] | null;
+}
+
 export type SegmentTypeOneOfType = (typeof SegmentTypeOneOfType)[keyof typeof SegmentTypeOneOfType];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
@@ -397,6 +405,11 @@ export type DeleteAlbumItems200 = unknown | null;
 /**
  * @nullable
  */
+export type RegenerateThumbnail200 = unknown | null;
+
+/**
+ * @nullable
+ */
 export type DeleteSeries200 = unknown | null;
 
 export const getAllAlbums = <TData = AxiosResponse<Album[]>>(
@@ -468,13 +481,11 @@ export const setAssetIsSeriesSelection = <TData = AxiosResponse<SetAssetIsSeries
   return axios.post(`/api/assets/${id}/seriesSelection`, setAssetSeriesSelectionRequest, options);
 };
 
-export const getOriginalFile = <TData = AxiosResponse<string>>(
-  id: string,
+export const regenerateThumbnail = <TData = AxiosResponse<RegenerateThumbnail200>>(
+  regenerateThumbnailsRequest: RegenerateThumbnailsRequest,
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
-  return axios.get(`/api/files/original/${id}`, {
-    ...options,
-  });
+  return axios.post(`/api/files/thumbnails/regenerate`, regenerateThumbnailsRequest, options);
 };
 
 export const getImageAssetRepresentation = <TData = AxiosResponse<string>>(
@@ -482,7 +493,23 @@ export const getImageAssetRepresentation = <TData = AxiosResponse<string>>(
   reprId: ImageRepresentationId,
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
-  return axios.get(`/api/files/repr/${fileId}/${reprId}`, {
+  return axios.get(`/api/files/${fileId}/repr/${reprId}`, {
+    ...options,
+  });
+};
+
+export const getFileDetails = <TData = AxiosResponse<AssetDetailsResponse>>(
+  id: string,
+  options?: AxiosRequestConfig,
+): Promise<TData> => {
+  return axios.get(`/api/files/${id}/details`, options);
+};
+
+export const getOriginalFile = <TData = AxiosResponse<string>>(
+  id: string,
+  options?: AxiosRequestConfig,
+): Promise<TData> => {
+  return axios.get(`/api/files/${id}/original`, {
     ...options,
   });
 };
@@ -493,16 +520,9 @@ export const getThumbnail = <TData = AxiosResponse<string>>(
   format: ThumbnailFormat,
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
-  return axios.get(`/api/files/thumbnail/${id}/${size}/${format}`, {
+  return axios.get(`/api/files/${id}/thumbnail/${size}/${format}`, {
     ...options,
   });
-};
-
-export const getFileDetails = <TData = AxiosResponse<AssetDetailsResponse>>(
-  id: string,
-  options?: AxiosRequestConfig,
-): Promise<TData> => {
-  return axios.get(`/api/files/${id}/details`, options);
 };
 
 export const setAssetTransformCorrection = <TData = AxiosResponse<SetAssetRotationResponse>>(
@@ -584,10 +604,11 @@ export type GetAlbumThumbnailResult = AxiosResponse<string>;
 export type SetAssetsHiddenResult = AxiosResponse<void>;
 export type GetAssetResult = AxiosResponse<Asset>;
 export type SetAssetIsSeriesSelectionResult = AxiosResponse<SetAssetIsSeriesSelectionResponse>;
-export type GetOriginalFileResult = AxiosResponse<string>;
+export type RegenerateThumbnailResult = AxiosResponse<RegenerateThumbnail200>;
 export type GetImageAssetRepresentationResult = AxiosResponse<string>;
-export type GetThumbnailResult = AxiosResponse<string>;
 export type GetFileDetailsResult = AxiosResponse<AssetDetailsResponse>;
+export type GetOriginalFileResult = AxiosResponse<string>;
+export type GetThumbnailResult = AxiosResponse<string>;
 export type SetAssetTransformCorrectionResult = AxiosResponse<SetAssetRotationResponse>;
 export type GetAllAssetsGeojsonResult = AxiosResponse<string>;
 export type CreateSeriesResult = AxiosResponse<CreateSeriesResponse>;

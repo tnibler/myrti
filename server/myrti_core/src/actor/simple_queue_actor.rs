@@ -20,7 +20,7 @@ pub enum MsgFrom<T: Debug> {
 }
 
 #[derive(Debug)]
-pub enum MsgTo<T: Debug> {
+pub enum MsgTo<T> {
     PauseAll,
     ResumeAll,
     Shutdown,
@@ -42,9 +42,16 @@ pub enum TaskError {
     Other(#[from] eyre::Report),
 }
 
-#[derive(Clone)]
-pub struct QueuedActorHandle<T: Debug + Send + Sync> {
+pub struct QueuedActorHandle<T> {
     send: mpsc::UnboundedSender<MsgTo<T>>,
+}
+
+impl<T> Clone for QueuedActorHandle<T> {
+    fn clone(&self) -> Self {
+        Self {
+            send: self.send.clone(),
+        }
+    }
 }
 
 impl<Task: Debug + Send + Sync + 'static> QueuedActorHandle<Task> {

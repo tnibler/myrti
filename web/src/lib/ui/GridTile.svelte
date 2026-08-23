@@ -86,7 +86,7 @@
   const isHoverable = $derived(selectState.state !== 'unclickable');
 
   let thumbHashVisible = $state(false);
-  const thumbnailUrl = $derived(`/api/files/thumbnail/${asset.repFile.fileId}/large/avif`);
+  const thumbnailUrl = $derived(`/api/files/${asset.repFile.fileId}/thumbnail/large/avif`);
   let dataUrl: string | null = $state(null);
 
   $effect(() => {

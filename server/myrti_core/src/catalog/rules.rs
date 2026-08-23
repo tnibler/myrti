@@ -162,7 +162,7 @@ pub async fn required_thumbnails_for_asset(
     .await??;
     Ok(CreateAssetThumbnail {
         file_id,
-        thumbnails: missing_asset_thumbnails(have_thumbnails),
+        thumbnails: missing_asset_thumbnails(&have_thumbnails),
     })
 }
 
@@ -182,13 +182,13 @@ pub async fn thumbnails_to_create(conn: &mut PooledDbConn) -> Result<Vec<CreateA
                  thumbnails,
              }| CreateAssetThumbnail {
                 file_id,
-                thumbnails: missing_asset_thumbnails(thumbnails),
+                thumbnails: missing_asset_thumbnails(&thumbnails),
             },
         )
         .collect())
 }
 
-fn missing_asset_thumbnails(have_thumbnails: Vec<AssetThumbnail>) -> Vec<ThumbnailToCreate> {
+pub fn missing_asset_thumbnails(have_thumbnails: &[AssetThumbnail]) -> Vec<ThumbnailToCreate> {
     let have_sm_sq_formats: HashSet<ThumbnailFormat> = have_thumbnails
         .iter()
         .filter(|t| t.ty == ThumbnailType::SmallSquare)

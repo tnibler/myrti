@@ -15,14 +15,18 @@ use crate::{
         },
         indexing::{IndexingActorHandle, MsgFromIndexing},
         thumbnail::{
-            MsgFromThumbnail, ThumbnailActorHandle, ThumbnailTaskResult, start_thumbnail_actor,
+            MsgFromThumbnail, ThumbnailActorHandle, ThumbnailTaskMsg, ThumbnailTaskResult,
+            start_thumbnail_actor,
         },
         video_packaging::{
             MsgFromVideoPackaging, VideoPackagingActorHandle, VideoPackagingTaskResult,
             start_video_packaging_actor,
         },
     },
-    catalog::{operation::create_thumbnail::CreateAssetThumbhash, rules},
+    catalog::{
+        operation::create_thumbnail::{CreateAssetThumbhash, CreateAssetThumbnail},
+        rules,
+    },
     config::Config,
     interact,
     model::{
@@ -48,6 +52,7 @@ pub enum SchedulerMessage {
 #[derive(Debug)]
 pub enum UserRequest {
     ReindexAssetRoot(AssetRootDirId),
+    RegenerateThumbnails(Option<Vec<FileId>>),
 }
 
 #[derive(Debug, Clone)]
@@ -518,6 +523,52 @@ impl Scheduler {
             SchedulerMessage::UserRequest(user_request) => match user_request {
                 UserRequest::ReindexAssetRoot(root_dir_id) => {
                     let _ = self.indexing_actor.msg_index_asset_root(root_dir_id);
+                }
+                UserRequest::RegenerateThumbnails(file_ids) => {
+                    tracing::debug!(?file_ids, "request RegenerateThumbnails");
+                    async fn handle_regenerate_thumbnails(
+                        db_pool: DbPool,
+                        file_ids: Option<Vec<FileId>>,
+                    ) -> Result<Vec<CreateAssetThumbnail>> {
+                        let mut conn = db_pool.get().await?;
+
+                        let file_ids = interact!(conn, move |conn| {
+                            repository::asset::delete_thumbnails_for_file(
+                                conn,
+                                file_ids.as_deref(),
+                            )?;
+                            Ok(file_ids)
+                        })
+                        .await??;
+
+                        let required_thumbnails = if let Some(file_ids) = file_ids {
+                            let mut required_thumbnails = Vec::default();
+                            for file_id in file_ids {
+                                required_thumbnails.push(
+                                    rules::required_thumbnails_for_asset(&mut conn, file_id)
+                                        .await?,
+                                );
+                            }
+                            required_thumbnails
+                        } else {
+                            rules::thumbnails_to_create(&mut conn).await?
+                        };
+
+                        Ok(required_thumbnails)
+                    }
+
+                    match handle_regenerate_thumbnails(self.db_pool.clone(), file_ids).await {
+                        Ok(create_thumbs) => {
+                            for thumb in create_thumbs {
+                                self.thumbnail_actor
+                                    .msg_create_asset_thumbnail(thumb)
+                                    .expect("receiver must be alive");
+                            }
+                        }
+                        Err(err) => {
+                            tracing::warn!(?err, "error regenerating thumbnails")
+                        }
+                    }
                 }
             },
             SchedulerMessage::PauseAllProcessing => {

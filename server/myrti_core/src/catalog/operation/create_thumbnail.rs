@@ -86,48 +86,7 @@ pub struct ThumbnailSideEffectResult {
     pub failed: Vec<(ThumbnailToCreateWithPaths, Report)>,
 }
 
-pub async fn perform_side_effects_create_thumbnail(
-    storage: &Storage,
-    pool: DbPool,
-    op: CreateThumbnailWithPaths,
-    control_recv: &mut ProcessControlReceiver,
-) -> Result<ThumbnailSideEffectResult> {
-    let mut result = ThumbnailSideEffectResult {
-        file_id: op.file_id,
-        succeeded: Vec::default(),
-        failed: Vec::default(),
-    };
-    if op.thumbnails.is_empty() {
-        return Ok(result);
-    }
-    let conn = pool.get().await?;
-    let (in_path, file) = interact!(conn, move |conn| {
-        let in_path = repository::asset::get_asset_path_on_disk(conn, op.file_id)?.path_on_disk();
-        let file = repository::asset::get_asset_file(conn, op.file_id)?;
-        Ok::<_, eyre::Report>((in_path, file))
-    })
-    .await??;
-    // TODO don't await sequentially. Not super bad because op.thumbnails is small but still
-    for thumb in op.thumbnails {
-        match create_thumbnail(in_path.clone(), &file, &thumb, storage, control_recv).await {
-            Ok(res) => {
-                for (format, _file_key) in thumb.file_keys {
-                    result.succeeded.push(ThumbnailSideEffectSuccess {
-                        ty: thumb.ty,
-                        format,
-                        actual_size: res.actual_size,
-                    });
-                }
-            }
-            Err(err) => {
-                result.failed.push((thumb.clone(), err));
-            }
-        }
-    }
-    Ok(result)
-}
-
-async fn create_thumbnail(
+pub async fn create_thumbnail(
     asset_path: PathBuf,
     file: &AssetFile,
     thumb: &ThumbnailToCreateWithPaths,

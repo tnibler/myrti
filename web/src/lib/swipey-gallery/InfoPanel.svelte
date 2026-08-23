@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { AssetWithSpe } from '@api/myrti';
   import { dayjs } from '@lib/dayjs';
-  import { getFileDetails } from '../../api/myrti';
+  import { getFileDetails, regenerateThumbnail } from '../../api/myrti';
   import { getFileDetailsResponse } from '../../api/myrti.zod';
 
   type Props = {
@@ -39,4 +39,15 @@
       {/each}
     </ul>
   {/await}
+  <button
+    class="hover:not-disabled:bg-gray-200 disabled:bg-gray-300 mt-4 px-3 py-2 border-1 rounded-sm"
+    onclick={async (e) => {
+      e.target.disabled = true;
+      try {
+        await regenerateThumbnail({ fileIds: [asset.repFile.fileId] });
+      } finally {
+        e.target.disabled = false;
+      }
+    }}>Regenerate thumbnails</button
+  >
 </div>

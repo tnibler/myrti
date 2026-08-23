@@ -174,19 +174,20 @@ export const setAssetIsSeriesSelectionResponse = zod.object({
   seriesId: zod.string(),
 });
 
-export const getOriginalFileParams = zod.object({
-  id: zod.string().describe('FileId'),
+export const regenerateThumbnailBody = zod.object({
+  fileIds: zod
+    .array(zod.string())
+    .nullish()
+    .describe('List of FileId, or null to regenerate thumbnails for all files'),
 });
+
+export const regenerateThumbnailResponseDefault = null;
+
+export const regenerateThumbnailResponse = zod.unknown().nullable();
 
 export const getImageAssetRepresentationParams = zod.object({
   fileId: zod.string().describe('FileId'),
   reprId: zod.string().describe('ImageRepresentationId'),
-});
-
-export const getThumbnailParams = zod.object({
-  id: zod.string().describe('FileId to get thumbnail for'),
-  size: zod.enum(['small', 'large']).describe('Thumbnail size'),
-  format: zod.enum(['avif', 'webp']).describe('Image format for thumbnail'),
 });
 
 export const getFileDetailsParams = zod.object({
@@ -195,6 +196,16 @@ export const getFileDetailsParams = zod.object({
 
 export const getFileDetailsResponse = zod.object({
   exiftoolOutput: zod.unknown(),
+});
+
+export const getOriginalFileParams = zod.object({
+  id: zod.string().describe('FileId'),
+});
+
+export const getThumbnailParams = zod.object({
+  id: zod.string().describe('FileId to get thumbnail for'),
+  size: zod.enum(['small', 'large']).describe('Thumbnail size'),
+  format: zod.enum(['avif', 'webp']).describe('Image format for thumbnail'),
 });
 
 export const setAssetTransformCorrectionParams = zod.object({

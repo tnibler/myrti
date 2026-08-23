@@ -276,6 +276,20 @@ pub fn get_thumbnails_for_asset(
         .collect::<Result<Vec<_>>>()
 }
 
+pub fn delete_thumbnails_for_file(conn: &mut DbConn, file_ids: Option<&[FileId]>) -> Result<usize> {
+    use schema::AssetThumbnail;
+    if let Some(file_ids) = file_ids {
+        diesel::delete(AssetThumbnail::table)
+            .filter(AssetThumbnail::file_id.eq_any(file_ids.iter().map(|id| id.0)))
+            .execute(conn)
+            .wrap_err("error deleting from table AssetThumbnail")
+    } else {
+        diesel::delete(AssetThumbnail::table)
+            .execute(conn)
+            .wrap_err("error deleting from table AssetThumbnail")
+    }
+}
+
 #[instrument(skip_all, fields(path=create_asset.base.file_path.as_str()), level = "debug")]
 pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<AssetId> {
     let timezone_offset: Option<_> = match create_asset.base.timestamp_info {

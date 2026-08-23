@@ -1,16 +1,23 @@
+use std::os::unix::fs::MetadataExt;
+
 use axum::{
+    Router,
     body::Body,
     extract::{Path, Request, State},
     response::{IntoResponse, Response},
     routing::get,
-    Router,
 };
-use eyre::{eyre, Context};
+use eyre::{Context, eyre};
 use serde::Deserialize;
 use tower::ServiceExt;
 use tracing::Instrument;
 
-use myrti_core::{catalog::storage_key, core::storage::StorageProvider, model};
+use myrti_core::{
+    catalog::storage_key,
+    core::storage::StorageProvider,
+    deadpool_diesel, interact,
+    model::{self, repository},
+};
 
 use crate::{
     app_state::SharedState,
@@ -28,15 +35,15 @@ struct DashFilePath {
     pub path: String,
 }
 
-#[tracing::instrument(fields(request = true), skip(app_state), err)]
+#[tracing::instrument(fields(request = true), skip(app_state), err, level = "trace")]
 async fn get_dash_file(
     Path(path): Path<DashFilePath>,
     State(app_state): State<SharedState>,
     request: Request<Body>,
 ) -> ApiResult<Response> {
-    let asset_id: model::FileId = path.id.try_into()?;
+    let file_id: model::FileId = path.id.try_into()?;
 
-    let key = storage_key::dash_file(asset_id, format_args!("{}", &path.path));
+    let key = storage_key::dash_file(file_id, format_args!("{}", path.path));
 
     let storage = &app_state.storage;
     let fs_path = storage
@@ -44,27 +51,27 @@ async fn get_dash_file(
         .await?
         .expect("not implemented for non-local StorageProvider");
 
-    if let Some(stripped) = path.path.strip_prefix("original/original_") {
+    if let Some(repr_filename_concat) = path.path.strip_prefix("original/original_") {
+        let (repr, rest) = match repr_filename_concat.strip_prefix("video-") {
+            None => match repr_filename_concat.strip_prefix("audio-") {
+                Some(rest) => ("original_audio", rest),
+                None => return Err(eyre!("bad path '{}'", path.path).into()),
+            },
+            Some(rest) => ("original_video", rest),
+        };
+        let filename = format!("{repr}-{rest}");
         if !tokio::fs::try_exists(&fs_path).await? {
-            let (repr, rest) = match stripped.strip_prefix("video-") {
-                None => match stripped.strip_prefix("audio-") {
-                    Some(rest) => ("original_audio", rest),
-                    None => return Err(eyre!("bad path").into()),
-                },
-                Some(rest) => ("original_video", rest),
-            };
             let ghi_path = storage
                 .local_path(&storage_key::dash_file(
-                    asset_id,
+                    file_id,
                     format_args!("original/index.ghi"),
                 ))
                 .await?
                 .expect("not supported");
             let out_dir = storage
-                .local_path(&storage_key::dash_file(asset_id, format_args!("original")))
+                .local_path(&storage_key::dash_file(file_id, format_args!("original")))
                 .await?
                 .expect("not supported");
-            tracing::info!(?repr, "{}, {}", &ghi_path, &rest);
 
             let segment_number: i32 = {
                 if rest == "init.mp4" {
@@ -75,16 +82,45 @@ async fn get_dash_file(
                 }
             };
 
+            let conn = app_state.pool.get().await?;
+            let filename_copy = filename.clone();
+            // TODO: handle unlikely error here. if segment is already being created, wait for it
+            interact!(conn, move |conn| {
+                repository::ghi_cache::insert_pending_segment(conn, file_id, &filename_copy)
+            })
+            .await??;
             let (_tx, mut rx) = tokio::sync::mpsc::channel(5);
             myrti_core::processing::video::gpac::create_segment(
                 &ghi_path,
                 &out_dir,
-                &repr,
+                repr,
                 segment_number,
                 None,
                 &mut rx,
             )
             .await?;
+            let metadata = tokio::fs::metadata(out_dir.join(&filename))
+                .await
+                .wrap_err("error reading segment file metadata")?;
+            let filename_copy = filename.clone();
+            interact!(conn, move |conn| {
+                repository::ghi_cache::finalize_segment(
+                    conn,
+                    file_id,
+                    &filename_copy,
+                    metadata.size().try_into().expect("fits in i64"),
+                )
+            })
+            .await??;
+        } else {
+            let conn = app_state.pool.get().await?;
+            let res = interact!(conn, move |conn| {
+                repository::ghi_cache::update_accessed_time(conn, file_id, &filename)
+            })
+            .await?;
+            if let Err(err) = res {
+                tracing::warn!(?err)
+            }
         }
     }
     // TODO (#8)

@@ -211,7 +211,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    TimelineItem(asset_id) {
+    TimelineItem (asset_id) {
         asset_id -> BigInt,
         taken_date -> BigInt,
         series_id -> Nullable<BigInt>,
@@ -224,6 +224,18 @@ diesel::table! {
         segment_id -> Integer,
         segment_split_idx -> Nullable<Integer>,
         is_dirty -> Integer,
+    }
+}
+
+diesel::table! {
+    GhiSegmentCache (ghi_cache_id) {
+        ghi_cache_id -> BigInt,
+        file_id -> BigInt,
+        file_name -> Text,
+        size -> Nullable<BigInt>,
+        status -> Integer,
+        created_at -> BigInt,
+        accessed_at -> BigInt,
     }
 }
 

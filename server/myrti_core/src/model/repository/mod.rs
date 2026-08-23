@@ -7,6 +7,7 @@ pub mod config;
 pub mod db;
 pub mod db_entity;
 pub mod duplicate_asset;
+pub mod ghi_cache;
 pub mod representation;
 #[allow(non_snake_case)]
 mod schema;

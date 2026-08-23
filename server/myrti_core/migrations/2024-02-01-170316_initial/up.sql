@@ -258,17 +258,19 @@ CREATE TABLE TimelineGroupItem (
 ) STRICT;
 
 CREATE TABLE GhiSegmentCache (
-  video_repr_id INTEGER
-  , audio_repr_id INTEGER
+  ghi_cache_id INTEGER PRIMARY KEY NOT NULL
+  , file_id INTEGER NOT NULL
   , file_name TEXT NOT NULL
-  , size INTEGER NOT NULL
+  , size INTEGER
+  -- 0: creation started, not finished
+  -- 1: created
+  , status INTEGER NOT NULL CHECK(status IN (0, 1))
   , created_at INTEGER NOT NULL DEFAULT (unixepoch())
   , accessed_at INTEGER NOT NULL DEFAULT (unixepoch())
-  , UNIQUE(video_repr_id, file_name)
-  , UNIQUE(audio_repr_id, file_name)
-  , CHECK ((video_repr_id IS NULL) IS NOT (audio_repr_id IS NULL))
-  , FOREIGN KEY (video_repr_id) REFERENCES VideoRepresentation(video_repr_id)
-  , FOREIGN KEY (audio_repr_id) REFERENCES AudioRepresentation(audio_repr_id)
+  , UNIQUE(file_id, file_name)
+  , CHECK((status = 0 AND size IS NULL) OR (status = 1 AND size IS NOT NULL))
+  , CHECK(size IS NULL OR size > 0)
+  , FOREIGN KEY (file_id) REFERENCES VideoFile(file_id)
 ) STRICT;
 
 CREATE TRIGGER GhiSegmentCache_Update_Accessed
@@ -276,8 +278,8 @@ AFTER UPDATE OF accessed_at
 ON GhiSegmentCache
 BEGIN
   UPDATE GhiSegmentCache SET accessed_at = (unixepoch())
-  WHERE GhiSegmentCache.video_repr_id = NEW.video_repr_id
-  AND GhiSegmentCache.audio_repr_id = NEW.audio_repr_id;
+  WHERE GhiSegmentCache.file_id = NEW.file_id
+  AND GhiSegmentCache.file_name = NEW.file_name;
 END;
 
 -- =================== Configuration =======================
@@ -304,3 +306,4 @@ CREATE INDEX index_timelinegroupitem_asset ON TimelineGroupItem(asset_id);
 CREATE INDEX index_timelinegroupitem_group ON TimelineGroupItem(group_id);
 CREATE INDEX index_imagerepresentation_file_id ON ImageRepresentation(file_id);
 CREATE INDEX index_videorepresentation_file_id ON VideoRepresentation(file_id);
+CREATE INDEX index_ghicache_file_id_name ON GhiSegmentCache(file_id, file_name);

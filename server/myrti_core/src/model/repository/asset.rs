@@ -198,78 +198,67 @@ pub fn get_assets_with_missing_thumbnail(
     conn: &mut DbConn,
     limit: Option<i64>,
 ) -> Result<Vec<AssetHasThumbnails>> {
-    #[derive(Debug, Clone, Queryable, Selectable)]
+    #[derive(Debug, Clone, QueryableByName, Selectable)]
     #[diesel(table_name = super::schema::AssetFile)]
     #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
     struct FileIdRow {
-        #[diesel(sql_type = diesel::sql_types::BigInt)]
         pub file_id: i64,
     }
-    let rows_zero_thumbnails: Vec<FileIdRow> = {
-        use diesel::dsl::{exists, not};
-        use schema::{AssetFile, AssetThumbnail};
-        AssetFile::table
-            .filter(not(exists(
-                AssetThumbnail::table.filter(AssetThumbnail::file_id.eq(AssetFile::file_id)),
-            )))
-            .select(FileIdRow::as_select())
-            .load(conn)
-            .wrap_err("error querying for Assets with zero thumbnails")?
-    };
-    const NUM_THUMBNAILS_PER_ASSET: i32 = 4;
+    const NUM_THUMBNAILS_PER_ASSET: i64 = 4;
 
-    let rows_missing_thumbnails: Vec<DbAssetThumbnail> = diesel::sql_query(
+    let missing_thumbnails: Vec<(FileIdRow, Option<DbAssetThumbnail>)> = diesel::sql_query(
         r#"
-    SELECT * FROM AssetThumbnail
-    WHERE 
-    (
-        SELECT COUNT(*) FROM AssetThumbnail at
-        WHERE at.file_id = AssetThumbnail.file_id
-        GROUP BY at.file_id
-    ) < $1
-    ORDER BY AssetThumbnail.file_id;
-    "#,
+        SELECT AssetFile.file_id, AssetThumbnail.*
+        FROM AssetFile
+        LEFT JOIN AssetThumbnail ON AssetFile.file_id = AssetThumbnail.file_id
+        WHERE AssetFile.file_id NOT IN (
+            SELECT at.file_id FROM AssetThumbnail at
+            GROUP BY at.file_id
+            HAVING COUNT(at.thumbnail_id) >= $1
+        )
+        ORDER BY AssetFile.file_id;
+            "#,
     )
-    .bind::<diesel::sql_types::Integer, _>(NUM_THUMBNAILS_PER_ASSET)
-    .load(conn)?;
+    .bind::<diesel::sql_types::BigInt, _>(NUM_THUMBNAILS_PER_ASSET)
+    .load(conn)
+    .wrap_err("error querying for AssetFile with missing thumbnails")?;
 
-    let result_zero_thumbnails = rows_zero_thumbnails
+    let result = missing_thumbnails
         .into_iter()
-        .map(|row| AssetHasThumbnails {
-            file_id: FileId(row.file_id),
-            thumbnails: Vec::default(),
-        });
-
-    let result_missing_thumbnails = rows_missing_thumbnails
-        .into_iter()
-        .map(AssetThumbnail::try_from)
-        .collect::<Result<Vec<AssetThumbnail>>>()?
+        .map(|(file_id, db_thumbnail)| {
+            Ok((
+                FileId(file_id.file_id),
+                db_thumbnail
+                    .map(model::AssetThumbnail::try_from)
+                    .transpose()?,
+            ))
+        })
+        .collect::<Result<Vec<(FileId, Option<model::AssetThumbnail>)>>>()?
         .into_iter()
         .fold(
             Vec::default(),
-            |mut acc: Vec<AssetHasThumbnails>, thumbnail| {
+            |mut acc: Vec<AssetHasThumbnails>, (file_id, thumbnail)| {
                 match acc.last_mut() {
                     None => {
                         acc.push(AssetHasThumbnails {
-                            file_id: thumbnail.file_id,
-                            thumbnails: vec![thumbnail],
+                            file_id,
+                            thumbnails: thumbnail.into_iter().collect(),
                         });
                     }
-                    Some(a) if a.file_id == thumbnail.file_id => a.thumbnails.push(thumbnail),
-                    Some(a) => {
-                        debug_assert!(a.file_id != thumbnail.file_id);
+                    Some(a) if a.file_id == file_id => a.thumbnails.push(thumbnail.expect(
+                        "row with null AssetThumbnail can only occur zero or one time per file_id",
+                    )),
+                    Some(_a) => {
                         acc.push(AssetHasThumbnails {
-                            file_id: thumbnail.file_id,
-                            thumbnails: vec![thumbnail],
+                            file_id,
+                            thumbnails: thumbnail.into_iter().collect(),
                         });
                     }
                 };
                 acc
             },
         );
-    Ok(result_zero_thumbnails
-        .chain(result_missing_thumbnails)
-        .collect())
+    Ok(result)
 }
 
 #[instrument(skip(conn), level = "trace")]
@@ -557,6 +546,7 @@ pub fn get_files_without_thumbhash(conn: &mut DbConn) -> Result<Vec<FileId>> {
             ),
         )
         .select(AssetFile::file_id)
+        .limit(1000)
         .get_results(conn)
         .wrap_err("error querying table AssetFile")?;
     Ok(rows.into_iter().map(FileId).collect())

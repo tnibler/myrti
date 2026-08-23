@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
-use eyre::{Context, Result};
+use eyre::{Context, Result, eyre};
+use itertools::Itertools;
 
 use crate::{
     core::storage::{CommandOutputFile, StorageCommandOutput},
@@ -48,9 +49,26 @@ impl GenerateThumbnailTrait for GenerateThumbnail {
             .iter()
             .map(|f| f.path().to_path_buf())
             .collect();
+        let tempdir = tempfile::tempdir()?;
+        let tmp_out_paths: Vec<PathBuf> = out_paths
+            .iter()
+            .map(|p| {
+                let filename = p
+                    .file_name()
+                    .ok_or_else(|| eyre!("thumbnail output path {} has no file_name", p))?;
+                Ok::<_, eyre::Error>(
+                    tempdir
+                        .path()
+                        .with_file_name(filename)
+                        .try_into()
+                        .expect("all path components were utf-8"),
+                )
+            })
+            .try_collect()?;
+
         let vips_params = VipsThumbnailParams {
             in_path: params.in_path,
-            out_paths,
+            out_paths: tmp_out_paths.clone(),
             out_dimension: params.out_dimension,
         };
         let (tx, rx) = tokio::sync::oneshot::channel::<Result<_>>();
@@ -62,6 +80,18 @@ impl GenerateThumbnailTrait for GenerateThumbnail {
             .await
             .wrap_err("error generating thumbnail with libvips")?
             .wrap_err("error generating thumbnail with libvips")?;
+
+        for (tmp_out_path, out_path) in tmp_out_paths.into_iter().zip(out_paths) {
+            tokio::fs::rename(&tmp_out_path, &out_path)
+                .await
+                .wrap_err_with(|| {
+                    eyre!(
+                        "error copying temp file {} to destination {}",
+                        tmp_out_path,
+                        out_path
+                    )
+                })?;
+        }
         Ok(ThumbnailResult {
             actual_size: Size {
                 width: vips_result.actual_size.width,

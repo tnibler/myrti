@@ -1,7 +1,9 @@
-use std::time::Duration;
+use std::{str::FromStr, time::Duration};
 
-use eyre::{Context, Result};
+use camino::Utf8Path as Path;
+use eyre::{Context, Result, eyre};
 use futures::{TryStreamExt, stream::FuturesUnordered};
+use itertools::Itertools;
 use strum::EnumCount;
 use tokio::sync::{mpsc, oneshot};
 use tracing::instrument;
@@ -175,8 +177,14 @@ async fn run_scheduler(
     mut video_packaging_recv: mpsc::UnboundedReceiver<MsgFromVideoPackaging>,
     mut image_conversion_recv: mpsc::UnboundedReceiver<MsgFromImageConversion>,
 ) {
+    let mut have_written_to_disk = true;
     let mut reindex_interval = {
         let mut int = tokio::time::interval(Duration::from_mins(60));
+        int.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        int
+    };
+    let mut check_disk_interval = {
+        let mut int = tokio::time::interval(Duration::from_mins(5));
         int.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         int
     };
@@ -187,25 +195,42 @@ async fn run_scheduler(
                     tracing::error!(?err, "Error reindexing asset roots");
                 }
             }
+            _ = check_disk_interval.tick(), if !sched.waiting_for_shutdown && have_written_to_disk => {
+                have_written_to_disk = false;
+                match is_disk_almost_full(&sched.config.data_dir.path).await {
+                    Ok(false) => {}
+                    Ok(true) => {
+                        tracing::warn!("Disk almost full, pausing processing");
+                        sched.handle_message(SchedulerMessage::PauseAllProcessing).await;
+                    }
+                    Err(err) => {
+                        tracing::warn!(?err, "error checking disk usage");
+                    }
+                }
+            }
             Some(msg) = recv.recv() => {
                 sched.handle_message(msg).await;
             }
             Some(indexing_msg) = indexing_recv.recv() => {
+                have_written_to_disk = true;
                 if let Err(err) = sched.on_indexing_msg(indexing_msg).await {
                     tracing::error!(?err, "error in scheduler");
                 }
             }
             Some(thumbnail_msg) = thumbnail_recv.recv() => {
+                have_written_to_disk = true;
                 if let Err(err) = sched.on_thumbnail_msg(thumbnail_msg).await {
                     tracing::error!(?err, "error in scheduler");
                 }
             }
             Some(video_packaging_msg) = video_packaging_recv.recv() => {
+                have_written_to_disk = true;
                 if let Err(err) = sched.on_video_packaging_msg(video_packaging_msg).await {
                     tracing::error!(?err, "error in scheduler");
                 }
             }
             Some(image_conversion_msg) = image_conversion_recv.recv() => {
+                have_written_to_disk = true;
                 if let Err(err) = sched.on_image_conversion_msg(image_conversion_msg).await {
                     tracing::error!(?err, "error in scheduler");
                 }
@@ -729,4 +754,71 @@ async fn reindex_all(db_pool: &DbPool, indexing_actor: &IndexingActorHandle) -> 
         let _ = indexing_actor.msg_index_asset_root(root_dir.id);
     }
     Ok(())
+}
+
+async fn is_disk_almost_full(path: &Path) -> Result<bool> {
+    let output = tokio::process::Command::new("df")
+        .arg(path)
+        .args([
+            "--output=source,fstype,size,used,avail",
+            "-B",
+            DF_BLOCK_SIZE,
+        ])
+        .output()
+        .await
+        .wrap_err("error running df")?;
+    if !output.status.success() {
+        return Err(eyre!(
+            "df exited with nonzero status code. stderr: {}",
+            String::from_utf8_lossy(&output.stdout)
+        ));
+    }
+    let output = str::from_utf8(&output.stdout).wrap_err("df output is not valid utf-8")?;
+    let disk_usage =
+        parse_df_output(output).ok_or_else(|| eyre!("unexpected df output format:\n{}", output))?;
+    tracing::info!(?disk_usage, "checking disk usage");
+    Ok(disk_usage.avail_mb < 5000)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DfOutput {
+    fs_source: String,
+    fs_type: String,
+    size_mb: u64,
+    used_mb: u64,
+    avail_mb: u64,
+}
+
+const DF_BLOCK_SIZE: &str = "MB"; // 10^6 Bytes
+fn parse_df_output(output: &str) -> Option<DfOutput> {
+    let (_header, values) = output.split_once('\n')?;
+    let mut columns = values.split_ascii_whitespace();
+    let fs_source = columns.next()?.to_owned();
+    let fs_type = columns.next()?.to_owned();
+    let size_mb = u64::from_str(columns.next()?.strip_suffix(DF_BLOCK_SIZE)?).ok()?;
+    let used_mb = u64::from_str(columns.next()?.strip_suffix(DF_BLOCK_SIZE)?).ok()?;
+    let avail_mb = u64::from_str(columns.next()?.strip_suffix(DF_BLOCK_SIZE)?).ok()?;
+    Some(DfOutput {
+        fs_source,
+        fs_type,
+        size_mb,
+        used_mb,
+        avail_mb,
+    })
+}
+
+#[test]
+fn test_parse_df_output() {
+    let output = r#"Filesystem            Type 1MB-blocks      Used    Avail
+/dev/mapper/cryptroot ext4  1916555MB 1302472MB 516652MB"#;
+    assert_eq!(
+        parse_df_output(output),
+        Some(DfOutput {
+            fs_source: "/dev/mapper/cryptroot".to_owned(),
+            fs_type: "ext4".to_owned(),
+            size_mb: 1916555,
+            used_mb: 1302472,
+            avail_mb: 516652
+        })
+    );
 }

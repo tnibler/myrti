@@ -198,6 +198,20 @@ export function layoutSegments(
       }),
     );
 
+    const locale = 'de';
+    const dateFmtYear = new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: 'long',
+    });
+    const dateFmt = new Intl.DateTimeFormat(locale, {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    const dateFmtDay = new Intl.DateTimeFormat(locale, {
+      month: 'long',
+      day: 'numeric',
+    });
     const gridHeight = Math.max(...gridItems.map((it) => it.top + it.height));
     if (segments[0].segment.type === 'creatingGroup') {
       console.assert(
@@ -215,14 +229,15 @@ export function layoutSegments(
       // segment with only 1 group gets a big title
       const groupSegment = segments[0].segment;
       const lastItem = gridItems[gridItems.length - 1];
+
       blocks.push({
         blockType: 'default',
         titleMajor: {
           text:
             groupSegment.title +
-            (groupSegment.end.startOf('month') == groupSegment.start.startOf('month')
-              ? ` (${groupSegment.end.format('MMMM YYYY')})`
-              : ` (${groupSegment.end.format('MMMM YYYY')} - ${groupSegment.start.format('MMMM YYYY')})`),
+            (groupSegment.end.startOf('day') == groupSegment.start.startOf('day')
+              ? ` (${dateFmtDay.format(groupSegment.start.toDate())})`
+              : ` (${dateFmt.formatRange(groupSegment.end.toDate(), groupSegment.start.toDate())})`),
           key: `title-major-group-${groupSegment.groupId}`,
         },
         titlesMinor: [],
@@ -247,7 +262,7 @@ export function layoutSegments(
         if (lastMajorTitleDate === null || !lastMajorTitleDate.isSame(firstSegmentMonth)) {
           lastMajorTitleDate = segments[0].segment.start.startOf('month');
           return {
-            text: segments[0].segment.start.format('MMMM YYYY'),
+            text: dateFmtYear.format(segments[0].segment.start.toDate()),
             key: segments[0].segment.items[0].sortDate,
           };
         }
@@ -258,12 +273,12 @@ export function layoutSegments(
           if (segment.type === 'group') {
             return (
               segment.title +
-              (segment.end.startOf('month').isSame(segment.start.startOf('month'))
-                ? ` (${segment.end.format('MMMM YYYY')})`
-                : ` (${segment.end.format('MMMM YYYY')} - ${segment.start.format('MMMM YYYY')})`)
+              (segment.end.startOf('day') == segment.start.startOf('day')
+                ? ` (${dateFmtDay.format(segment.start.toDate())})`
+                : ` (${dateFmt.formatRange(segment.end.toDate(), segment.start.toDate())})`)
             );
           } else {
-            return segment.start.format('MMMM Do');
+            return dateFmtDay.format(segment.start.toDate());
           }
         })();
         const lastBox = boxes[boxes.length - 1];

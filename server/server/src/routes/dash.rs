@@ -59,8 +59,44 @@ async fn get_dash_file(
             },
             Some(rest) => ("original_video", rest),
         };
+        let segment_number: i32 = {
+            if rest == "init.mp4" {
+                0
+            } else {
+                let rest = rest.strip_suffix(".m4s").ok_or(eyre!("bad path"))?;
+                rest.parse().context("error parsing segment number")?
+            }
+        };
         let filename = format!("{repr}-{rest}");
-        if !tokio::fs::try_exists(&fs_path).await? {
+        let conn = app_state.pool.get().await?;
+        let file_exists = tokio::fs::try_exists(&fs_path).await?;
+        let do_cache_insert = match (segment_number, file_exists) {
+            // init segment (0) is ignored for cache bookkeeping
+            (0, _) => false,
+            (_, true) => {
+                let filename = filename.clone();
+                let row_exists = interact!(conn, move |conn| {
+                    repository::ghi_cache::update_accessed_time(conn, file_id, &filename)
+                })
+                .await??;
+                !row_exists
+            }
+            (_, false) => true,
+        };
+        let out_dir = storage
+            .local_path(&storage_key::dash_file(file_id, format_args!("original")))
+            .await?
+            .expect("not supported");
+        if do_cache_insert {
+            let filename_copy = filename.clone();
+            // TODO: handle unlikely error here. if segment is already being created, wait for it
+            interact!(conn, move |conn| {
+                repository::ghi_cache::insert_pending_segment(conn, file_id, &filename_copy)
+            })
+            .await??;
+        }
+        if !file_exists {
+            let (_tx, mut rx) = tokio::sync::mpsc::channel(5);
             let ghi_path = storage
                 .local_path(&storage_key::dash_file(
                     file_id,
@@ -68,28 +104,7 @@ async fn get_dash_file(
                 ))
                 .await?
                 .expect("not supported");
-            let out_dir = storage
-                .local_path(&storage_key::dash_file(file_id, format_args!("original")))
-                .await?
-                .expect("not supported");
 
-            let segment_number: i32 = {
-                if rest == "init.mp4" {
-                    0
-                } else {
-                    let rest = rest.strip_suffix(".m4s").ok_or(eyre!("bad path"))?;
-                    rest.parse().context("error parsing segment number")?
-                }
-            };
-
-            let conn = app_state.pool.get().await?;
-            let filename_copy = filename.clone();
-            // TODO: handle unlikely error here. if segment is already being created, wait for it
-            interact!(conn, move |conn| {
-                repository::ghi_cache::insert_pending_segment(conn, file_id, &filename_copy)
-            })
-            .await??;
-            let (_tx, mut rx) = tokio::sync::mpsc::channel(5);
             myrti_core::processing::video::gpac::create_segment(
                 &ghi_path,
                 &out_dir,
@@ -99,6 +114,11 @@ async fn get_dash_file(
                 &mut rx,
             )
             .await?;
+        }
+        if do_cache_insert {
+            if file_exists {
+                tracing::debug!(path = ?fs_path, "GHI segment file exists, but no row in GhiSegmentCache");
+            }
             let metadata = tokio::fs::metadata(out_dir.join(&filename))
                 .await
                 .wrap_err("error reading segment file metadata")?;
@@ -112,15 +132,6 @@ async fn get_dash_file(
                 )
             })
             .await??;
-        } else {
-            let conn = app_state.pool.get().await?;
-            let res = interact!(conn, move |conn| {
-                repository::ghi_cache::update_accessed_time(conn, file_id, &filename)
-            })
-            .await?;
-            if let Err(err) = res {
-                tracing::warn!(?err)
-            }
         }
     }
     // TODO (#8)

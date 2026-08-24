@@ -59,7 +59,8 @@ pub fn finalize_segment(
     })
 }
 
-pub fn update_accessed_time(conn: &mut DbConn, file_id: FileId, file_name: &str) -> Result<()> {
+/// returns true if a row for this cache file existed
+pub fn update_accessed_time(conn: &mut DbConn, file_id: FileId, file_name: &str) -> Result<bool> {
     use schema::GhiSegmentCache;
     conn.immediate_transaction(|conn| {
         let n_affected = diesel::update(GhiSegmentCache::table)
@@ -71,12 +72,6 @@ pub fn update_accessed_time(conn: &mut DbConn, file_id: FileId, file_name: &str)
             // trigger will set it to the current timestamp
             .set((GhiSegmentCache::accessed_at.eq(1),))
             .execute(conn)?;
-        if n_affected != 1 {
-            return Err(eyre!(
-                "error updating GhiSegmentCache accessed time: expected 1 modified row but got {}",
-                n_affected
-            ));
-        }
-        Ok(())
+        Ok(n_affected == 1)
     })
 }

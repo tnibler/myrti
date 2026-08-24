@@ -48,5 +48,6 @@ fn image_file_extension(target: &ImageFormatTarget) -> &'static str {
     match target {
         ImageFormatTarget::JPEG(_) => "jpg",
         ImageFormatTarget::AVIF(_) => "avif",
+        ImageFormatTarget::WEBP => "webp",
     }
 }

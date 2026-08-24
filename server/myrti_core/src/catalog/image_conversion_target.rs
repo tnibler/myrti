@@ -8,6 +8,7 @@ pub struct ImageConversionTarget {
 pub enum ImageFormatTarget {
     AVIF(heif::AvifTarget),
     JPEG(jpeg::JpegTarget),
+    WEBP,
 }
 
 pub mod jpeg {
@@ -68,12 +69,16 @@ pub mod heif {
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     pub struct QualityFactor(i32);
 
+    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+    pub struct Effort(i32);
+
     #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct AvifTarget {
         pub quality: QualityFactor,
         pub lossless: bool,
         pub bit_depth: BitDepth,
         pub compression: Compression,
+        pub effort: Effort,
     }
 
     impl TryFrom<i32> for QualityFactor {
@@ -99,6 +104,29 @@ pub mod heif {
         }
     }
 
+    impl TryFrom<i32> for Effort {
+        type Error = eyre::Report;
+
+        fn try_from(value: i32) -> Result<Self, Self::Error> {
+            match value {
+                0..=9 => Ok(Effort(value)),
+                _ => Err(eyre!("invalid HEIF effort {}", value)),
+            }
+        }
+    }
+
+    impl From<Effort> for i32 {
+        fn from(val: Effort) -> Self {
+            val.0
+        }
+    }
+
+    impl Default for Effort {
+        fn default() -> Self {
+            Self(7)
+        }
+    }
+
     impl Default for AvifTarget {
         fn default() -> Self {
             Self {
@@ -106,6 +134,7 @@ pub mod heif {
                 lossless: false,
                 bit_depth: BitDepth::Eight,
                 compression: Compression::AV1,
+                effort: Default::default(),
             }
         }
     }
@@ -115,5 +144,6 @@ pub fn image_format_name(format_target: &ImageFormatTarget) -> &'static str {
     match format_target {
         ImageFormatTarget::AVIF(_) => "avif",
         ImageFormatTarget::JPEG(_) => "jpeg",
+        ImageFormatTarget::WEBP => "webp",
     }
 }

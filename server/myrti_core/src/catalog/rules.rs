@@ -116,16 +116,19 @@ pub async fn required_image_conversion_for_asset(
     conn: &mut PooledDbConn,
     file_id: FileId,
 ) -> Result<Vec<ConvertImage>> {
-    let (image, file) = interact!(conn, move |conn| {
+    let (image, _file) = interact!(conn, move |conn| {
         repository::asset::get_image_file(conn, file_id)
     })
     .await??;
+    let acceptable_formats = ["jpeg", "avif", "png", "webp"];
+    if acceptable_formats.contains(&image.image_format_name.as_str()) {
+        return Ok(Default::default());
+    }
     let existing_image_reprs = interact!(conn, move |conn| {
         repository::representation::get_image_representations(conn, file_id)
     })
     .await??;
 
-    let acceptable_formats = ["jpeg", "avif", "png", "webp"];
     if !existing_image_reprs
         .into_iter()
         .any(|repr| acceptable_formats.contains(&repr.format_name.as_str()))

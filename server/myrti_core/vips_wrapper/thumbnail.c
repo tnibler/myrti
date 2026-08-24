@@ -1,5 +1,7 @@
 #include <assert.h>
 #include <vips/vips.h>
+#include <vips/image.h>
+#include <vips/vips.h>
 #include <vips/conversion.h>
 #include <vips/error.h>
 #include <vips/foreign.h>
@@ -7,7 +9,6 @@
 #include <vips/memory.h>
 #include <vips/image.h>
 #include "vips_wrapper.h"
-
 
 int init() {
   int ret = VIPS_INIT("vips_wrapper"); 
@@ -17,39 +18,40 @@ int init() {
 
 void teardown() { vips_shutdown(); }
 
-int thumbnail(ThumbnailParams params, ThumbnailResult* result) {
+void free_vips_image(void* image) {
+  g_object_unref((VipsImagePtr)image);
+}
+
+int create_thumbnail(ThumbnailParams params, ThumbnailResult* result) {
   if (result == NULL) {
     return -1;
   }
-
-  for (unsigned long long i = 0; i < params.num_out_paths; ++i) {
-    VipsImage* out = NULL;
-    int ret;
-    if (params.keep_aspect) {
-       ret = vips_thumbnail(params.in_path, &out, params.width, NULL);
-    } else {
-       ret = vips_thumbnail(params.in_path, &out, params.width, "height", params.height, "crop", VIPS_INTERESTING_ATTENTION, NULL);
-    }
-    if (ret) {
+  VipsImage* out = NULL;
+  int ret = 0;
+  if (params.keep_aspect) {
+    ret = vips_thumbnail(params.in_path, &out, params.width, NULL);
+  } else {
+    ret = vips_thumbnail(params.in_path, &out, params.width, "height", params.height, "crop", VIPS_INTERESTING_ATTENTION, NULL);
+  }
+  if (ret != 0) {
       printf("libvips error: %s", vips_error_buffer());
       if (out != NULL) {
         g_object_unref(out);
       }
+      vips_error_clear();
       return ret;
-    }
-    assert(out);
-    ret = vips_image_write_to_file(out, params.out_paths[i], NULL);
-    result->actual_width = out->Xsize;
-    result->actual_height = out->Ysize;
-    if (out != NULL) {
-      g_object_unref(out);
-    }
-    if (ret) {
-      printf("libvips error: %s", vips_error_buffer());
-      return ret;
-    }
   }
-  return 0;
+  assert(out);
+  // thumbnail can produce a streaming source that can only be used once, so copy to a regular image buffer if necessary
+  VipsImage* image = vips_image_copy_memory(out);
+  g_object_unref(out);
+  if (image == NULL) {
+    return 1;
+  }
+  result->actual_width = out->Xsize;
+  result->actual_height = out->Ysize;
+  result->image = image;
+  return ret;
 }
 
 // Create a thumbnail in RGBA, converting if necessary

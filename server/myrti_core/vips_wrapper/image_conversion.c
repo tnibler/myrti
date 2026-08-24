@@ -7,20 +7,33 @@
 #include <vips/image.h>
 #include "vips_wrapper.h"
 
-int save_jpeg(VipsImage* img, const char* out_path, JpegSaveParams params) {
+int save_image_jpeg(VipsImagePtr img, const char* out_path, JpegSaveParams params) {
   return vips_jpegsave(img, out_path, "Q", params.quality, NULL);
 }
 
-int save_heif(VipsImage* img, const char* out_path, HeifSaveParams params) {
-  return vips_heifsave(img, out_path, "Q", params.quality,
+int save_image_heif(VipsImagePtr img, const char* out_path, HeifSaveParams params) {
+  vips_error_clear();
+  int ret = vips_heifsave((VipsImage*)img, out_path, "Q", params.quality,
       "bitdepth", params.bit_depth,
       "lossless", params.lossless,
       "compression", params.compression,
+      "effort", params.effort,
       NULL);
+  if (ret) {
+    printf("vips_heifsave error: %s", vips_error_buffer());
+    vips_error_clear();
+  }
+  return ret;
 }
 
-int save_webp(VipsImage* img, const char* out_path) {
-  return vips_webpsave(img, out_path, NULL);
+int save_image_webp(VipsImagePtr img, const char* out_path) {
+  vips_error_clear();
+  int ret = vips_webpsave((VipsImage*)img, out_path, NULL);
+  if (ret) {
+    printf("vips_webpsave error: %s", vips_error_buffer());
+    vips_error_clear();
+  }
+  return ret;
 }
 
 ConvertHeifResult convert_heif(const char * in_path, const char * out_path, HeifSaveParams params, Scale scale) {
@@ -55,7 +68,7 @@ ConvertHeifResult convert_heif(const char * in_path, const char * out_path, Heif
     result.height = scaled->Ysize;
     img = scaled;
   }
-  result.err = save_heif(img, out_path, params);
+  result.err = save_image_heif(img, out_path, params);
   g_object_unref(img);
   return result;
 }
@@ -90,7 +103,7 @@ ConvertJpegResult convert_jpeg(const char * in_path, const char * out_path, Jpeg
     g_object_unref(img);
     img = scaled;
   }
-  result.err = save_jpeg(img, out_path, params);
+  result.err = save_image_jpeg(img, out_path, params);
   g_object_unref(img);
   return result;
 }
@@ -106,7 +119,7 @@ int save_test_heif_image(const char* out_path, HeifSaveParams params) {
     }
     return err;
   } 
-  err = save_heif(img, out_path, params);
+  err = save_image_heif(img, out_path, params);
   g_object_unref(img);
   return err;
 }
@@ -122,7 +135,7 @@ int save_test_jpeg_image(const char* out_path, JpegSaveParams params) {
     }
     return err;
   } 
-  err = save_jpeg(img, out_path, params);
+  err = save_image_jpeg(img, out_path, params);
   g_object_unref(img);
   return err;
 }
@@ -138,7 +151,7 @@ int save_test_webp_image(const char* out_path) {
     }
     return err;
   } 
-  err = save_webp(img, out_path);
+  err = save_image_webp(img, out_path);
   g_object_unref(img);
   return err;
 }

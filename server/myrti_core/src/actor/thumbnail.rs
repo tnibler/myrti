@@ -9,7 +9,7 @@ use crate::{
             create_album_thumbnail::{self, CreateAlbumThumbnail, CreateAlbumThumbnailWithPaths},
             create_thumbnail::{
                 CreateAssetThumbhash, CreateAssetThumbnail, CreateThumbnailWithPaths,
-                ThumbnailSideEffectResult, ThumbnailToCreateWithPaths, apply_create_thumbnail,
+                ThumbnailSideEffectResult, ThumbnailToCreateWithPaths,
             },
         },
         rules, storage_key,

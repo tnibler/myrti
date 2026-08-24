@@ -1,5 +1,5 @@
 use std::{
-    ffi::{CString, c_char},
+    ffi::{CString, c_char, c_void},
     os::unix::prelude::OsStrExt,
     sync::Once,
 };
@@ -51,39 +51,36 @@ pub enum OutDimension {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VipsThumbnailParams {
     pub in_path: PathBuf,
-    pub out_paths: Vec<PathBuf>,
     pub out_dimension: OutDimension,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VipsImage {
+    ptr: *mut c_void,
+}
+
+impl Drop for VipsImage {
+    fn drop(&mut self) {
+        unsafe { wrapper::free_vips_image(self.ptr) };
+    }
+}
+
 pub struct VipsThumbailResult {
     pub actual_size: Size,
+    pub image: VipsImage,
 }
 
 pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<VipsThumbailResult> {
     let c_path = CString::new(params.in_path.as_os_str().as_bytes()).wrap_err(format!(
         "Could not convert path {} to bytes",
-        &params.in_path
+        params.in_path
     ))?;
-    // c_out_paths has to stay alive for as long as c_out_path_ptrs is used
-    let c_out_paths = params
-        .out_paths
-        .into_iter()
-        .map(|path| {
-            CString::new(path.as_os_str().as_bytes())
-                .wrap_err(format!("Could not convert path {} to bytes", &path))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let c_out_path_ptrs: Vec<*const c_char> =
-        c_out_paths.iter().map(|c_str| c_str.as_ptr()).collect();
     let mut c_result = wrapper::ThumbnailResult {
         actual_width: 0,
         actual_height: 0,
+        image: std::ptr::null_mut(),
     };
-    let params = wrapper::ThumbnailParams {
+    let c_params = wrapper::ThumbnailParams {
         in_path: c_path.as_ptr(),
-        out_paths: c_out_path_ptrs.as_ptr(),
-        num_out_paths: c_out_path_ptrs.len() as u64,
         width: match params.out_dimension {
             OutDimension::KeepAspect { width } => width,
             OutDimension::Crop { width, height: _ } => width,
@@ -100,17 +97,21 @@ pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<VipsThumbailRes
             } => false,
         },
     };
-    let ret = unsafe { wrapper::thumbnail(params, &mut c_result as *mut _) };
+    let ret = unsafe { wrapper::create_thumbnail(c_params, &mut c_result as *mut _) };
     if ret != 0 {
         return Err(eyre!(
-            "An error occurred while creating thumbnail with libvips"
+            "error creating thumbnail with libvips (input: {})",
+            params.in_path
         ));
     }
     let actual_size = Size {
         width: c_result.actual_width,
         height: c_result.actual_height,
     };
-    Ok(VipsThumbailResult { actual_size })
+    let image = VipsImage {
+        ptr: c_result.image,
+    };
+    Ok(VipsThumbailResult { actual_size, image })
 }
 
 pub struct VipsImageBuffer {
@@ -241,6 +242,41 @@ pub fn convert_image(
                 _ => Err(eyre!("Error converting image to HEIF with libvips")),
             }
         }
+        ImageFormatTarget::WEBP => {
+            todo!()
+        }
+    }
+}
+
+pub fn save_image(image: &VipsImage, output: &Path, format: &ImageFormatTarget) -> Result<()> {
+    let c_out_path = CString::new(output.as_os_str().as_bytes())
+        .wrap_err(format!("Could not convert path {} to bytes", output))?;
+    match &format {
+        ImageFormatTarget::AVIF(avif) => {
+            let c_save_params = to_wrapper_heif_params(avif);
+            let ret =
+                unsafe { wrapper::save_image_heif(image.ptr, c_out_path.as_ptr(), c_save_params) };
+            match ret {
+                0 => Ok(()),
+                _ => Err(eyre!("error saving image as HEIF {} with libvips", output)),
+            }
+        }
+        ImageFormatTarget::JPEG(jpeg) => {
+            let c_save_params = to_wrapper_jpeg_params(jpeg);
+            let ret =
+                unsafe { wrapper::save_image_jpeg(image.ptr, c_out_path.as_ptr(), c_save_params) };
+            match ret {
+                0 => Ok(()),
+                _ => Err(eyre!("error saving image as JPEG {} with libvips", output)),
+            }
+        }
+        ImageFormatTarget::WEBP => {
+            let ret = unsafe { wrapper::save_image_webp(image.ptr, c_out_path.as_ptr()) };
+            match ret {
+                0 => Ok(()),
+                _ => Err(eyre!("error saving image as WEBP {} with libvips", output)),
+            }
+        }
     }
 }
 
@@ -297,5 +333,6 @@ fn to_wrapper_heif_params(avif_target: &AvifTarget) -> wrapper::HeifSaveParams {
             Compression::JPEG => 3,
             Compression::AV1 => 4,
         },
+        effort: avif_target.effort.into(),
     }
 }

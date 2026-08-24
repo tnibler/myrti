@@ -3,6 +3,7 @@ use eyre::Result;
 use tracing::instrument;
 
 use crate::{
+    catalog::image_conversion_target::{ImageFormatTarget, heif::AvifTarget},
     core::storage::{Storage, StorageCommandOutput, StorageProvider},
     interact,
     model::{
@@ -11,8 +12,7 @@ use crate::{
     },
     processing::{
         self,
-        commands::GenerateThumbnail,
-        image::thumbnail::{GenerateThumbnailTrait, ThumbnailParams},
+        image::thumbnail::{ThumbnailParams, generate_thumbnail, generate_video_thumbnail},
         process_control::ProcessControlReceiver,
     },
 };
@@ -92,7 +92,7 @@ pub async fn apply_create_thumbnail(
 }
 
 #[instrument(skip(storage, control_recv))]
-async fn create_thumbnail(
+pub async fn create_thumbnail(
     asset_path: PathBuf,
     file: &AssetFile,
     webp_key: &str,
@@ -101,25 +101,30 @@ async fn create_thumbnail(
     storage: &Storage,
     control_recv: &mut ProcessControlReceiver,
 ) -> Result<()> {
-    let out_file_avif = storage.new_command_out_file(avif_key).await?;
-    let out_file_webp = storage.new_command_out_file(webp_key).await?;
+    let out_file_avif = storage.local_path(avif_key).await?.unwrap();
+    let out_file_webp = storage.local_path(webp_key).await?.unwrap();
     let out_dimension = processing::image::OutDimension::Crop {
         width: size,
         height: size,
     };
-    let out_paths = vec![&out_file_avif, &out_file_webp];
+    let out_paths = vec![
+        (
+            out_file_avif,
+            ImageFormatTarget::AVIF(AvifTarget {
+                quality: 30.try_into()?,
+                ..Default::default()
+            }),
+        ),
+        (out_file_webp, ImageFormatTarget::WEBP),
+    ];
     let thumbnail_params = ThumbnailParams {
         in_path: asset_path,
         outputs: out_paths,
         out_dimension,
     };
     let _res = match &file.ty {
-        AssetType::Image => GenerateThumbnail::generate_thumbnail(thumbnail_params).await?,
-        AssetType::Video => {
-            GenerateThumbnail::generate_video_thumbnail(thumbnail_params, control_recv).await?
-        }
+        AssetType::Image => generate_thumbnail(thumbnail_params).await?,
+        AssetType::Video => generate_video_thumbnail(thumbnail_params, control_recv).await?,
     };
-    out_file_webp.flush_to_storage().await?;
-    out_file_avif.flush_to_storage().await?;
     Ok(())
 }

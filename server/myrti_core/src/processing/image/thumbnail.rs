@@ -1,10 +1,8 @@
-use async_trait::async_trait;
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use eyre::{Context, Result, eyre};
-use itertools::Itertools;
 
 use crate::{
-    core::storage::{CommandOutputFile, StorageCommandOutput},
+    catalog::image_conversion_target::ImageFormatTarget,
     model::Size,
     processing::{
         image::ffmpeg_snapshot::ffmpeg_snapshot, process_control::ProcessControlReceiver,
@@ -17,9 +15,9 @@ use super::{
 };
 
 #[derive(Debug)]
-pub struct ThumbnailParams<'a> {
+pub struct ThumbnailParams {
     pub in_path: PathBuf,
-    pub outputs: Vec<&'a CommandOutputFile>,
+    pub outputs: Vec<(PathBuf, ImageFormatTarget)>,
     pub out_dimension: OutDimension,
 }
 
@@ -28,133 +26,87 @@ pub struct ThumbnailResult {
     pub actual_size: Size,
 }
 
-#[async_trait]
-pub trait GenerateThumbnailTrait {
-    async fn generate_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<ThumbnailResult>;
-    async fn generate_video_thumbnail<'a>(
-        params: ThumbnailParams<'a>,
-        control_recv: &mut ProcessControlReceiver,
-    ) -> Result<ThumbnailResult>;
-}
+pub async fn generate_thumbnail(params: ThumbnailParams) -> Result<ThumbnailResult> {
+    let tempdir = tempfile::tempdir()?;
 
-pub struct GenerateThumbnail {}
-
-pub struct GenerateThumbnailMock {}
-
-#[async_trait]
-impl GenerateThumbnailTrait for GenerateThumbnail {
-    async fn generate_thumbnail<'a>(params: ThumbnailParams<'a>) -> Result<ThumbnailResult> {
-        let out_paths: Vec<PathBuf> = params
-            .outputs
-            .iter()
-            .map(|f| f.path().to_path_buf())
-            .collect();
-        let tempdir = tempfile::tempdir()?;
-        let tmp_out_paths: Vec<PathBuf> = out_paths
-            .iter()
-            .map(|p| {
-                let filename = p
+    let vips_params = VipsThumbnailParams {
+        in_path: params.in_path.clone(),
+        out_dimension: params.out_dimension,
+    };
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<_>>();
+    rayon::spawn(move || {
+        let inner = move || {
+            let vips_wrapper::VipsThumbailResult { actual_size, image } =
+                vips_wrapper::generate_thumbnail(vips_params)?;
+            for (out_path, format) in params.outputs {
+                let filename = out_path
                     .file_name()
-                    .ok_or_else(|| eyre!("thumbnail output path {} has no file_name", p))?;
-                Ok::<_, eyre::Error>(
-                    tempdir
-                        .path()
-                        .with_file_name(filename)
-                        .try_into()
-                        .expect("all path components were utf-8"),
-                )
-            })
-            .try_collect()?;
+                    .ok_or_else(|| eyre!("thumbnail output path {} has no file_name", out_path))?;
+                let tmp_out: PathBuf = tempdir
+                    .path()
+                    .with_file_name(filename)
+                    .try_into()
+                    .expect("all path components were utf-8");
 
-        let vips_params = VipsThumbnailParams {
-            in_path: params.in_path,
-            out_paths: tmp_out_paths.clone(),
-            out_dimension: params.out_dimension,
-        };
-        let (tx, rx) = tokio::sync::oneshot::channel::<Result<_>>();
-        rayon::spawn(move || {
-            let res = vips_wrapper::generate_thumbnail(vips_params);
-            tx.send(res).unwrap();
-        });
-        let vips_result = rx
-            .await
-            .wrap_err("error generating thumbnail with libvips")?
-            .wrap_err("error generating thumbnail with libvips")?;
+                vips_wrapper::save_image(&image, &tmp_out, &format)?;
 
-        for (tmp_out_path, out_path) in tmp_out_paths.into_iter().zip(out_paths) {
-            tokio::fs::rename(&tmp_out_path, &out_path)
-                .await
-                .wrap_err_with(|| {
+                std::fs::create_dir_all(out_path.parent().expect("path is not empty"))
+                    .wrap_err("error creating thumb data directory")?;
+                std::fs::rename(&tmp_out, &out_path).wrap_err_with(|| {
                     eyre!(
                         "error copying temp file {} to destination {}",
-                        tmp_out_path,
+                        tmp_out,
                         out_path
                     )
                 })?;
-        }
-        Ok(ThumbnailResult {
-            actual_size: Size {
-                width: vips_result.actual_size.width,
-                height: vips_result.actual_size.height,
-            },
-        })
-    }
-
-    async fn generate_video_thumbnail<'a>(
-        params: ThumbnailParams<'a>,
-        control_recv: &mut ProcessControlReceiver,
-    ) -> Result<ThumbnailResult> {
-        let snapshot_path = tempfile::Builder::new()
-            .prefix("snap")
-            .suffix(".webp")
-            .tempfile()
-            .wrap_err("could not create temp file")?
-            .into_temp_path();
-        let utf8_snapshot_path: camino::Utf8PathBuf = snapshot_path
-            .to_path_buf()
-            .try_into()
-            .expect("tempfile paths should be UTF8");
-        // fixme ffmpeg path should come from config
-        ffmpeg_snapshot(
-            &params.in_path,
-            &utf8_snapshot_path,
-            Some("ffmpeg"),
-            control_recv,
+            }
+            Ok(actual_size)
+        };
+        tx.send(inner()).unwrap();
+    });
+    let actual_size = rx.await.unwrap().wrap_err_with(|| {
+        format!(
+            "error generating thumbnail with libvips (input: {})",
+            params.in_path
         )
-        .await
-        .wrap_err("error taking video snapshot")?;
-        Self::generate_thumbnail(ThumbnailParams {
-            in_path: utf8_snapshot_path,
-            ..params
-        })
-        .await
-    }
+    })?;
+
+    Ok(ThumbnailResult {
+        actual_size: Size {
+            width: actual_size.width,
+            height: actual_size.height,
+        },
+    })
 }
 
-#[async_trait]
-impl GenerateThumbnailTrait for GenerateThumbnailMock {
-    #[tracing::instrument]
-    async fn generate_thumbnail<'a>(_params: ThumbnailParams<'a>) -> Result<ThumbnailResult> {
-        Ok(ThumbnailResult {
-            actual_size: Size {
-                width: 400,
-                height: 400,
-            },
-        })
-    }
-
-    #[tracing::instrument]
-    async fn generate_video_thumbnail<'a>(
-        _params: ThumbnailParams<'a>,
-        _control_recv: &mut ProcessControlReceiver,
-    ) -> Result<ThumbnailResult> {
-        Ok(ThumbnailResult {
-            actual_size: Size {
-                width: 400,
-                height: 400,
-            },
-        })
-    }
+pub async fn generate_video_thumbnail(
+    params: ThumbnailParams,
+    control_recv: &mut ProcessControlReceiver,
+) -> Result<ThumbnailResult> {
+    let snapshot_path = tempfile::Builder::new()
+        .prefix("snap")
+        .suffix(".webp")
+        .tempfile()
+        .wrap_err("could not create temp file")?
+        .into_temp_path();
+    let utf8_snapshot_path: camino::Utf8PathBuf = snapshot_path
+        .to_path_buf()
+        .try_into()
+        .expect("tempfile paths should be UTF8");
+    // fixme ffmpeg path should come from config
+    ffmpeg_snapshot(
+        &params.in_path,
+        &utf8_snapshot_path,
+        Some("ffmpeg"),
+        control_recv,
+    )
+    .await
+    .wrap_err("error taking video snapshot")?;
+    generate_thumbnail(ThumbnailParams {
+        in_path: utf8_snapshot_path,
+        ..params
+    })
+    .await
 }
 
 pub async fn generate_thumbhash(in_path: PathBuf) -> Result<String> {

@@ -1,21 +1,23 @@
-#ifndef __VIPS_WRAPPER_H
-#define __VIPS_WRAPPER_H
+#ifndef __MYRTI_VIPS_WRAPPER_H
+#define __MYRTI_VIPS_WRAPPER_H
 
 #include <stdbool.h>
 
 int init();
 void teardown();
 
+typedef void* VipsImagePtr;
+void free_vips_image(VipsImagePtr);
+
 typedef struct ThumbnailOptions {
   const char *in_path;
-  const char *const *out_paths;
-  unsigned long long num_out_paths;
   bool keep_aspect;
   int width;
   int height;
 } ThumbnailParams;
 
 typedef struct ThumbnailResult {
+  VipsImagePtr image;
   int actual_width;
   int actual_height;
 } ThumbnailResult;
@@ -27,7 +29,7 @@ typedef struct ImageBuffer {
   const char* buf;
 } ImageBuffer;
 
-int thumbnail(ThumbnailParams, ThumbnailResult *);
+int create_thumbnail(ThumbnailParams, ThumbnailResult *);
 
 typedef struct ImageInfo {
   int width;
@@ -49,6 +51,8 @@ typedef struct HeifSaveParams {
   // 3 = VIPS_FOREIGN_HEIF_COMPRESSION_JPEG
   // 4 = VIPS_FOREIGN_HEIF_COMPRESSION_AV1
   int compression;
+  // 0 fast - 9 slow
+  int effort;
 } HeifSaveParams;
 
 typedef struct Scale {
@@ -78,7 +82,13 @@ typedef struct ConvertJpegResult {
 ConvertJpegResult convert_jpeg(const char *, const char *, JpegSaveParams,
                                Scale);
 
+int save_image_jpeg(VipsImagePtr img, const char* out_path, JpegSaveParams params);
+int save_image_heif(VipsImagePtr img, const char* out_path, HeifSaveParams params);
+int save_image_webp(VipsImagePtr img, const char* out_path);
+
 int save_test_heif_image(const char *, HeifSaveParams);
 int save_test_jpeg_image(const char *, JpegSaveParams);
 int save_test_webp_image(const char *);
-#endif // __VIPS_WRAPPER_H
+
+
+#endif // __MYRTI_VIPS_WRAPPER_H

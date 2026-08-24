@@ -443,9 +443,15 @@
             id="id-{slideHolder.id}"
             class="slide-holder"
             style="transform: translate3d({Math.round(x)}px, 0px, 0px);"
-            onpointerdown={(e) => gestureController.onPointerDown(e)}
-            onclick={(e) => gestureController.onClick(e)}
-            onpointerup={(e) => gestureController.onPointerUp(e)}
+            onpointerdown={(e) => {
+              gestureController.onPointerDown(e);
+            }}
+            onclick={(e) => {
+              gestureController.onClick(e);
+            }}
+            onpointerup={(e) => {
+              gestureController.onPointerUp(e);
+            }}
             onpointermove={(e) => gestureController.onPointerMove(e)}
           >
             {#if slideHolder.slide !== null}
@@ -479,7 +485,7 @@
         }}
       >
         <div
-          class="flex flex-row shrink-0 justify-end items-center
+          class="flex flex-row flex-none justify-end items-center
     h-16 px-2 gap-4 bg-gradient-to-b from-black/50 pointer-events-auto"
         >
           <button
@@ -558,9 +564,9 @@
             <X color="white" />
           </button>
         </div>
-        <div class="flex flex-row grow-1 justify-between {hasMouse ? '' : 'hidden'} ">
+        <div class="flex flex-row flex-1 items-center justify-between {hasMouse ? '' : 'hidden'} ">
           <button
-            class="pl-5 pointer-events-auto"
+            class="pl-5 pointer-events-auto h-96"
             onclick={() => moveSlide('left')}
             disabled={!canMoveLeft}
           >
@@ -572,7 +578,7 @@
             >
           </button>
           <button
-            class="pr-5 pointer-events-auto"
+            class="pr-5 pointer-events-auto h-96"
             onclick={() => moveSlide('right')}
             disabled={!canMoveRight}
           >

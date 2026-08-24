@@ -17,7 +17,7 @@
 
   let isCloseTransitionRunning = $state(false);
   let videoEl: HTMLVideoElement | undefined = $state();
-  let enableVideoSrcOrig: { src: string; mimeType: string } | null = $state(null);
+  let videoContainerEl: HTMLElement | undefined = $state();
 
   $effect(() => {
     if (!videoEl) {
@@ -33,19 +33,7 @@
     if (!isActive) {
       return;
     }
-    if (slideData.videoSource === 'dash') {
-      shakaInitPlayer(slideData.mpdManifestUrl);
-    } else {
-      enableVideoSrcOrig = slideData;
-    }
-    setTimeout(() => {
-      if (videoEl) {
-        videoEl.controls = true;
-        if (isActive) {
-          videoEl.play();
-        }
-      }
-    }, 400);
+    shakaInitPlayer();
   });
 
   export function closeTransition(transform: string, onTransitionEnd: () => void) {
@@ -73,56 +61,57 @@
     });
   }
 
-  async function shakaInitPlayer(mpdManifestUrl: string) {
+  async function shakaInitPlayer() {
+    if (!videoEl || !videoContainerEl) {
+      return;
+    }
     const player = new shaka.Player();
-    // player.configure('abr', { enabled: false });
-    // player.configure('mediaSource.codecSwitchingStrategy', 'reload');
-    // player.configure('streaming.disableVideoPrefetch', true);
-    // player.configure('streaming.bufferingGoal', 0.1);
-    // player.configure('streaming.stopFetchingOnPause', true);
-    // player.configure('streaming.dontChooseCodecs', true);
-
-    // shaka.log.setLevel(shaka.log.Level.DEBUG);
-    // window.player = player;
+    const ui = new shaka.ui.Overlay(player, videoContainerEl, videoEl);
     await player.attach(videoEl);
-    await player.load(mpdManifestUrl);
+    if (slideData.videoSource === 'original') {
+      await player.load(slideData.src);
+    } else {
+      await player.load(slideData.mpdManifestUrl);
+    }
+
+    const controls = ui.getControls();
+    ui.configure({
+      topControlPanelElements: [],
+      controlPanelElements: [
+        'play_pause',
+        'mute_volume',
+        'time_and_duration',
+        'spacer',
+        'quality',
+        'fullscreen',
+      ],
+      bigButtons: ['play_pause'],
+      enableTooltips: true,
+      // doubleClickForFullscreen: false,
+      // seekOnTaps: true,
+    });
+    controls.addEventListener('error', console.log);
   }
 </script>
 
 {#if isActive}
-  <video
-    autoplay={isActive}
-    muted={false}
-    class="slide-video max-w-none"
-    bind:this={videoEl}
-    onloadeddata={onContentReady}
-    width={size.width}
-    style:width="{size.width}px"
-    style:height="{size.height}px"
-    style:user-select="none"
-    class:slide-transition-transform={isCloseTransitionRunning}
-    class:slide-transition-opacity={!isCloseTransitionRunning}
-    class:hidden={!isVisible}
-  >
-    {#if enableVideoSrcOrig !== null}
-      <source
-        src={enableVideoSrcOrig.src}
-        type={enableVideoSrcOrig.mimeType}
-        onerror={(e) => {
-          console.log('TODO handle video codec errors', e);
-          onContentReady();
-        }}
-      />
-    {/if}
-  </video>
+  <div class="flex flex-row items-center" bind:this={videoContainerEl}>
+    <video
+      autoplay={isActive}
+      class="flex-1"
+      bind:this={videoEl}
+      onloadeddata={onContentReady}
+      width={size.width}
+      style:width="{size.width}px"
+      style:height="{size.height}px"
+      style:user-select="none"
+      class:slide-transition-transform={isCloseTransitionRunning}
+      class:slide-transition-opacity={!isCloseTransitionRunning}
+      class:hidden={!isVisible}
+    >
+    </video>
+  </div>
 {/if}
 
 <style>
-  .slide-video {
-    position: absolute;
-  }
-
-  .hidden {
-    display: none;
-  }
 </style>

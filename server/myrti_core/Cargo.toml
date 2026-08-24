@@ -43,7 +43,7 @@ diesel = { version = "2.3.11", features = ["sqlite", "returning_clauses_for_sqli
 diesel_migrations = { version = "2.1.0", features = ["sqlite"] }
 deadpool-diesel = { version = "0.5.0", features = ["sqlite", "tracing", "serde"] }
 deadpool = { version = "0.10.0", features = ["rt_tokio_1"] }
-libsqlite3-sys = { version = "0.35.0", features = ["bundled"] }
+libsqlite3-sys = { version = "0.38.1", features = ["bundled"] }
 strum = { version = "0.26.3", features = ["derive"] }
 nix = { version = "0.29.0", features = ["signal"] }
 const_format = "0.2.32"

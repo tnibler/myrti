@@ -10,19 +10,20 @@ CREATE TABLE TimelineItem (
   , section_idx INTEGER NOT NULL
   , segment_id INTEGER NOT NULL
   , segment_split_idx INTEGER
-  , is_dirty INTEGER NOT NULL DEFAULT 0 CHECK(is_dirty IN (0, 1))
+  , is_dirty INTEGER NOT NULL DEFAULT 0
+    CONSTRAINT bool_is_dirty CHECK(is_dirty IN (0, 1))
   , FOREIGN KEY (asset_id) REFERENCES Asset(asset_id) ON DELETE CASCADE
   , FOREIGN KEY (series_id) REFERENCES AssetSeries(series_id) ON DELETE CASCADE
   , FOREIGN KEY (group_id) REFERENCES TimelineGroup(timeline_group_id) ON DELETE CASCADE
-  , CHECK ((series_id IS NULL) IS (series_date IS NULL))
-  , CHECK ((group_id IS NULL) IS (group_date IS NULL))
+  , CONSTRAINT opt_cols_series CHECK ((series_id IS NULL) IS (series_date IS NULL))
+  , CONSTRAINT opt_cols_group CHECK ((group_id IS NULL) IS (group_date IS NULL))
 ) STRICT;
 
 CREATE TABLE TimelineSection (
   section_idx INTEGER PRIMARY KEY
   , section_len INTEGER NOT NULL
   , total_width REAL NOT NULL
-  , CHECK (0 < section_len)
+  , CONSTRAINT valid_section_len CHECK (0 < section_len)
 ) STRICT;
 
 CREATE TABLE TimelineMonth (
@@ -31,7 +32,8 @@ CREATE TABLE TimelineMonth (
   -- one month can end up split over multiple sections. when one of those is loaded and the actual height is known,
   -- we need to know what proportion of the estimated height is from this section to update height estimates for the scrollbar scrubber marks
   , section_idx INTEGER NOT NULL
-  , num_assets INTEGER NOT NULL CHECK(num_assets > 0)
+  , num_assets INTEGER NOT NULL
+    CONSTRAINT valid_num_assets CHECK(num_assets > 0)
   , total_width REAL NOT NULL
   , UNIQUE(start_of_month, section_idx)
   , FOREIGN KEY (section_idx) REFERENCES TimelineSection(section_idx)
@@ -41,7 +43,7 @@ CREATE TRIGGER Asset_Delete_TimelineDirty
 BEFORE DELETE
 ON Asset
 BEGIN
-	UPDATE TimelineItem SET is_dirty = 1 
+	UPDATE TimelineItem SET is_dirty = 1
 	WHERE TimelineItem.section_idx = (
 		SELECT ti2.section_idx FROM TimelineItem ti2
 		WHERE ti2.asset_id = OLD.asset_id

@@ -518,7 +518,7 @@ pub fn get_image_assets_with_no_acceptable_repr(
 ) -> Result<Vec<FileId>> {
     use diesel::dsl::{exists, not};
     use schema::{ImageFile, ImageRepresentation};
-    let asset_ids: Vec<i64> = ImageFile::table
+    let file_ids: Vec<i64> = ImageFile::table
         .filter(not(ImageFile::image_format_name.eq_any(acceptable_codecs)))
         .filter(not(exists(
             ImageRepresentation::table.filter(
@@ -529,7 +529,7 @@ pub fn get_image_assets_with_no_acceptable_repr(
         )))
         .select(ImageFile::file_id)
         .load(conn)?;
-    Ok(asset_ids.into_iter().map(FileId).collect())
+    Ok(file_ids.into_iter().map(FileId).collect())
 }
 
 pub fn get_ffprobe_output(conn: &mut DbConn, video_file_id: FileId) -> Result<Vec<u8>> {
@@ -570,7 +570,7 @@ pub fn set_file_thumbhash(conn: &mut DbConn, file_id: FileId, thumbhash: &str) -
     use schema::AssetFile;
     let n_affected = diesel::update(AssetFile::table)
         .filter(AssetFile::file_id.eq(file_id.0))
-        .set(AssetFile::thumb_hash.eq(thumbhash.as_bytes()))
+        .set(AssetFile::thumb_hash.eq(thumbhash))
         .execute(conn)
         .wrap_err("error updating column AssetFile.thumb_hash")?;
     if n_affected == 1 {

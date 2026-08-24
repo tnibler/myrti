@@ -49,7 +49,7 @@ diesel::table! {
         height -> Integer,
         rotation_correction -> Integer,
         mirror_correction -> Integer,
-        thumb_hash -> Nullable<Blob>,
+        thumb_hash -> Nullable<Text>,
         exiftool_output -> Blob,
     }
 }

@@ -32,7 +32,7 @@ pub struct DbAssetFile {
     pub height: i32,
     pub rotation_correction: i32,
     pub mirror_correction: i32,
-    pub thumb_hash: Option<Vec<u8>>,
+    pub thumb_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Identifiable, Queryable, QueryableByName, Selectable)]
@@ -124,11 +124,7 @@ impl TryFrom<DbAssetFile> for AssetFile {
                     ));
                 }
             },
-            thumbhash: value
-                .thumb_hash
-                .map(|byt| String::from_utf8(byt))
-                .transpose()
-                .wrap_err("Invalid UTF-8 in AssetFile.thumb_hash")?,
+            thumbhash: value.thumb_hash,
         })
     }
 }

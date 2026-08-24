@@ -57,6 +57,7 @@ pub struct ThumbnailSideEffectResult {
     pub failed: Vec<(ThumbnailToCreateWithPaths, Report)>,
 }
 
+#[tracing::instrument(skip_all, fields(path=?asset_path, ?thumb), level = "trace", err)]
 pub async fn create_thumbnail(
     asset_path: PathBuf,
     file: &AssetFile,
@@ -78,8 +79,8 @@ pub async fn create_thumbnail(
         let target = match format {
             ThumbnailFormat::Webp => ImageFormatTarget::WEBP,
             ThumbnailFormat::Avif => ImageFormatTarget::AVIF(AvifTarget {
-                quality: 30.try_into()?,
-                effort: 6.try_into()?,
+                quality: 50.try_into()?,
+                effort: 7.try_into()?,
                 ..Default::default()
             }),
         };

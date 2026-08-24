@@ -8,7 +8,13 @@
 #include "vips_wrapper.h"
 
 int save_image_jpeg(VipsImagePtr img, const char* out_path, JpegSaveParams params) {
-  return vips_jpegsave(img, out_path, "Q", params.quality, NULL);
+  return vips_jpegsave(img, out_path,
+      "Q", params.quality,
+      "keep", VIPS_FOREIGN_KEEP_NONE,
+      "optimize_coding", 1,
+      "trellis_quant", 1, // only supported by mozjpeg
+      "strip", 1,
+      NULL);
 }
 
 int save_image_heif(VipsImagePtr img, const char* out_path, HeifSaveParams params) {
@@ -18,6 +24,7 @@ int save_image_heif(VipsImagePtr img, const char* out_path, HeifSaveParams param
       "lossless", params.lossless,
       "compression", params.compression,
       "effort", params.effort,
+      "keep", VIPS_FOREIGN_KEEP_NONE,
       NULL);
   if (ret) {
     printf("vips_heifsave error: %s", vips_error_buffer());
@@ -28,7 +35,7 @@ int save_image_heif(VipsImagePtr img, const char* out_path, HeifSaveParams param
 
 int save_image_webp(VipsImagePtr img, const char* out_path) {
   vips_error_clear();
-  int ret = vips_webpsave((VipsImage*)img, out_path, NULL);
+  int ret = vips_webpsave((VipsImage*)img, out_path, "keep", VIPS_FOREIGN_KEEP_NONE, NULL);
   if (ret) {
     printf("vips_webpsave error: %s", vips_error_buffer());
     vips_error_clear();

@@ -29,9 +29,16 @@ int create_thumbnail(ThumbnailParams params, ThumbnailResult* result) {
   VipsImage* out = NULL;
   int ret = 0;
   if (params.keep_aspect) {
-    ret = vips_thumbnail(params.in_path, &out, params.width, NULL);
+    ret = vips_thumbnail(params.in_path, &out, params.width,
+        "output_profile", "srgb",
+        NULL);
   } else {
-    ret = vips_thumbnail(params.in_path, &out, params.width, "height", params.height, "crop", VIPS_INTERESTING_ATTENTION, NULL);
+    ret = vips_thumbnail(params.in_path, &out, params.width,
+        "height", params.height,
+        "crop", VIPS_INTERESTING_ATTENTION,
+        "output_profile", "srgb",
+        "fail_on", VIPS_FAIL_ON_TRUNCATED,
+        NULL);
   }
   if (ret != 0) {
       printf("libvips error: %s", vips_error_buffer());
@@ -62,7 +69,9 @@ int thumbnail_for_thumbhash(const char* path, int width, ImageBuffer* out) {
   VipsImage* image = NULL;
   int ret = 0;
 
-  if ((ret = vips_thumbnail(path, &image, width, NULL)) != 0) {
+  if ((ret = vips_thumbnail(path, &image, width, 
+          "fail_on", VIPS_FAIL_ON_TRUNCATED,
+          NULL)) != 0) {
     goto cleanup;
   }
 

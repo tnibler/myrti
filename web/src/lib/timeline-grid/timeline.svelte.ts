@@ -489,9 +489,15 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       }
       // after waiting for all sections to load. We could do this progressively after any one section loads, but that makes things more complicated for little reason
       // TODO: make the above irrelevant by adding an API call to load multiple sections at once, for the rare event that the user jumps exactly inbetween two sections.
-      for (let i = firstLoadedSection; i <= lastLoadedSection; i += 1) {
-        if (sections[i].blocks === null || forceRelayout) {
+      for (let i = 0; i < sections.length; i += 1) {
+        if (
+          firstLoadedSection <= i &&
+          i <= lastLoadedSection &&
+          (sections[i].blocks === null || forceRelayout)
+        ) {
           layoutSection(i);
+        } else if (forceRelayout) {
+          sections[i].blocks = null;
         }
       }
     }

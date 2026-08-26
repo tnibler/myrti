@@ -55,6 +55,7 @@ export default defineConfig(
     rules: {
       // Override or add rule settings here, such as:
       // 'svelte/rule-name': 'error'
+      'svelte/prefer-svelte-reactivity': 'off',
     },
   },
 

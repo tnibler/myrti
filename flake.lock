@@ -54,33 +54,13 @@
         "type": "github"
       }
     },
-    "gpac": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1785242872,
-        "narHash": "sha256-BPPcI/+cm5w0c6zqBcUCFljb0TqNNTPWR0MgvXlOTNg=",
-        "owner": "gpac",
-        "repo": "gpac",
-        "rev": "49dee5cad329cfed310c1682703df7daa47df31a",
-        "type": "github"
-      },
-      "original": {
-        "owner": "gpac",
-        "repo": "gpac",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1782918843,
-        "narHash": "sha256-ETYnV9U7Sr+A45dohzZdfCZKOss4qrTkO+wgNZNvEc0=",
+        "lastModified": 1787394516,
+        "narHash": "sha256-pRGOQSClnXNI2iLUG6DYpsGvYcuw0drOutVZFTJNw90=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "e8273b29fe1390ec8d4603f2477357555291432e",
+        "rev": "c8f90650c15282fa8656a041bfbbd2403997a9a7",
         "type": "github"
       },
       "original": {
@@ -95,7 +75,6 @@
         "crane": "crane",
         "fenix": "fenix",
         "flake-utils": "flake-utils",
-        "gpac": "gpac",
         "nixpkgs": "nixpkgs"
       }
     },

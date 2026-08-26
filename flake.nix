@@ -6,10 +6,6 @@
 
     crane.url = "github:ipetkov/crane";
 
-    gpac = {
-      url = "github:gpac/gpac";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -24,19 +20,13 @@
     nixpkgs,
     crane,
     fenix,
-    gpac,
     flake-utils,
     ...
   }:
     flake-utils.lib.eachDefaultSystem (system: let
       vipsOverlay = final: prev: {
         vips = prev.vips.overrideAttrs (old: {
-          src = prev.fetchFromGitHub {
-            owner = "libvips";
-            repo = "libvips";
-            rev = "e01a4797cabe77d457fdfa7d776b7a7e7ca6d6a7";
-            hash = "sha256-RpbNiuEicnRTxdB6o63CGdiq2Y3+/QEimtnnOn6EoT0=";
-          };
+          libjpeg = prev.mozjpeg;
         });
       };
       pkgs = import nixpkgs {
@@ -96,7 +86,7 @@
             ffmpeg
             exiftool
           ]
-          ++ [gpac.packages.${system}.default];
+          ++ [pkgs.gpac];
 
         # Additional environment variables can be set directly
         # MY_CUSTOM_VAR = "some value";
@@ -162,7 +152,7 @@
       apps = {
         server = let
           runServer = pkgs.writeShellScriptBin "run-server" ''
-            export PATH="${pkgs.lib.makeBinPath [pkgs.ffmpeg pkgs.exiftool gpac.packages.${system}.default]}:$PATH"
+            export PATH="${pkgs.lib.makeBinPath [pkgs.ffmpeg pkgs.exiftool pkgs.gpac]}:$PATH"
             export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [pkgs.glib pkgs.vips]}"
             export LD_PRELOAD="${pkgs.jemalloc}/lib/libjemalloc.so"
             exec ${server}/bin/server --serve-static ${myrtiWeb} "$@"
@@ -196,6 +186,7 @@
           vscode-langservers-extracted
           prettier
           diesel-cli
+          sqlite
         ];
 
         JEMALLOC_PATH = "${pkgs.jemalloc}/lib/libjemalloc.so";

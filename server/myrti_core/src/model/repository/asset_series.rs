@@ -1,4 +1,4 @@
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 
 use crate::model::{AssetId, AssetSeries, AssetSeriesId};
 
@@ -13,7 +13,7 @@ pub fn create_series(conn: &mut DbConn, asset_ids: &[AssetId]) -> Result<AssetSe
         return Err(eyre!("asset_ids can not be empty"));
     }
 
-    conn.immediate_transaction(|conn| {
+    let create_result = conn.immediate_transaction(|conn| {
         let series_id = diesel::insert_into(AssetSeries::table)
             .values((AssetSeries::is_auto.eq(0), AssetSeries::series_type.eq(0)))
             .returning(AssetSeries::series_id)
@@ -48,7 +48,11 @@ pub fn create_series(conn: &mut DbConn, asset_ids: &[AssetId]) -> Result<AssetSe
             .wrap_err("error setting first asset to selection true")?;
         assert!(affected_rows == 1);
         Ok(AssetSeriesId(series_id))
-    })
+    })?;
+    if let Err(err) = super::timeline::update_timeline_dirty(conn) {
+        tracing::error!("Error updating dirty timeline:\n{:?}", err);
+    }
+    Ok(create_result)
 }
 
 #[tracing::instrument(skip(conn))]
@@ -106,7 +110,7 @@ pub fn get_series_for_asset(conn: &mut DbConn, asset_id: AssetId) -> Result<Opti
 pub fn dissolve_series(conn: &mut DbConn, series_id: AssetSeriesId) -> Result<()> {
     use diesel::prelude::*;
     use schema::{Asset, AssetSeries};
-    conn.transaction(|conn| {
+    let delete_result = conn.transaction(|conn| {
         diesel::update(Asset::table.filter(Asset::series_id.eq(Some(series_id.0))))
             .set((
                 Asset::series_id.eq(None::<i64>),
@@ -115,7 +119,11 @@ pub fn dissolve_series(conn: &mut DbConn, series_id: AssetSeriesId) -> Result<()
             .execute(conn)?;
         diesel::delete(AssetSeries::table.find(series_id.0)).execute(conn)?;
         Ok(())
-    })
+    });
+    if let Err(err) = super::timeline::update_timeline_dirty(conn) {
+        tracing::error!("Error updating dirty timeline:\n{:?}", err);
+    }
+    delete_result
 }
 
 #[tracing::instrument(skip(conn))]
@@ -126,7 +134,7 @@ pub fn add_assets_to_series(
 ) -> Result<AssetSeries> {
     use diesel::prelude::*;
     use schema::Asset;
-    conn.transaction(|conn| {
+    let add_result = conn.transaction(|conn| {
         diesel::update(
             Asset::table.filter(
                 Asset::series_id
@@ -138,12 +146,14 @@ pub fn add_assets_to_series(
             Asset::series_id.eq(Some(series_id.0)),
             Asset::is_series_selection.eq(Some(0)),
         ))
-        .execute(conn)?;
+        .execute(conn)
+        .wrap_err("error updating table Asset")?;
         let assets_in_series: Vec<(i64, Option<i32>)> = Asset::table
             .filter(Asset::series_id.eq(Some(series_id.0)))
             .order_by(Asset::taken_date.desc())
             .select((Asset::asset_id, Asset::is_series_selection))
-            .load(conn)?;
+            .load(conn)
+            .wrap_err("error querying Assets in AssetSeries")?;
         let selection_indices: Vec<usize> = assets_in_series
             .iter()
             .enumerate()
@@ -156,10 +166,14 @@ pub fn add_assets_to_series(
             .into_iter()
             .map(|(asset_id, _)| AssetId(asset_id))
             .collect();
-        Ok(crate::model::AssetSeries {
+        Ok::<_, eyre::Report>(crate::model::AssetSeries {
             series_id,
             asset_ids,
             selection_indices,
         })
-    })
+    })?;
+    if let Err(err) = super::timeline::update_timeline_dirty(conn) {
+        tracing::error!("Error updating dirty timeline:\n{:?}", err);
+    }
+    Ok(add_result)
 }

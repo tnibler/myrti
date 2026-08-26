@@ -350,7 +350,7 @@
         if (!placeholderEl) {
           return;
         }
-        placeholderEl.style.transform = transform;
+        transitionTransform = transform;
       });
     } else if (slideImage) {
       slideImage.closeTransition(transform, onTransitionEnd);

@@ -514,7 +514,7 @@
             onpointerdown={(e) => e.stopPropagation()}
           >
             <img
-              src="/api/files/thumbnail/{asset.repFile.fileId}/small/avif"
+              src="/api/files/{asset.repFile.fileId}/thumbnail/small/avif"
               class={'bg-black transition-transform max-h-full max-w-full object-cover rounded-sm ' +
                 (selectedSeriesIndex === indexInSeries ? 'border-solid border-3 border-white' : '')}
               style:max-width="none"

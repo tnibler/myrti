@@ -4,18 +4,18 @@ use myrti_core::{
 };
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
     routing::{delete, patch, post},
-    Json, Router,
 };
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::{
     app_state::SharedState,
     http_error::ApiResult,
-    schema::{asset_series::AssetSeries, AssetId, AssetSeriesId},
+    schema::{AssetId, AssetSeriesId, asset_series::AssetSeries},
 };
 
 pub fn router() -> Router<SharedState> {
@@ -42,7 +42,7 @@ pub struct CreateSeriesResponse {
     path = "/api/photoSeries",
     responses((status=200, body=CreateSeriesResponse))
 )]
-#[tracing::instrument(fields(request = true), skip(app_state))]
+#[tracing::instrument(fields(request = true), skip(app_state), err)]
 pub async fn create_series(
     State(app_state): State<SharedState>,
     Json(request): Json<CreateSeriesRequest>,
@@ -75,7 +75,7 @@ pub async fn create_series(
     ),
     responses((status=200, body=())),
 )]
-#[tracing::instrument(fields(request = true), skip(app_state))]
+#[tracing::instrument(fields(request = true), skip(app_state), err)]
 pub async fn delete_series(
     State(app_state): State<SharedState>,
     Path(series_id): Path<AssetSeriesId>,
@@ -104,7 +104,7 @@ pub struct AddAssetsToSeriesRequest {
     ),
     responses((status=200, body=AssetSeries)),
 )]
-#[tracing::instrument(fields(request = true), skip(app_state))]
+#[tracing::instrument(fields(request = true), skip(app_state), err)]
 pub async fn add_assets_to_series(
     State(app_state): State<SharedState>,
     Path(series_id): Path<AssetSeriesId>,

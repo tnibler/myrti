@@ -149,6 +149,7 @@ diesel::table! {
 diesel::table! {
     AssetSeries (series_id) {
         series_id -> BigInt,
+        series_type -> Integer,
         is_auto -> Integer,
     }
 }

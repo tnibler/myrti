@@ -15,7 +15,7 @@ pub fn create_series(conn: &mut DbConn, asset_ids: &[AssetId]) -> Result<AssetSe
 
     conn.immediate_transaction(|conn| {
         let series_id = diesel::insert_into(AssetSeries::table)
-            .values(AssetSeries::is_auto.eq(0))
+            .values((AssetSeries::is_auto.eq(0), AssetSeries::series_type.eq(0)))
             .returning(AssetSeries::series_id)
             .get_result(conn)
             .wrap_err("error inserting into table AssetSeries")?;

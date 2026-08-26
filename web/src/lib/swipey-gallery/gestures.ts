@@ -89,6 +89,12 @@ export function newGestureController(
   }
 
   function onPointerDown(e: PointerEvent) {
+    if (
+      !e.target.classList.values().find((s) => s === 'shaka-scrim-container') &&
+      e.target.classList.values().find((s) => s.includes('shaka'))
+    ) {
+      return;
+    }
     // Desktop Safari allows to drag images when preventDefault isn't called on mousedown,
     // even though preventDefault IS called on mousemove. That's why we preventDefault mousedown.
     if (e.pointerType === 'mouse') {
@@ -135,6 +141,13 @@ export function newGestureController(
   }
 
   function onClick(e: MouseEvent) {
+    let node = e.target;
+    while (node && node.classList !== undefined) {
+      if (node.classList.values().find((s) => s.includes('shaka'))) {
+        return;
+      }
+      node = node.parentNode;
+    }
     if (gallery.pager.isShifted) {
       e.preventDefault();
       e.stopPropagation();
@@ -243,6 +256,13 @@ export function newGestureController(
   }
 
   function onTap(p: Point, e: PointerEvent) {
+    let node = e.target;
+    while (node && node.classList !== undefined) {
+      if (node.classList.values().find((s) => s.includes('shaka'))) {
+        return;
+      }
+      node = node.parentNode;
+    }
     if (gallery.pager.isShifted) {
       gallery.pager.moveSlideAnimate('backToCenter');
       return;

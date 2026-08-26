@@ -4,7 +4,9 @@ use eyre::{Context, Report, Result};
 use crate::{
     catalog::image_conversion_target::{ImageFormatTarget, heif::AvifTarget},
     core::storage::{Storage, StorageProvider},
-    model::{AssetFile, AssetType, FileId, Size, ThumbnailFormat, ThumbnailType},
+    model::{
+        AssetFile, AssetType, FileId, RotationCorrection, Size, ThumbnailFormat, ThumbnailType,
+    },
     processing::{
         self,
         image::thumbnail::{
@@ -70,9 +72,9 @@ pub async fn create_thumbnail(
             width: 200,
             height: 200,
         },
-        ThumbnailType::LargeOrigAspect => processing::image::OutDimension::KeepAspect {
-            width: (file.size.width as f32 * (300.0 / file.size.height as f32)).round() as i32,
-        },
+        ThumbnailType::LargeOrigAspect => {
+            processing::image::OutDimension::KeepAspect { height: 300 }
+        }
     };
     let mut outputs = Vec::new();
     for (format, file_key) in &thumb.file_keys {

@@ -29,7 +29,8 @@ int create_thumbnail(ThumbnailParams params, ThumbnailResult* result) {
   VipsImage* out = NULL;
   int ret = 0;
   if (params.keep_aspect) {
-    ret = vips_thumbnail(params.in_path, &out, params.width,
+    ret = vips_thumbnail(params.in_path, &out, 100000, // very large width
+        "height", params.height,
         "output_profile", "srgb",
         NULL);
   } else {

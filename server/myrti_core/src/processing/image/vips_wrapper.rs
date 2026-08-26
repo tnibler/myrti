@@ -44,7 +44,7 @@ pub fn teardown() {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OutDimension {
-    KeepAspect { width: i32 },
+    KeepAspect { height: i32 },
     Crop { width: i32, height: i32 },
 }
 
@@ -82,15 +82,15 @@ pub fn generate_thumbnail(params: VipsThumbnailParams) -> Result<VipsThumbailRes
     let c_params = wrapper::ThumbnailParams {
         in_path: c_path.as_ptr(),
         width: match params.out_dimension {
-            OutDimension::KeepAspect { width } => width,
+            OutDimension::KeepAspect { height: _ } => 0,
             OutDimension::Crop { width, height: _ } => width,
         },
         height: match params.out_dimension {
-            OutDimension::KeepAspect { width: _ } => 0,
+            OutDimension::KeepAspect { height } => height,
             OutDimension::Crop { width: _, height } => height,
         },
         keep_aspect: match params.out_dimension {
-            OutDimension::KeepAspect { width: _ } => true,
+            OutDimension::KeepAspect { height: _ } => true,
             OutDimension::Crop {
                 width: _,
                 height: _,

@@ -270,7 +270,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
   );
 
   function computeScrollbarMonths() {
-    scrollbarMonthHeights = sectionMonthSlices.flatMap((sectionMonths, sectionIdx) => {
+    const rawHeightsBySection = sectionMonthSlices.flatMap((sectionMonths, sectionIdx) => {
       return sectionMonths.flatMap(({ year, month, totalNormalizedWidth }) => {
         let height;
         if (sectionsPublic[sectionIdx].blocks) {
@@ -288,6 +288,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
             estimateHeight(totalNormalizedWidth, viewport.width, opts.targetRowHeight),
           );
         }
+
         return {
           sectionIdx,
           month,
@@ -296,16 +297,42 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
         };
       });
     });
+
+    let totalRawHeight = 0;
+    const totalMonthHeights = new Map<string, number>();
+    for (const m of rawHeightsBySection) {
+      const key = `${m.year}-${m.month}`;
+      totalMonthHeights.set(key, totalMonthHeights.getOrInsert(key, 0) + m.height);
+      totalRawHeight += m.height;
+    }
+    const monthScaling = new Map<string, number>();
+
+    const compressThresh = (3 / totalMonthHeights.size) * totalRawHeight;
+    for (const [key, height] of totalMonthHeights.entries()) {
+      const scaled =
+        height > compressThresh ? compressThresh * (1 + Math.log(height / compressThresh)) : height;
+      const scale = scaled / height;
+      monthScaling.set(key, scale);
+    }
+
+    for (const m of rawHeightsBySection) {
+      const key = `${m.year}-${m.month}`;
+      const scale = monthScaling.get(key);
+      // const scale = 1;
+      m.height = scale * m.height;
+    }
+
     {
       const totalHeight = R.pipe(
-        scrollbarMonthHeights,
+        rawHeightsBySection,
         R.map((m) => m.height),
         R.sum(),
       );
-      for (const m of scrollbarMonthHeights) {
+      for (const m of rawHeightsBySection) {
         m.height = (m.height / totalHeight) * viewport.scrollbarHeight;
       }
     }
+    scrollbarMonthHeights = rawHeightsBySection;
 
     let cumulHeight = 0;
     const monthMarkers: ScrollbarMonth[] = [];

@@ -342,7 +342,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
         monthMarkers.length === 0 || year !== monthMarkers[monthMarkers.length - 1].year;
       const showMonth =
         monthMarkers.length === 0 ||
-        (month !== monthMarkers[monthMarkers.length - 1].month && cumulHeight - lastMarkerTop > 6);
+        (month !== monthMarkers[monthMarkers.length - 1].month && cumulHeight - lastMarkerTop > 8);
       if (showMonth) {
         lastMarkerTop = cumulHeight;
       }
@@ -359,7 +359,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     }
     const yearMarkers = monthMarkers.filter((month) => month.showYear);
     const yearStarts = yearMarkers.map((m) => m.top);
-    const keepYears = selectYearLabels(yearStarts, 8);
+    const keepYears = selectYearLabels(yearStarts, 10);
     for (const [i, marker] of yearMarkers.entries()) {
       marker.showYear = keepYears.has(i);
     }

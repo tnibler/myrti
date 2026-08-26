@@ -1,3 +1,6 @@
+CREATE TEMP VIEW IF NOT EXISTS MinSectionLen AS SELECT 400 AS min_section_len;
+CREATE TEMP VIEW IF NOT EXISTS MaxSectionLen AS SELECT 1000 AS max_section_len;
+
 WITH RECURSIVE
 SeriesDate AS (
 	SELECT Asset.*
@@ -109,19 +112,19 @@ SeriesDate AS (
 	, CASE 
 		WHEN n.segment_month <> curr.segment_month AND (
 			-- merging next month would surpass the limit
-             curr.running_count + n.month_count > 800
+             curr.running_count + n.month_count > (SELECT * FROM MaxSectionLen)
 			-- current has enough for a complete section and next month can fill one by itself
-             OR (curr.running_count >= 100 AND n.month_count >= 800)
+             OR (curr.running_count >= (SELECT * FROM MinSectionLen) AND n.month_count >= (SELECT * FROM MaxSectionLen))
         ) THEN n.day_count
-        WHEN curr.running_count + n.day_count > 800 THEN n.day_count
+        WHEN curr.running_count + n.day_count > (SELECT * FROM MaxSectionLen) THEN n.day_count
 		ELSE curr.running_count + n.day_count
 	END AS running_count
 	, CASE 
 		WHEN n.segment_month <> curr.segment_month AND (
-             curr.running_count + n.month_count > 800
-             OR (curr.running_count >= 100 AND n.month_count >= 800)
+             curr.running_count + n.month_count > (SELECT * FROM MaxSectionLen)
+             OR (curr.running_count >= (SELECT * FROM MinSectionLen) AND n.month_count >= (SELECT * FROM MaxSectionLen))
         ) THEN curr.section_id + 1
-        WHEN curr.running_count + n.day_count > 800 THEN curr.section_id + 1
+        WHEN curr.running_count + n.day_count > (SELECT * FROM MaxSectionLen) THEN curr.section_id + 1
 		ELSE curr.section_id
 	END AS section_id
 	FROM DayOrdered n

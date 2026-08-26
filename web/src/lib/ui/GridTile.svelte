@@ -164,7 +164,7 @@
     className +
     ' ' +
     (isHoverable ? '' : 'cursor-default')}
-  style="max-width: {box.width}px; max-height: {box.height}px; width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
+  style="width: {box.width}px; height: {box.height}px; max-width: {box.width}px; max-height: {box.height}px; top: {box.top}px; left: {box.left}px;"
   onclick={(e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -199,11 +199,12 @@
         {@attach thumbnailLoadOnce}
         id={imgElId}
         src={dataUrl}
-        class="absolute transition-opacity max-w-full max-h-full"
+        class="absolute transition-opacity"
         class:rounded-xl={isSelected}
         class:scale-[0.85]={isSelected}
         width={imgWidth}
         height={imgHeight}
+        style="max-width: {imgWidth}px; max-height: {imgHeight}px;"
         style:opacity={thumbHashVisible ? '0' : '1'}
         style:top={imgTop + 'px'}
         style:left={imgLeft + 'px'}

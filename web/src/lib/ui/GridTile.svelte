@@ -164,7 +164,7 @@
     className +
     ' ' +
     (isHoverable ? '' : 'cursor-default')}
-  style="width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
+  style="max-width: {box.width}px; max-height: {box.height}px; width: {box.width}px; height: {box.height}px; top: {box.top}px; left: {box.left}px;"
   onclick={(e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -199,7 +199,7 @@
         {@attach thumbnailLoadOnce}
         id={imgElId}
         src={dataUrl}
-        class="absolute transition-opacity"
+        class="absolute transition-opacity max-w-full max-h-full"
         class:rounded-xl={isSelected}
         class:scale-[0.85]={isSelected}
         width={imgWidth}
@@ -207,7 +207,6 @@
         style:opacity={thumbHashVisible ? '0' : '1'}
         style:top={imgTop + 'px'}
         style:left={imgLeft + 'px'}
-        style:max-width="none"
         style:transform="rotate({rotateImg}deg) {mirrorImg === 'vertical'
           ? 'scaleY(-1)'
           : mirrorImg === 'horizontal'

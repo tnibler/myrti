@@ -375,8 +375,6 @@
     }
     const endListener = () => {
       transitionTransformClass = false;
-      domZoom *= cssTransformZoom;
-      cssTransformZoom = 1;
       zoomWrapperDiv?.removeEventListener('transitionend', endListener, false);
       zoomWrapperDiv?.removeEventListener('transitioncancel', endListener, false);
     };
@@ -390,7 +388,7 @@
     transitionTransformClass = true;
     if (p === 'reset') {
       const currentZoom = domZoom * cssTransformZoom;
-      cssTransformZoom *= zoomLevels.fit / currentZoom;
+      cssTransformZoom = zoomLevels.fit;
       pan = panBounds.center;
       userHasZoomed = false;
     } else {

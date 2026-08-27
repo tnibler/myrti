@@ -63,7 +63,7 @@ CREATE TRIGGER TimelineGroup_Update_TimelineDirty
 AFTER UPDATE OF group_date
 ON TimelineGroup
 BEGIN
-	UPDATE TimelineItem SET is_dirty = 1 WHERE TimelineItem.group_id = NEW.group_id;
+	UPDATE TimelineItem SET is_dirty = 1 WHERE TimelineItem.group_id = NEW.timeline_group_id;
 END;
 
 CREATE TRIGGER TimelineGroupItem_Insert_TimelineDirty

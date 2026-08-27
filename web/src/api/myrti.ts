@@ -187,6 +187,10 @@ export interface DeleteAlbumItemRequest {
   itemIds: AlbumItemId[];
 }
 
+export interface DisableDashGhiRequest {
+  fileIds: FileId[];
+}
+
 export type EditTimelineGroup = (typeof EditTimelineGroup)[keyof typeof EditTimelineGroup];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
@@ -405,6 +409,11 @@ export type DeleteAlbumItems200 = unknown | null;
 /**
  * @nullable
  */
+export type DisableGhiStreaming200 = unknown | null;
+
+/**
+ * @nullable
+ */
 export type RegenerateThumbnail200 = unknown | null;
 
 /**
@@ -479,6 +488,13 @@ export const setAssetIsSeriesSelection = <TData = AxiosResponse<SetAssetIsSeries
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
   return axios.post(`/api/assets/${id}/seriesSelection`, setAssetSeriesSelectionRequest, options);
+};
+
+export const disableGhiStreaming = <TData = AxiosResponse<DisableGhiStreaming200>>(
+  disableDashGhiRequest: DisableDashGhiRequest,
+  options?: AxiosRequestConfig,
+): Promise<TData> => {
+  return axios.post(`/api/files/disableGhiStreaming`, disableDashGhiRequest, options);
 };
 
 export const regenerateThumbnail = <TData = AxiosResponse<RegenerateThumbnail200>>(
@@ -604,6 +620,7 @@ export type GetAlbumThumbnailResult = AxiosResponse<string>;
 export type SetAssetsHiddenResult = AxiosResponse<void>;
 export type GetAssetResult = AxiosResponse<Asset>;
 export type SetAssetIsSeriesSelectionResult = AxiosResponse<SetAssetIsSeriesSelectionResponse>;
+export type DisableGhiStreamingResult = AxiosResponse<DisableGhiStreaming200>;
 export type RegenerateThumbnailResult = AxiosResponse<RegenerateThumbnail200>;
 export type GetImageAssetRepresentationResult = AxiosResponse<string>;
 export type GetFileDetailsResult = AxiosResponse<AssetDetailsResponse>;

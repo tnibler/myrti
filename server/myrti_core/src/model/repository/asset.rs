@@ -14,8 +14,9 @@ use crate::model::repository::db_entity::{
 };
 use crate::model::{
     self, Asset, AssetBase, AssetFile, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe,
-    AssetThumbnail, AssetThumbnailId, AssetType, CreateAsset, CreateAssetSpe, FileId, HasGhiIndex,
-    Image, MirrorCorrection, RotationCorrection, ThumbnailType, TimestampInfo, Video,
+    AssetThumbnail, AssetThumbnailId, AssetType, CreateAsset, CreateAssetSpe, FileId, Image,
+    IsOriginalStreamable, MirrorCorrection, OriginalStreaming, RotationCorrection, ThumbnailType,
+    TimestampInfo, Video,
 };
 use crate::model::{
     repository::db_entity::{DbAssetPathOnDisk, DbAssetThumbnail, to_db_asset_ty},
@@ -379,10 +380,9 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
                             .audio_codec_name
                             .as_deref()
                             .map(Cow::Borrowed),
-                        has_ghi: None,
-                        is_original_streamable: bool_to_int(
-                            create_asset_video.is_original_streamable,
-                        ),
+                        original_streaming: None,
+                        original_streaming_state: None,
+                        ghi_disabled: 0,
                         max_iframe_interval: create_asset_video.max_iframe_interval,
                         frame_rate_num: create_asset_video.frame_rate.map(|(num, _)| num),
                         frame_rate_denom: create_asset_video.frame_rate.map(|(_, denom)| denom),
@@ -443,7 +443,7 @@ pub fn get_video_files_with_no_acceptable_audio_repr(
                 (
                     SELECT ar.codec_name FROM AudioRepresentation ar WHERE ar.file_id = VideoFile.file_id
                     UNION
-                    SELECT VideoFile.audio_codec_name WHERE VideoFile.has_ghi = 2 OR VideoFile.has_ghi = 3
+                    SELECT VideoFile.audio_codec_name WHERE VideoFile.original_streaming = 2 OR VideoFile.original_streaming = 3
                 )
                 INTERSECT SELECT * FROM AcceptableAudioCodec
             );
@@ -478,7 +478,7 @@ pub fn get_video_files_with_no_acceptable_video_repr(
                 (
                     SELECT vr.codec_name FROM VideoRepresentation vr WHERE vr.file_id = VideoFile.file_id
                     UNION
-                    SELECT VideoFile.video_codec_name WHERE VideoFile.has_ghi = 1 OR VideoFile.has_ghi = 3
+                    SELECT VideoFile.video_codec_name WHERE VideoFile.original_streaming = 1 OR VideoFile.original_streaming = 3
                 )
                 INTERSECT SELECT * FROM AcceptableVideoCodec
             );
@@ -499,15 +499,24 @@ pub fn get_video_files_with_no_acceptable_video_repr(
 }
 
 #[instrument(skip(conn))]
-pub fn get_video_files_with_unknown_ghi(conn: &mut DbConn) -> Result<Vec<Video>> {
-    use schema::VideoFile;
-    let rows: Vec<DbVideoFile> = VideoFile::table
-        .filter(VideoFile::has_ghi.is_null())
-        .select(DbVideoFile::as_select())
+pub fn get_video_files_with_original_streaming_due(
+    conn: &mut DbConn,
+) -> Result<Vec<(AssetFile, Video)>> {
+    use schema::{AssetFile, VideoFile};
+    let rows: Vec<(DbAssetFile, DbVideoFile)> = VideoFile::table
+        .filter(
+            VideoFile::original_streaming
+                .is_null()
+                .or(VideoFile::original_streaming
+                    .ne(0)
+                    .and(VideoFile::original_streaming_state.eq(0))),
+        )
+        .inner_join(AssetFile::table)
+        .select((DbAssetFile::as_select(), DbVideoFile::as_select()))
         .load(conn)
         .wrap_err("error querying table VideoFile")?;
     rows.into_iter()
-        .map(|row| Video::try_from(row))
+        .map(|(file, video)| Ok((model::AssetFile::try_from(file)?, Video::try_from(video)?)))
         .try_collect()
 }
 
@@ -674,31 +683,93 @@ pub fn set_asset_max_iframe_interval(
     // diesel::update(Asset::table.filter(Asset::asset_id.eq(asset_id.0))).set(Asset::h)
 }
 
-pub fn get_asset_has_ghi_index(conn: &mut DbConn, file_id: FileId) -> Result<Option<HasGhiIndex>> {
+pub fn get_asset_has_ghi_index(
+    conn: &mut DbConn,
+    file_id: FileId,
+) -> Result<Option<IsOriginalStreamable>> {
     use schema::VideoFile;
     let r: Option<i32> = VideoFile::table
         .find(file_id.0)
-        .select(VideoFile::has_ghi)
+        .select(VideoFile::original_streaming)
         .get_result(conn)
-        .context("querying VideoFile for has_ghi_index")?;
-    r.map(|r| HasGhiIndex::try_from(r)).transpose()
+        .context("querying VideoFile for original_streaming")?;
+    r.map(IsOriginalStreamable::try_from).transpose()
 }
 
-pub fn set_asset_has_ghi_index(
+pub fn set_asset_ghi_disabled(
     conn: &mut DbConn,
     file_id: FileId,
-    has_ghi_index: HasGhiIndex,
+    ghi_disabled: bool,
 ) -> Result<()> {
     use schema::VideoFile;
     conn.immediate_transaction(|conn| {
         let n_affected = diesel::update(VideoFile::table.find(file_id.0))
-            .set(VideoFile::has_ghi.eq(i32::from(has_ghi_index)))
+            .set((
+                VideoFile::ghi_disabled.eq(i32::from(ghi_disabled)),
+                VideoFile::original_streaming_state.eq(diesel::dsl::case_when(
+                    VideoFile::original_streaming.is_null(),
+                    None::<i32>,
+                )
+                .otherwise(i32::from(false))),
+            ))
             .execute(conn)
-            .context("error updating column VideoFile.has_ghi_index")?;
+            .context("error updating columns VideoFile.ghi_disabled")?;
         if n_affected == 1 {
             Ok(())
         } else {
-            Err(eyre!("error updating column VideoFile.has_ghi_index"))
+            Err(eyre!("error updating column VideoFile.ghi_disabled"))
+        }
+    })
+}
+
+pub fn set_asset_original_streamable(
+    conn: &mut DbConn,
+    file_id: FileId,
+    state: OriginalStreaming,
+) -> Result<()> {
+    use schema::VideoFile;
+    conn.immediate_transaction(|conn| {
+        let n_affected = diesel::update(VideoFile::table.find(file_id.0))
+            .set((
+                VideoFile::original_streaming.eq(i32::from(state.is_streamable)),
+                VideoFile::original_streaming_state.eq(match state.is_streamable {
+                    IsOriginalStreamable::None => None,
+                    _ => Some(i32::from(state.is_done)),
+                }),
+            ))
+            .execute(conn)
+            .context("error updating columns VideoFile.original_streaming")?;
+        if n_affected == 1 {
+            Ok(())
+        } else {
+            Err(eyre!("error updating column VideoFile.original_streaming"))
+        }
+    })
+}
+
+pub fn set_asset_original_streamable_done(
+    conn: &mut DbConn,
+    file_id: FileId,
+    is_done: bool,
+) -> Result<()> {
+    use schema::VideoFile;
+    conn.immediate_transaction(|conn| {
+        let n_affected = diesel::update(VideoFile::table.find(file_id.0))
+            .set(
+                VideoFile::original_streaming_state.eq(diesel::dsl::case_when(
+                    VideoFile::ghi_disabled.eq(0),
+                    Some(if is_done { 1 } else { 0 }),
+                )
+                .otherwise(Some(if is_done { 2 } else { 0 }))),
+            )
+            .execute(conn)
+            .context("error updating columns VideoFile.original_streaming_state")?;
+        if n_affected == 1 {
+            Ok(())
+        } else {
+            Err(eyre!(
+                "error updating column VideoFile.original_streaming_state"
+            ))
         }
     })
 }

@@ -26,13 +26,17 @@ use crate::{
         },
     },
     catalog::{
-        operation::create_thumbnail::{CreateAssetThumbhash, CreateAssetThumbnail},
+        operation::{
+            create_thumbnail::{CreateAssetThumbhash, CreateAssetThumbnail},
+            package_video::PackageVideo,
+        },
         rules,
     },
-    config::Config,
+    config::{BinPaths, Config},
     interact,
     model::{
-        AssetId, AssetRootDirId, AssetSpe, AssetType, FileId,
+        AssetId, AssetRootDirId, AssetSpe, AssetType, FileId, IsOriginalStreamable,
+        OriginalStreaming,
         repository::{self, db::DbPool},
     },
 };
@@ -55,6 +59,7 @@ pub enum SchedulerMessage {
 pub enum UserRequest {
     ReindexAssetRoot(AssetRootDirId),
     RegenerateThumbnails(Option<Vec<FileId>>),
+    DisableGhiStreaming(Vec<FileId>),
 }
 
 #[derive(Debug, Clone)]
@@ -548,6 +553,55 @@ impl Scheduler {
             SchedulerMessage::UserRequest(user_request) => match user_request {
                 UserRequest::ReindexAssetRoot(root_dir_id) => {
                     let _ = self.indexing_actor.msg_index_asset_root(root_dir_id);
+                }
+                UserRequest::DisableGhiStreaming(file_ids) => {
+                    tracing::debug!(?file_ids, "request DisableGhiStreaming");
+                    async fn handle_disable_ghi(
+                        db_pool: DbPool,
+                        bin_paths: Option<&BinPaths>,
+                        file_ids: Vec<FileId>,
+                    ) -> Result<Vec<PackageVideo>> {
+                        let mut conn = db_pool.get().await?;
+
+                        for file_id in file_ids.clone() {
+                            interact!(conn, move |conn| {
+                                repository::asset::set_asset_ghi_disabled(conn, file_id, true)
+                            })
+                            .await??;
+                        }
+                        let required_video_packaging = {
+                            let mut required = Vec::default();
+                            for file_id in file_ids {
+                                required.extend(
+                                    rules::required_video_packaging_for_asset(
+                                        &mut conn, file_id, bin_paths,
+                                    )
+                                    .await?,
+                                );
+                            }
+                            required
+                        };
+                        Ok(required_video_packaging)
+                    }
+
+                    match handle_disable_ghi(
+                        self.db_pool.clone(),
+                        self.config.bin_paths.as_ref(),
+                        file_ids,
+                    )
+                    .await
+                    {
+                        Ok(tasks) => {
+                            for p in tasks {
+                                self.video_packaging_actor
+                                    .msg_package_video(p)
+                                    .expect("receiver must be alive");
+                            }
+                        }
+                        Err(err) => {
+                            tracing::warn!(?err, "error setting GHI streaming disabled")
+                        }
+                    }
                 }
                 UserRequest::RegenerateThumbnails(file_ids) => {
                     tracing::debug!(?file_ids, "request RegenerateThumbnails");

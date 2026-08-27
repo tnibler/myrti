@@ -1,5 +1,3 @@
-use std::default;
-
 use camino::Utf8PathBuf as PathBuf;
 use chrono::{DateTime, Utc};
 use eyre::{Report, eyre};
@@ -18,7 +16,8 @@ pub struct Video {
     pub video_codec_name: String,
     pub video_bitrate: Option<i64>,
     pub audio_codec_name: Option<String>,
-    pub is_original_streamable: bool,
+    pub original_streaming: Option<OriginalStreaming>,
+    pub ghi_disabled: bool,
     pub max_iframe_interval: Option<i32>,
     pub frame_rate: Option<(i32, i32)>,
 }
@@ -91,14 +90,20 @@ pub enum MirrorCorrection {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum HasGhiIndex {
+pub enum IsOriginalStreamable {
     None,
     VideoOnly,
     AudioOnly,
     VideoAudio,
 }
 
-impl HasGhiIndex {
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct OriginalStreaming {
+    pub is_streamable: IsOriginalStreamable,
+    pub is_done: bool,
+}
+
+impl IsOriginalStreamable {
     pub const fn includes_video(&self) -> bool {
         match self {
             Self::VideoOnly | Self::VideoAudio => true,
@@ -109,30 +114,6 @@ impl HasGhiIndex {
         match self {
             Self::AudioOnly | Self::VideoAudio => true,
             Self::VideoOnly | Self::None => false,
-        }
-    }
-}
-
-impl TryFrom<i32> for HasGhiIndex {
-    type Error = eyre::Report;
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::None),
-            1 => Ok(Self::VideoOnly),
-            2 => Ok(Self::AudioOnly),
-            3 => Ok(Self::VideoAudio),
-            other => Err(eyre!("invalid HasGhiIndex value {}", other)),
-        }
-    }
-}
-
-impl From<HasGhiIndex> for i32 {
-    fn from(value: HasGhiIndex) -> Self {
-        match value {
-            HasGhiIndex::None => 0,
-            HasGhiIndex::VideoOnly => 1,
-            HasGhiIndex::AudioOnly => 2,
-            HasGhiIndex::VideoAudio => 3,
         }
     }
 }
@@ -169,7 +150,6 @@ pub struct CreateAssetVideo {
     pub video_bitrate: Option<i64>,
     pub video_duration_ms: Option<i64>,
     pub audio_codec_name: Option<String>,
-    pub is_original_streamable: bool,
     pub max_iframe_interval: Option<i32>,
     pub frame_rate: Option<(i32, i32)>,
 }

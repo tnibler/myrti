@@ -100,7 +100,6 @@ async fn index_file(
                     .audio
                     .map(|audio| audio.codec_name.to_ascii_lowercase()),
                 ffprobe_output: ffprobe_output.into(),
-                is_original_streamable,
                 max_iframe_interval,
                 frame_rate: video.avg_frame_rate,
             };

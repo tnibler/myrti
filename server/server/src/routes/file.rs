@@ -34,6 +34,7 @@ use crate::{
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/thumbnails/regenerate", post(regenerate_thumbnail))
+        .route("/disableGhiStreaming", post(disable_ghi_streaming))
         .nest(
             "/:id/",
             Router::new()
@@ -199,6 +200,39 @@ async fn regenerate_thumbnail(
         .send
         .send(SchedulerMessage::UserRequest(
             UserRequest::RegenerateThumbnails(ids),
+        ))
+        .await
+        .expect("receiver must be alive");
+    Ok(().into_response())
+}
+
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DisableDashGhiRequest {
+    file_ids: Vec<FileId>,
+}
+
+#[utoipa::path(post, path = "/api/files/disableGhiStreaming",
+    responses(
+        (status = 200, body=()),
+    ),
+    request_body = DisableDashGhiRequest,
+)]
+#[tracing::instrument(skip(app_state), level = "trace")]
+async fn disable_ghi_streaming(
+    State(app_state): State<SharedState>,
+    Json(request): Json<DisableDashGhiRequest>,
+) -> ApiResult<Response> {
+    let ids: Vec<model::FileId> = request
+        .file_ids
+        .into_iter()
+        .map(model::FileId::try_from)
+        .try_collect()?;
+    app_state
+        .scheduler
+        .send
+        .send(SchedulerMessage::UserRequest(
+            UserRequest::DisableGhiStreaming(ids),
         ))
         .await
         .expect("receiver must be alive");

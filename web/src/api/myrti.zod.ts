@@ -174,6 +174,14 @@ export const setAssetIsSeriesSelectionResponse = zod.object({
   seriesId: zod.string(),
 });
 
+export const disableGhiStreamingBody = zod.object({
+  fileIds: zod.array(zod.string()),
+});
+
+export const disableGhiStreamingResponseDefault = null;
+
+export const disableGhiStreamingResponse = zod.unknown().nullable();
+
 export const regenerateThumbnailBody = zod.object({
   fileIds: zod
     .array(zod.string())

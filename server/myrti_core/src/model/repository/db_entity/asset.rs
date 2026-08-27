@@ -7,8 +7,8 @@ use eyre::{Context, Result, eyre};
 
 use crate::model::{
     AssetBase, AssetFile, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSeriesId, AssetType,
-    FileId, GpsCoordinates, Image, InSeries, MirrorCorrection, RotationCorrection, Size,
-    TimestampInfo, Video,
+    FileId, GpsCoordinates, Image, InSeries, IsOriginalStreamable, MirrorCorrection,
+    OriginalStreaming, RotationCorrection, Size, TimestampInfo, Video,
     util::{datetime_from_db_repr, hash_vec8_to_u64},
 };
 
@@ -77,8 +77,9 @@ pub struct DbVideoFile {
     pub video_codec_name: String,
     pub video_bitrate: Option<i64>,
     pub audio_codec_name: Option<String>,
-    pub has_ghi: Option<i32>,
-    pub is_original_streamable: Option<i32>,
+    pub original_streaming: Option<i32>,
+    pub original_streaming_state: Option<i32>,
+    pub ghi_disabled: i32,
     pub max_iframe_interval: Option<i32>,
     pub frame_rate_num: Option<i32>,
     pub frame_rate_denom: Option<i32>,
@@ -171,16 +172,41 @@ impl TryFrom<DbVideoFile> for Video {
     type Error = eyre::Report;
 
     fn try_from(value: DbVideoFile) -> Result<Self, Self::Error> {
+        let original_streamable = value
+            .original_streaming
+            .map(IsOriginalStreamable::try_from)
+            .transpose()?;
         Ok(Video {
             file_id: FileId(value.file_id),
             video_codec_name: value.video_codec_name,
             video_bitrate: value.video_bitrate,
             audio_codec_name: value.audio_codec_name,
-            is_original_streamable: value
-                .is_original_streamable
-                .expect("null currently disallowed on application side")
-                != 0,
             max_iframe_interval: value.max_iframe_interval,
+            original_streaming: match (
+                original_streamable,
+                value.ghi_disabled,
+                value.original_streaming_state,
+            ) {
+                (Some(s), 1, Some(done)) if done == 0 || done == 2 => Some(OriginalStreaming {
+                    is_streamable: s,
+                    is_done: done == 2,
+                }),
+                (Some(s), 0, Some(done)) if done == 0 || done == 1 => Some(OriginalStreaming {
+                    is_streamable: s,
+                    is_done: done == 1,
+                }),
+                (Some(s @ IsOriginalStreamable::None), 0, None) => Some(OriginalStreaming {
+                    is_streamable: s,
+                    is_done: false,
+                }),
+                (None, _, None) => None,
+                (s, g, done) => {
+                    return Err(eyre!(
+                        "invalid original_streaming columns; {s:?}, {g:?}, {done:?}"
+                    ));
+                }
+            },
+            ghi_disabled: value.ghi_disabled != 0,
             frame_rate: value
                 .frame_rate_num
                 .and_then(|num| value.frame_rate_denom.map(|denom| (num, denom))),
@@ -243,8 +269,9 @@ pub struct DbInsertVideoFile<'a> {
     pub video_bitrate: Option<i64>,
     pub video_duration_ms: Option<i64>,
     pub audio_codec_name: Option<Cow<'a, str>>,
-    pub has_ghi: Option<i32>,
-    pub is_original_streamable: i32,
+    pub original_streaming: Option<i32>,
+    pub ghi_disabled: i32,
+    pub original_streaming_state: Option<i32>,
     pub max_iframe_interval: Option<i32>,
     pub frame_rate_num: Option<i32>,
     pub frame_rate_denom: Option<i32>,
@@ -317,5 +344,29 @@ impl TryFrom<DbAssetPathOnDisk> for AssetPathOnDisk {
             path_in_asset_root: PathBuf::from(value.path_in_asset_root),
             asset_root_path: PathBuf::from(value.asset_root_path),
         })
+    }
+}
+
+impl TryFrom<i32> for IsOriginalStreamable {
+    type Error = eyre::Report;
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::None),
+            1 => Ok(Self::VideoOnly),
+            2 => Ok(Self::AudioOnly),
+            3 => Ok(Self::VideoAudio),
+            other => Err(eyre!("invalid IsOriginalStreamable value {}", other)),
+        }
+    }
+}
+
+impl From<IsOriginalStreamable> for i32 {
+    fn from(value: IsOriginalStreamable) -> Self {
+        match value {
+            IsOriginalStreamable::None => 0,
+            IsOriginalStreamable::VideoOnly => 1,
+            IsOriginalStreamable::AudioOnly => 2,
+            IsOriginalStreamable::VideoAudio => 3,
+        }
     }
 }

@@ -321,6 +321,37 @@
         }
       }
     },
+    "/api/files/disableGhiStreaming": {
+      "post": {
+        "tags": [
+          "crate::routes::file"
+        ],
+        "operationId": "disableGhiStreaming",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DisableDashGhiRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "default": null,
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/files/thumbnails/regenerate": {
       "post": {
         "tags": [
@@ -1257,6 +1288,20 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AlbumItemId"
+            }
+          }
+        }
+      },
+      "DisableDashGhiRequest": {
+        "type": "object",
+        "required": [
+          "fileIds"
+        ],
+        "properties": {
+          "fileIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileId"
             }
           }
         }

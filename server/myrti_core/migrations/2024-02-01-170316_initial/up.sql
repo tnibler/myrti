@@ -35,7 +35,7 @@ CREATE TABLE Asset (
 
   , series_id INTEGER
   , is_series_selection INTEGER
-    CONSTRAINT opt_cols_series CHECK ((series_id IS NULL) = (is_series_selection IS NULL) AND is_series_selection IN (0, 1, NULL))
+    CONSTRAINT opt_cols_series CHECK ((series_id IS NULL) IS (is_series_selection IS NULL) AND is_series_selection IN (0, 1, NULL))
 
   -- latitude and longitude are stored multipled by 10e8
   , gps_latitude INTEGER
@@ -114,23 +114,36 @@ CREATE TABLE VideoFile (
   , frame_rate_denom INTEGER
     CONSTRAINT valid_frame_rate_denom CHECK(frame_rate_denom IS NULL OR frame_rate_denom > 0)
 
-  , is_original_streamable INTEGER
-    CONSTRAINT enum_is_original_streamable CHECK(is_original_streamable IN (NULL, 0, 1))
   -- NULL: unknown
-  -- 0: none
+  -- 0: not streamable
   -- 1: video
   -- 2: audio
   -- 3: video+audio
-  -- 4: explicitly disabled
-  , has_ghi INTEGER
-    CONSTRAINT enum_has_ghi CHECK(has_ghi IN (0, 1, 2, 3, 4))
+  , original_streaming INTEGER
+    CONSTRAINT enum_original_streaming CHECK(original_streaming IN (0, 1, 2, 3))
+  , ghi_disabled INTEGER NOT NULL
+    CONSTRAINT bool_ghi_disabled CHECK(ghi_disabled IN (0, 1))
+  -- NULL: unknown
+  -- 0: GHI index not created or DASH segmenter not run
+  -- 1: GHI created
+  -- 2: DASH segmented
+  , original_streaming_state INTEGER
+    CONSTRAINT enum_original_streaming_state CHECK(original_streaming_state IN (NULL, 0, 1))
   , max_iframe_interval INTEGER
+
   , CONSTRAINT opt_cols_frame_rate CHECK((frame_rate_num IS NULL) = (frame_rate_denom IS NULL))
-  , CONSTRAINT opt_cols_streamable CHECK(is_original_streamable IN (0, NULL) OR
-    (max_iframe_interval IS NOT NULL
-      AND frame_rate_num IS NOT NULL
-      AND frame_rate_denom IS NOT NULL
-  ))
+  , CONSTRAINT valid_original_streaming CHECK (
+    CASE
+      WHEN original_streaming IS NULL THEN original_streaming_state IS NULL
+      WHEN original_streaming IS 0 THEN original_streaming_state IS NULL
+      ELSE 1
+    END
+    AND CASE
+      WHEN original_streaming_state IS 1 THEN ghi_disabled IS 0
+      WHEN original_streaming_state IS 2 THEN ghi_disabled IS 1
+      ELSE 1
+    END
+  )
   , UNIQUE(file_id)
   , FOREIGN KEY (file_id, asset_type) REFERENCES AssetFile(file_id, asset_type)
 ) STRICT;

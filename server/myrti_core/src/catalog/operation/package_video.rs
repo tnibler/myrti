@@ -15,7 +15,7 @@ use crate::{
     core::storage::{Storage, StorageProvider},
     interact,
     model::{
-        CreateAudioRepresentation, CreateVideoRepresentation, FileId, HasGhiIndex, Size,
+        CreateAudioRepresentation, CreateVideoRepresentation, FileId, IsOriginalStreamable, Size,
         VideoRepresentation,
         repository::{self, db::DbPool},
     },
@@ -52,6 +52,7 @@ pub enum PackageVideoTask {
         include_audio: bool,
         segment_duration: i32,
     },
+    DashSegment,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,16 +95,53 @@ pub async fn do_package_video(
     let ffprobe_path = bin_paths.and_then(|bp| bp.ffprobe.as_opt_path());
     let gpac_path = bin_paths.and_then(|bp| bp.gpac.as_opt_path());
 
-    let asset_dash_dir = match storage {
-        Storage::LocalFileStorage(local_file_storage) => local_file_storage
-            .root
-            .join(storage_key::dash_file(file_id, format_args!(""))),
-    };
+    let asset_dash_dir = storage
+        .local_path(&storage_key::dash_file(file_id, format_args!("")))
+        .await?
+        .expect("not supported");
     tokio::fs::create_dir_all(&asset_dash_dir)
         .await
         .wrap_err_with(|| format!("error creating directory {}", asset_dash_dir))?;
 
     match &package_video.task {
+        PackageVideoTask::DashSegment => {
+            let orig_dash_dir = storage
+                .local_path(&storage_key::dash_file(file_id, format_args!("original")))
+                .await?
+                .expect("not supported");
+            tracing::trace!(path=?orig_dash_dir, ?file_id, "deleting DASH files");
+            match tokio::fs::remove_dir_all(&orig_dash_dir).await {
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                other => other,
+            }
+            .wrap_err("error deleting DASH data directory")?;
+            tokio::fs::create_dir(&orig_dash_dir).await?;
+
+            let in_path = interact!(conn, move |conn| {
+                repository::asset::get_asset_path_on_disk(conn, file_id)
+            })
+            .await??
+            .path_on_disk();
+
+            let mpd_name = "stream.mpd";
+            let _dash_result = processing::video::gpac::run_dasher(
+                &in_path,
+                &orig_dash_dir,
+                DasherOptions {
+                    mpd_name,
+                    base_url: None,
+                    segment_duration: 2, // TODO
+                },
+                gpac_path,
+                &mut process_control_recv,
+            )
+            .await?;
+
+            interact!(conn, move |conn| {
+                repository::asset::set_asset_original_streamable_done(conn, file_id, true)
+            })
+            .await??;
+        }
         PackageVideoTask::CreateGHIIndex {
             include_video,
             include_audio,
@@ -128,19 +166,6 @@ pub async fn do_package_video(
                 &mut process_control_recv,
             )
             .await?;
-            let has_ghi = match (include_video, include_audio) {
-                (true, true) => HasGhiIndex::VideoAudio,
-                (true, false) => HasGhiIndex::VideoOnly,
-                (false, true) => HasGhiIndex::AudioOnly,
-                (false, false) => {
-                    tracing::error!(?package_video, "noop PackageVideo task");
-                    HasGhiIndex::None
-                }
-            };
-            interact!(conn, move |conn| {
-                repository::asset::set_asset_has_ghi_index(conn, file_id, has_ghi)
-            })
-            .await??;
         }
         PackageVideoTask::TranscodeAudio(transcode) => {
             let repr_name = package_video.repr_name.clone();
@@ -234,7 +259,8 @@ pub async fn do_package_video(
                 .try_into()
                 .expect("temp files should have utf8 paths");
 
-            let pre_input_flags = if video.is_original_streamable {
+            let no_autorotate = file.file_type == "mp4";
+            let pre_input_flags = if no_autorotate {
                 vec![OsString::from("-noautorotate")]
             } else {
                 vec![]
@@ -275,7 +301,7 @@ pub async fn do_package_video(
             )
             .await?;
 
-            if video.is_original_streamable {
+            if no_autorotate {
                 copy_mp4_rotation_metadata(
                     file_path.path_on_disk().as_std_path(),
                     dash_result.mp4_path.as_std_path(),
@@ -373,7 +399,7 @@ pub async fn do_package_video(
         repository::asset::get_asset_has_ghi_index(conn, file_id)
     })
     .await??;
-    if has_ghi.is_some_and(|s| s != HasGhiIndex::None) {
+    if has_ghi.is_some_and(|s| s != IsOriginalStreamable::None) {
         let mpd_key = storage_key::dash_file(file_id, format_args!("original/stream.mpd"));
         let mut mpd_str = String::new();
         storage
@@ -426,6 +452,15 @@ pub async fn do_package_video(
         .await?
         .write_all(merged_manifest.to_string().as_bytes())
         .await?;
+
+    if let PackageVideoTask::CreateGHIIndex { .. } | PackageVideoTask::DashSegment =
+        package_video.task
+    {
+        interact!(conn, move |conn| {
+            repository::asset::set_asset_original_streamable_done(conn, file_id, true)
+        })
+        .await??;
+    }
 
     Ok(())
 }

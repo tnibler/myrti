@@ -330,10 +330,23 @@ async fn index_asset_root(
                     Ok(p) => p,
                     Err(_) => continue,
                 };
+                assert!(path.is_dir());
                 if let Some((completed_dir, new_count)) =
                     stack.pop_if(|(top, _)| !path.starts_with(top))
                 {
-                    debug_assert!(stack.last().is_none_or(|(top, _)| path.starts_with(top)));
+                    // assert_eq!(
+                    //     path.parent(),
+                    //     stack
+                    //         .last()
+                    //         .and_then(|(top, _)| top.parent().map(|p| p.as_path()))
+                    // );
+                    // assert!(
+                    //
+                    //     stack
+                    //         .last()
+                    //         .is_none_or(|(top, _)| path.parent() == top.parent()),
+                    //     "stack: {stack:?}, path: {path:?}"
+                    // );
                     tracing::trace!(?completed_dir, "Completed indexing directory");
                     if new_count > 0 {
                         #[allow(clippy::redundant_closure_call)]

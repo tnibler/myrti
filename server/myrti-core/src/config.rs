@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
-use eyre::{Context, Result, eyre};
+use eyre::{Context, Result};
 use globset::Glob;
 use itertools::Itertools;
 use serde::Deserialize;
@@ -87,10 +87,7 @@ pub async fn read_config(path: &Path) -> Result<Config> {
                 .flat_map(|v| v.into_iter())
                 .map(|s| {
                     Glob::new(&s).wrap_err_with(|| {
-                        format!(
-                            "error parsing exclude pattern for asset directory {}",
-                            &path
-                        )
+                        format!("error parsing exclude pattern for asset directory {}", path)
                     })
                 })
                 .try_collect()?;

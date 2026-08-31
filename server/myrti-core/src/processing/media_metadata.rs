@@ -1,10 +1,9 @@
 use std::process::Stdio;
 
 use camino::Utf8Path as Path;
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, ParseResult, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, ParseResult, Utc};
 use eyre::{Context, Result, eyre};
 use tokio::process::Command;
-use tracing::{Instrument, debug_span};
 
 pub mod exiftool {
     use serde::Deserialize;
@@ -269,6 +268,7 @@ fn parse_exiftool_timestamps() {
 
 #[test]
 fn exiftool_timestamp_panasonic() {
+    use chrono::{NaiveDate, NaiveTime};
     let output = r#"
 [{
   "SourceFile": "/home/data/library2/P1080723.RW2",

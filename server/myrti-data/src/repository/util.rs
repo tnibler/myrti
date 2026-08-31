@@ -1,20 +1,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 use eyre::{Context, Result, eyre};
-use std::path::Path;
 
 use crate::model::ThumbnailType;
-
-#[inline]
-pub fn bool_to_int(b: bool) -> i32 {
-    if b { 1 } else { 0 }
-}
-
-pub fn path_to_string<P: AsRef<Path>>(path: P) -> Result<String> {
-    path.as_ref()
-        .to_str()
-        .map(|s| s.to_owned())
-        .ok_or_else(|| eyre!("non unicode file path not supported"))
-}
 
 /// milliseconds since UNIX epoch
 pub fn datetime_to_db_repr(d: &DateTime<Utc>) -> i64 {

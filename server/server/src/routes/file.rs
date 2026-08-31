@@ -335,7 +335,7 @@ async fn get_image_asset_representation(
         .unwrap_or(false);
     let mut headers = HeaderMap::new();
 
-    let file_name = format!("{}.{}", repr.file_id.0, &repr.format_name);
+    let file_name = format!("{}.{}", repr.file_id.0, repr.format_name);
     let mut s = match download {
         true => OsString::from("attachment; filename=\""),
         false => OsString::from("inline; filename=\""),

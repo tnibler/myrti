@@ -158,12 +158,12 @@ async fn main() -> Result<()> {
     };
     if !std::fs::exists(&data_dir_path)? {
         std::fs::create_dir(&data_dir_path)
-            .with_context(|| format!("error creating data directory at {}", &data_dir_path))?;
+            .with_context(|| format!("error creating data directory at {}", data_dir_path))?;
     }
     let db_path = config.data_dir.db_path.as_deref().unwrap_or(&data_dir_path);
-    if !std::fs::exists(&db_path)? {
-        std::fs::create_dir(&db_path)
-            .with_context(|| format!("error creating database directory at {}", &db_path))?;
+    if !std::fs::exists(db_path)? {
+        std::fs::create_dir(db_path)
+            .with_context(|| format!("error creating database directory at {}", db_path))?;
     }
 
     let data_dir_canon = match config.data_dir.path.canonicalize_utf8() {

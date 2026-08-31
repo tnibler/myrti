@@ -1,4 +1,4 @@
-use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
+use camino::Utf8PathBuf as PathBuf;
 use eyre::{Context, Result, eyre};
 
 use myrti_data::model::Size;

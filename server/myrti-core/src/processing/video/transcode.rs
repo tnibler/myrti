@@ -7,11 +7,11 @@ pub fn ffmpeg_video_flags(encoding_target: &VideoEncodingTarget) -> Vec<String> 
     let mut flags: Vec<String> = match encoding_target.codec {
         CodecTarget::AVC(ref target) => {
             let mut f: Vec<String> = vec![
-                format!("-c:v"),
-                format!("libx264"),
-                format!("-crf"),
+                "-c:v".to_owned(),
+                "libx264".to_owned(),
+                "-crf".to_owned(),
                 target.crf.crf().to_string(),
-                format!("-preset"),
+                "-preset".to_owned(),
                 target.preset.to_string(),
             ];
             if let Some(interv) = encoding_target.force_keyframe_interval {
@@ -39,9 +39,9 @@ pub fn ffmpeg_video_flags(encoding_target: &VideoEncodingTarget) -> Vec<String> 
         }
         CodecTarget::AV1(ref target) => {
             let mut f: Vec<String> = vec![
-                format!("-c:v"),
-                format!("libsvtav1"),
-                format!("-crf"),
+                "-c:v".to_owned(),
+                "libsvtav1".to_owned(),
+                "-crf".to_owned(),
                 target.crf.crf().to_string(),
             ];
             if let Some(preset) = target.preset {
@@ -84,12 +84,12 @@ pub fn ffmpeg_video_flags(encoding_target: &VideoEncodingTarget) -> Vec<String> 
 
 pub fn ffmpeg_audio_flags(encoding_target: &AudioEncodingTarget) -> Vec<String> {
     vec![
-        format!("-c:a"),
+        "-c:a".to_owned(),
         match encoding_target {
-            AudioEncodingTarget::AAC => "libopus".to_string(),
-            AudioEncodingTarget::OPUS => "aac".to_string(),
-            AudioEncodingTarget::FLAC => "flac".to_string(),
-            AudioEncodingTarget::MP3 => "libmp3lame".to_string(),
+            AudioEncodingTarget::AAC => "libopus".to_owned(),
+            AudioEncodingTarget::OPUS => "aac".to_owned(),
+            AudioEncodingTarget::FLAC => "flac".to_owned(),
+            AudioEncodingTarget::MP3 => "libmp3lame".to_owned(),
         },
     ]
 }

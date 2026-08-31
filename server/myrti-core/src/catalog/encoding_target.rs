@@ -24,7 +24,7 @@ pub enum Scale {
 pub mod avc {
     use std::fmt::Display;
 
-    use eyre::{eyre, Report};
+    use eyre::{Report, eyre};
 
     #[allow(dead_code)]
     #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -36,13 +36,14 @@ pub mod avc {
     }
 
     #[allow(dead_code)]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub enum Preset {
         Ultrafast,
         Superfast,
         Veryfast,
         Faster,
         Fast,
+        #[default]
         Medium,
         Slow,
         Slower,
@@ -68,12 +69,6 @@ pub mod avc {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct Crf {
         crf: i32,
-    }
-
-    impl Default for Preset {
-        fn default() -> Self {
-            Self::Medium
-        }
     }
 
     impl Display for Preset {
@@ -138,7 +133,7 @@ pub mod avc {
 }
 
 pub mod av1 {
-    use eyre::{eyre, Report};
+    use eyre::{Report, eyre};
 
     /// For libsvtav1 only
     #[derive(Debug, Clone, PartialEq, Eq, Default)]

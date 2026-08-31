@@ -1,5 +1,5 @@
 use camino::Utf8PathBuf as PathBuf;
-use eyre::{Context, Report, Result};
+use eyre::{Report, Result};
 
 use myrti_data::model::{AssetFile, AssetType, FileId, Size, ThumbnailFormat, ThumbnailType};
 

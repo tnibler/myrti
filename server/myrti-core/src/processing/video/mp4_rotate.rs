@@ -1,6 +1,6 @@
 use std::{io::SeekFrom, os::unix::fs::MetadataExt, path::Path};
 
-use eyre::{eyre, Result};
+use eyre::{Result, eyre};
 use tokio::{
     fs::{File, OpenOptions},
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufReader},
@@ -100,10 +100,10 @@ async fn video_stream_matrix_offset(path: &Path) -> Result<(u64, &'static [i32; 
                     data.read_exact(&mut b).await?;
                     b
                 };
-                if &hdlr == b"vide" {
-                    if let Some(matrix_offset) = matrix_offset {
-                        return Ok(matrix_offset);
-                    }
+                if &hdlr == b"vide"
+                    && let Some(matrix_offset) = matrix_offset
+                {
+                    return Ok(matrix_offset);
                 }
                 data.seek(SeekFrom::Start(end)).await?;
             }

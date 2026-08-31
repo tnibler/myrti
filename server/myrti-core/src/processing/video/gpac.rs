@@ -154,7 +154,7 @@ pub async fn run_dasher(
             opts.mpd_name,
             opts.base_url
                 .map(|url| format!(":base={}", url))
-                .unwrap_or(String::new()),
+                .unwrap_or_default(),
             opts.segment_duration
         )
         .as_str(),

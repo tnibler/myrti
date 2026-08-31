@@ -1,5 +1,5 @@
 use std::{
-    ffi::{CString, c_char, c_void},
+    ffi::{CString, c_void},
     os::unix::prelude::OsStrExt,
     sync::Once,
 };
@@ -171,7 +171,7 @@ pub struct Size {
 
 pub fn get_image_size(path: &Path) -> Result<Size> {
     let c_path = CString::new(path.as_os_str().as_bytes())
-        .wrap_err(format!("Could not convert path {} to bytes", &path))?;
+        .wrap_err(format!("Could not convert path {} to bytes", path))?;
     let mut out = wrapper::ImageInfo {
         width: 0,
         height: 0,

@@ -1,8 +1,9 @@
 <script lang="ts">
   import type { AssetWithSpe } from '@api/myrti';
   import { dayjs } from '@lib/dayjs';
-  import { getFileDetails, regenerateThumbnail } from '../../api/myrti';
+  import { disableGhiStreaming, getFileDetails, regenerateThumbnail } from '../../api/myrti';
   import { getFileDetailsResponse } from '../../api/myrti.zod';
+  import Button from '@lib/ui/Button.svelte';
 
   type Props = {
     asset: AssetWithSpe;
@@ -24,7 +25,7 @@
   });
 </script>
 
-<div class="overflow-y-scroll px-2 h-full">
+<div class="overflow-y-scroll px-2 h-full flex flex-col">
   {#await assetMetadata then entries}
     <ul>
       <li>
@@ -39,8 +40,8 @@
       {/each}
     </ul>
   {/await}
-  <button
-    class="hover:not-disabled:bg-gray-200 disabled:bg-gray-300 mt-4 px-3 py-2 border-1 rounded-sm"
+  <Button
+    text="Regenerate thumbnails"
     onclick={async (e) => {
       e.target.disabled = true;
       try {
@@ -48,6 +49,19 @@
       } finally {
         e.target.disabled = false;
       }
-    }}>Regenerate thumbnails</button
-  >
+    }}
+  />
+  {#if asset.assetType === 'video'}
+    <Button
+      text="Video doesn't play right"
+      onclick={async (e) => {
+        e.target.disabled = true;
+        try {
+          await disableGhiStreaming({ fileIds: [asset.repFile.fileId] });
+        } finally {
+          e.target.disabled = false;
+        }
+      }}
+    />
+  {/if}
 </div>

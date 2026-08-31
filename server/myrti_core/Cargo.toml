@@ -9,7 +9,6 @@ mock-commands = []
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# geocode = { path = "../geocode" }
 
 async-trait = "0.1.73"
 camino = { version = "1.1.6", features = ["serde1"] }

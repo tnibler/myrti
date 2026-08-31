@@ -3,6 +3,5 @@ resolver = "2"
 
 members = [
   "myrti_core",
-  # "geocode",
   "server",
 ]

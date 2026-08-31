@@ -10,7 +10,6 @@ mock-commands = []
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# geocode = { path = "../geocode" }
 myrti_core = { path = "../myrti_core" }
 
 async-trait = "0.1.73"

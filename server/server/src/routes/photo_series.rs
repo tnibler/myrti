@@ -1,8 +1,3 @@
-use myrti_core::{
-    deadpool_diesel, interact,
-    model::{self, repository},
-};
-
 use axum::{
     Json, Router,
     extract::{Path, State},
@@ -11,6 +6,8 @@ use axum::{
 use eyre::{Context, Result, eyre};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
+
+use myrti_data::{interact, model, repository};
 
 use crate::{
     app_state::SharedState,

@@ -13,9 +13,8 @@ use utoipa::{IntoParams, ToSchema};
 use myrti_core::{
     catalog::storage_key,
     core::storage::{StorageProvider, StorageReadError},
-    deadpool_diesel, interact,
-    model::{self, repository},
 };
+use myrti_data::{interact, model, repository};
 
 use crate::{
     app_state::SharedState,

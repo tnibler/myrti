@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use myrti_core::{
-    core::{scheduler::SchedulerHandle, storage::Storage},
-    model::repository::db::DbPool,
-};
+use myrti_core::core::{scheduler::SchedulerHandle, storage::Storage};
+use myrti_data::db::DbPool;
 
 pub struct AppState {
     pub pool: DbPool,

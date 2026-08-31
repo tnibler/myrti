@@ -1,0 +1,130 @@
+use camino::Utf8PathBuf as PathBuf;
+use eyre::Result;
+use tracing::instrument;
+
+use myrti_data::db::PooledDbConn;
+use myrti_data::model::{AlbumId, AlbumThumbnailId, AssetFile, AssetType, FileId};
+use myrti_data::repository::album_thumbnail::InsertAlbumThumbnail;
+use myrti_data::{interact, repository};
+
+use crate::{
+    catalog::image_conversion_target::{ImageFormatTarget, heif::AvifTarget},
+    core::storage::{Storage, StorageProvider},
+    processing::{
+        self,
+        image::thumbnail::{ThumbnailParams, generate_thumbnail, generate_video_thumbnail},
+        process_control::ProcessControlReceiver,
+    },
+};
+
+#[derive(Debug, Clone)]
+pub struct CreateAlbumThumbnail {
+    pub album_id: AlbumId,
+    pub file_id: FileId,
+    pub size: i32,
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateAlbumThumbnailWithPaths {
+    pub album_id: AlbumId,
+    pub file_id: FileId,
+    pub size: i32,
+    pub webp_key: String,
+    pub avif_key: String,
+}
+
+#[instrument(skip(conn, storage, control_recv))]
+pub async fn perform_side_effects_create_thumbnail(
+    storage: &Storage,
+    conn: &mut PooledDbConn,
+    op: CreateAlbumThumbnailWithPaths,
+    control_recv: &mut ProcessControlReceiver,
+) -> Result<()> {
+    let (in_path, file) = interact!(conn, move |conn| {
+        let in_path = repository::asset::get_asset_path_on_disk(conn, op.file_id)?.path_on_disk();
+        let file = repository::asset::get_asset_file(conn, op.file_id)?;
+        Ok::<_, eyre::Report>((in_path, file))
+    })
+    .await??;
+    create_thumbnail(
+        in_path.clone(),
+        &file,
+        &op.webp_key,
+        &op.avif_key,
+        op.size,
+        storage,
+        control_recv,
+    )
+    .await?;
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+pub struct CreateAlbumThumbnailResult {
+    pub thumbnail_ids: Vec<AlbumThumbnailId>,
+}
+
+#[instrument(skip(conn))]
+pub async fn apply_create_thumbnail(
+    conn: &mut PooledDbConn,
+    create_thumbnail: CreateAlbumThumbnailWithPaths,
+) -> Result<CreateAlbumThumbnailResult> {
+    let mut ids: Vec<AlbumThumbnailId> = Vec::default();
+    for (format, file_key) in [
+        ("webp", create_thumbnail.webp_key),
+        ("avif", create_thumbnail.avif_key),
+    ] {
+        let id = interact!(conn, move |conn| {
+            repository::album_thumbnail::insert_album_thumbnail(
+                conn,
+                InsertAlbumThumbnail {
+                    album_id: create_thumbnail.album_id,
+                    format_name: format.to_string(),
+                    size: create_thumbnail.size,
+                    file_key: file_key.clone(),
+                },
+            )
+        })
+        .await??;
+        ids.push(id);
+    }
+    Ok(CreateAlbumThumbnailResult { thumbnail_ids: ids })
+}
+
+#[instrument(skip(storage, control_recv))]
+pub async fn create_thumbnail(
+    asset_path: PathBuf,
+    file: &AssetFile,
+    webp_key: &str,
+    avif_key: &str,
+    size: i32,
+    storage: &Storage,
+    control_recv: &mut ProcessControlReceiver,
+) -> Result<()> {
+    let out_file_avif = storage.local_path(avif_key).await?.unwrap();
+    let out_file_webp = storage.local_path(webp_key).await?.unwrap();
+    let out_dimension = processing::image::OutDimension::Crop {
+        width: size,
+        height: size,
+    };
+    let out_paths = vec![
+        (
+            out_file_avif,
+            ImageFormatTarget::AVIF(AvifTarget {
+                quality: 30.try_into()?,
+                ..Default::default()
+            }),
+        ),
+        (out_file_webp, ImageFormatTarget::WEBP),
+    ];
+    let thumbnail_params = ThumbnailParams {
+        in_path: asset_path,
+        outputs: out_paths,
+        out_dimension,
+    };
+    let _res = match &file.ty {
+        AssetType::Image => generate_thumbnail(thumbnail_params).await?,
+        AssetType::Video => generate_video_thumbnail(thumbnail_params, control_recv).await?,
+    };
+    Ok(())
+}

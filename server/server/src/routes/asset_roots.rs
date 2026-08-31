@@ -1,11 +1,10 @@
 use axum::{
+    Json, Router,
     extract::{Path, State},
     routing::get,
-    Json, Router,
 };
 
-use myrti_core::model::{self, repository};
-use myrti_core::{deadpool_diesel, interact};
+use myrti_data::{interact, model, repository};
 
 use crate::{
     app_state::SharedState,

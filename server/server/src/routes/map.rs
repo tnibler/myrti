@@ -1,11 +1,12 @@
 use axum::{
+    Router,
     extract::State,
     http::header::CONTENT_TYPE,
     response::{IntoResponse, Response},
     routing::get,
-    Router,
 };
-use myrti_core::{deadpool_diesel, interact, model::repository};
+
+use myrti_data::{interact, repository};
 
 use crate::{app_state::SharedState, http_error::ApiResult};
 

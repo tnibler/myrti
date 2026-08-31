@@ -1,21 +1,18 @@
 use axum::{
+    Json, Router,
     extract::{Path, State},
     routing::{get, post},
-    Json, Router,
 };
-use eyre::{eyre, Context, Result};
+use eyre::{Context, Result, eyre};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use myrti_core::{
-    deadpool_diesel, interact,
-    model::{self, repository},
-};
+use myrti_data::{interact, model, repository};
 
 use crate::{
     app_state::SharedState,
     http_error::{ApiResult, HttpErrorExt},
-    schema::{asset::Asset, AssetId, AssetSeriesId},
+    schema::{AssetId, AssetSeriesId, asset::Asset},
 };
 
 pub fn router() -> Router<SharedState> {

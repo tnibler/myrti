@@ -1,0 +1,467 @@
+use std::ffi::OsString;
+
+use eyre::{Context, Result, eyre};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    sync::mpsc,
+};
+
+use myrti_data::db::DbPool;
+use myrti_data::model::{
+    CreateAudioRepresentation, CreateVideoRepresentation, FileId, IsOriginalStreamable, Size,
+    VideoRepresentation,
+};
+use myrti_data::{interact, repository};
+
+use crate::{
+    catalog::{
+        encoding_target::{VideoEncodingTarget, audio_codec_name, codec_name},
+        storage_key,
+    },
+    config,
+    core::storage::{Storage, StorageProvider},
+    processing::{
+        self,
+        commands::FFmpeg,
+        process_control::ProcessControl,
+        video::{
+            ffmpeg::{FFmpegLocalOutputTrait, FFmpegTrait},
+            ffprobe_get_streams,
+            gpac::{CreateGHIOptions, DasherOptions},
+            mp4_rotate::copy_mp4_rotation_metadata,
+            mpd::{self, BaseURL},
+            transcode::{ffmpeg_audio_flags, ffmpeg_video_flags},
+        },
+    },
+    util::OptionPathExt,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageVideo {
+    pub file_id: FileId,
+    pub repr_name: String,
+    pub output_key: String,
+    pub task: PackageVideoTask,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PackageVideoTask {
+    TranscodeVideo(VideoEncodingTarget),
+    TranscodeAudio(AudioEncodingTarget),
+    CreateGHIIndex {
+        include_video: bool,
+        include_audio: bool,
+        segment_duration: i32,
+    },
+    DashSegment,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VideoTranscodeResult {
+    pub target: VideoEncodingTarget,
+    pub final_size: Size,
+    pub bitrate: i64,
+    pub out_file_key: String,
+    pub out_media_info_key: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AudioEncodingTarget {
+    AAC,
+    OPUS,
+    FLAC,
+    MP3,
+}
+
+#[tracing::instrument(skip(pool, storage, process_control_recv, bin_paths), level = "debug")]
+pub async fn do_package_video(
+    pool: &DbPool,
+    storage: &Storage,
+    package_video: PackageVideo,
+    bin_paths: Option<&config::BinPaths>,
+    mut process_control_recv: mpsc::Receiver<ProcessControl>,
+) -> Result<()> {
+    let file_id = package_video.file_id;
+    let conn = pool.get().await?;
+    let (video, file) = interact!(conn, move |conn| {
+        repository::asset::get_video_file(conn, file_id)
+    })
+    .await??;
+    let file_path = interact!(conn, move |conn| {
+        repository::asset::get_asset_path_on_disk(conn, video.file_id)
+    })
+    .await??;
+
+    let ffmpeg_path = bin_paths.and_then(|bp| bp.ffmpeg.as_opt_path());
+    let ffprobe_path = bin_paths.and_then(|bp| bp.ffprobe.as_opt_path());
+    let gpac_path = bin_paths.and_then(|bp| bp.gpac.as_opt_path());
+
+    let asset_dash_dir = storage
+        .local_path(&storage_key::dash_file(file_id, format_args!("")))
+        .await?
+        .expect("not supported");
+    tokio::fs::create_dir_all(&asset_dash_dir)
+        .await
+        .wrap_err_with(|| format!("error creating directory {}", asset_dash_dir))?;
+
+    match &package_video.task {
+        PackageVideoTask::DashSegment => {
+            let orig_dash_dir = storage
+                .local_path(&storage_key::dash_file(file_id, format_args!("original")))
+                .await?
+                .expect("not supported");
+            tracing::trace!(path=?orig_dash_dir, ?file_id, "deleting DASH files");
+            match tokio::fs::remove_dir_all(&orig_dash_dir).await {
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                other => other,
+            }
+            .wrap_err("error deleting DASH data directory")?;
+            tokio::fs::create_dir(&orig_dash_dir).await?;
+
+            let in_path = interact!(conn, move |conn| {
+                repository::asset::get_asset_path_on_disk(conn, file_id)
+            })
+            .await??
+            .path_on_disk();
+
+            let mpd_name = "stream.mpd";
+            let _dash_result = processing::video::gpac::run_dasher(
+                &in_path,
+                &orig_dash_dir,
+                DasherOptions {
+                    mpd_name,
+                    base_url: None,
+                    segment_duration: 2, // TODO
+                },
+                gpac_path,
+                &mut process_control_recv,
+            )
+            .await?;
+
+            interact!(conn, move |conn| {
+                repository::asset::set_asset_original_streamable_done(conn, file_id, true)
+            })
+            .await??;
+        }
+        PackageVideoTask::CreateGHIIndex {
+            include_video,
+            include_audio,
+            segment_duration,
+        } => {
+            let out_dir = match storage {
+                Storage::LocalFileStorage(local_file_storage) => {
+                    local_file_storage.root.join(&package_video.output_key)
+                }
+            };
+            processing::video::gpac::create_ghi_and_manifest(
+                &file_path.path_on_disk(),
+                &CreateGHIOptions {
+                    segment_duration: *segment_duration,
+                    video_rep_id: include_video.then(|| String::from("original_video")),
+                    audio_rep_id: include_audio.then(|| String::from("original_audio")),
+                    mpd_base_url: None,
+                    ghi_out_path: out_dir.join("index.ghi"),
+                    mpd_out_path: out_dir.join("stream.mpd"),
+                },
+                gpac_path,
+                &mut process_control_recv,
+            )
+            .await?;
+        }
+        PackageVideoTask::TranscodeAudio(transcode) => {
+            let repr_name = package_video.repr_name.clone();
+            let codec_name = audio_codec_name(transcode);
+
+            let codec_name2 = codec_name.clone();
+            let repr_id = interact!(conn, move |conn| {
+                repository::representation::insert_audio_representation(
+                    conn,
+                    &CreateAudioRepresentation {
+                        file_id,
+                        codec_name: codec_name2,
+                        name: repr_name,
+                    },
+                )
+            })
+            .await??;
+
+            let repr_file_stem = format!("{}-{}", repr_id.0, package_video.repr_name);
+            let ffmpeg_out_dir = tempfile::tempdir()?;
+            let ffmpeg_out_path = ffmpeg_out_dir
+                .path()
+                .join(format!("{}.mp4", repr_file_stem));
+            let utf8_path: camino::Utf8PathBuf = ffmpeg_out_path
+                .to_path_buf()
+                .try_into()
+                .expect("temp files should have utf8 paths");
+
+            FFmpeg::new(
+                Vec::default(),
+                ffmpeg_audio_flags(transcode)
+                    .into_iter()
+                    .map(OsString::from)
+                    .collect(),
+            )
+            .run_with_local_output(
+                file_path.path_on_disk().as_str(),
+                &utf8_path,
+                ffmpeg_path,
+                &mut process_control_recv,
+            )
+            .await
+            .context("error transcoding audio with ffmpeg")?;
+
+            let out_dir = asset_dash_dir.join(&repr_file_stem);
+            tokio::fs::create_dir(&out_dir)
+                .await
+                .wrap_err_with(|| format!("error creating directory {}", &out_dir))?;
+            let mpd_name = "stream.mpd";
+            let _dash_result = processing::video::gpac::run_dasher(
+                &utf8_path,
+                &out_dir,
+                DasherOptions {
+                    mpd_name,
+                    base_url: None,
+                    segment_duration: 2, // TODO
+                },
+                gpac_path,
+                &mut process_control_recv,
+            )
+            .await?;
+            interact!(conn, move |conn| {
+                repository::representation::finalize_audio_representation(conn, repr_id)
+            })
+            .await??;
+        }
+        PackageVideoTask::TranscodeVideo(transcode) => {
+            tracing::info!(?transcode, "video transcode");
+            let repr_name = package_video.repr_name.clone();
+            let codec_name = codec_name(&transcode.codec);
+            let codec_name2 = codec_name.to_owned();
+            let repr_id = interact!(conn, move |conn| {
+                repository::representation::insert_video_representation(
+                    conn,
+                    &CreateVideoRepresentation {
+                        file_id,
+                        name: repr_name,
+                        codec_name: codec_name2,
+                    },
+                )
+            })
+            .await??;
+
+            let repr_file_stem = format!("{}-{}", repr_id.0, package_video.repr_name);
+            let ffmpeg_out_dir = tempfile::tempdir()?;
+            let ffmpeg_out_path = ffmpeg_out_dir
+                .path()
+                .join(format!("{}.mp4", repr_file_stem));
+            let utf8_path: camino::Utf8PathBuf = ffmpeg_out_path
+                .to_path_buf()
+                .try_into()
+                .expect("temp files should have utf8 paths");
+
+            let no_autorotate = file.file_type == "mp4";
+            let pre_input_flags = if no_autorotate {
+                vec![OsString::from("-noautorotate")]
+            } else {
+                vec![]
+            };
+            FFmpeg::new(
+                pre_input_flags,
+                ffmpeg_video_flags(transcode)
+                    .into_iter()
+                    .chain(std::iter::once("-an".to_owned()))
+                    .map(OsString::from)
+                    .collect(),
+            )
+            .run_with_local_output(
+                file_path.path_on_disk().as_str(),
+                &utf8_path,
+                ffmpeg_path,
+                &mut process_control_recv,
+            )
+            .await
+            .context("error transcoding audio with ffmpeg")?;
+
+            let out_dir = asset_dash_dir.join(&repr_file_stem);
+            tokio::fs::create_dir(&out_dir)
+                .await
+                .wrap_err_with(|| format!("error creating directory {}", out_dir))?;
+            let mpd_name = "stream.mpd";
+            tracing::debug!("running gpac dasher");
+            let dash_result = processing::video::gpac::run_dasher(
+                &utf8_path,
+                &out_dir,
+                DasherOptions {
+                    mpd_name,
+                    base_url: None,
+                    segment_duration: 2, // TODO
+                },
+                gpac_path,
+                &mut process_control_recv,
+            )
+            .await?;
+
+            if no_autorotate {
+                copy_mp4_rotation_metadata(
+                    file_path.path_on_disk().as_std_path(),
+                    dash_result.mp4_path.as_std_path(),
+                )
+                .await
+                .context(
+                    "error copying mp4 rotation metadata from original asset to new representation",
+                )?;
+            }
+
+            let (_, streams) = ffprobe_get_streams(&dash_result.mp4_path, ffprobe_path).await?;
+            let bitrate = streams.video.bitrate.ok_or_else(|| {
+                eyre!(
+                    "transcoded mp4 has no bitrate in stream info: {}",
+                    dash_result.mp4_path
+                )
+            })?;
+            let repr_name = package_video.repr_name.clone();
+            interact!(conn, move |conn| {
+                repository::representation::finalize_video_representation(
+                    conn,
+                    &VideoRepresentation {
+                        id: repr_id,
+                        file_id,
+                        name: repr_name.to_owned(),
+                        codec_name: codec_name.to_owned(),
+                        width: streams.video.width,
+                        height: streams.video.height,
+                        bitrate,
+                    },
+                )
+            })
+            .await??;
+        }
+    }
+
+    // merge MPD manifests
+    let existing_video_reprs = interact!(conn, move |conn| {
+        repository::representation::get_video_representations(conn, file_id)
+    })
+    .await??;
+    let existing_audio_reprs = interact!(conn, move |conn| {
+        repository::representation::get_audio_representations(conn, file_id)
+    })
+    .await??;
+
+    let mut merged_manifest = None;
+    let mut adaptation_sets = vec![];
+
+    let repr_info = existing_video_reprs
+        .into_iter()
+        .map(|repr| (repr.id.0, repr.name))
+        .chain(
+            existing_audio_reprs
+                .into_iter()
+                .map(|repr| (repr.id.0, repr.name)),
+        );
+
+    for (repr_id, repr_name) in repr_info {
+        let mpd_key = storage_key::dash_file(
+            file_id,
+            format_args!("{}-{}/stream.mpd", repr_id, repr_name),
+        );
+        let mut mpd_str = String::new();
+        storage
+            .open_read_stream(&mpd_key)
+            .await?
+            .read_to_string(&mut mpd_str)
+            .await?;
+        let manifest = mpd::parse(&mpd_str)?;
+        debug_assert_eq!(manifest.periods.len(), 1);
+
+        let mut adaptations = manifest.periods[0].adaptations.clone();
+        let prepend_base = format_args!("{}-{}", repr_id, repr_name);
+        for adap in &mut adaptations {
+            for rep in &mut adap.representations {
+                if rep.BaseURL.is_empty() {
+                    rep.BaseURL.push(BaseURL {
+                        base: format!("{prepend_base}"),
+                        ..Default::default()
+                    })
+                } else {
+                    for base in &mut rep.BaseURL {
+                        base.base = format!("{prepend_base}/{}", base.base);
+                    }
+                }
+            }
+        }
+        adaptation_sets.extend(adaptations);
+        if merged_manifest.is_none() {
+            merged_manifest = Some(manifest)
+        }
+    }
+    let has_ghi = interact!(conn, move |conn| {
+        repository::asset::get_asset_has_ghi_index(conn, file_id)
+    })
+    .await??;
+    if has_ghi.is_some_and(|s| s != IsOriginalStreamable::None) {
+        let mpd_key = storage_key::dash_file(file_id, format_args!("original/stream.mpd"));
+        let mut mpd_str = String::new();
+        storage
+            .open_read_stream(&mpd_key)
+            .await?
+            .read_to_string(&mut mpd_str)
+            .await?;
+        let manifest = mpd::parse(&mpd_str)?;
+
+        let mut adaptations = manifest.periods[0].adaptations.clone();
+        let prepend_base = "original";
+        for adap in &mut adaptations {
+            adap.representations
+                .retain(|rep| rep.id.as_deref() != Some("ignored"));
+            for rep in &mut adap.representations {
+                if rep.BaseURL.is_empty() {
+                    rep.BaseURL.push(BaseURL {
+                        base: format!("{prepend_base}/"),
+                        ..Default::default()
+                    })
+                } else {
+                    for base in &mut rep.BaseURL {
+                        base.base = format!("{prepend_base}/{}", base.base);
+                    }
+                }
+                if let Some(codecs) = rep.codecs.as_mut() {
+                    codecs.make_ascii_lowercase();
+                    // 0x00 is an invalid level but can be found in some old files and will not play
+                    // in browsers.
+                    // Set it to baseline @ 3.1 as a safe bet.
+                    *codecs = codecs.replace("avc1.42e000", "avc1.42e01f");
+                }
+            }
+        }
+        adaptation_sets.extend(
+            adaptations
+                .into_iter()
+                .filter(|adap| !adap.representations.is_empty()),
+        );
+        if merged_manifest.is_none() {
+            merged_manifest = Some(manifest);
+        }
+    }
+
+    // TODO: set full profile
+    let mut merged_manifest = merged_manifest.expect("at least one manifest was just created");
+    merged_manifest.periods[0].adaptations = adaptation_sets;
+    storage
+        .open_write_stream(&storage_key::dash_file(file_id, format_args!("stream.mpd")))
+        .await?
+        .write_all(merged_manifest.to_string().as_bytes())
+        .await?;
+
+    if let PackageVideoTask::CreateGHIIndex { .. } | PackageVideoTask::DashSegment =
+        package_video.task
+    {
+        interact!(conn, move |conn| {
+            repository::asset::set_asset_original_streamable_done(conn, file_id, true)
+        })
+        .await??;
+    }
+
+    Ok(())
+}

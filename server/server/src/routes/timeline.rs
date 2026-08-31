@@ -5,26 +5,18 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use eyre::Context;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use utoipa::{IntoParams, ToSchema};
 
+use myrti_data::repository::timeline::{AssetsInTimeline, TimelineSegmentType};
+use myrti_data::{interact, model, repository};
+
 use crate::{
     app_state::SharedState,
     asset_queries::make_api_asset,
-    http_error::{ApiResult, HttpErrorExt},
+    http_error::ApiResult,
     schema::{AssetSeriesId, TimelineGroupId, TimelineSectionId, asset::AssetWithSpe},
-};
-use myrti_core::{
-    deadpool_diesel, interact,
-    model::{
-        self,
-        repository::{
-            self,
-            timeline::{AssetsInTimeline, TimelineSegmentType},
-        },
-    },
 };
 
 pub fn router() -> Router<SharedState> {

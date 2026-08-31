@@ -1,13 +1,11 @@
-use myrti_core::{
-    core::scheduler::{SchedulerMessage, UserRequest},
-    model::{self},
-};
+use myrti_core::core::scheduler::{SchedulerMessage, UserRequest};
+use myrti_data::model;
 
 use axum::{
+    Router,
     extract::{Query, State},
     response::IntoResponse,
     routing::post,
-    Router,
 };
 use serde::Deserialize;
 use tracing::info;

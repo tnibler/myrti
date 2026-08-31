@@ -31,15 +31,10 @@ use myrti_core::{
         scheduler::{SchedulerHandle, SchedulerMessage},
         storage::{LocalFileStorage, Storage},
     },
-    deadpool_diesel, interact,
-    model::{
-        AssetRootDir, AssetRootDirId,
-        repository::{
-            self,
-            db::{self, DbPool},
-        },
-    },
 };
+use myrti_data::db::DbPool;
+use myrti_data::model::{AssetRootDir, AssetRootDirId};
+use myrti_data::{db, interact, repository};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

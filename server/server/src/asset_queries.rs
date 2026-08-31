@@ -1,4 +1,4 @@
-use myrti_core::model::{self, repository};
+use myrti_data::{model, repository};
 
 use crate::schema::asset::{AssetSpe, AssetWithSpe, Image, Video};
 

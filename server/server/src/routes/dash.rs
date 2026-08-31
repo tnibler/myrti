@@ -12,18 +12,10 @@ use serde::Deserialize;
 use tower::ServiceExt;
 use tracing::Instrument;
 
-use myrti_core::{
-    catalog::storage_key,
-    core::storage::StorageProvider,
-    deadpool_diesel, interact,
-    model::{self, repository},
-};
+use myrti_core::{catalog::storage_key, core::storage::StorageProvider};
+use myrti_data::{interact, model, repository};
 
-use crate::{
-    app_state::SharedState,
-    http_error::ApiResult,
-    schema::{AssetId, FileId},
-};
+use crate::{app_state::SharedState, http_error::ApiResult, schema::FileId};
 
 pub fn router() -> Router<SharedState> {
     Router::new().route("/:id/*path", get(get_dash_file).options(get_dash_file))

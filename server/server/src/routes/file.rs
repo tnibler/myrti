@@ -11,18 +11,18 @@ use axum::{
 use axum_extra::body::AsyncReadBody;
 use eyre::{Context, eyre};
 use itertools::Itertools;
-use myrti_core::{
-    catalog::storage_key,
-    core::storage::{StorageProvider, StorageReadError},
-    deadpool_diesel, interact,
-};
-use myrti_core::{
-    core::scheduler::{SchedulerMessage, UserRequest},
-    model::{self, repository},
-};
 use serde::{Deserialize, Serialize};
 use tokio_util::io::ReaderStream;
 use utoipa::ToSchema;
+
+use myrti_core::{
+    catalog::storage_key,
+    core::{
+        scheduler::{SchedulerMessage, UserRequest},
+        storage::{StorageProvider, StorageReadError},
+    },
+};
+use myrti_data::{interact, model, repository};
 
 use crate::{
     app_state::SharedState,

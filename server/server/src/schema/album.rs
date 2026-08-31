@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use myrti_core::model;
+use myrti_data::model;
 
 use super::AlbumId;
 

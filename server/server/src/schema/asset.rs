@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use myrti_core::model;
+use myrti_data::model;
 use std::borrow::Cow;
 
 use crate::{mime_type::guess_mime_type, schema::FileId};

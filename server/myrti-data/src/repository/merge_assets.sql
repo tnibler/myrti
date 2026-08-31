@@ -38,6 +38,16 @@ WINDOW w AS (
 	, asset_id
 );
 
+
+-- Be sure to point any references to merged assets to the new canonical asset.
+UPDATE TimelineGroupItem SET asset_id = MergeMap.merge_asset_id
+FROM MergeMap
+WHERE MergeMap.asset_id = TimelineGroupItem.asset_id AND MergeMap.group_rank > 1;
+
+UPDATE AlbumItem SET asset_id = MergeMap.merge_asset_id
+FROM MergeMap
+WHERE MergeMap.asset_id = AlbumItem.asset_id AND MergeMap.group_rank > 1;
+
 DELETE FROM Asset WHERE asset_id NOT IN (SELECT merge_asset_id FROM MergeMap);
 
 UPDATE AssetFile

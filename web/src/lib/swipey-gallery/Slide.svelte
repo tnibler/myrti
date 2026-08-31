@@ -14,7 +14,6 @@
   import { getGalleryContext, type GalleryContext } from './context';
   import * as R from 'remeda';
   import { goto } from 'elegua';
-  import { transform } from 'zod/v4';
 
   export type OpenTransitionParams = {
     fromBounds: ThumbnailBounds;

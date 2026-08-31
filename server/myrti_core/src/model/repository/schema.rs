@@ -167,7 +167,6 @@ diesel::table! {
     TimelineGroup (timeline_group_id) {
         timeline_group_id -> BigInt,
         name -> Nullable<Text>,
-        display_date -> BigInt,
         created_at -> BigInt,
         changed_at -> BigInt,
     }

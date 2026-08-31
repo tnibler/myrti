@@ -16,7 +16,7 @@
 // OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#![allow(non_snake_case)]
+#![allow(non_snake_case, clippy::collapsible_if)]
 
 use chrono::DateTime;
 use regex::Regex;
@@ -1485,14 +1485,6 @@ pub struct Event {
     #[serde(rename = "@messageData")]
     pub messageData: Option<String>,
     pub SelectionInfo: Option<SelectionInfo>,
-    #[cfg(feature = "scte35")]
-    #[serde(rename = "scte35:Signal", alias = "Signal")]
-    #[cfg(feature = "scte35")]
-    pub signal: Vec<Signal>,
-    #[cfg(feature = "scte35")]
-    #[serde(rename = "scte35:SpliceInfoSection", alias = "SpliceInfoSection")]
-    #[cfg(feature = "scte35")]
-    pub splice_info_section: Vec<SpliceInfoSection>,
     // #[serde(rename = "@schemeIdUri")]
     // pub schemeIdUri: String,
     #[serde(rename = "@value")]
@@ -2230,16 +2222,6 @@ pub struct MPD {
         serialize_with = "serialize_xlink_ns"
     )]
     pub xlink: Option<String>,
-    /// The XML namespace prefix used by convention for the “Digital Program Insertion Cueing
-    /// Message for Cable” (SCTE 35) signaling standard.
-    #[cfg(feature = "scte35")]
-    #[serialize_always]
-    #[serde(
-        rename = "@xmlns:scte35",
-        alias = "@scte35",
-        serialize_with = "scte35::serialize_scte35_ns"
-    )]
-    pub scte35: Option<String>,
     /// The XML namespace prefix used by convention for DASH extensions proposed by the Digital
     /// Video Broadcasting Project, as per RFC 5328.
     #[serialize_always]
@@ -3211,8 +3193,11 @@ mod tests {
         let anomalies = check_conformity(&mpd);
         assert!(!anomalies.is_empty());
         for anomaly in anomalies {
-            assert!(anomaly
-                .starts_with("Period with @id <unspecified> contains no AdaptationSet elements"));
+            assert!(
+                anomaly.starts_with(
+                    "Period with @id <unspecified> contains no AdaptationSet elements"
+                )
+            );
         }
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.push("tests");
@@ -3223,8 +3208,11 @@ mod tests {
         let anomalies = check_conformity(&mpd);
         assert!(!anomalies.is_empty());
         for anomaly in anomalies {
-            assert!(anomaly
-                .starts_with("Period with @id <unspecified> contains no AdaptationSet elements"));
+            assert!(
+                anomaly.starts_with(
+                    "Period with @id <unspecified> contains no AdaptationSet elements"
+                )
+            );
         }
         let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path.push("tests");

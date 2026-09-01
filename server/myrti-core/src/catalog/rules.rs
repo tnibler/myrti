@@ -24,10 +24,8 @@ use crate::{
 use super::{
     image_conversion_target::{ImageConversionTarget, heif::AvifTarget},
     operation::{
-        convert_image::ConvertImage,
-        create_album_thumbnail::CreateAlbumThumbnail,
-        create_thumbnail::{CreateAssetThumbnail, ThumbnailToCreate},
-        package_video::PackageVideo,
+        convert_image::ConvertImage, create_album_thumbnail::CreateAlbumThumbnail,
+        create_thumbnail::CreateAssetThumbnail, package_video::PackageVideo,
     },
 };
 
@@ -168,9 +166,11 @@ pub async fn required_thumbnails_for_asset(
         repository::asset::get_thumbnails_for_asset(conn, file_id)
     })
     .await??;
+    let (create_formats, create_types) = missing_asset_thumbnails(&have_thumbnails);
     Ok(CreateAssetThumbnail {
         file_id,
-        thumbnails: missing_asset_thumbnails(&have_thumbnails),
+        formats: create_formats,
+        thumbnail_types: create_types,
     })
 }
 
@@ -188,15 +188,21 @@ pub async fn thumbnails_to_create(conn: &mut PooledDbConn) -> Result<Vec<CreateA
             |AssetHasThumbnails {
                  file_id,
                  thumbnails,
-             }| CreateAssetThumbnail {
-                file_id,
-                thumbnails: missing_asset_thumbnails(&thumbnails),
+             }| {
+                let (create_formats, create_types) = missing_asset_thumbnails(&thumbnails);
+                CreateAssetThumbnail {
+                    file_id,
+                    formats: create_formats,
+                    thumbnail_types: create_types,
+                }
             },
         )
         .collect())
 }
 
-pub fn missing_asset_thumbnails(have_thumbnails: &[AssetThumbnail]) -> Vec<ThumbnailToCreate> {
+pub fn missing_asset_thumbnails(
+    have_thumbnails: &[AssetThumbnail],
+) -> (Vec<ThumbnailFormat>, Vec<ThumbnailType>) {
     let have_sm_sq_formats: HashSet<ThumbnailFormat> = have_thumbnails
         .iter()
         .filter(|t| t.ty == ThumbnailType::SmallSquare)
@@ -210,28 +216,17 @@ pub fn missing_asset_thumbnails(have_thumbnails: &[AssetThumbnail]) -> Vec<Thumb
     let want_formats: HashSet<ThumbnailFormat> = [ThumbnailFormat::Webp, ThumbnailFormat::Avif]
         .into_iter()
         .collect();
-    let missing_lg_orig: Vec<_> = want_formats
-        .difference(&have_lg_orig_formats)
-        .copied()
-        .collect();
-    let missing_sm_sq: Vec<_> = want_formats
-        .difference(&have_sm_sq_formats)
-        .copied()
-        .collect();
-    let mut missing = Vec::new();
-    if !missing_lg_orig.is_empty() {
-        missing.push(ThumbnailToCreate {
-            ty: ThumbnailType::LargeOrigAspect,
-            formats: missing_lg_orig,
-        })
+    let mut create_formats = HashSet::new();
+    let mut create_types = Vec::new();
+    if have_lg_orig_formats != want_formats {
+        create_formats.extend(&want_formats);
+        create_types.push(ThumbnailType::LargeOrigAspect);
     }
-    if !missing_sm_sq.is_empty() {
-        missing.push(ThumbnailToCreate {
-            ty: ThumbnailType::SmallSquare,
-            formats: missing_sm_sq,
-        })
+    if have_sm_sq_formats != want_formats {
+        create_formats.extend(&want_formats);
+        create_types.push(ThumbnailType::SmallSquare);
     }
-    missing
+    (create_formats.into_iter().collect(), create_types)
 }
 
 pub async fn album_thumbnails_to_create(

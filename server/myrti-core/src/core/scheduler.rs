@@ -7,10 +7,14 @@ use strum::EnumCount;
 use tokio::sync::{mpsc, oneshot};
 use tracing::instrument;
 
-use myrti_data::db::DbPool;
-use myrti_data::model::{AssetId, AssetRootDirId, AssetSpe, AssetType, FileId};
+use myrti_data::db::{DbPool, PooledDbConn};
+use myrti_data::model::{AssetId, AssetRootDirId, AssetSpe, FileId};
 use myrti_data::{interact, repository};
 
+use crate::core::image_processor::{
+    ImageJob, ImageJobProcessor, ImageProcessingMsg, ImageProcessor,
+};
+use crate::core::queue_executor::{BatchQueueExecutor, JobError, JobId};
 use crate::{
     actor::{
         TaskError,
@@ -19,19 +23,13 @@ use crate::{
             start_image_conversion_actor,
         },
         indexing::{IndexingActorHandle, MsgFromIndexing},
-        thumbnail::{
-            MsgFromThumbnail, ThumbnailActorHandle, ThumbnailTaskResult, start_thumbnail_actor,
-        },
         video_packaging::{
             MsgFromVideoPackaging, VideoPackagingActorHandle, VideoPackagingTaskResult,
             start_video_packaging_actor,
         },
     },
     catalog::{
-        operation::{
-            create_thumbnail::{CreateAssetThumbhash, CreateAssetThumbnail},
-            package_video::PackageVideo,
-        },
+        operation::{create_thumbnail::CreateAssetThumbnail, package_video::PackageVideo},
         rules,
     },
     config::{BinPaths, Config},
@@ -67,7 +65,6 @@ pub struct SchedulerHandle {
 #[repr(usize)]
 enum Actors {
     Indexing,
-    Thumbnail,
     ImageConversion,
     VideoPackaging,
 }
@@ -89,9 +86,10 @@ struct Scheduler {
     actor_states: [ActorState; Actors::COUNT],
 
     indexing_actor: IndexingActorHandle,
-    thumbnail_actor: ThumbnailActorHandle,
     video_packaging_actor: VideoPackagingActorHandle,
     image_conversion_actor: ImageConversionActorHandle,
+    thumbnail_service: ImageProcessor,
+    dropped_thumbnail_jobs: bool,
 }
 
 impl SchedulerHandle {
@@ -110,14 +108,7 @@ impl SchedulerHandle {
             from_indexing_send,
         );
 
-        let (thumbnail_did_shutdown_send, thumbnail_did_shutdown_recv) = oneshot::channel();
-        let (from_thumbnail_send, from_thumbnail_recv) = mpsc::unbounded_channel();
-        let thumbnail_actor = start_thumbnail_actor(
-            db_pool.clone(),
-            storage.clone(),
-            thumbnail_did_shutdown_send,
-            from_thumbnail_send,
-        );
+        let (from_thumbnail_send, from_thumbnail_recv) = mpsc::channel(100);
 
         let (video_did_shutdown_send, video_did_shutdown_recv) = oneshot::channel();
         let (from_video_packaging_send, from_video_packaging_recv) = mpsc::unbounded_channel();
@@ -139,6 +130,11 @@ impl SchedulerHandle {
             from_image_conversion_send,
         );
 
+        let thumbnail_proc = ImageJobProcessor {
+            db_pool: db_pool.clone(),
+            storage: storage.clone(),
+        };
+
         let (send, recv) = mpsc::channel(1000);
         let sched = Scheduler {
             db_pool,
@@ -147,16 +143,21 @@ impl SchedulerHandle {
             waiting_for_shutdown: false,
             did_shutdown_send: Some(did_shutdown_send),
             actor_did_shutdown_recvs: Some(vec![
-                thumbnail_did_shutdown_recv,
                 video_did_shutdown_recv,
                 image_conversion_did_shutdown_recv,
                 indexing_did_shutdown_recv,
             ]),
             actor_states: Default::default(),
             indexing_actor: indexing_actor.clone(),
-            thumbnail_actor: thumbnail_actor.clone(),
             video_packaging_actor: video_packaging_actor.clone(),
             image_conversion_actor: image_conversion_actor.clone(),
+            thumbnail_service: BatchQueueExecutor::new(
+                thumbnail_proc,
+                4.try_into().unwrap(),
+                1000.try_into().unwrap(),
+                from_thumbnail_send,
+            ),
+            dropped_thumbnail_jobs: false,
         };
         tokio::spawn(run_scheduler(
             sched,
@@ -174,7 +175,7 @@ async fn run_scheduler(
     mut sched: Scheduler,
     mut recv: mpsc::Receiver<SchedulerMessage>,
     mut indexing_recv: mpsc::UnboundedReceiver<MsgFromIndexing>,
-    mut thumbnail_recv: mpsc::UnboundedReceiver<MsgFromThumbnail>,
+    mut thumbnail_recv: mpsc::Receiver<ImageProcessingMsg>,
     mut video_packaging_recv: mpsc::UnboundedReceiver<MsgFromVideoPackaging>,
     mut image_conversion_recv: mpsc::UnboundedReceiver<MsgFromImageConversion>,
 ) {
@@ -295,7 +296,7 @@ impl Scheduler {
         Ok(())
     }
 
-    async fn on_new_asset_indexed(&self, asset_id: AssetId) -> Result<()> {
+    async fn on_new_asset_indexed(&mut self, asset_id: AssetId) -> Result<()> {
         let mut conn = self.db_pool.get().await.unwrap();
         let asset = interact!(conn, move |conn| repository::asset::get_asset(
             conn, asset_id
@@ -303,10 +304,19 @@ impl Scheduler {
         .await??;
         let thumbnails_required =
             rules::required_thumbnails_for_asset(&mut conn, asset.base.rep_file_id).await?;
-        if !thumbnails_required.thumbnails.is_empty() {
-            self.thumbnail_actor
-                .msg_create_asset_thumbnail(thumbnails_required)
-                .expect("receiver must be alive");
+        if !thumbnails_required.thumbnail_types.is_empty()
+            && self
+                .thumbnail_service
+                .enqueue_job(
+                    thumbnails_required.file_id,
+                    ImageJob::CreateThumbnail {
+                        thumbnail_types: thumbnails_required.thumbnail_types,
+                        formats: thumbnails_required.formats,
+                    },
+                )
+                .is_err()
+        {
+            self.dropped_thumbnail_jobs = true;
         }
         match &asset.sp {
             AssetSpe::Video(video) => {
@@ -330,105 +340,43 @@ impl Scheduler {
                         .msg_convert_image(img_convert)
                         .expect("receiver must be alive");
                 }
-                self.thumbnail_actor
-                    .msg_create_thumbhash(CreateAssetThumbhash {
-                        file_id: asset.rep_file.id,
-                    })
-                    .expect("receiver must be alive");
+
+                if self
+                    .thumbnail_service
+                    .enqueue_job(asset.rep_file.id, ImageJob::CreateThumbhash)
+                    .is_err()
+                {
+                    self.dropped_thumbnail_jobs = true;
+                }
             }
         }
 
         Ok(())
     }
 
-    async fn on_thumbnail_msg(&mut self, msg: MsgFromThumbnail) -> Result<()> {
-        let actor_state = &mut self.actor_states[Actors::Thumbnail as usize];
-        match msg {
-            MsgFromThumbnail::ActivityChange {
-                is_running,
-                active_tasks,
-                queued_tasks,
-            } => {
-                let is_idle = is_running && active_tasks == 0 && queued_tasks == 0;
-                let found_new_work = if is_idle && actor_state.has_dropped_msgs {
-                    actor_state.has_dropped_msgs = false;
-                    let mut conn = self.db_pool.get().await?;
-                    let thumbnails_required = rules::thumbnails_to_create(&mut conn).await?;
-                    let mut any_work = !thumbnails_required.is_empty();
-                    for t in thumbnails_required {
-                        self.thumbnail_actor
-                            .msg_create_asset_thumbnail(t)
-                            .expect("receiver must be alive");
-                    }
-                    let thumbhash_missing = rules::files_missing_thumbhash(&mut conn)
-                        .await
-                        .expect("TODO");
-                    any_work |= !thumbhash_missing.is_empty();
-                    for file_id in thumbhash_missing {
-                        let _ = self
-                            .thumbnail_actor
-                            .msg_create_thumbhash(CreateAssetThumbhash { file_id });
-                    }
-                    any_work
-                } else {
-                    false
-                };
-                if is_idle && !found_new_work {
-                    tracing::debug!("Thumbnail actor idle");
-                }
+    async fn on_thumbnail_msg(
+        &mut self,
+        (job_id, result): (JobId, Result<Result<()>, JobError>),
+    ) -> Result<()> {
+        match result {
+            Err(JobError::Cancelled) => {
+                tracing::debug!(?job_id, "image job cancelled");
             }
-            MsgFromThumbnail::DroppedMessage => {
-                actor_state.has_dropped_msgs = true;
+            Err(JobError::Other(err)) => {
+                tracing::warn!(?job_id, ?err, "image job encountered an error");
             }
-            MsgFromThumbnail::TaskResult(task_result) => {
-                let result = match task_result {
-                    Err(TaskError::Cancelled) => {
-                        return Ok(());
-                    }
-                    Err(err) => {
-                        tracing::warn!(?err);
-                        return Ok(());
-                    }
-                    Ok(r) => r,
-                };
-                match result {
-                    ThumbnailTaskResult::Asset(result) => match result {
-                        Err(_) => {
-                            // something weird went wrong
-                            tracing::warn!(?result);
-                        }
-                        Ok(result) => {
-                            let conn = self.db_pool.get().await?;
-                            let file =
-                                interact!(conn, move |conn| repository::asset::get_asset_file(
-                                    conn,
-                                    result.file_id
-                                ))
-                                .await??;
-                            if file.ty == AssetType::Video && file.thumbhash.is_none() {
-                                self.thumbnail_actor
-                                    .msg_create_thumbhash(CreateAssetThumbhash { file_id: file.id })
-                                    .expect("receiver must be alive");
-                            }
-                            result.failed.iter().for_each(|(create_thumbnail, err)| {
-                                tracing::warn!(?create_thumbnail, ?err)
-                            });
-                        }
-                    },
-                    ThumbnailTaskResult::Album(ref result) => match result {
-                        Err(err) => {
-                            tracing::warn!(?err);
-                        }
-                        Ok(_result) => {}
-                    },
-                    ThumbnailTaskResult::Thumbhash(file_id, result) => match result {
-                        Err(err) => {
-                            tracing::warn!(?file_id, ?err, "error generating thumbhash");
-                        }
-                        Ok(()) => {}
-                    },
-                };
+            Ok(Err(err)) => {
+                tracing::warn!(?job_id, ?err, "image job encountered an error");
             }
+            Ok(Ok(())) => {
+                tracing::trace!(?job_id, "image job completed");
+            }
+        }
+        self.thumbnail_service.on_job_finished(job_id);
+        if self.dropped_thumbnail_jobs && self.thumbnail_service.queued() == 0 {
+            let mut conn = self.db_pool.get().await?;
+            self.dropped_thumbnail_jobs = false;
+            self.enqueue_required_image_jobs(&mut conn).await;
         }
         Ok(())
     }
@@ -634,10 +582,25 @@ impl Scheduler {
 
                     match handle_regenerate_thumbnails(self.db_pool.clone(), file_ids).await {
                         Ok(create_thumbs) => {
-                            for thumb in create_thumbs {
-                                self.thumbnail_actor
-                                    .msg_create_asset_thumbnail(thumb)
-                                    .expect("receiver must be alive");
+                            for CreateAssetThumbnail {
+                                file_id,
+                                formats,
+                                thumbnail_types,
+                            } in create_thumbs
+                            {
+                                if self
+                                    .thumbnail_service
+                                    .enqueue_job(
+                                        file_id,
+                                        ImageJob::CreateThumbnail {
+                                            thumbnail_types,
+                                            formats,
+                                        },
+                                    )
+                                    .is_err()
+                                {
+                                    self.dropped_thumbnail_jobs = true;
+                                }
                             }
                         }
                         Err(err) => {
@@ -647,9 +610,7 @@ impl Scheduler {
                 }
             },
             SchedulerMessage::PauseAllProcessing => {
-                self.thumbnail_actor
-                    .msg_pause_all()
-                    .expect("receiver must be alive");
+                self.thumbnail_service.pause_all();
                 self.video_packaging_actor
                     .msg_pause_all()
                     .expect("receiver must be alive");
@@ -658,9 +619,7 @@ impl Scheduler {
                     .expect("receiver must be alive");
             }
             SchedulerMessage::ResumeAllProcessing => {
-                self.thumbnail_actor
-                    .msg_resume_all()
-                    .expect("receiver must be alive");
+                self.thumbnail_service.resume_all();
                 self.video_packaging_actor
                     .msg_resume_all()
                     .expect("receiver must be alive");
@@ -687,9 +646,7 @@ impl Scheduler {
                     self.video_packaging_actor
                         .msg_shutdown()
                         .expect("receiver must be alive");
-                    self.thumbnail_actor
-                        .msg_shutdown()
-                        .expect("receiver must be alive");
+                    self.thumbnail_service.cancel_all();
                     self.image_conversion_actor
                         .msg_shutdown()
                         .expect("receiver must be alive");
@@ -718,77 +675,91 @@ impl Scheduler {
                 }
             }
             SchedulerMessage::Startup => {
-                tokio::spawn(on_startup(
-                    self.db_pool.clone(),
-                    self.indexing_actor.clone(),
-                    self.thumbnail_actor.clone(),
-                    self.video_packaging_actor.clone(),
-                    self.image_conversion_actor.clone(),
-                ));
+                self.on_startup().await;
             }
         }
     }
-}
 
-#[instrument(skip_all)]
-async fn on_startup(
-    db_pool: DbPool,
-    indexing_actor: IndexingActorHandle,
-    thumbnail_actor: ThumbnailActorHandle,
-    video_packaging_actor: VideoPackagingActorHandle,
-    image_conversion_actor: ImageConversionActorHandle,
-) {
-    let mut conn = db_pool
-        .get()
+    #[instrument(skip_all)]
+    async fn on_startup(&mut self) {
+        let mut conn = self
+            .db_pool
+            .get()
+            .await
+            .expect("TODO how do we handle errors in scheduler");
+
+        if let Err(err) = interact!(conn, move |conn| {
+            repository::timeline::rebuild_timeline_full(conn)
+        })
         .await
-        .expect("TODO how do we handle errors in scheduler");
+        .flatten()
+        {
+            tracing::error!("Error rebuilding timeline:\n{:?}", (err));
+        }
 
-    if let Err(err) = interact!(conn, move |conn| {
-        repository::timeline::rebuild_timeline_full(conn)
-    })
-    .await
-    .flatten()
-    {
-        tracing::error!("Error rebuilding timeline:\n{:?}", (err));
-    }
+        let video_packaging_required = rules::video_packaging_due(&mut conn).await.expect("TODO");
+        let video_packaging_count = video_packaging_required.len();
+        let image_conversion_required = rules::image_conversion_due(&mut conn).await.expect("TODO");
+        let image_conversion_count = image_conversion_required.len();
+        let album_thumbnails_required = rules::album_thumbnails_to_create(&mut conn)
+            .await
+            .expect("TODO");
 
-    let video_packaging_required = rules::video_packaging_due(&mut conn).await.expect("TODO");
-    let video_packaging_count = video_packaging_required.len();
-    let image_conversion_required = rules::image_conversion_due(&mut conn).await.expect("TODO");
-    let image_conversion_count = image_conversion_required.len();
-    let thumbnails_required = rules::thumbnails_to_create(&mut conn).await.expect("TODO");
-    let thumbnail_count = thumbnails_required.len();
-    let thumbhash_missing = rules::files_missing_thumbhash(&mut conn)
-        .await
-        .expect("TODO");
-    for file_id in thumbhash_missing {
-        let _ = thumbnail_actor.msg_create_thumbhash(CreateAssetThumbhash { file_id });
-    }
-    let album_thumbnails_required = rules::album_thumbnails_to_create(&mut conn)
-        .await
-        .expect("TODO");
-    tracing::info!(
-        image_conversion = image_conversion_count,
-        video_packaging = video_packaging_count,
-        thumbnail = thumbnail_count,
-        album_thumbnail = album_thumbnails_required.len(),
-        "Collected required jobs"
-    );
-    for vid_pack in video_packaging_required {
-        let _ = video_packaging_actor.msg_package_video(vid_pack);
-    }
-    for img_convert in image_conversion_required {
-        let _ = image_conversion_actor.msg_convert_image(img_convert);
-    }
-    for t in thumbnails_required {
-        let _ = thumbnail_actor.msg_create_asset_thumbnail(t);
-    }
-    for album_thumb in album_thumbnails_required {
-        let _ = thumbnail_actor.msg_create_album_thumbnail(album_thumb);
+        self.enqueue_required_image_jobs(&mut conn).await;
+        tracing::info!(
+            image_conversion = image_conversion_count,
+            video_packaging = video_packaging_count,
+            album_thumbnail = album_thumbnails_required.len(),
+            "Collected required jobs"
+        );
+        for vid_pack in video_packaging_required {
+            let _ = self.video_packaging_actor.msg_package_video(vid_pack);
+        }
+        for img_convert in image_conversion_required {
+            let _ = self.image_conversion_actor.msg_convert_image(img_convert);
+        }
+        // for album_thumb in album_thumbnails_required {
+        //     let _ = self.thumbnail_actor.msg_create_album_thumbnail(album_thumb);
+        // }
+
+        if let Err(err) = reindex_all(&self.db_pool, &self.indexing_actor).await {
+            tracing::error!(?err, "Error reindexing asset roots");
+        }
     }
 
-    if let Err(err) = reindex_all(&db_pool, &indexing_actor).await {
-        tracing::error!(?err, "Error reindexing asset roots");
+    async fn enqueue_required_image_jobs(&mut self, conn: &mut PooledDbConn) {
+        let thumbnails_required = rules::thumbnails_to_create(conn).await.expect("TODO");
+        let thumbhash_missing = rules::files_missing_thumbhash(conn).await.expect("TODO");
+        for file_id in thumbhash_missing {
+            if self
+                .thumbnail_service
+                .enqueue_job(file_id, ImageJob::CreateThumbhash)
+                .is_err()
+            {
+                self.dropped_thumbnail_jobs = true;
+            }
+        }
+
+        for CreateAssetThumbnail {
+            file_id,
+            formats,
+            thumbnail_types,
+        } in thumbnails_required
+        {
+            if self
+                .thumbnail_service
+                .enqueue_job(
+                    file_id,
+                    ImageJob::CreateThumbnail {
+                        thumbnail_types,
+                        formats,
+                    },
+                )
+                .is_err()
+            {
+                self.dropped_thumbnail_jobs = true;
+            }
+        }
     }
 }
 

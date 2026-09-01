@@ -7,7 +7,7 @@ use crate::processing::process_control::ProcessControl;
 use super::simple_queue_actor::{MsgTaskControl, TaskError};
 
 pub async fn task_loop<T>(
-    mut fut: impl Future<Output = T>,
+    fut: impl Future<Output = T>,
     ctl_recv: &mut mpsc::UnboundedReceiver<MsgTaskControl>,
     process_control_send: mpsc::Sender<ProcessControl>,
 ) -> Result<T, TaskError> {

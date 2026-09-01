@@ -12,9 +12,8 @@ use myrti_data::model::{AssetId, AssetRootDirId, AssetSpe, FileId};
 use myrti_data::{interact, repository};
 
 use crate::core::image_processor::{
-    ImageJob, ImageJobProcessor, ImageProcessingMsg, ImageProcessor,
+    ImageJob, ImageJobProcessor, ImageProcessingMsg, JobError, JobId,
 };
-use crate::core::queue_executor::{BatchQueueExecutor, JobError, JobId};
 use crate::{
     actor::indexing::{IndexingActorHandle, MsgFromIndexing},
     catalog::{
@@ -73,7 +72,7 @@ struct Scheduler {
     actor_states: [ActorState; Actors::COUNT],
 
     indexing_actor: IndexingActorHandle,
-    image_proc: ImageProcessor,
+    image_proc: ImageJobProcessor,
     dropped_image_jobs: bool,
 }
 
@@ -93,13 +92,16 @@ impl SchedulerHandle {
             from_indexing_send,
         );
 
-        let (from_thumbnail_send, from_thumbnail_recv) = mpsc::channel(100);
+        let (from_imageproc_send, from_thumbnail_recv) = mpsc::channel(100);
 
-        let thumbnail_proc = ImageJobProcessor {
-            db_pool: db_pool.clone(),
-            storage: storage.clone(),
-            config: config.clone(),
-        };
+        let image_proc = ImageJobProcessor::new(
+            4.try_into().unwrap(),
+            1000.try_into().unwrap(),
+            from_imageproc_send,
+            db_pool.clone(),
+            storage.clone(),
+            config.clone(),
+        );
 
         let (send, recv) = mpsc::channel(1000);
         let sched = Scheduler {
@@ -111,12 +113,7 @@ impl SchedulerHandle {
             actor_did_shutdown_recvs: Some(vec![indexing_did_shutdown_recv]),
             actor_states: Default::default(),
             indexing_actor: indexing_actor.clone(),
-            image_proc: BatchQueueExecutor::new(
-                thumbnail_proc,
-                4.try_into().unwrap(),
-                1000.try_into().unwrap(),
-                from_thumbnail_send,
-            ),
+            image_proc,
             dropped_image_jobs: false,
         };
         tokio::spawn(run_scheduler(

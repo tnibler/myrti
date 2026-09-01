@@ -7,7 +7,6 @@ pub mod startup_self_check;
 pub mod video;
 
 pub mod commands {
-    pub use super::image::image_conversion::ConvertImage;
     pub use super::video::ffmpeg::FFmpeg;
 }
 

@@ -214,7 +214,7 @@ pub async fn do_package_video(
             let out_dir = asset_dash_dir.join(&repr_file_stem);
             tokio::fs::create_dir(&out_dir)
                 .await
-                .wrap_err_with(|| format!("error creating directory {}", out_dir))?;
+                .wrap_err_with(|| format!("error creating directory {}", &out_dir))?;
             let mpd_name = "stream.mpd";
             let _dash_result = processing::video::gpac::run_dasher(
                 &utf8_path,

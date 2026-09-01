@@ -3,13 +3,20 @@ use tokio::sync::mpsc;
 
 use myrti_data::db::{DbPool, PooledDbConn};
 use myrti_data::model::{
-    AssetThumbnail, AssetThumbnailId, AssetType, FileId, ThumbnailFormat, ThumbnailType,
+    AssetThumbnail, AssetThumbnailId, AssetType, FileId, ImageRepresentation,
+    ImageRepresentationId, Size, ThumbnailFormat, ThumbnailType,
 };
 use myrti_data::{interact, repository};
 
-use crate::catalog::image_conversion_target::ImageFormatTarget;
 use crate::catalog::image_conversion_target::heif::AvifTarget;
-use crate::core::queue_executor::{BatchQueueExecutor, JobError, JobId, JobProcessor};
+use crate::catalog::image_conversion_target::{ImageFormatTarget, image_format_name};
+use crate::catalog::operation::convert_image::ConvertImage;
+use crate::catalog::operation::package_video::{PackageVideo, do_package_video};
+use crate::config::Config;
+use crate::core::queue_executor::{
+    BatchQueueExecutor, JobError, JobId, JobProcessor, run_process_loop,
+};
+use crate::core::storage::StorageCommandOutput;
 use crate::processing;
 use crate::processing::image::thumbnail::{
     ThumbnailParams, ThumbnailResult, generate_thumbnail, generate_video_thumbnail,
@@ -26,6 +33,7 @@ pub(super) type ImageProcessor = BatchQueueExecutor<ImageJob, Result<()>, ImageJ
 pub(super) struct ImageJobProcessor {
     pub db_pool: DbPool,
     pub storage: Storage,
+    pub config: Config,
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +43,8 @@ pub(super) enum ImageJob {
         formats: Vec<ThumbnailFormat>,
     },
     CreateThumbhash,
+    ConvertImage(ConvertImage),
+    PackageVideo(PackageVideo),
 }
 
 pub(super) type ImageProcessingMsg = (
@@ -50,7 +60,7 @@ impl JobProcessor for ImageJobProcessor {
         &self,
         file_id: FileId,
         jobs: Vec<Self::Job>,
-        mut control: super::queue_executor::JobControlRecv,
+        mut control_recv: super::queue_executor::JobControlRecv,
     ) -> Result<Self::Output, JobError> {
         let mut conn = self.db_pool.get().await?;
         for job in jobs {
@@ -59,6 +69,7 @@ impl JobProcessor for ImageJobProcessor {
                     thumbnail_types,
                     formats,
                 } => {
+                    tracing::trace!(?file_id, ?thumbnail_types, ?formats, "create thumbnail");
                     let (process_control_send, mut process_control_recv) = mpsc::channel(1);
                     let result_fut = generate_asset_thumbnail(
                         &mut conn,
@@ -70,15 +81,37 @@ impl JobProcessor for ImageJobProcessor {
                     );
                     crate::core::queue_executor::run_process_loop(
                         result_fut,
-                        &mut control,
+                        &mut control_recv,
                         process_control_send,
                     )
                     .await??;
                 }
                 ImageJob::CreateThumbhash => {
+                    tracing::trace!(?file_id, "create thumbhash");
                     generate_thumbhash(&mut conn, &self.storage, file_id)
                         .await
                         .wrap_err("error generating asset thumbhash")?;
+                }
+                ImageJob::ConvertImage(convert_op) => {
+                    tracing::trace!(?file_id, ?convert_op, "converting image");
+                    convert_image(&mut conn, &self.storage, convert_op)
+                        .await
+                        .wrap_err("error converting image")?;
+                }
+                ImageJob::PackageVideo(package_op) => {
+                    tracing::trace!(?file_id, ?package_op, "packaging video");
+                    let (process_control_send, process_control_recv) =
+                        tokio::sync::mpsc::channel(1);
+                    let result_fut = do_package_video(
+                        &self.db_pool,
+                        &self.storage,
+                        package_op.clone(),
+                        self.config.bin_paths.as_ref(),
+                        process_control_recv,
+                    );
+                    run_process_loop(result_fut, &mut control_recv, process_control_send)
+                        .await
+                        .wrap_err("error running video packaging job")??;
                 }
             }
         }
@@ -192,6 +225,54 @@ async fn generate_thumbhash(
     let thumbhash = crate::processing::image::thumbnail::generate_thumbhash(input_path).await?;
     interact!(conn, move |conn| {
         repository::asset::set_file_thumbhash(conn, file_id, &thumbhash)
+    })
+    .await??;
+    Ok(())
+}
+
+async fn convert_image(conn: &mut PooledDbConn, storage: &Storage, op: ConvertImage) -> Result<()> {
+    let command_out_file = storage.new_command_out_file(&op.output_file_key).await?;
+    let file_id = op.file_id;
+    let (file, asset_path) = interact!(conn, move |conn| {
+        // FIXME (low) unnecessarily querying same row twice
+        let file = repository::asset::get_asset_file(conn, file_id)?;
+        let asset_path = repository::asset::get_asset_path_on_disk(conn, file_id)?;
+        Ok((file, asset_path))
+    })
+    .await??;
+
+    let out_path = command_out_file.path().to_owned();
+    let input_path = asset_path.path_on_disk();
+    let target = op.target.clone();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    rayon::spawn(move || {
+        let res = processing::image::convert_image(&input_path, &out_path, &target);
+        tx.send(res).expect("receiver thread should not have died");
+    });
+    let scaled_size = rx
+        .await
+        .wrap_err("error in image conversion task")?
+        .wrap_err("error converting image")?
+        .map(|processing_size| Size {
+            width: processing_size.width,
+            height: processing_size.height,
+        });
+    let final_size = scaled_size.unwrap_or(file.size);
+    let file_size = command_out_file.size().await?;
+    command_out_file.flush_to_storage().await?;
+
+    let image_representation = ImageRepresentation {
+        id: ImageRepresentationId(0),
+        file_id: op.file_id,
+        format_name: image_format_name(&op.target.format).to_owned(),
+        file_key: op.output_file_key.clone(),
+        file_size: file_size.try_into().unwrap(),
+        width: final_size.width,
+        height: final_size.height,
+    };
+    interact!(conn, move |conn| {
+        repository::representation::insert_image_representation(conn, &image_representation)
+            .wrap_err("error inserting image representation")
     })
     .await??;
     Ok(())

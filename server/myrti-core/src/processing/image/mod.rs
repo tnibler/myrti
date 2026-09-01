@@ -9,5 +9,4 @@ pub use vips_wrapper::{
     save_test_jpeg_image, save_test_webp_image,
 };
 
-pub mod image_conversion;
 pub mod thumbnail;

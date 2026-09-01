@@ -9,7 +9,6 @@ mock-commands = []
 [dependencies]
 myrti-data = { path = "../myrti-data" }
 
-async-trait = "0.1.73"
 camino = { workspace = true }
 chrono = { workspace = true }
 claims = "0.7.1"

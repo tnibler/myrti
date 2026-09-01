@@ -12,7 +12,7 @@ use serde::Deserialize;
 use tower::ServiceExt;
 use tracing::Instrument;
 
-use myrti_core::{catalog::storage_key, core::storage::StorageProvider};
+use myrti_core::catalog::storage_key;
 use myrti_data::{interact, model, repository};
 
 use crate::{app_state::SharedState, http_error::ApiResult, schema::FileId};
@@ -38,10 +38,7 @@ async fn get_dash_file(
     let key = storage_key::dash_file(file_id, format_args!("{}", path.path));
 
     let storage = &app_state.storage;
-    let fs_path = storage
-        .local_path(&key)
-        .await?
-        .expect("not implemented for non-local StorageProvider");
+    let fs_path = storage.local_path(&key);
 
     if let Some(repr_filename_concat) = path.path.strip_prefix("original/original_") {
         let (repr, rest) = match repr_filename_concat.strip_prefix("video-") {
@@ -75,10 +72,8 @@ async fn get_dash_file(
             }
             (_, false) => true,
         };
-        let out_dir = storage
-            .local_path(&storage_key::dash_file(file_id, format_args!("original")))
-            .await?
-            .expect("not supported");
+        let out_dir =
+            storage.local_path(&storage_key::dash_file(file_id, format_args!("original")));
         if do_cache_insert {
             let filename_copy = filename.clone();
             // TODO: handle unlikely error here. if segment is already being created, wait for it
@@ -89,13 +84,10 @@ async fn get_dash_file(
         }
         if !file_exists {
             let (_tx, mut rx) = tokio::sync::mpsc::channel(5);
-            let ghi_path = storage
-                .local_path(&storage_key::dash_file(
-                    file_id,
-                    format_args!("original/index.ghi"),
-                ))
-                .await?
-                .expect("not supported");
+            let ghi_path = storage.local_path(&storage_key::dash_file(
+                file_id,
+                format_args!("original/index.ghi"),
+            ));
 
             myrti_core::processing::video::gpac::create_segment(
                 &ghi_path,

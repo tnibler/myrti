@@ -9,7 +9,7 @@ use myrti_data::{interact, repository};
 
 use crate::{
     catalog::image_conversion_target::{ImageFormatTarget, heif::AvifTarget},
-    core::storage::{Storage, StorageProvider},
+    core::storage::Storage,
     processing::{
         self,
         image::thumbnail::{ThumbnailParams, generate_thumbnail, generate_video_thumbnail},
@@ -101,8 +101,8 @@ pub async fn create_thumbnail(
     storage: &Storage,
     control_recv: &mut ProcessControlReceiver,
 ) -> Result<()> {
-    let out_file_avif = storage.local_path(avif_key).await?.unwrap();
-    let out_file_webp = storage.local_path(webp_key).await?.unwrap();
+    let out_file_avif = storage.local_path(avif_key);
+    let out_file_webp = storage.local_path(webp_key);
     let out_dimension = processing::image::OutDimension::Crop {
         width: size,
         height: size,

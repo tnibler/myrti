@@ -1,3 +1,5 @@
+use std::os::unix::fs::MetadataExt;
+
 use eyre::{Context, Result, eyre};
 use tokio::sync::mpsc;
 
@@ -16,14 +18,12 @@ use crate::config::Config;
 use crate::core::queue_executor::{
     BatchQueueExecutor, JobError, JobId, JobProcessor, run_process_loop,
 };
-use crate::core::storage::StorageCommandOutput;
 use crate::processing;
 use crate::processing::image::thumbnail::{
     ThumbnailParams, ThumbnailResult, generate_thumbnail, generate_video_thumbnail,
 };
 use crate::{
-    catalog::storage_key,
-    core::storage::{Storage, StorageProvider},
+    catalog::storage_key, core::storage::Storage,
     processing::process_control::ProcessControlReceiver,
 };
 
@@ -160,7 +160,7 @@ async fn generate_asset_thumbnail(
                     ..Default::default()
                 }),
             };
-            outputs.push((storage.local_path(file_key).await?.unwrap(), target));
+            outputs.push((storage.local_path(file_key), target));
         }
         let thumbnail_params = ThumbnailParams {
             in_path: in_path.clone(),
@@ -216,10 +216,7 @@ async fn generate_thumbhash(
                 "can't generate thumbhash for video with no suitable thumbnail yet"
             ))?;
             let thumbnail_key = storage_key::thumbnail(file_id, thumbnail.ty, thumbnail.format);
-            storage
-                .local_path(&thumbnail_key)
-                .await?
-                .ok_or(eyre!("thumbnail must be local file"))?
+            storage.local_path(&thumbnail_key)
         }
     };
     let thumbhash = crate::processing::image::thumbnail::generate_thumbhash(input_path).await?;
@@ -231,7 +228,6 @@ async fn generate_thumbhash(
 }
 
 async fn convert_image(conn: &mut PooledDbConn, storage: &Storage, op: ConvertImage) -> Result<()> {
-    let command_out_file = storage.new_command_out_file(&op.output_file_key).await?;
     let file_id = op.file_id;
     let (file, asset_path) = interact!(conn, move |conn| {
         // FIXME (low) unnecessarily querying same row twice
@@ -241,12 +237,13 @@ async fn convert_image(conn: &mut PooledDbConn, storage: &Storage, op: ConvertIm
     })
     .await??;
 
-    let out_path = command_out_file.path().to_owned();
+    let out_path = storage.local_path(&op.output_file_key);
     let input_path = asset_path.path_on_disk();
     let target = op.target.clone();
     let (tx, rx) = tokio::sync::oneshot::channel();
+    let out_path_copy = out_path.clone();
     rayon::spawn(move || {
-        let res = processing::image::convert_image(&input_path, &out_path, &target);
+        let res = processing::image::convert_image(&input_path, &out_path_copy, &target);
         tx.send(res).expect("receiver thread should not have died");
     });
     let scaled_size = rx
@@ -258,8 +255,10 @@ async fn convert_image(conn: &mut PooledDbConn, storage: &Storage, op: ConvertIm
             height: processing_size.height,
         });
     let final_size = scaled_size.unwrap_or(file.size);
-    let file_size = command_out_file.size().await?;
-    command_out_file.flush_to_storage().await?;
+    let file_size = tokio::fs::metadata(&out_path)
+        .await
+        .wrap_err_with(|| format!("error reading file metadata for {out_path}"))?
+        .size();
 
     let image_representation = ImageRepresentation {
         id: ImageRepresentationId(0),

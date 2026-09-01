@@ -19,7 +19,7 @@ use myrti_core::{
     catalog::storage_key,
     core::{
         scheduler::{SchedulerMessage, UserRequest},
-        storage::{StorageProvider, StorageReadError},
+        storage::StorageReadError,
     },
 };
 use myrti_data::{interact, model, repository};

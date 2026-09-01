@@ -10,10 +10,7 @@ use eyre::{Context, Result, eyre};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use myrti_core::{
-    catalog::storage_key,
-    core::storage::{StorageProvider, StorageReadError},
-};
+use myrti_core::{catalog::storage_key, core::storage::StorageReadError};
 use myrti_data::{interact, model, repository};
 
 use crate::{

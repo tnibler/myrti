@@ -1563,7 +1563,6 @@ dependencies = [
 name = "myrti-core"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "bindgen 0.72.1",
  "camino",
  "cc",
@@ -2920,7 +2919,7 @@ dependencies = [
 [[package]]
 name = "utoipa-discover"
 version = "0.1.0"
-source = "git+https://github.com/tnibler/utoipa-discover#3dffbfc4c46bb30cd957ca4f997f88758a95ae28"
+source = "git+https://github.com/tnibler/utoipa-discover?rev=3dffbfc4c46bb30cd957ca4f997f88758a95ae28#3dffbfc4c46bb30cd957ca4f997f88758a95ae28"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -20,7 +20,7 @@ use crate::{
         storage_key,
     },
     config,
-    core::storage::{Storage, StorageProvider},
+    core::storage::Storage,
     processing::{
         self,
         process_control::ProcessControl,
@@ -96,20 +96,15 @@ pub async fn do_package_video(
     let ffprobe_path = bin_paths.and_then(|bp| bp.ffprobe.as_opt_path());
     let gpac_path = bin_paths.and_then(|bp| bp.gpac.as_opt_path());
 
-    let asset_dash_dir = storage
-        .local_path(&storage_key::dash_file(file_id, format_args!("")))
-        .await?
-        .expect("not supported");
+    let asset_dash_dir = storage.local_path(&storage_key::dash_file(file_id, format_args!("")));
     tokio::fs::create_dir_all(&asset_dash_dir)
         .await
         .wrap_err_with(|| format!("error creating directory {}", asset_dash_dir))?;
 
     match &package_video.task {
         PackageVideoTask::DashSegment => {
-            let orig_dash_dir = storage
-                .local_path(&storage_key::dash_file(file_id, format_args!("original")))
-                .await?
-                .expect("not supported");
+            let orig_dash_dir =
+                storage.local_path(&storage_key::dash_file(file_id, format_args!("original")));
             tracing::trace!(path=?orig_dash_dir, ?file_id, "deleting DASH files");
             match tokio::fs::remove_dir_all(&orig_dash_dir).await {
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -148,11 +143,7 @@ pub async fn do_package_video(
             include_audio,
             segment_duration,
         } => {
-            let out_dir = match storage {
-                Storage::LocalFileStorage(local_file_storage) => {
-                    local_file_storage.root.join(&package_video.output_key)
-                }
-            };
+            let out_dir = storage.local_path(&package_video.output_key);
             processing::video::gpac::create_ghi_and_manifest(
                 &file_path.path_on_disk(),
                 &CreateGHIOptions {
@@ -447,11 +438,19 @@ pub async fn do_package_video(
     // TODO: set full profile
     let mut merged_manifest = merged_manifest.expect("at least one manifest was just created");
     merged_manifest.periods[0].adaptations = adaptation_sets;
-    storage
-        .open_write_stream(&storage_key::dash_file(file_id, format_args!("stream.mpd")))
-        .await?
+
+    let mpd_path = storage_key::dash_file(file_id, format_args!("stream.mpd"));
+    tokio::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .read(true)
+        .write(true)
+        .open(&mpd_path)
+        .await
+        .wrap_err_with(|| format!("error opening file {mpd_path} for writing"))?
         .write_all(merged_manifest.to_string().as_bytes())
-        .await?;
+        .await
+        .wrap_err_with(|| format!("error writing mpd manifest at {mpd_path}"))?;
 
     if let PackageVideoTask::CreateGHIIndex { .. } | PackageVideoTask::DashSegment =
         package_video.task

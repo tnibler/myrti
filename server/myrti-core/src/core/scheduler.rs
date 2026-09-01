@@ -54,7 +54,6 @@ pub struct SchedulerHandle {
 #[repr(usize)]
 enum Actors {
     Indexing,
-    VideoPackaging,
 }
 
 #[derive(Debug, Default)]

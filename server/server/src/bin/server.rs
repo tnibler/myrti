@@ -29,7 +29,7 @@ use myrti_core::{
     config::Config,
     core::{
         scheduler::{SchedulerHandle, SchedulerMessage},
-        storage::{LocalFileStorage, Storage},
+        storage::Storage,
     },
 };
 use myrti_data::db::DbPool;
@@ -214,7 +214,7 @@ async fn main() -> Result<()> {
 
     let pool = db_setup(db_path).await.unwrap();
     store_asset_roots_from_config(config_dir, &config, &pool).await?;
-    let storage: Storage = LocalFileStorage::new(data_dir_path).into();
+    let storage = Storage::new(data_dir_path);
     let (scheduler_did_shutdown_send, scheduler_did_shutdown_recv) = oneshot::channel();
     let scheduler = SchedulerHandle::new(
         pool.clone(),

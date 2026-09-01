@@ -7,15 +7,13 @@ use myrti_data::model::*;
 use myrti_data::repository::duplicate_asset::NewDuplicateAsset;
 use myrti_data::{interact, repository};
 
+use crate::processing::video::ffprobe_get_streams;
 use crate::{
     config,
     processing::{self, hash::hash_file},
 };
 
-use super::{
-    media_metadata::{TimestampGuess, figure_out_utc_timestamp, read_media_metadata},
-    video::{FFProbe, streams::FFProbeStreamsTrait},
-};
+use super::media_metadata::{TimestampGuess, figure_out_utc_timestamp, read_media_metadata};
 
 pub async fn try_index_file(
     path: &Path,
@@ -69,7 +67,7 @@ async fn index_file(
     // image, same with ffprobe and video
     let (create_asset_spe, size): (CreateAssetSpe, Size) = match metadata.file.mime_type.as_ref() {
         Some(mime) if mime.starts_with("video") => {
-            let (ffprobe_output, streams) = match FFProbe::streams(path, ffprobe_path).await {
+            let (ffprobe_output, streams) = match ffprobe_get_streams(path, ffprobe_path).await {
                 Ok(r) => r,
                 Err(err) => {
                     tracing::debug!(%path, %err, "Could not get stream info with ffprobe, ignoring file");

@@ -6,9 +6,5 @@ pub mod process_control;
 pub mod startup_self_check;
 pub mod video;
 
-pub mod commands {
-    pub use super::video::ffmpeg::FFmpeg;
-}
-
 #[cfg(test)]
 mod test;

@@ -1,6 +1,7 @@
 use std::ffi::OsString;
 
 use eyre::{Context, Result, eyre};
+use itertools::Itertools;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::mpsc,
@@ -22,10 +23,9 @@ use crate::{
     core::storage::{Storage, StorageProvider},
     processing::{
         self,
-        commands::FFmpeg,
         process_control::ProcessControl,
         video::{
-            ffmpeg::{FFmpegLocalOutputTrait, FFmpegTrait},
+            ffmpeg::run_ffmpeg,
             ffprobe_get_streams,
             gpac::{CreateGHIOptions, DasherOptions},
             mp4_rotate::copy_mp4_rotation_metadata,
@@ -195,16 +195,16 @@ pub async fn do_package_video(
                 .try_into()
                 .expect("temp files should have utf8 paths");
 
-            FFmpeg::new(
-                Vec::default(),
-                ffmpeg_audio_flags(transcode)
-                    .into_iter()
-                    .map(OsString::from)
-                    .collect(),
-            )
-            .run_with_local_output(
+            let pre_input_flags = [];
+            let audio_flags = ffmpeg_audio_flags(transcode)
+                .into_iter()
+                .map(OsString::from)
+                .collect_vec();
+            run_ffmpeg(
                 file_path.path_on_disk().as_str(),
                 &utf8_path,
+                &pre_input_flags,
+                &audio_flags,
                 ffmpeg_path,
                 &mut process_control_recv,
             )
@@ -266,17 +266,16 @@ pub async fn do_package_video(
             } else {
                 vec![]
             };
-            FFmpeg::new(
-                pre_input_flags,
-                ffmpeg_video_flags(transcode)
-                    .into_iter()
-                    .chain(std::iter::once("-an".to_owned()))
-                    .map(OsString::from)
-                    .collect(),
-            )
-            .run_with_local_output(
+            let video_flags = ffmpeg_video_flags(transcode)
+                .into_iter()
+                .chain(std::iter::once("-an".to_owned()))
+                .map(OsString::from)
+                .collect_vec();
+            run_ffmpeg(
                 file_path.path_on_disk().as_str(),
                 &utf8_path,
+                &pre_input_flags,
+                &video_flags,
                 ffmpeg_path,
                 &mut process_control_recv,
             )

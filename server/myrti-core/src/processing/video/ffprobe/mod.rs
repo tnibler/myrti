@@ -1,6 +1,4 @@
 mod command;
-pub mod streams;
-pub mod video_rotation;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FFProbeStreams {
@@ -26,8 +24,6 @@ pub struct VideoStream {
     pub duration_ms: Option<i64>,
     pub avg_frame_rate: Option<(i32, i32)>,
 }
-
-pub struct FFProbe {}
 
 pub use command::{
     ffprobe_get_max_iframe_interval, ffprobe_get_streams, ffprobe_get_streams_from_json,

@@ -3,14 +3,12 @@ use std::process::Stdio;
 use camino::Utf8Path as Path;
 use eyre::{Context, Result};
 use tokio::process::Command;
-use tracing::instrument;
 
 use crate::processing::{
-    process_control::{run_process, ProcessControlReceiver, RunProcessOpts},
+    process_control::{ProcessControlReceiver, RunProcessOpts, run_process},
     video::ffmpeg::FFmpegError,
 };
 
-#[instrument(skip(control_recv))]
 pub async fn ffmpeg_snapshot(
     video_path: &Path,
     output: &Path,

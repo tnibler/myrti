@@ -552,7 +552,6 @@ pub fn get_ffprobe_output(conn: &mut DbConn, video_file_id: FileId) -> Result<Ve
 pub fn get_files_without_thumbhash(conn: &mut DbConn) -> Result<Vec<FileId>> {
     use schema::{AssetFile, AssetThumbnail};
     let rows = AssetFile::table
-        .inner_join(AssetThumbnail::table)
         .filter(
             AssetFile::thumb_hash.is_null().and(
                 AssetFile::asset_type
@@ -561,16 +560,21 @@ pub fn get_files_without_thumbhash(conn: &mut DbConn) -> Result<Vec<FileId>> {
                     // to create a thumbhash from
                     .or(AssetFile::asset_type
                         .eq(to_db_asset_ty(AssetType::Video))
-                        .and(
-                            AssetThumbnail::ty
-                                .eq(to_db_thumbnail_type(ThumbnailType::LargeOrigAspect)),
-                        )),
+                        .and(diesel::dsl::exists(
+                            AssetThumbnail::table.filter(
+                                AssetThumbnail::file_id.eq(AssetFile::file_id).and(
+                                    AssetThumbnail::ty
+                                        .eq(to_db_thumbnail_type(ThumbnailType::LargeOrigAspect)),
+                                ),
+                            ),
+                        ))),
             ),
         )
         .select(AssetFile::file_id)
         .limit(1000)
         .get_results(conn)
         .wrap_err("error querying table AssetFile")?;
+    debug_assert_eq!(rows.iter().unique().count(), rows.len());
     Ok(rows.into_iter().map(FileId).collect())
 }
 

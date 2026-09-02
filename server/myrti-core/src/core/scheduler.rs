@@ -11,9 +11,9 @@ use myrti_data::db::{DbPool, PooledDbConn};
 use myrti_data::model::{AssetId, AssetRootDirId, AssetSpe, FileId};
 use myrti_data::{interact, repository};
 
-use crate::core::image_processor::{
-    ImageJob, ImageJobProcessor, ImageProcessingMsg, JobError, JobId,
-};
+use crate::core::image_processor::{ImageJob, ImageJobProcessor, ImageProcessingMsg};
+use crate::core::job_control::{JobError, JobId};
+use crate::core::video_processor::{VideoJob, VideoJobProcessor, VideoProcessingMsg};
 use crate::{
     actor::indexing::{IndexingActorHandle, MsgFromIndexing},
     catalog::{
@@ -73,7 +73,9 @@ struct Scheduler {
 
     indexing_actor: IndexingActorHandle,
     image_proc: ImageJobProcessor,
+    video_proc: VideoJobProcessor,
     dropped_image_jobs: bool,
+    dropped_video_jobs: bool,
 }
 
 impl SchedulerHandle {
@@ -92,8 +94,17 @@ impl SchedulerHandle {
             from_indexing_send,
         );
 
-        let (from_imageproc_send, from_thumbnail_recv) = mpsc::channel(100);
+        let (from_imageproc_send, from_imageproc_recv) = mpsc::channel(100);
+        let (from_videoproc_send, from_videoproc_recv) = mpsc::channel(100);
 
+        let video_proc = VideoJobProcessor::new(
+            2.try_into().unwrap(),
+            100.try_into().unwrap(),
+            from_videoproc_send,
+            db_pool.clone(),
+            storage.clone(),
+            config.clone(),
+        );
         let image_proc = ImageJobProcessor::new(
             4.try_into().unwrap(),
             1000.try_into().unwrap(),
@@ -114,13 +125,16 @@ impl SchedulerHandle {
             actor_states: Default::default(),
             indexing_actor: indexing_actor.clone(),
             image_proc,
+            video_proc,
             dropped_image_jobs: false,
+            dropped_video_jobs: false,
         };
         tokio::spawn(run_scheduler(
             sched,
             recv,
             from_indexing_recv,
-            from_thumbnail_recv,
+            from_imageproc_recv,
+            from_videoproc_recv,
         ));
         Self { send }
     }
@@ -130,7 +144,8 @@ async fn run_scheduler(
     mut sched: Scheduler,
     mut recv: mpsc::Receiver<SchedulerMessage>,
     mut indexing_recv: mpsc::UnboundedReceiver<MsgFromIndexing>,
-    mut thumbnail_recv: mpsc::Receiver<ImageProcessingMsg>,
+    mut imageproc_recv: mpsc::Receiver<ImageProcessingMsg>,
+    mut videoproc_recv: mpsc::Receiver<VideoProcessingMsg>,
 ) {
     let mut have_written_to_disk = true;
     let mut reindex_interval = {
@@ -172,9 +187,15 @@ async fn run_scheduler(
                     tracing::error!(?err, "error in scheduler");
                 }
             }
-            Some(thumbnail_msg) = thumbnail_recv.recv() => {
+            Some(msg) = imageproc_recv.recv() => {
                 have_written_to_disk = true;
-                if let Err(err) = sched.on_image_msg(thumbnail_msg).await {
+                if let Err(err) = sched.on_image_msg(msg).await {
+                    tracing::error!(?err, "error in scheduler");
+                }
+            }
+            Some(msg) = videoproc_recv.recv() => {
+                have_written_to_disk = true;
+                if let Err(err) = sched.on_video_msg(msg).await {
                     tracing::error!(?err, "error in scheduler");
                 }
             }
@@ -269,11 +290,11 @@ impl Scheduler {
                 .await?;
                 for vid_pack in video_packaging_required {
                     if self
-                        .image_proc
-                        .enqueue_job(vid_pack.file_id, ImageJob::PackageVideo(vid_pack))
+                        .video_proc
+                        .enqueue_job(VideoJob::PackageVideo(vid_pack))
                         .is_err()
                     {
-                        self.dropped_image_jobs = true;
+                        self.dropped_video_jobs = true;
                     }
                 }
             }
@@ -323,10 +344,38 @@ impl Scheduler {
         }
         self.image_proc.on_job_finished(job_id);
         if self.dropped_image_jobs && self.image_proc.queued() == 0 {
-            tracing::debug!("job queue empty, enqueueing any dropped jobs");
+            tracing::debug!("image job queue empty, enqueueing any dropped jobs");
             let mut conn = self.db_pool.get().await?;
             self.dropped_image_jobs = false;
             self.enqueue_required_image_jobs(&mut conn).await?;
+        }
+        Ok(())
+    }
+
+    async fn on_video_msg(
+        &mut self,
+        (job_id, result): (JobId, Result<Result<()>, JobError>),
+    ) -> Result<()> {
+        match result {
+            Err(JobError::Cancelled) => {
+                tracing::debug!(?job_id, "video job cancelled");
+            }
+            Err(JobError::Other(err)) => {
+                tracing::warn!(?job_id, ?err, "video job encountered an error");
+            }
+            Ok(Err(err)) => {
+                tracing::warn!(?job_id, ?err, "video job encountered an error");
+            }
+            Ok(Ok(())) => {
+                tracing::trace!(?job_id, "video job completed");
+            }
+        }
+        self.video_proc.on_job_finished(job_id);
+        if self.dropped_video_jobs && self.video_proc.queued() == 0 {
+            tracing::debug!("video job queue empty, enqueueing any dropped jobs");
+            let mut conn = self.db_pool.get().await?;
+            self.dropped_video_jobs = false;
+            self.enqueue_required_video_jobs(&mut conn).await?;
         }
         Ok(())
     }
@@ -382,8 +431,8 @@ impl Scheduler {
                         Ok(tasks) => {
                             for p in tasks {
                                 if self
-                                    .image_proc
-                                    .enqueue_job(p.file_id, ImageJob::PackageVideo(p))
+                                    .video_proc
+                                    .enqueue_job(VideoJob::PackageVideo(p))
                                     .is_err()
                                 {
                                     self.dropped_image_jobs = true;
@@ -459,15 +508,17 @@ impl Scheduler {
             },
             SchedulerMessage::PauseAllProcessing => {
                 self.image_proc.pause_all();
+                self.video_proc.pause_all();
             }
             SchedulerMessage::ResumeAllProcessing => {
                 self.image_proc.resume_all();
+                self.video_proc.resume_all();
             }
             SchedulerMessage::PauseVideoPackaging => {
-                todo!()
+                self.video_proc.pause_all();
             }
             SchedulerMessage::ResumeVideoPackaging => {
-                todo!()
+                self.video_proc.resume_all();
             }
             SchedulerMessage::Shutdown => {
                 if !self.waiting_for_shutdown {
@@ -476,6 +527,7 @@ impl Scheduler {
                         .msg_shutdown()
                         .expect("receiver must be alive");
                     self.image_proc.cancel_all();
+                    self.video_proc.cancel_all();
                     let did_shutdown_recvs = self
                         .actor_did_shutdown_recvs
                         .take()
@@ -530,6 +582,9 @@ impl Scheduler {
         if let Err(err) = self.enqueue_required_image_jobs(&mut conn).await {
             tracing::error!(?err, "Error enqueuing image processing jobs");
         }
+        if let Err(err) = self.enqueue_required_video_jobs(&mut conn).await {
+            tracing::error!(?err, "Error enqueuing video processing jobs");
+        }
         // for album_thumb in album_thumbnails_required {
         //     let _ = self.thumbnail_actor.msg_create_album_thumbnail(album_thumb);
         // }
@@ -583,15 +638,18 @@ impl Scheduler {
                 self.dropped_image_jobs = true;
             }
         }
+        Ok(())
+    }
 
+    async fn enqueue_required_video_jobs(&mut self, conn: &mut PooledDbConn) -> Result<()> {
         let video_packaging_required = rules::video_packaging_due(conn).await?;
         for v in video_packaging_required {
             if self
-                .image_proc
-                .enqueue_job(v.file_id, ImageJob::PackageVideo(v))
+                .video_proc
+                .enqueue_job(VideoJob::PackageVideo(v))
                 .is_err()
             {
-                self.dropped_image_jobs = true;
+                self.dropped_video_jobs = true;
             }
         }
         Ok(())

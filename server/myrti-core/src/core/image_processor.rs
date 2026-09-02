@@ -15,61 +15,31 @@ use myrti_data::{interact, repository};
 use crate::catalog::image_conversion_target::heif::AvifTarget;
 use crate::catalog::image_conversion_target::{ImageFormatTarget, image_format_name};
 use crate::catalog::operation::convert_image::ConvertImage;
-use crate::catalog::operation::package_video::{PackageVideo, do_package_video};
 use crate::config::Config;
+use crate::core::job_control::{
+    JobControl, JobControlMsg, JobControlRecv, JobError, JobId, new_job_control, run_process_loop,
+};
 use crate::processing;
 use crate::processing::image::thumbnail::{
     ThumbnailParams, ThumbnailResult, generate_thumbnail, generate_video_thumbnail,
 };
-use crate::processing::process_control::ProcessControl;
 use crate::{
     catalog::storage_key, core::storage::Storage,
     processing::process_control::ProcessControlReceiver,
 };
 
-#[derive(Debug, thiserror::Error)]
-pub enum JobError {
-    #[error("Job was cancelled")]
-    Cancelled,
-    #[error("Job failed")]
-    Other(#[from] eyre::Report),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct JobId(u64);
-
 #[derive(Clone)]
 struct RunningJob {
     control: JobControl,
-    jobs: Vec<ImageJob>,
-}
-
-#[derive(Clone)]
-struct JobControl {
-    send: mpsc::UnboundedSender<JobControlMsg>,
-}
-
-pub struct JobControlRecv {
-    pub recv: mpsc::UnboundedReceiver<JobControlMsg>,
-}
-
-#[derive(Debug, Clone)]
-pub enum JobControlMsg {
-    Pause,
-    Resume,
-    Cancel,
-}
-
-fn new_job_control() -> (JobControl, JobControlRecv) {
-    let (send, recv) = mpsc::unbounded_channel();
-    (JobControl { send }, JobControlRecv { recv })
+    job: ImageJob,
 }
 
 #[derive(Clone)]
 pub(super) struct ImageJobProcessor {
     max_running: usize,
     max_queued: usize,
-    queue: VecDeque<(JobId, FileId, Vec<ImageJob>)>,
+    queue: VecDeque<(FileId, VecDeque<(JobId, ImageJob)>)>,
+    n_queued: usize,
     accepting_new: bool,
     // back up to scheduler
     result_send: mpsc::Sender<ImageProcessingMsg>,
@@ -89,7 +59,6 @@ pub(super) enum ImageJob {
     },
     CreateThumbhash,
     ConvertImage(ConvertImage),
-    PackageVideo(PackageVideo),
 }
 
 pub(super) type ImageProcessingMsg = (JobId, Result<Result<()>, JobError>);
@@ -107,6 +76,7 @@ impl ImageJobProcessor {
             max_running: max_running.get(),
             max_queued: max_queued.get(),
             queue: Default::default(),
+            n_queued: 0,
             accepting_new: true,
             result_send,
             running_jobs: Default::default(),
@@ -118,37 +88,59 @@ impl ImageJobProcessor {
     }
 
     pub fn enqueue_job(&mut self, file_id: FileId, job: ImageJob) -> Result<JobId, ImageJob> {
-        if let Some((job_id, _file_id, jobs)) = self
+        if !self.accepting_new || self.n_queued >= self.max_queued {
+            return Err(job);
+        }
+        let job_id = self.new_job_id();
+
+        if let Some((_file_id, jobs)) = self
             .queue
             .iter_mut()
-            .rfind(|(_job_id, queued_file_id, _jobs)| *queued_file_id == file_id)
+            .rfind(|(queued_file_id, _jobs)| *queued_file_id == file_id)
         {
-            jobs.push(job);
-            Ok(*job_id)
-        } else if self.accepting_new && self.running_jobs.len() < self.max_running {
-            let job_id = self.new_job_id();
-            self.start_job(job_id, file_id, vec![job]);
-            Ok(job_id)
-        } else if self.queue.len() < self.max_queued {
-            let job_id = self.new_job_id();
-            self.queue.push_back((job_id, file_id, vec![job]));
-            Ok(job_id)
+            jobs.push_back((job_id, job));
+            self.n_queued += 1;
+        } else if self.running_jobs.len() < self.max_running {
+            self.start_job(file_id, job_id, job);
         } else {
-            Err(job)
+            self.queue
+                .push_back((file_id, VecDeque::from([(job_id, job)])));
+            self.n_queued += 1;
         }
+        debug_assert_eq!(
+            self.n_queued,
+            self.queue.iter().map(|(_, jobs)| jobs.len()).sum::<usize>()
+        );
+        Ok(job_id)
     }
 
     pub fn try_dequeue(&mut self) {
         let mut dequeued_count = 0;
         while self.accepting_new && self.running_jobs.len() < self.max_running {
-            if let Some((job_id, file_id, jobs)) = self.queue.pop_front() {
-                dequeued_count += 1;
-                self.start_job(job_id, file_id, jobs);
-            } else {
-                break;
+            let deq = self
+                .queue
+                .front_mut()
+                .map(|(file_id, jobs)| (*file_id, jobs.pop_front()));
+            match deq {
+                Some((file_id, Some((job_id, job)))) => {
+                    self.n_queued -= 1;
+                    dequeued_count += 1;
+                    self.start_job(file_id, job_id, job);
+                }
+                Some((_, None)) => {
+                    unreachable!(
+                        "empty lists are never pushed to the queue and immediately removed after dequeueing"
+                    );
+                }
+                None => break,
             }
+            self.queue.pop_front_if(|(_, jobs)| jobs.is_empty());
         }
-        let remaining_queued = self.queued();
+        debug_assert_eq!(
+            self.n_queued,
+            self.queue.iter().map(|(_, jobs)| jobs.len()).sum::<usize>()
+        );
+        let remaining_queued = self.n_queued;
         tracing::trace!(dequeued_count, remaining_queued, "try_dequeue");
     }
 
@@ -177,33 +169,32 @@ impl ImageJobProcessor {
     }
 
     pub fn on_job_finished(&mut self, job_id: JobId) {
-        if self.running_jobs.remove(&job_id).is_none() {
-            tracing::error!(?job_id, "tried removing non existing job from running_jobs");
-        }
+        self.running_jobs
+            .remove(&job_id)
+            .expect("tried removing non existing job from running_jobs");
         self.try_dequeue();
     }
 
     pub fn queued(&self) -> usize {
-        self.queue.len()
+        self.n_queued
     }
 
-    fn start_job(&mut self, job_id: JobId, file_id: FileId, jobs: Vec<ImageJob>) {
-        tracing::trace!(?job_id, ?file_id, "starting job");
+    fn start_job(&mut self, file_id: FileId, job_id: JobId, job: ImageJob) {
         assert!(self.running_jobs.len() < self.max_running);
+        tracing::trace!(?job_id, ?file_id, "starting job");
         let (control_send, control_recv) = new_job_control();
         let result_send = self.result_send.clone();
         self.running_jobs.insert(
             job_id,
             RunningJob {
                 control: control_send,
-                jobs: jobs.clone(),
+                job: job.clone(),
             },
         );
         let db_pool = self.db_pool.clone();
         let storage = self.storage.clone();
-        let config = self.config.clone();
         tokio::task::spawn(async move {
-            let result = process(db_pool, storage, config, file_id, jobs, control_recv).await;
+            let result = process(db_pool, storage, file_id, job, control_recv).await;
             let _ = result_send.send((job_id, result)).await;
         });
     }
@@ -217,56 +208,39 @@ impl ImageJobProcessor {
 async fn process(
     db_pool: DbPool,
     storage: Storage,
-    config: Config,
     file_id: FileId,
-    jobs: Vec<ImageJob>,
+    job: ImageJob,
     mut control_recv: JobControlRecv,
 ) -> Result<Result<()>, JobError> {
     let mut conn = db_pool.get().await?;
-    for job in jobs {
-        match job {
-            ImageJob::CreateThumbnail {
-                thumbnail_types,
-                formats,
-            } => {
-                tracing::trace!(?file_id, ?thumbnail_types, ?formats, "create thumbnail");
-                let (process_control_send, mut process_control_recv) = mpsc::channel(1);
-                let result_fut = generate_asset_thumbnail(
-                    &mut conn,
-                    &storage,
-                    file_id,
-                    &thumbnail_types,
-                    &formats,
-                    &mut process_control_recv,
-                );
-                run_process_loop(result_fut, &mut control_recv, process_control_send).await??;
-            }
-            ImageJob::CreateThumbhash => {
-                tracing::trace!(?file_id, "create thumbhash");
-                generate_thumbhash(&mut conn, &storage, file_id)
-                    .await
-                    .wrap_err("error generating asset thumbhash")?;
-            }
-            ImageJob::ConvertImage(convert_op) => {
-                tracing::trace!(?file_id, ?convert_op, "converting image");
-                convert_image(&mut conn, &storage, convert_op)
-                    .await
-                    .wrap_err("error converting image")?;
-            }
-            ImageJob::PackageVideo(package_op) => {
-                tracing::trace!(?file_id, ?package_op, "packaging video");
-                let (process_control_send, process_control_recv) = tokio::sync::mpsc::channel(1);
-                let result_fut = do_package_video(
-                    &db_pool,
-                    &storage,
-                    package_op.clone(),
-                    config.bin_paths.as_ref(),
-                    process_control_recv,
-                );
-                run_process_loop(result_fut, &mut control_recv, process_control_send)
-                    .await
-                    .wrap_err("error running video packaging job")??;
-            }
+    match job {
+        ImageJob::CreateThumbnail {
+            thumbnail_types,
+            formats,
+        } => {
+            tracing::trace!(?file_id, ?thumbnail_types, ?formats, "create thumbnail");
+            let (process_control_send, mut process_control_recv) = mpsc::channel(1);
+            let result_fut = generate_asset_thumbnail(
+                &mut conn,
+                &storage,
+                file_id,
+                &thumbnail_types,
+                &formats,
+                &mut process_control_recv,
+            );
+            run_process_loop(result_fut, &mut control_recv, process_control_send).await??;
+        }
+        ImageJob::CreateThumbhash => {
+            tracing::trace!(?file_id, "create thumbhash");
+            generate_thumbhash(&mut conn, &storage, file_id)
+                .await
+                .wrap_err("error generating asset thumbhash")?;
+        }
+        ImageJob::ConvertImage(convert_op) => {
+            tracing::trace!(?file_id, ?convert_op, "converting image");
+            convert_image(&mut conn, &storage, convert_op)
+                .await
+                .wrap_err("error converting image")?;
         }
     }
     Ok(Ok(()))
@@ -428,42 +402,4 @@ async fn convert_image(conn: &mut PooledDbConn, storage: &Storage, op: ConvertIm
     })
     .await??;
     Ok(())
-}
-
-async fn run_process_loop<T>(
-    fut: impl Future<Output = T>,
-    ctl_recv: &mut JobControlRecv,
-    process_control_send: mpsc::Sender<ProcessControl>,
-) -> Result<T, JobError> {
-    let mut was_cancelled = false;
-    let mut fut = std::pin::pin!(fut);
-    loop {
-        tokio::select! {
-            result = &mut fut => {
-                if was_cancelled {
-                    return Err(JobError::Cancelled)
-                } else {
-                    return Ok(result);
-                }
-            }
-            Some(msg) = ctl_recv.recv.recv() => {
-                if was_cancelled {
-                    continue;
-                }
-                let (process_control, will_cancel) = match msg {
-                    JobControlMsg::Pause => (ProcessControl::Suspend, false),
-                    JobControlMsg::Resume => (ProcessControl::Resume, false),
-                    JobControlMsg::Cancel => (ProcessControl::Quit, true),
-                };
-                match process_control_send.send(process_control).await {
-                    Ok(_) => {
-                        was_cancelled = will_cancel;
-                    }
-                    Err(err) => {
-                        return Err(JobError::Other(eyre::Report::from(err).wrap_err("error sending process control message")));
-                    }
-                };
-            }
-        }
-    }
 }

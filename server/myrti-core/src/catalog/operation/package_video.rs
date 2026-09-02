@@ -439,7 +439,7 @@ pub async fn do_package_video(
     let mut merged_manifest = merged_manifest.expect("at least one manifest was just created");
     merged_manifest.periods[0].adaptations = adaptation_sets;
 
-    let mpd_path = storage_key::dash_file(file_id, format_args!("stream.mpd"));
+    let mpd_path = storage.local_path(&storage_key::dash_file(file_id, format_args!("stream.mpd")));
     tokio::fs::OpenOptions::new()
         .create(true)
         .truncate(true)

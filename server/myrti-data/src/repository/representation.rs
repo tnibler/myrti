@@ -177,7 +177,11 @@ pub fn get_audio_representations(
 ) -> Result<Vec<AudioRepresentation>> {
     use schema::AudioRepresentation;
     let db_reprs: Vec<DbAudioRepresentation> = AudioRepresentation::table
-        .filter(AudioRepresentation::file_id.eq(file_id.0))
+        .filter(
+            AudioRepresentation::file_id
+                .eq(file_id.0)
+                .and(AudioRepresentation::created_status.eq(1)),
+        )
         .load(conn)?;
     db_reprs
         .into_iter()

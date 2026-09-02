@@ -81,8 +81,11 @@ async fn index_file(
                     bin_paths.and_then(|p| p.ffprobe.as_deref()),
                 )
                 .await?;
-                if let Some((interval_frames, interval_seconds)) = max_iframe_interval {
-                    (interval_seconds < 20.0, Some(interval_frames))
+                if let Some(interval_seconds) = max_iframe_interval {
+                    (
+                        interval_seconds < 20.0,
+                        Some((interval_seconds * 1000.0).round() as i32),
+                    )
                 } else {
                     (false, None)
                 }

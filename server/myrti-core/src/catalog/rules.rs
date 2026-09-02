@@ -416,8 +416,7 @@ async fn check_create_ghi_task(
             })
             .await??;
 
-            let gop_time =
-                (max_iframe_interval as f32 / frame_rate_num as f32) * frame_rate_denom as f32;
+            let gop_time = max_iframe_interval as f32 / 1000.0;
             let segment_duration = gop_time.clamp(1.0, 10.0).round() as i32;
             PackageVideoTask::CreateGHIIndex {
                 include_video: orig_vid_streamable,

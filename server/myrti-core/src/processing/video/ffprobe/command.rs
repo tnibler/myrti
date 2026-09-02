@@ -203,7 +203,7 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
 pub async fn ffprobe_get_max_iframe_interval(
     path: &Path,
     ffprobe_bin_path: Option<&Path>,
-) -> Result<Option<(i32, f64)>> {
+) -> Result<Option<f64>> {
     let ffprobe_result = Command::new(ffprobe_bin_path.unwrap_or("ffprobe".into()))
         .args([
             "-v",
@@ -212,6 +212,8 @@ pub async fn ffprobe_get_max_iframe_interval(
             "v:0",
             "-read_intervals",
             "%+20", // read/decode 20 seconds of the stream
+            "-skip_frame",
+            "nointra", // only decode and output I-frames (much faster)
             "-show_entries",
             "frame=pts_time,pict_type",
             "-of",
@@ -225,11 +227,10 @@ pub async fn ffprobe_get_max_iframe_interval(
         .wait_with_output()
         .await
         .wrap_err("ffprobe error")?;
-    let timestamps: Vec<(i32, f64)> = String::from_utf8(ffprobe_result.stdout)?
+    let mut timestamps: Vec<f64> = String::from_utf8(ffprobe_result.stdout)?
         .lines()
         .filter(|line| !line.is_empty()) // timecode or side data entries will produce blank lines
-        .enumerate()
-        .map(|(idx, line)| {
+        .map(|line| {
             let (pts, pict_type) = line
                 .trim_end_matches(',')
                 .split_once(",")
@@ -240,24 +241,23 @@ pub async fn ffprobe_get_max_iframe_interval(
                     line
                 )
             })?;
-            Ok::<_, eyre::Report>((i32::try_from(idx)?, timestamp, pict_type))
+            Ok::<_, eyre::Report>((timestamp, pict_type))
         })
-        .filter_map_ok(|(idx, timestamp, pict_type)| {
+        .filter_map_ok(|(timestamp, pict_type)| {
             if pict_type == "I" {
-                Some((idx, timestamp))
+                Some(timestamp)
             } else {
                 None
             }
         })
         .try_collect()?;
-    if !timestamps.is_sorted_by(|a, b| a < b) {
-        return Err(eyre!("I-Frame timestamps are not ascending. Weird"));
-    }
+    // skipping non-I-frames can lead to packets being decoded out of order (RX-100 Mk VII for instance)
+    timestamps.sort_unstable_by(|a, b| a.total_cmp(b));
     let max_interval = timestamps
         .iter()
         .tuple_windows()
-        .map(|((idx_a, t_a), (idx_b, t_b))| (idx_b - idx_a, t_b - t_a))
-        .max_by_key(|(delta_idx, _delta_t)| *delta_idx);
+        .map(|(t_a, t_b)| t_b - t_a)
+        .max_by(|delta_t1, delta_t2| delta_t1.total_cmp(delta_t2));
     Ok(max_interval)
 }
 

@@ -129,6 +129,7 @@ CREATE TABLE VideoFile (
   -- 2: DASH segmented
   , original_streaming_state INTEGER
     CONSTRAINT enum_original_streaming_state CHECK(original_streaming_state IN (NULL, 0, 1))
+  -- interval in milliseconds
   , max_iframe_interval INTEGER
 
   , CONSTRAINT opt_cols_frame_rate CHECK((frame_rate_num IS NULL) = (frame_rate_denom IS NULL))

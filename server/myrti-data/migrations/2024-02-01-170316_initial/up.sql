@@ -146,7 +146,7 @@ CREATE TABLE VideoFile (
     END
   )
   , UNIQUE(file_id)
-  , FOREIGN KEY (file_id, asset_type) REFERENCES AssetFile(file_id, asset_type)
+  , FOREIGN KEY (file_id, asset_type) REFERENCES AssetFile(file_id, asset_type) DEFERRABLE INITIALLY DEFERRED
 ) STRICT;
 
 CREATE TABLE ImageFile (
@@ -155,7 +155,7 @@ CREATE TABLE ImageFile (
     CONSTRAINT const_asset_type CHECK (asset_type = 1)
   , image_format_name TEXT NOT NULL
   , UNIQUE(file_id)
-  , FOREIGN KEY (file_id, asset_type) REFERENCES AssetFile(file_id, asset_type)
+  , FOREIGN KEY (file_id, asset_type) REFERENCES AssetFile(file_id, asset_type) DEFERRABLE INITIALLY DEFERRED
 ) STRICT;
 
 CREATE TABLE DuplicateFile (

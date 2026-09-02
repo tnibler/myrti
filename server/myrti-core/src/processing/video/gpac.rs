@@ -23,7 +23,7 @@ pub async fn create_ghi_and_manifest(
     gpac_bin_path: Option<&Path>,
     control_recv: &mut ProcessControlReceiver,
 ) -> Result<()> {
-    let mut command = Command::new(gpac_bin_path.unwrap_or("gpac".into()));
+    let mut ghi_command = Command::new(gpac_bin_path.unwrap_or("gpac".into()));
     let input_arg = match (opts.video_rep_id.as_deref(), opts.audio_rep_id.as_deref()) {
         (None, None) => return Err(eyre!("at least one video or audio track must be selected")),
         (Some(v), None) => format!("{}:#Representation=(video){}:tkid=video", input, v),
@@ -32,7 +32,7 @@ pub async fn create_ghi_and_manifest(
         (None, Some(a)) => format!("{}:#Representation=(video)ignored,(audio){}", input, a),
         (Some(v), Some(a)) => format!("{}:#Representation=(video){},(audio){}", input, v, a),
     };
-    command.args([
+    ghi_command.args([
         "-i",
         &input_arg,
         "-o",
@@ -41,22 +41,22 @@ pub async fn create_ghi_and_manifest(
             opts.ghi_out_path, opts.segment_duration
         ),
     ]);
-    tracing::debug!(?command);
-    let child = command.spawn().context("error calling gpac")?;
+    tracing::debug!(?ghi_command);
+    let child = ghi_command.spawn().context("error calling gpac")?;
     run_process(child, RunProcessOpts::with_timeout_secs(3600), control_recv)
         .await
         .wrap_err("Error running gpac to create ghi index")?;
 
-    let mut command = Command::new(gpac_bin_path.unwrap_or("gpac".into()));
+    let mut mpd_command = Command::new(gpac_bin_path.unwrap_or("gpac".into()));
     // gm=main produces broken init segments even though docs say it only writes manifests
-    command.args(["-i", &format!("{}:gm=all", opts.ghi_out_path,), "-o"]);
+    mpd_command.args(["-i", &format!("{}:gm=all", opts.ghi_out_path,), "-o"]);
     if let Some(base) = opts.mpd_base_url.as_ref() {
-        command.arg(format!("{}:base={}:stl=true", opts.mpd_out_path, base));
+        mpd_command.arg(format!("{}:base={}:stl=true", opts.mpd_out_path, base));
     } else {
-        command.arg(format!("{}:stl=true:profile=live", opts.mpd_out_path));
+        mpd_command.arg(format!("{}:stl=true:profile=live", opts.mpd_out_path));
     }
-    tracing::debug!(?command);
-    let child = command.spawn().context("error calling gpac")?;
+    tracing::debug!(?mpd_command);
+    let child = mpd_command.spawn().context("error calling gpac")?;
     if let Err(err) = run_process(child, RunProcessOpts::with_timeout_secs(300), control_recv)
         .await
         .wrap_err("error writing MPD manifest and mp4 init segment with gpac")
@@ -117,9 +117,21 @@ pub async fn create_segment(
     ]);
     tracing::trace!(?command);
     let child = command.spawn().context("error calling gpac")?;
-    run_process(child, RunProcessOpts::with_timeout_secs(60), control_recv)
+    let result = run_process(child, RunProcessOpts::with_timeout_secs(60), control_recv)
         .await
-        .wrap_err("error creating m4s segment with gpac")?;
+        .wrap_err("error creating m4s segment with gpac");
+    if let Err(err) = result {
+        // RX100 Mk VII slow motion video prints this error, but files are still created:
+        // [GHIX] Failed to locate source filter for pid A2
+        // Failed to connect filter mp4dmx PID A2 to filter ghidmx: Internal Service Error
+        let worked_despite_error =
+            tokio::fs::metadata(out_dir.join(format!("{rep_id}-{segment}.m4s")))
+                .await
+                .is_ok_and(|md| md.size() > 100);
+        if !worked_despite_error {
+            return Err(err);
+        }
+    }
     Ok(())
 }
 

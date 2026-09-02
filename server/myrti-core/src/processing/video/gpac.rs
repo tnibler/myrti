@@ -16,7 +16,7 @@ pub struct CreateGHIOptions {
     pub mpd_out_path: PathBuf,
 }
 
-#[tracing::instrument(skip(control_recv))]
+#[tracing::instrument(skip(control_recv), level = "debug")]
 pub async fn create_ghi_and_manifest(
     input: &Path,
     opts: &CreateGHIOptions,
@@ -148,7 +148,7 @@ pub struct DasherOptions<'a> {
     pub segment_duration: i32,
 }
 
-#[tracing::instrument(skip(control_recv))]
+#[tracing::instrument(skip(control_recv), level = "debug")]
 pub async fn run_dasher(
     input_path: &Path,
     out_dir: &Path,

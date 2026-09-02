@@ -27,7 +27,6 @@ impl Storage {
     pub fn new(root: PathBuf) -> Self {
         Self { root }
     }
-    #[tracing::instrument(err, skip(self), level = "trace")]
     pub async fn open_read_stream(
         &self,
         key: &str,
@@ -46,7 +45,6 @@ impl Storage {
         }
     }
 
-    #[tracing::instrument(err, skip(self), level = "trace")]
     pub async fn exists(&self, key: &str) -> Result<bool> {
         let path = self.root.join(key);
         tokio::fs::try_exists(&path)

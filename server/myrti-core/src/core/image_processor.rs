@@ -89,6 +89,7 @@ impl ImageJobProcessor {
 
     pub fn enqueue_job(&mut self, file_id: FileId, job: ImageJob) -> Result<JobId, ImageJob> {
         if !self.accepting_new || self.n_queued >= self.max_queued {
+            tracing::trace!(?file_id, ?job, "not accepting new image job");
             return Err(job);
         }
         let job_id = self.new_job_id();
@@ -98,11 +99,14 @@ impl ImageJobProcessor {
             .iter_mut()
             .rfind(|(queued_file_id, _jobs)| *queued_file_id == file_id)
         {
+            tracing::trace!(?file_id, "adding image job to existing batch for file");
             jobs.push_back((job_id, job));
             self.n_queued += 1;
         } else if self.running_jobs.len() < self.max_running {
+            tracing::trace!(?file_id, "starting image job immediately");
             self.start_job(file_id, job_id, job);
         } else {
+            tracing::trace!(?file_id, "enqueuing image job");
             self.queue
                 .push_back((file_id, VecDeque::from([(job_id, job)])));
             self.n_queued += 1;
@@ -169,6 +173,7 @@ impl ImageJobProcessor {
     }
 
     pub fn on_job_finished(&mut self, job_id: JobId) {
+        tracing::trace!(?job_id, "image job finished");
         self.running_jobs
             .remove(&job_id)
             .expect("tried removing non existing job from running_jobs");

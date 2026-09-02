@@ -452,14 +452,15 @@ impl Scheduler {
                     ) -> Result<Vec<CreateAssetThumbnail>> {
                         let mut conn = db_pool.get().await?;
 
-                        let file_ids = interact!(conn, move |conn| {
-                            repository::asset::delete_thumbnails_for_file(
+                        let (file_ids, n_deleted) = interact!(conn, move |conn| {
+                            let n_affected = repository::asset::delete_thumbnails_for_file(
                                 conn,
                                 file_ids.as_deref(),
                             )?;
-                            Ok(file_ids)
+                            Ok((file_ids, n_affected))
                         })
                         .await??;
+                        tracing::debug!(?n_deleted, "deleted thumbnails");
 
                         let required_thumbnails = if let Some(file_ids) = file_ids {
                             let mut required_thumbnails = Vec::default();

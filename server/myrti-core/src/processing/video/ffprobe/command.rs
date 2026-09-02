@@ -39,7 +39,7 @@ pub fn ffprobe_get_streams_from_json(json: &[u8]) -> Result<FFProbeStreams> {
     })
 }
 
-#[instrument(err)]
+#[instrument(err, level = "debug")]
 pub async fn ffprobe_get_streams(
     path: &Path,
     ffprobe_bin_path: Option<&Path>,
@@ -200,6 +200,7 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
 }
 
 /// Max interval (frame count, seconds) between any 2 I-Frames in video stream, or None if there aren't 2 I-Frames.
+#[tracing::instrument(level = "trace")]
 pub async fn ffprobe_get_max_iframe_interval(
     path: &Path,
     ffprobe_bin_path: Option<&Path>,

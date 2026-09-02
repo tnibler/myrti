@@ -7,7 +7,7 @@ use tokio::{
     sync::mpsc,
 };
 
-use myrti_data::db::DbPool;
+use myrti_data::db::{DbPool, PooledDbConn};
 use myrti_data::model::{
     CreateAudioRepresentation, CreateVideoRepresentation, FileId, IsOriginalStreamable, Size,
     VideoRepresentation,
@@ -73,7 +73,7 @@ pub enum AudioEncodingTarget {
     MP3,
 }
 
-#[tracing::instrument(skip(pool, storage, process_control_recv, bin_paths), level = "debug")]
+#[tracing::instrument(skip_all, fields(?package_video), level = "debug")]
 pub async fn do_package_video(
     pool: &DbPool,
     storage: &Storage,
@@ -82,7 +82,7 @@ pub async fn do_package_video(
     mut process_control_recv: mpsc::Receiver<ProcessControl>,
 ) -> Result<()> {
     let file_id = package_video.file_id;
-    let conn = pool.get().await?;
+    let mut conn = pool.get().await?;
     let (video, file) = interact!(conn, move |conn| {
         repository::asset::get_video_file(conn, file_id)
     })
@@ -329,6 +329,28 @@ pub async fn do_package_video(
         }
     }
 
+    create_merged_manifest(&mut conn, storage, file_id)
+        .await
+        .wrap_err("error creating merged MPD manifes")?;
+
+    if let PackageVideoTask::CreateGHIIndex { .. } | PackageVideoTask::DashSegment =
+        package_video.task
+    {
+        interact!(conn, move |conn| {
+            repository::asset::set_asset_original_streamable_done(conn, file_id, true)
+        })
+        .await??;
+    }
+
+    Ok(())
+}
+
+#[tracing::instrument(skip_all, fields(file_id), level = "trace")]
+async fn create_merged_manifest(
+    conn: &mut PooledDbConn,
+    storage: &Storage,
+    file_id: FileId,
+) -> Result<()> {
     // merge MPD manifests
     let existing_video_reprs = interact!(conn, move |conn| {
         repository::representation::get_video_representations(conn, file_id)
@@ -451,15 +473,6 @@ pub async fn do_package_video(
         .write_all(merged_manifest.to_string().as_bytes())
         .await
         .wrap_err_with(|| format!("error writing mpd manifest at {mpd_path}"))?;
-
-    if let PackageVideoTask::CreateGHIIndex { .. } | PackageVideoTask::DashSegment =
-        package_video.task
-    {
-        interact!(conn, move |conn| {
-            repository::asset::set_asset_original_streamable_done(conn, file_id, true)
-        })
-        .await??;
-    }
 
     Ok(())
 }

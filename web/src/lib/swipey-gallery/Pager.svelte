@@ -432,7 +432,11 @@
       class:transition-opacity={backgroundOpacityTransition}
     ></div>
     {#if viewport.height > 0.0 && viewport.width > 0.0}
-      <div class="absolute top-0 left-0 w-full h-full" style="transform: {transformString};">
+      <div
+        class="absolute top-0 left-0 w-full h-full"
+        style="transform: {transformString};"
+        data-gesture-noclick
+      >
         {#each holderStates as slideHolder (slideHolder.id)}
           <!-- currentShift - 1 because there is still one slideHolder to the left of the viewport when currentShift is 0 -->
           {@const x =
@@ -453,6 +457,7 @@
               gestureController.onPointerUp(e);
             }}
             onpointermove={(e) => gestureController.onPointerMove(e)}
+            data-gesture-noclick
           >
             {#if slideHolder.slide !== null}
               {#key [slideHolder.slide.assetId, slideHolder.slide.assetSeriesId, slideHolder.slide.coverIndex]}

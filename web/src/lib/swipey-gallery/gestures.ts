@@ -89,12 +89,6 @@ export function newGestureController(
   }
 
   function onPointerDown(e: PointerEvent) {
-    if (
-      !e.target.classList.values().find((s) => s === 'shaka-scrim-container') &&
-      e.target.classList.values().find((s) => s.includes('shaka'))
-    ) {
-      return;
-    }
     // Desktop Safari allows to drag images when preventDefault isn't called on mousedown,
     // even though preventDefault IS called on mousemove. That's why we preventDefault mousedown.
     if (e.pointerType === 'mouse') {
@@ -107,7 +101,6 @@ export function newGestureController(
     }
     if (e.type === 'mousedown') {
       onMouseDetected();
-      // TODO gestures.js:194 prevent image dragging default
     }
     gallery.animations.stopAllAnimations();
 
@@ -141,13 +134,6 @@ export function newGestureController(
   }
 
   function onClick(e: MouseEvent) {
-    let node = e.target;
-    while (node && node.classList !== undefined) {
-      if (node.classList.values().find((s) => s.includes('shaka'))) {
-        return;
-      }
-      node = node.parentNode;
-    }
     if (gallery.pager.isShifted) {
       e.preventDefault();
       e.stopPropagation();
@@ -155,6 +141,19 @@ export function newGestureController(
   }
 
   function onPointerUp(e: PointerEvent) {
+    const isClickable = (() => {
+      let node = e.target;
+      if (node.dataset && 'gestureNoclick' in node.dataset) {
+        return false;
+      }
+      while (node && node.dataset) {
+        if ('gestureNoclickRecursive' in node.dataset) {
+          return false;
+        }
+        node = node.parentNode;
+      }
+      return true;
+    })();
     // console.assert(state.points > 0); // not really true, this fires on up events for the entire window
     e.preventDefault();
     if (state.points === 1) {
@@ -163,7 +162,7 @@ export function newGestureController(
         updateDragVelocity(state, true);
         gallery.animations.stopAllAnimations();
         finishDrag(state, gallery);
-      } else {
+      } else if (isClickable) {
         onTap(state.p1, e);
       }
       state = {
@@ -256,13 +255,6 @@ export function newGestureController(
   }
 
   function onTap(p: Point, e: PointerEvent) {
-    let node = e.target;
-    while (node && node.classList !== undefined) {
-      if (node.classList.values().find((s) => s.includes('shaka'))) {
-        return;
-      }
-      node = node.parentNode;
-    }
     if (gallery.pager.isShifted) {
       gallery.pager.moveSlideAnimate('backToCenter');
       return;

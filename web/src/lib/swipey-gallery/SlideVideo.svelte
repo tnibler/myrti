@@ -95,7 +95,11 @@
 </script>
 
 {#if isActive}
-  <div class="flex flex-row items-center" bind:this={videoContainerEl}>
+  <div
+    class="flex flex-row items-center"
+    bind:this={videoContainerEl}
+    data-gesture-noclick-recursive
+  >
     <video
       autoplay={isActive}
       class="flex-1"

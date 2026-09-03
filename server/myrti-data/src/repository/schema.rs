@@ -221,7 +221,7 @@ diesel::table! {
         group_date -> Nullable<BigInt>,
         sort_date -> BigInt,
         segment_date -> Text,
-        section_idx -> Integer,
+        section_idx -> BigInt,
         segment_id -> Integer,
         segment_split_idx -> Nullable<Integer>,
         is_dirty -> Integer,

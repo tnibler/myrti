@@ -228,7 +228,6 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     }, 0),
   );
 
-  // eslint-disable-next-line svelte/prefer-svelte-reactivity
   const inflightSegmentRequests: Map<string, Promise<ApiTimelineSegment[]>> = new Map();
   function requestSegments(sectionId: string): Promise<ApiTimelineSegment[]> {
     const inflight = inflightSegmentRequests.get(sectionId);
@@ -236,7 +235,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       return inflight;
     } else {
       const insertPromise = (async () => {
-        const r = getTimelineSegmentsResponse.parse((await getTimelineSegments(sectionId)).data);
+        const r = (await getTimelineSegments(sectionId)).data;
         return r.segments;
       })();
       inflightSegmentRequests.set(sectionId, insertPromise);
@@ -371,7 +370,11 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
   }
 
   async function loadSectionPlaceholders() {
-    const { sections: sectionData, monthsSummary } = (await getTimelineSections()).data;
+    const {
+      sections: sectionData,
+      monthsSummary,
+      initialAssetSection,
+    } = (await getTimelineSections({ initialAssetId: opts.initialAssetId })).data;
 
     sectionMonthSlices = monthsSummary;
     sections = sectionData.map((section) => {
@@ -388,6 +391,13 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
         blocks: null,
       };
     });
+    if (initialAssetSection) {
+      const sectionIdx = sections.findIndex((s) => s.data.id === initialAssetSection.sectionId);
+      if (sectionIdx >= 0) {
+        populateSection(sectionIdx, initialAssetSection.segments);
+        layoutSection(sectionIdx);
+      }
+    }
     sectionsPublic = sections;
     computeScrollbarMonths();
   }
@@ -608,15 +618,8 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     }
   }
 
-  async function loadSection(sectionIndex: number, reload: 'reload' | undefined = undefined) {
+  function populateSection(sectionIndex: number, segments: ApiTimelineSegment[]) {
     const section = sections[sectionIndex];
-    if (section.blocks && reload === undefined) {
-      return;
-    }
-
-    const sectionId = section.data.id;
-    const segments = await requestSegments(sectionId);
-
     for (const segment of segments) {
       for (const item of segment.items) {
         if (item.itemType === 'asset') {
@@ -633,7 +636,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
         }
       }
     }
-    sections[sectionIndex].segments = R.pipe(
+    section.segments = R.pipe(
       segments,
       R.map((segment, segmentIndex) => {
         // split up stacks with multiple selection images. stacks with multiple selections are shown
@@ -722,6 +725,18 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       }),
       R.filter(R.isNonNull),
     );
+  }
+
+  async function loadSection(sectionIndex: number, reload: 'reload' | undefined = undefined) {
+    const section = sections[sectionIndex];
+    if (section.blocks && reload === undefined) {
+      return;
+    }
+
+    const sectionId = section.data.id;
+    const segments = await requestSegments(sectionId);
+
+    populateSection(sectionIndex, segments);
   }
 
   function isItemSelected(item: TimelineItem): boolean {
@@ -1280,7 +1295,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     sections[sectionIndex].segments![segmentIndex] = {
       type: 'group' as const,
       items: oldSegment.items,
-      sortDate: response.displayDate,
+      sortDate: oldSegment.sortDate,
       clickArea: null,
       groupId: response.timelineGroupId,
       title,

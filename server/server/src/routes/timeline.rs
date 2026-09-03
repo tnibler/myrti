@@ -1,22 +1,25 @@
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     routing::{get, post},
 };
 use chrono::{DateTime, Utc};
-use eyre::Context;
+use eyre::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 use utoipa::{IntoParams, ToSchema};
 
-use myrti_data::repository::timeline::{AssetsInTimeline, TimelineSegmentType};
+use myrti_data::{
+    db::PooledDbConn,
+    repository::timeline::{AssetsInTimeline, TimelineSegmentType},
+};
 use myrti_data::{interact, model, repository};
 
 use crate::{
     app_state::SharedState,
     asset_queries::make_api_asset,
     http_error::ApiResult,
-    schema::{AssetSeriesId, TimelineGroupId, TimelineSectionId, asset::AssetWithSpe},
+    schema::{AssetId, AssetSeriesId, TimelineGroupId, TimelineSectionId, asset::AssetWithSpe},
 };
 
 pub fn router() -> Router<SharedState> {
@@ -28,9 +31,17 @@ pub fn router() -> Router<SharedState> {
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct TimelineSegmentsWithId {
+    pub section_id: TimelineSectionId,
+    pub segments: Vec<TimelineSegment>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct TimelineSectionsResponse {
     pub sections: Vec<TimelineSection>,
     pub months_summary: Vec<Vec<TimelineMonthSlice>>,
+    pub initial_asset_section: Option<TimelineSegmentsWithId>,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -71,15 +82,25 @@ pub async fn rebuild_timeline(State(app_state): State<SharedState>) -> ApiResult
     Ok(())
 }
 
+#[derive(Debug, Clone, Deserialize, ToSchema, IntoParams)]
+#[serde(rename_all = "camelCase")]
+pub struct GetSectionsQuery {
+    pub initial_asset_id: Option<AssetId>,
+}
+
 #[utoipa::path(
     get,
     path = "/api/timeline/sections",
+    params(
+        ("initialAssetId" = Option<AssetId>, Query,),
+    ),
     responses(
         (status = 200, body=TimelineSectionsResponse)
-    )
+    ),
 )]
 #[instrument(skip(app_state))]
 pub async fn get_timeline_sections(
+    Query(query): Query<GetSectionsQuery>,
     State(app_state): State<SharedState>,
 ) -> ApiResult<Json<TimelineSectionsResponse>> {
     let conn = app_state.pool.get().await?;
@@ -126,9 +147,29 @@ pub async fn get_timeline_sections(
                 },
             )
             .1;
+    let initial_asset_section = if let Some(asset_id) = query.initial_asset_id {
+        let asset_id: model::AssetId = asset_id.try_into().wrap_err("invalid initialAssetId")?;
+        let section_id = interact!(conn, move |conn| {
+            repository::timeline::get_section_containing_asset(conn, asset_id)
+        })
+        .await??;
+        if let Some(section_id) = section_id {
+            let segments = build_segments_response(&conn, section_id).await?;
+            Some(TimelineSegmentsWithId {
+                section_id: section_id.into(),
+                segments,
+            })
+        } else {
+            tracing::debug!("no timeline section containing requested asset found");
+            None
+        }
+    } else {
+        None
+    };
     Ok(Json(TimelineSectionsResponse {
         sections,
         months_summary: section_months,
+        initial_asset_section,
     }))
 }
 
@@ -197,6 +238,14 @@ pub async fn get_timeline_segments(
     let section_id: model::TimelineSectionId =
         section_id.try_into().wrap_err("invalid sectionId")?;
     let conn = app_state.pool.get().await?;
+    let segments = build_segments_response(&conn, section_id).await?;
+    Ok(Json(TimelineSegmentsResponse { segments }))
+}
+
+async fn build_segments_response(
+    conn: &PooledDbConn,
+    section_id: model::TimelineSectionId,
+) -> Result<Vec<TimelineSegment>> {
     let segments = interact!(conn, move |conn| {
         repository::timeline::get_segments_in_section(conn, section_id)
     })
@@ -244,5 +293,5 @@ pub async fn get_timeline_segments(
             },
         });
     }
-    Ok(Json(TimelineSegmentsResponse { segments: result }))
+    Ok(result)
 }

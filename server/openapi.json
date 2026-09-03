@@ -740,6 +740,21 @@
           "crate::routes::timeline"
         ],
         "operationId": "getTimelineSections",
+        "parameters": [
+          {
+            "name": "initialAssetId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AssetId"
+                }
+              ],
+              "nullable": true
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1338,6 +1353,19 @@
       "FileId": {
         "type": "string"
       },
+      "GetSectionsQuery": {
+        "type": "object",
+        "properties": {
+          "initialAssetId": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetId"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
       "HideAssetAction": {
         "type": "string",
         "enum": [
@@ -1706,6 +1734,14 @@
           "monthsSummary"
         ],
         "properties": {
+          "initialAssetSection": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TimelineSegmentsWithId"
+              }
+            ],
+            "nullable": true
+          },
           "monthsSummary": {
             "type": "array",
             "items": {
@@ -1755,6 +1791,24 @@
           "segments"
         ],
         "properties": {
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimelineSegment"
+            }
+          }
+        }
+      },
+      "TimelineSegmentsWithId": {
+        "type": "object",
+        "required": [
+          "sectionId",
+          "segments"
+        ],
+        "properties": {
+          "sectionId": {
+            "$ref": "#/components/schemas/TimelineSectionId"
+          },
           "segments": {
             "type": "array",
             "items": {

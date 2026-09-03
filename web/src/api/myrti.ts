@@ -207,6 +207,16 @@ export interface EditTimelineGroupRequest {
 
 export type FileId = string;
 
+/**
+ * @nullable
+ */
+export type GetSectionsQueryInitialAssetId = AssetId | null;
+
+export interface GetSectionsQuery {
+  /** @nullable */
+  initialAssetId?: GetSectionsQueryInitialAssetId;
+}
+
 export type HideAssetAction = (typeof HideAssetAction)[keyof typeof HideAssetAction];
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
@@ -381,7 +391,14 @@ export interface TimelineSection {
 
 export type TimelineSectionId = string;
 
+/**
+ * @nullable
+ */
+export type TimelineSectionsResponseInitialAssetSection = TimelineSegmentsWithId | null;
+
 export interface TimelineSectionsResponse {
+  /** @nullable */
+  initialAssetSection?: TimelineSectionsResponseInitialAssetSection;
   monthsSummary: TimelineMonthSlice[][];
   sections: TimelineSection[];
 }
@@ -394,6 +411,11 @@ export type TimelineSegmentAllOf = {
 export type TimelineSegment = SegmentType & TimelineSegmentAllOf;
 
 export interface TimelineSegmentsResponse {
+  segments: TimelineSegment[];
+}
+
+export interface TimelineSegmentsWithId {
+  sectionId: TimelineSectionId;
   segments: TimelineSegment[];
 }
 
@@ -420,6 +442,13 @@ export type RegenerateThumbnail200 = unknown | null;
  * @nullable
  */
 export type DeleteSeries200 = unknown | null;
+
+export type GetTimelineSectionsParams = {
+  /**
+   * @nullable
+   */
+  initialAssetId?: AssetId | null;
+};
 
 export const getAllAlbums = <TData = AxiosResponse<Album[]>>(
   options?: AxiosRequestConfig,
@@ -585,9 +614,13 @@ export const rebuildTimeline = <TData = AxiosResponse<void>>(
 };
 
 export const getTimelineSections = <TData = AxiosResponse<TimelineSectionsResponse>>(
+  params?: GetTimelineSectionsParams,
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
-  return axios.get(`/api/timeline/sections`, options);
+  return axios.get(`/api/timeline/sections`, {
+    ...options,
+    params: { ...params, ...options?.params },
+  });
 };
 
 export const getTimelineSegments = <TData = AxiosResponse<TimelineSegmentsResponse>>(

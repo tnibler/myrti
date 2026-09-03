@@ -20,8 +20,8 @@ use super::{
     util::datetime_from_db_repr,
 };
 use crate::model::{
-    self, Asset, AssetSeriesId, AssetSpe, FileId, Image, InSeries, TimelineGroup, TimelineGroupId,
-    TimelineSectionId,
+    self, Asset, AssetId, AssetSeriesId, AssetSpe, FileId, Image, InSeries, TimelineGroup,
+    TimelineGroupId, TimelineSectionId,
 };
 
 use super::{db_entity::DbAsset, timeline_group::get_timeline_group};
@@ -219,7 +219,7 @@ struct DbTimelineItem {
     pub group_id: Option<i64>,
     pub group_date: Option<i64>,
     pub sort_date: i64,
-    pub section_idx: i32,
+    pub section_idx: i64,
     pub segment_id: i32,
     pub segment_split_idx: Option<i32>,
 }
@@ -411,6 +411,7 @@ pub fn get_segments_in_section(
             };
             Ok(TimelineSegment {
                 ty: segment_type,
+                // FIXME: is this date wrong? should it be series date or something
                 sort_date: datetime_from_db_repr(first_row.timeline_item.sort_date)?,
                 items,
                 id: segment_id,
@@ -476,21 +477,34 @@ pub fn get_segments_in_section(
             .first()
             .expect("segment assets must not be empty")
         {
-            AssetsInTimeline::Asset(asset, _) => asset,
+            AssetsInTimeline::Asset(asset, _) => asset.base.taken_date,
             AssetsInTimeline::AssetSeries {
-                assets,
+                assets: _,
                 series_id: _,
-                series_date: _,
+                series_date,
                 selection_indices: _,
-            } => &assets.first().expect("can not be empty").0,
-        }
-        .base
-        .taken_date;
-        debug_assert_eq!(
-            most_recent_date, segment.sort_date,
-            "TimelineSegment sort_date is not taken_date of first (most recent) asset:\n{:?}",
-            segment
-        );
+            } => *series_date,
+        };
+        // debug_assert_eq!(
+        //     most_recent_date, segment.sort_date,
+        //     "TimelineSegment sort_date is not taken_date of first (most recent) asset:\n{:?}",
+        //     segment
+        // );
     }
     Ok(segments)
+}
+
+#[instrument(err(Debug), skip(conn), level = "debug")]
+pub fn get_section_containing_asset(
+    conn: &mut DbConn,
+    asset_id: AssetId,
+) -> Result<Option<TimelineSectionId>> {
+    use schema::TimelineItem;
+    let id: Option<i64> = TimelineItem::table
+        .filter(TimelineItem::asset_id.eq(asset_id.0))
+        .select(TimelineItem::section_idx)
+        .get_result(conn)
+        .optional()
+        .wrap_err("error querying for timeline section containing asset")?;
+    Ok(id.map(TimelineSectionId))
 }

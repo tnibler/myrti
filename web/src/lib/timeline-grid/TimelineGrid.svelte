@@ -5,16 +5,10 @@
   import GridTile from '@lib/ui/GridTile.svelte';
   import type { SelectState } from '@lib/ui/GridTile.svelte';
   import CreateGroupInput from './CreateGroupInput.svelte';
-  import type {
-    PositionInTimeline,
-    TimelineBlock,
-    TimelineItem,
-    TimelineSection,
-  } from './timeline-types';
+  import type { TimelineBlock, TimelineItem, TimelineSection } from './timeline-types';
   import type { SlideRef } from '@lib/swipey-gallery/gallery-types';
   import { path } from 'elegua';
   import { fade } from 'svelte/transition';
-  import dayjs, { Dayjs } from 'dayjs';
   import { onDestroy, onMount } from 'svelte';
   import * as R from 'remeda';
   import { imageQueue } from './image-fetch-queue';
@@ -38,6 +32,7 @@
 
   // openedAssetId is passed as prop and set to from the current URL. Pager sets URL when navigating between slides which is then reflected here. kind of a roundabout way to do it?
   const openedItem: TimelineItem | null = $derived.by(() => {
+    timeline.sections;
     if (openedAssetId === null) {
       return null;
     }

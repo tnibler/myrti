@@ -33,7 +33,9 @@
 
   const { openedAssetId } = $props();
 
-  const timeline: ITimelineGrid = $state(createTimeline(layoutConfig));
+  const timeline: ITimelineGrid = $state(
+    createTimeline({ ...layoutConfig, initialAssetId: openedAssetId }),
+  );
   const inSelectionMode = $derived(timeline.numAssetsSelected > 0);
   let timelineScrollWrapper: HTMLElement | null = $state(null);
 

@@ -262,7 +262,158 @@ export const addAssetsToSeriesResponse = zod.object({
   selectionIndices: zod.array(zod.number().min(addAssetsToSeriesResponseSelectionIndicesItemMin)),
 });
 
+export const getTimelineSectionsQueryParams = zod.object({
+  initialAssetId: zod.string().nullish(),
+});
+
+export const getTimelineSectionsResponseInitialAssetSectionSegmentsItemItemsItemSelectionIndicesItemMin = 0;
+
 export const getTimelineSectionsResponse = zod.object({
+  initialAssetSection: zod
+    .object({
+      sectionId: zod.string(),
+      segments: zod.array(
+        zod
+          .union([
+            zod.object({
+              end: zod.string().datetime({}),
+              start: zod.string().datetime({}),
+              type: zod.enum(['dateRange']),
+            }),
+            zod.object({
+              id: zod.string(),
+              name: zod.string().nullish(),
+              type: zod.enum(['userGroup']),
+            }),
+          ])
+          .and(
+            zod.object({
+              items: zod.array(
+                zod.union([
+                  zod
+                    .object({
+                      assetId: zod.string(),
+                      repFile: zod.object({
+                        addedAt: zod.string().datetime({}),
+                        assetRootId: zod.string(),
+                        fileId: zod.string(),
+                        height: zod.number(),
+                        mimeType: zod.string(),
+                        mirrorCorrection: zod.enum(['none', 'horizontal', 'vertical']),
+                        pathInRoot: zod.string(),
+                        rotationCorrection: zod.number(),
+                        thumbhash: zod.string().nullish(),
+                        width: zod.number(),
+                      }),
+                      takenDate: zod.string().datetime({}),
+                    })
+                    .and(
+                      zod.union([
+                        zod
+                          .object({
+                            representations: zod.array(
+                              zod.object({
+                                format: zod.string(),
+                                height: zod.number(),
+                                id: zod.string(),
+                                size: zod.number(),
+                                width: zod.number(),
+                              }),
+                            ),
+                          })
+                          .and(
+                            zod.object({
+                              assetType: zod.enum(['image']),
+                            }),
+                          ),
+                        zod
+                          .object({
+                            hasDash: zod.boolean(),
+                          })
+                          .and(
+                            zod.object({
+                              assetType: zod.enum(['video']),
+                            }),
+                          ),
+                      ]),
+                    )
+                    .and(zod.object({}))
+                    .and(
+                      zod.object({
+                        itemType: zod.enum(['asset']),
+                      }),
+                    ),
+                  zod.object({
+                    assets: zod
+                      .array(
+                        zod
+                          .object({
+                            assetId: zod.string(),
+                            repFile: zod.object({
+                              addedAt: zod.string().datetime({}),
+                              assetRootId: zod.string(),
+                              fileId: zod.string(),
+                              height: zod.number(),
+                              mimeType: zod.string(),
+                              mirrorCorrection: zod.enum(['none', 'horizontal', 'vertical']),
+                              pathInRoot: zod.string(),
+                              rotationCorrection: zod.number(),
+                              thumbhash: zod.string().nullish(),
+                              width: zod.number(),
+                            }),
+                            takenDate: zod.string().datetime({}),
+                          })
+                          .and(
+                            zod.union([
+                              zod
+                                .object({
+                                  representations: zod.array(
+                                    zod.object({
+                                      format: zod.string(),
+                                      height: zod.number(),
+                                      id: zod.string(),
+                                      size: zod.number(),
+                                      width: zod.number(),
+                                    }),
+                                  ),
+                                })
+                                .and(
+                                  zod.object({
+                                    assetType: zod.enum(['image']),
+                                  }),
+                                ),
+                              zod
+                                .object({
+                                  hasDash: zod.boolean(),
+                                })
+                                .and(
+                                  zod.object({
+                                    assetType: zod.enum(['video']),
+                                  }),
+                                ),
+                            ]),
+                          )
+                          .and(zod.object({})),
+                      )
+                      .describe('assets[0] is most recent, last is oldest asset'),
+                    itemType: zod.enum(['assetSeries']),
+                    selectionIndices: zod.array(
+                      zod
+                        .number()
+                        .min(
+                          getTimelineSectionsResponseInitialAssetSectionSegmentsItemItemsItemSelectionIndicesItemMin,
+                        ),
+                    ),
+                    seriesId: zod.string(),
+                  }),
+                ]),
+              ),
+              sortDate: zod.string().datetime({}),
+            }),
+          ),
+      ),
+    })
+    .nullish(),
   monthsSummary: zod.array(
     zod.array(
       zod.object({

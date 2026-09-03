@@ -32,6 +32,8 @@
 
   // openedAssetId is passed as prop and set to from the current URL. Pager sets URL when navigating between slides which is then reflected here. kind of a roundabout way to do it?
   const openedItem: TimelineItem | null = $derived.by(() => {
+    // make sure initial section load triggers update. not nice. if there's an initial asset id in the url on page load, the gallery should start open without the grid showing for a moment, but works okay for now.
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     timeline.sections;
     if (openedAssetId === null) {
       return null;
@@ -461,7 +463,7 @@
       return;
     }
     const rect = scrollbarEl.getBoundingClientRect();
-    const relativeY = e.clientY - rect.top;
+    const relativeY = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
     const month = timeline.monthForScrollbarY(relativeY);
     if (scrubHover) {
       hoverY = relativeY;

@@ -1671,7 +1671,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       return monthHeights;
     },
     monthForScrollbarY: (scrollY: number) => {
-      return monthHeights.find((m) => scrollY < m.topInScrollbar + m.heightInScrollbar);
+      return monthHeights.findLast((m) => m.topInScrollbar <= scrollY);
     },
     monthForScrollY: (scrollY: number) => {
       return monthHeights.find(

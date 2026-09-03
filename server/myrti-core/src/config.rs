@@ -54,7 +54,7 @@ pub struct DataDir {
     pub db_path: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BinPaths {
     pub ffmpeg: Option<PathBuf>,
     pub ffprobe: Option<PathBuf>,

@@ -9,7 +9,7 @@ pub(super) const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 pub fn open_db_pool(sqlite_url: &str) -> Result<DbPool> {
     let manager = Manager::new(sqlite_url, deadpool_diesel::Runtime::Tokio1);
     let pool = Pool::builder(manager)
-        .max_size(8)
+        .max_size(if sqlite_url == ":memory:" { 1 } else { 8 })
         .post_create(Hook::sync_fn(|conn, _| {
             let mut conn = conn.lock().unwrap();
             let res = connection_setup(&mut conn);

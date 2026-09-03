@@ -40,7 +40,7 @@ pub(super) struct VideoJobProcessor {
     queue: VecDeque<(JobId, VideoJob)>,
     accepting_new: bool,
     // back up to scheduler
-    result_send: mpsc::Sender<VideoProcessingMsg>,
+    result_send: Option<mpsc::Sender<VideoProcessingMsg>>,
     running_jobs: HashMap<JobId, RunningJob>,
     next_job_id: u64,
 
@@ -63,7 +63,7 @@ impl VideoJobProcessor {
             max_queued: max_queued.get(),
             queue: Default::default(),
             accepting_new: true,
-            result_send,
+            result_send: Some(result_send),
             running_jobs: Default::default(),
             next_job_id: 0,
             db_pool,
@@ -118,11 +118,17 @@ impl VideoJobProcessor {
     }
 
     pub fn cancel_all(&mut self) {
-        tracing::debug!("cancelling all");
+        let n_jobs = self.running_jobs.len();
+        tracing::debug!(n_jobs, "cancelling all");
         self.accepting_new = false;
         for job in self.running_jobs.values() {
             let _ = job.control.send.send(JobControlMsg::Cancel);
         }
+    }
+
+    pub fn shutdown(&mut self) {
+        self.cancel_all();
+        self.result_send = None;
     }
 
     pub fn on_job_finished(&mut self, job_id: JobId) {
@@ -140,7 +146,7 @@ impl VideoJobProcessor {
         assert!(self.running_jobs.len() < self.max_running);
         tracing::trace!(?job_id, "starting job");
         let (control_send, control_recv) = new_job_control();
-        let result_send = self.result_send.clone();
+        let result_send = self.result_send.clone().expect("must not be shut down");
         self.running_jobs.insert(
             job_id,
             RunningJob {

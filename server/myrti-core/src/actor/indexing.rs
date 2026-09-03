@@ -3,7 +3,7 @@ use std::collections::{HashSet, VecDeque};
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{Context, Result, eyre};
 use globset::GlobSet;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use walkdir::WalkDir;
 
@@ -60,7 +60,6 @@ impl IndexingActorHandle {
     pub fn new(
         db_pool: DbPool,
         config: config::Config,
-        did_shutdown_send: oneshot::Sender<()>,
         send_from_us: mpsc::UnboundedSender<MsgFromIndexing>,
     ) -> Self {
         let (send, recv) = mpsc::unbounded_channel();
@@ -68,7 +67,6 @@ impl IndexingActorHandle {
         let actor = IndexingActor {
             db_pool,
             config,
-            did_shutdown_send: Some(did_shutdown_send),
             send_from_us,
             subtask_send,
             subtask_recv,
@@ -107,7 +105,6 @@ struct IndexingActor {
     pub db_pool: DbPool,
     pub config: config::Config,
     pub send_from_us: mpsc::UnboundedSender<MsgFromIndexing>,
-    did_shutdown_send: Option<oneshot::Sender<()>>,
     subtask_recv: mpsc::UnboundedReceiver<(AssetRootDirId, MsgFromIndexing)>,
     subtask_send: mpsc::UnboundedSender<(AssetRootDirId, MsgFromIndexing)>,
     running_tasks: HashSet<AssetRootDirId>,
@@ -126,6 +123,7 @@ async fn run_indexing_actor(
     loop {
         tokio::select! {
             Some((asset_root_id, msg)) = actor.subtask_recv.recv() => {
+                tracing::trace!(target="indexing", ?msg, "message from subtask");
                 match &msg {
                     MsgFromIndexing::FailedToStartIndexing { root_dir_id, .. }
                     | MsgFromIndexing::IndexingComplete { root_dir_id }
@@ -133,14 +131,13 @@ async fn run_indexing_actor(
                         debug_assert_eq!(*root_dir_id, asset_root_id);
                         let was_running = actor.running_tasks.remove(&asset_root_id);
                         debug_assert!(was_running);
-                        let _ = actor.send_from_us.send(MsgFromIndexing::ActivityChange {
+                        actor.send_from_us.send(MsgFromIndexing::ActivityChange {
                             running_tasks: actor.running_tasks.len(),
                             queued_tasks: queue.len()
-                        });
+                        }).expect("receiver must be alive");
                         if actor.cancel.is_cancelled() && actor.running_tasks.is_empty() {
-                            tracing::debug!("last indexing child task cancelled, shutting down");
+                            tracing::debug!(target="indexing", "last indexing child task cancelled, shutting down");
                             debug_assert!(!is_running);
-                            actor.did_shutdown_send.take().expect("shutdown must only be called once").send(()).expect("receiver must be alive");
                             return;
                         }
                     },
@@ -153,13 +150,13 @@ async fn run_indexing_actor(
                 let _ = actor.send_from_us.send(msg);
             },
             Some(msg) = recv.recv() => {
+                tracing::trace!(target="indexing", ?msg, "message to indexing actor");
                 match msg {
                     MsgToIndexing::Shutdown => {
                         is_running = false;
                         actor.cancel.cancel();
                         if actor.running_tasks.is_empty() {
-                            tracing::debug!("no indexing child tasks running, shutting down");
-                            actor.did_shutdown_send.take().expect("shutdown must only be called once").send(()).expect("receiver must be alive");
+                            tracing::debug!(target="indexing", "no indexing child tasks running, shutting down");
                             return;
                         }
                     }
@@ -189,6 +186,9 @@ async fn run_indexing_actor(
                         }
                     }
                 }
+            }
+            else => {
+                break;
             }
         }
     }
@@ -287,12 +287,14 @@ async fn index_asset_root(
         .filter_entry(|ent| !exclude_set.is_match(ent.path()))
     {
         if cancel.is_cancelled() {
-            let _ = send_result.send((
-                asset_root.id,
-                MsgFromIndexing::IndexingCancelled {
-                    root_dir_id: asset_root.id,
-                },
-            ));
+            send_result
+                .send((
+                    asset_root.id,
+                    MsgFromIndexing::IndexingCancelled {
+                        root_dir_id: asset_root.id,
+                    },
+                ))
+                .expect("receiver must be alive");
             return;
         }
         match entry {
@@ -319,7 +321,9 @@ async fn index_asset_root(
                             report,
                         },
                     };
-                    let _ = send_result.send((asset_root.id, msg));
+                    send_result
+                        .send((asset_root.id, msg))
+                        .expect("receiver must be alive");
                 }
             }
             Ok(dir) => {
@@ -372,28 +376,33 @@ async fn index_asset_root(
                     stack.push((path, 0));
                 }
             }
-            Err(e) => {
-                let _ = send_result.send((
-                    asset_root.id,
-                    MsgFromIndexing::IndexingError {
-                        root_dir_id: asset_root.id,
-                        path: e.path().map(|p| {
-                            p.to_owned()
-                                .try_into()
-                                .expect("only UTF-8 paths are supported")
-                        }),
-                        report: eyre!("error while listing directory: {}", e),
-                    },
-                ));
+            Err(err) => {
+                tracing::warn!(target = "indexing", ?err, "error while listing directory");
+                send_result
+                    .send((
+                        asset_root.id,
+                        MsgFromIndexing::IndexingError {
+                            root_dir_id: asset_root.id,
+                            path: err.path().map(|p| {
+                                p.to_owned()
+                                    .try_into()
+                                    .expect("only UTF-8 paths are supported")
+                            }),
+                            report: eyre!("error while listing directory: {}", err),
+                        },
+                    ))
+                    .expect("receiver must be alive");
             }
         }
     }
-    let _ = send_result.send((
-        asset_root.id,
-        MsgFromIndexing::IndexingComplete {
-            root_dir_id: asset_root.id,
-        },
-    ));
+    send_result
+        .send((
+            asset_root.id,
+            MsgFromIndexing::IndexingComplete {
+                root_dir_id: asset_root.id,
+            },
+        ))
+        .expect("receiver must be alive");
     #[allow(clippy::redundant_closure_call)]
     if let Err(err) = (async || {
         let conn = pool.get().await?;

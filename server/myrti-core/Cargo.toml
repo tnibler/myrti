@@ -3,9 +3,6 @@ name = "myrti-core"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-mock-commands = []
-
 [dependencies]
 myrti-data = { path = "../myrti-data" }
 

@@ -2,9 +2,9 @@ use std::{str::FromStr, time::Duration};
 
 use camino::Utf8Path as Path;
 use eyre::{Context, Result, eyre};
-use futures::{TryStreamExt, stream::FuturesUnordered};
 use strum::EnumCount;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc};
+use tokio_util::sync::CancellationToken;
 use tracing::instrument;
 
 use myrti_data::db::{DbPool, PooledDbConn};
@@ -49,6 +49,11 @@ pub struct SchedulerHandle {
     pub send: mpsc::Sender<SchedulerMessage>,
 }
 
+#[derive(Debug, Clone)]
+pub enum MessageFromScheduler {
+    IndexingFinished(AssetRootDirId),
+}
+
 #[derive(Debug, Copy, Clone, strum::EnumCount)]
 #[repr(usize)]
 enum Actors {
@@ -66,8 +71,7 @@ struct Scheduler {
     config: Config,
 
     waiting_for_shutdown: bool,
-    did_shutdown_send: Option<oneshot::Sender<()>>,
-    actor_did_shutdown_recvs: Option<Vec<oneshot::Receiver<()>>>,
+    from_scheduler_send: broadcast::Sender<MessageFromScheduler>,
 
     actor_states: [ActorState; Actors::COUNT],
 
@@ -83,16 +87,11 @@ impl SchedulerHandle {
         db_pool: DbPool,
         storage: Storage,
         config: Config,
-        did_shutdown_send: oneshot::Sender<()>,
-    ) -> Self {
-        let (indexing_did_shutdown_send, indexing_did_shutdown_recv) = oneshot::channel::<()>();
+    ) -> (Self, broadcast::Receiver<MessageFromScheduler>) {
+        let (from_us_send, from_us_recv) = broadcast::channel(100);
         let (from_indexing_send, from_indexing_recv) = mpsc::unbounded_channel();
-        let indexing_actor = IndexingActorHandle::new(
-            db_pool.clone(),
-            config.clone(),
-            indexing_did_shutdown_send,
-            from_indexing_send,
-        );
+        let indexing_actor =
+            IndexingActorHandle::new(db_pool.clone(), config.clone(), from_indexing_send);
 
         let (from_imageproc_send, from_imageproc_recv) = mpsc::channel(100);
         let (from_videoproc_send, from_videoproc_recv) = mpsc::channel(100);
@@ -120,8 +119,7 @@ impl SchedulerHandle {
             storage,
             config,
             waiting_for_shutdown: false,
-            did_shutdown_send: Some(did_shutdown_send),
-            actor_did_shutdown_recvs: Some(vec![indexing_did_shutdown_recv]),
+            from_scheduler_send: from_us_send,
             actor_states: Default::default(),
             indexing_actor: indexing_actor.clone(),
             image_proc,
@@ -136,7 +134,7 @@ impl SchedulerHandle {
             from_imageproc_recv,
             from_videoproc_recv,
         ));
-        Self { send }
+        (Self { send }, from_us_recv)
     }
 }
 
@@ -148,24 +146,45 @@ async fn run_scheduler(
     mut videoproc_recv: mpsc::Receiver<VideoProcessingMsg>,
 ) {
     let mut have_written_to_disk = true;
-    let mut reindex_interval = {
-        let mut int = tokio::time::interval(Duration::from_mins(60));
-        int.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        int
-    };
-    let mut check_disk_interval = {
-        let mut int = tokio::time::interval(Duration::from_mins(5));
-        int.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        int
-    };
+    let (reindex_tx, mut reindex_rx) = mpsc::channel::<()>(5);
+    let (check_disk_tx, mut check_disk_rx) = mpsc::channel::<()>(5);
+    let cancel_ticks = CancellationToken::default();
+    let cancel_copy = cancel_ticks.clone();
+
+    let mut tick_task = tokio::task::spawn(async move {
+        let mut reindex_interval = {
+            let mut int = tokio::time::interval(Duration::from_mins(60));
+            int.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            int
+        };
+        let mut check_disk_interval = {
+            let mut int = tokio::time::interval(Duration::from_mins(5));
+            int.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            int
+        };
+        loop {
+            tokio::select! {
+                _ = cancel_copy.cancelled() => {
+                    break;
+                }
+                _ = check_disk_interval.tick() => {
+                    check_disk_tx.send(()).await.unwrap();
+                }
+                _ = reindex_interval.tick() => {
+                    reindex_tx.send(()).await.unwrap();
+                }
+            }
+        }
+    });
     loop {
         tokio::select! {
-            _ = reindex_interval.tick(), if !sched.waiting_for_shutdown => {
+            _ = &mut tick_task => {}
+            _ = reindex_rx.recv(), if !sched.waiting_for_shutdown && have_written_to_disk => {
                 if let Err(err) = reindex_all(&sched.db_pool, &sched.indexing_actor).await {
                     tracing::error!(?err, "Error reindexing asset roots");
                 }
             }
-            _ = check_disk_interval.tick(), if !sched.waiting_for_shutdown && have_written_to_disk => {
+            _ = check_disk_rx.recv(), if !sched.waiting_for_shutdown && have_written_to_disk => {
                 have_written_to_disk = false;
                 match is_disk_almost_full(&sched.config.data_dir.path).await {
                     Ok(false) => {}
@@ -179,6 +198,9 @@ async fn run_scheduler(
                 }
             }
             Some(msg) = recv.recv() => {
+                if let SchedulerMessage::Shutdown = &msg {
+                    cancel_ticks.cancel();
+                }
                 sched.handle_message(msg).await;
             }
             Some(indexing_msg) = indexing_recv.recv() => {
@@ -243,6 +265,9 @@ impl Scheduler {
                 );
             }
             MsgFromIndexing::IndexingComplete { root_dir_id } => {
+                _ = self
+                    .from_scheduler_send
+                    .send(MessageFromScheduler::IndexingFinished(root_dir_id));
                 tracing::debug!(?root_dir_id, "Completed indexing root directory");
             }
             MsgFromIndexing::IndexingCancelled { root_dir_id } => {
@@ -527,26 +552,8 @@ impl Scheduler {
                     self.indexing_actor
                         .msg_shutdown()
                         .expect("receiver must be alive");
-                    self.image_proc.cancel_all();
-                    self.video_proc.cancel_all();
-                    let did_shutdown_recvs = self
-                        .actor_did_shutdown_recvs
-                        .take()
-                        .expect("must be Some before shutdown called");
-                    let did_shutdown_send = self
-                        .did_shutdown_send
-                        .take()
-                        .expect("must be Some before shutdown called");
-                    tokio::task::spawn(async move {
-                        did_shutdown_recvs
-                            .into_iter()
-                            .collect::<FuturesUnordered<_>>()
-                            .try_collect::<Vec<()>>()
-                            .await
-                            .expect("TODO senders must be alive");
-                        tracing::info!("all actors shutdown");
-                        did_shutdown_send.send(()).expect("receiver must be alive");
-                    });
+                    self.image_proc.shutdown();
+                    self.video_proc.shutdown();
                 } else {
                     tracing::debug!(
                         "Already waiting for shutdown, received another shutdown message"
@@ -590,6 +597,7 @@ impl Scheduler {
         //     let _ = self.thumbnail_actor.msg_create_album_thumbnail(album_thumb);
         // }
 
+        drop(conn);
         if let Err(err) = reindex_all(&self.db_pool, &self.indexing_actor).await {
             tracing::error!(?err, "Error reindexing asset roots");
         }

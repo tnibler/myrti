@@ -18,6 +18,10 @@ pub mod exiftool {
         pub file_modify_date: Option<String>,
         #[serde(rename = "FileAccessDate")]
         pub file_access_date: Option<String>,
+        #[serde(rename = "ImageHeight")]
+        pub height: Option<i32>,
+        #[serde(rename = "ImageWidth")]
+        pub width: Option<i32>,
     }
 
     #[derive(Debug, Clone, Deserialize)]
@@ -54,6 +58,10 @@ pub mod exiftool {
         // pub orientation: Option<i32>,
         #[serde(rename = "Make")]
         pub make: Option<String>,
+        #[serde(rename = "ImageHeight")]
+        pub height: Option<i32>,
+        #[serde(rename = "ImageWidth")]
+        pub width: Option<i32>,
     }
 
     #[derive(Debug, Clone, Deserialize)]
@@ -71,6 +79,10 @@ pub mod exiftool {
         // created from QuickTime tags
         #[serde(rename = "Rotation")]
         pub rotation: Option<i32>,
+        #[serde(rename = "ImageHeight")]
+        pub height: Option<i32>,
+        #[serde(rename = "ImageWidth")]
+        pub width: Option<i32>,
     }
 
     #[derive(Debug, Clone, Deserialize)]
@@ -89,7 +101,7 @@ pub mod exiftool {
     }
 }
 
-#[tracing::instrument(skip(exiftool_bin_path), level = "debug")]
+// #[tracing::instrument(skip(exiftool_bin_path), level = "debug")]
 pub async fn read_media_metadata(
     path: &Path,
     exiftool_bin_path: Option<&Path>,
@@ -104,12 +116,14 @@ pub async fn read_media_metadata(
         .arg(path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    tracing::trace!(command=?command.as_std());
     let output = command
         .spawn()
         .wrap_err("failed to call exiftool")?
         .wait_with_output()
         .await
         .wrap_err("exiftool error")?;
+    tracing::trace!(exiftool_status = ?output.status, stderr=%String::from_utf8_lossy(&output.stderr));
     let raw_json = output.stdout;
     let parsed: exiftool::Output = serde_json::from_slice::<Vec<exiftool::Output>>(&raw_json)
         .wrap_err("failed to parse exiftool output")?

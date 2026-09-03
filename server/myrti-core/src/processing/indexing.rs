@@ -7,6 +7,7 @@ use myrti_data::model::*;
 use myrti_data::repository::duplicate_asset::NewDuplicateAsset;
 use myrti_data::{interact, repository};
 
+use crate::processing::media_metadata::exiftool;
 use crate::processing::video::ffprobe_get_streams;
 use crate::{
     config,
@@ -38,11 +39,12 @@ pub async fn try_index_file(
     if existing {
         return Ok(None);
     }
+    drop(conn);
     index_file(path, path_in_asset_root, asset_root, pool, bin_paths).await
 }
 
 /// Returns Some(AssetId) if a new, non duplicate asset was indexed and added to the database
-#[tracing::instrument(skip_all, fields(path), level = "trace")]
+#[tracing::instrument(skip_all, fields(path), err, level = "trace")]
 async fn index_file(
     path: &Path,
     path_in_asset_root: &Path,
@@ -126,15 +128,57 @@ async fn index_file(
         // TODO: Should probably use libmagic or something faster and more accurate at some point
         Some(mime) if mime.starts_with("image") && !mime.eq_ignore_ascii_case("image/vnd.fpx") => {
             let p = path.to_owned();
-            let vips_get_size_result = tokio::task::spawn_blocking(move || {
-                processing::image::get_image_size(&p).wrap_err("could not read image size")
-            })
-            .await?;
-            let size = match vips_get_size_result {
-                Ok(s) => s,
-                Err(_) => {
-                    tracing::debug!(%path, "Could not read image size, ignoring file");
-                    return Ok(None);
+            let size = if cfg!(test) {
+                if let Some(exiftool::Composite {
+                    width: Some(width),
+                    height: Some(height),
+                    ..
+                }) = metadata.composite.as_ref()
+                {
+                    Size {
+                        width: *width,
+                        height: *height,
+                    }
+                } else if let exiftool::File {
+                    width: Some(width),
+                    height: Some(height),
+                    ..
+                } = &metadata.file
+                {
+                    Size {
+                        width: *width,
+                        height: *height,
+                    }
+                } else if let Some(exiftool::Exif {
+                    width: Some(width),
+                    height: Some(height),
+                    ..
+                }) = metadata.exif.as_ref()
+                {
+                    Size {
+                        width: *width,
+                        height: *height,
+                    }
+                } else {
+                    tracing::error!("no image dimensions found in exiftool output");
+                    panic!("no image dimensions found in exiftool output")
+                }
+            } else {
+                // Size information from EXIF can be different from the actual image size, so read
+                // that by actually decoding the image.
+                let vips_result = tokio::task::spawn_blocking(move || {
+                    processing::image::get_image_size(&p).wrap_err("could not read image size")
+                })
+                .await?;
+                match vips_result {
+                    Ok(s) => Size {
+                        width: s.width,
+                        height: s.height,
+                    },
+                    Err(_) => {
+                        tracing::info!(%path, "Could not read image size, ignoring file");
+                        return Ok(None);
+                    }
                 }
             };
             let format = metadata
@@ -145,10 +189,6 @@ async fn index_file(
                 .to_ascii_lowercase();
             let create_image = CreateAssetImage {
                 image_format_name: format,
-            };
-            let size = Size {
-                width: size.width,
-                height: size.height,
             };
             (CreateAssetSpe::Image(create_image), size)
         }

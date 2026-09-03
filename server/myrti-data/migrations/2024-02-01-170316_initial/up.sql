@@ -41,7 +41,9 @@ CREATE TABLE Asset (
   , gps_latitude INTEGER
   , gps_longitude INTEGER
 
-  , UNIQUE(asset_id, asset_type)
+  -- these are just to make some foreign keys work
+  , CONSTRAINT unique_asset_type UNIQUE(asset_id, asset_type)
+  , CONSTRAINT unique_asset_series UNIQUE(asset_id, series_id)
 
   -- timezone_offset NULL is only valid for timezone_info=UtcCertain, and NoTimestamp I guess?
   , CONSTRAINT enum_timezone_info CHECK (timezone_info IN (1, 2, 3, 4, 5, 6) AND (timezone_info IN (2, 6) OR timezone_offset IS NOT NULL))
@@ -283,11 +285,16 @@ CREATE TABLE TimelineGroup (
 CREATE TABLE TimelineGroupItem (
   timeline_group_item_id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL
   , group_id INTEGER NOT NULL
-  , asset_id INTEGER NOT NULL
+  , asset_id INTEGER
+  , series_id INTEGER
+  , CONSTRAINT opt_cols_asset_series CHECK ((asset_id IS NOT NULL) OR (series_id IS NOT NULL))
   -- an Asset can only belong to one TimelineGroup
-  , UNIQUE(asset_id)
+  , CONSTRAINT unique_asset UNIQUE(asset_id)
+  -- Assets in an AssetSeries can not be part of different groups
+  , CONSTRAINT unique_group_series UNIQUE(group_id, series_id)
+  , CONSTRAINT unique_asset_series UNIQUE(asset_id, series_id)
+  , CONSTRAINT foreign_asset_series FOREIGN KEY (asset_id, series_id) REFERENCES Asset(asset_id, series_id)
   , FOREIGN KEY (group_id) REFERENCES TimelineGroup(timeline_group_id)
-  , FOREIGN KEY (asset_id) REFERENCES Asset(asset_id)
 ) STRICT;
 
 CREATE TABLE GhiSegmentCache (
@@ -328,6 +335,13 @@ CREATE TABLE AcceptableAudioCodec (
   , CONSTRAINT is_lowercase CHECK(LOWER(codec_name) = codec_name)
 ) STRICT;
 
+CREATE VIEW AssetsInTimelineGroup AS
+SELECT COALESCE(series_group.asset_id, asset_group.asset_id) AS asset_id
+	, TimelineGroupItem.group_id AS group_id
+FROM TimelineGroupItem
+LEFT JOIN Asset series_group ON series_group.series_id = TimelineGroupItem.series_id
+LEFT JOIN Asset asset_group ON asset_group.asset_id = TimelineGroupItem.asset_id;
+
 CREATE UNIQUE INDEX index_asset_repfile ON Asset(rep_file_id);
 CREATE INDEX index_asset_date ON Asset(taken_date);
 CREATE INDEX index_thumbnail_file ON AssetThumbnail(file_id);
@@ -338,6 +352,7 @@ CREATE INDEX index_asset_series ON Asset(series_id);
 CREATE INDEX index_assetfile_asset ON AssetFile(asset_id);
 CREATE INDEX index_timelinegroupitem_asset ON TimelineGroupItem(asset_id);
 CREATE INDEX index_timelinegroupitem_group ON TimelineGroupItem(group_id);
+CREATE INDEX index_timelinegroupitem_series ON TimelineGroupItem(series_id);
 CREATE INDEX index_imagerepresentation_file_id ON ImageRepresentation(file_id);
 CREATE INDEX index_videorepresentation_file_id ON VideoRepresentation(file_id);
 CREATE INDEX index_ghicache_file_id_name ON GhiSegmentCache(file_id, file_name);

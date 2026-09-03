@@ -176,6 +176,14 @@ diesel::table! {
     TimelineGroupItem (timeline_group_item_id) {
         timeline_group_item_id -> BigInt,
         group_id -> BigInt,
+        asset_id -> Nullable<BigInt>,
+        series_id -> Nullable<BigInt>,
+    }
+}
+
+diesel::table! {
+    AssetsInTimelineGroup (asset_id) {
+        group_id -> BigInt,
         asset_id -> BigInt,
     }
 }
@@ -264,10 +272,11 @@ diesel::joinable!(AudioRepresentation -> VideoFile (file_id));
 diesel::joinable!(DuplicateFile -> AssetFile (file_id));
 diesel::joinable!(DuplicateFile -> AssetRootDir (root_dir_id));
 diesel::joinable!(ImageRepresentation -> ImageFile (file_id));
-diesel::joinable!(TimelineGroupItem -> Asset (asset_id));
 diesel::joinable!(TimelineGroupItem -> TimelineGroup (group_id));
 diesel::joinable!(VideoRepresentation -> VideoFile (file_id));
 diesel::joinable!(DeletedAutoAssetSeries -> Asset (asset_id));
+diesel::joinable!(AssetsInTimelineGroup -> Asset (asset_id));
+diesel::joinable!(AssetsInTimelineGroup -> TimelineGroup (group_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     Album,
@@ -293,4 +302,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     TimelineItem,
     AcceptableVideoCodec,
     AcceptableAudioCodec,
+    AssetsInTimelineGroup,
 );

@@ -16,16 +16,15 @@ pub fn get_timeline_group(conn: &mut DbConn, id: TimelineGroupId) -> Result<Time
     db_timeline_group.try_into()
 }
 
-pub fn get_timeline_group_album_for_asset(
+pub fn get_timeline_group_for_asset(
     conn: &mut DbConn,
     asset_id: AssetId,
 ) -> Result<Option<TimelineGroup>> {
-    use schema::{Asset, TimelineGroup, TimelineGroupItem};
+    use schema::{AssetsInTimelineGroup, TimelineGroup};
 
-    let db_timeline_group: Option<DbTimelineGroup> = TimelineGroupItem::table
-        .filter(TimelineGroupItem::asset_id.eq(asset_id.0))
+    let db_timeline_group: Option<DbTimelineGroup> = AssetsInTimelineGroup::table
+        .filter(AssetsInTimelineGroup::asset_id.eq(asset_id.0))
         .inner_join(TimelineGroup::table)
-        .inner_join(Asset::table)
         .select(DbTimelineGroup::as_select())
         .first(conn)
         .optional()?;
@@ -45,7 +44,7 @@ pub fn create_timeline_group(
     conn: &mut DbConn,
     ctg: CreateTimelineGroup,
 ) -> Result<TimelineGroupId> {
-    use schema::{TimelineGroup, TimelineGroupItem};
+    use schema::{Asset, TimelineGroup, TimelineGroupItem};
     let now = Utc::now();
     let group_id = conn.immediate_transaction(|conn| {
         let group_id: i64 = diesel::insert_into(TimelineGroup::table)
@@ -63,6 +62,10 @@ pub fn create_timeline_group(
                 .values((
                     TimelineGroupItem::group_id.eq(group_id),
                     TimelineGroupItem::asset_id.eq(asset_id.0),
+                    TimelineGroupItem::series_id.eq(Asset::table
+                        .find(asset_id.0)
+                        .select(Asset::series_id)
+                        .single_value()),
                 ))
                 .execute(conn)
                 .wrap_err("error inserting into TimelineGroupItem")?;
@@ -95,7 +98,7 @@ pub fn add_assets_to_group(
     group_id: TimelineGroupId,
     asset_ids: &[AssetId],
 ) -> Result<()> {
-    use schema::TimelineGroupItem;
+    use schema::{Asset, TimelineGroupItem};
     if asset_ids.is_empty() {
         return Ok(());
     }
@@ -105,27 +108,14 @@ pub fn add_assets_to_group(
                 .values((
                     TimelineGroupItem::group_id.eq(group_id.0),
                     TimelineGroupItem::asset_id.eq(asset_id.0),
+                    TimelineGroupItem::series_id.eq(Asset::table
+                        .find(asset_id.0)
+                        .select(Asset::series_id)
+                        .single_value()),
                 ))
                 .execute(conn)
                 .wrap_err("error inserting into TimelineGroupItem")?;
         }
-        // Update TimelineGroup.display_date to most recent asset in case it changed
-        // no query builder sorry idk how subqueries work
-        diesel::sql_query(
-            r#"
-        UPDATE TimelineGroup
-        SET display_date = (
-            SELECT MAX(Asset.taken_date)
-            FROM Asset INNER JOIN TimelineGroupItem ON TimelineGroupItem.asset_id = Asset.asset_id
-            WHERE TimelineGroupItem.group_id = ?
-        )
-        WHERE TimelineGroup.timeline_group_id = ?;
-        "#,
-        )
-        .bind::<diesel::sql_types::BigInt, _>(group_id.0)
-        .bind::<diesel::sql_types::BigInt, _>(group_id.0)
-        .execute(conn)
-        .wrap_err("error updating TimelineGroup display_date")?;
         Ok::<_, eyre::Error>(())
     })?;
     if let Err(err) = super::timeline::update_timeline_dirty(conn) {
@@ -140,20 +130,41 @@ pub fn remove_assets_from_group(
     group_id: TimelineGroupId,
     asset_ids: &[AssetId],
 ) -> Result<()> {
+    use diesel::sql_types::BigInt;
     use schema::TimelineGroupItem;
+    define_sql_function! { fn coalesce(x: BigInt, y: BigInt) -> BigInt; }
+
     if asset_ids.is_empty() {
         return Ok(());
     }
     conn.immediate_transaction(|conn| {
+        let tgi_series = diesel::alias!(TimelineGroupItem as tgi_series);
+        let tgi_ids: Vec<i64> = TimelineGroupItem::table
+            .filter(
+                TimelineGroupItem::group_id
+                    .eq(group_id.0)
+                    .and(TimelineGroupItem::asset_id.eq_any(asset_ids.iter().map(|id| id.0))),
+            )
+            .left_join(
+                tgi_series.on(tgi_series
+                    .field(TimelineGroupItem::series_id)
+                    .eq(TimelineGroupItem::series_id)),
+            )
+            .select(
+                coalesce(
+                    TimelineGroupItem::timeline_group_item_id,
+                    tgi_series.field(TimelineGroupItem::timeline_group_item_id),
+                )
+                .assume_not_null(),
+            )
+            .load(conn)
+            .wrap_err("error querying table TimelineGroupItem")?;
         let affected_rows = diesel::delete(
-            TimelineGroupItem::table.filter(
-                TimelineGroupItem::asset_id
-                    .eq_any(asset_ids.iter().map(|id| id.0))
-                    .and(TimelineGroupItem::group_id.eq(group_id.0)),
-            ),
+            TimelineGroupItem::table
+                .filter(TimelineGroupItem::timeline_group_item_id.eq_any(&tgi_ids)),
         )
         .execute(conn)?;
-        if affected_rows != asset_ids.len() {
+        if affected_rows < asset_ids.len() {
             Err(eyre!(
                 "mismatch: not all asset_ids belonged to specified group_id"
             ))
@@ -169,9 +180,9 @@ pub fn remove_assets_from_group(
 
 #[instrument(skip(conn))]
 pub fn get_assets_in_group(conn: &mut DbConn, group_id: TimelineGroupId) -> Result<Vec<AssetBase>> {
-    use schema::{Asset, TimelineGroupItem};
-    let db_assets: Vec<DbAsset> = TimelineGroupItem::table
-        .filter(TimelineGroupItem::group_id.eq(group_id.0))
+    use schema::{Asset, AssetsInTimelineGroup};
+    let db_assets: Vec<DbAsset> = AssetsInTimelineGroup::table
+        .filter(AssetsInTimelineGroup::group_id.eq(group_id.0))
         .inner_join(Asset::table)
         .select(DbAsset::as_select())
         .load(conn)?;

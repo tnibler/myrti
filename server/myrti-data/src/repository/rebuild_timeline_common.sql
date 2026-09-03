@@ -13,9 +13,9 @@ SeriesDate AS (
 			WHEN group_id IS NOT NULL THEN MAX(Asset.taken_date) OVER (PARTITION BY group_id)
 			ELSE NUlL
 		END AS group_date
-		, TimelineGroupItem.group_id
+		, AssetsInTimelineGroup.group_id
 	FROM Asset
-	LEFT JOIN TimelineGroupItem ON Asset.asset_id = TimelineGroupItem.asset_id
+	LEFT JOIN AssetsInTimelineGroup ON Asset.asset_id = AssetsInTimelineGroup.asset_id
 	WHERE Asset.asset_id IN (SELECT asset_id FROM BuildTimelineStaging)
 	OR (EXISTS (SELECT * FROM RebuildFullTimeline) AND Asset.is_hidden = 0)
 )

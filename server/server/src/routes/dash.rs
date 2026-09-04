@@ -9,7 +9,7 @@ use axum::{
 };
 use eyre::{Context, eyre};
 use serde::Deserialize;
-use tower::ServiceExt;
+use tower::util::ServiceExt;
 use tracing::Instrument;
 
 use myrti_core::catalog::storage_key;
@@ -18,7 +18,7 @@ use myrti_data::{interact, model, repository};
 use crate::{app_state::SharedState, http_error::ApiResult, schema::FileId};
 
 pub fn router() -> Router<SharedState> {
-    Router::new().route("/:id/*path", get(get_dash_file).options(get_dash_file))
+    Router::new().route("/{id}/{*path}", get(get_dash_file).options(get_dash_file))
 }
 
 #[derive(Debug, Clone, Deserialize)]

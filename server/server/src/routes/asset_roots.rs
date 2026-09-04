@@ -15,7 +15,7 @@ use crate::{
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/", get(get_asset_roots))
-        .route("/:id", get(get_asset_root_by_id))
+        .route("/{id}", get(get_asset_root_by_id))
 }
 
 async fn get_asset_roots(app_state: State<SharedState>) -> ApiResult<Json<Vec<AssetRoot>>> {

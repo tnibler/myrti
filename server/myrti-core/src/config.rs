@@ -11,6 +11,7 @@ struct TomlAssetDir {
     path: String,
     name: Option<String>,
     exclude: Option<Vec<String>>,
+    include: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -45,6 +46,7 @@ pub struct AssetDir {
     pub path: PathBuf,
     pub name: Option<String>,
     pub exclude_globs: Vec<Glob>,
+    pub include_globs: Vec<Glob>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,7 +89,17 @@ pub async fn read_config(path: &Path) -> Result<Config> {
                 .flat_map(|v| v.into_iter())
                 .map(|s| {
                     Glob::new(&s).wrap_err_with(|| {
-                        format!("error parsing exclude pattern for asset directory {}", path)
+                        format!("error parsing exclude pattern '{s}' for asset directory {path}")
+                    })
+                })
+                .try_collect()?;
+            let include_globs = toml_value
+                .include
+                .into_iter()
+                .flat_map(|v| v.into_iter())
+                .map(|s| {
+                    Glob::new(&s).wrap_err_with(|| {
+                        format!("error parsing include pattern '{s}' for asset directory {path}")
                     })
                 })
                 .try_collect()?;
@@ -95,6 +107,7 @@ pub async fn read_config(path: &Path) -> Result<Config> {
                 path,
                 name: toml_value.name,
                 exclude_globs,
+                include_globs,
             })
         })
         .collect::<Result<_>>()?;

@@ -18,8 +18,8 @@ use crate::{
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/", post(create_series))
-        .route("/:id", patch(add_assets_to_series))
-        .route("/:id", delete(delete_series))
+        .route("/{id}", patch(add_assets_to_series))
+        .route("/{id}", delete(delete_series))
 }
 
 #[derive(Debug, Clone, Deserialize, ToSchema)]
@@ -66,7 +66,7 @@ pub async fn create_series(
 
 #[utoipa::path(
     delete,
-    path = "/api/photoSeries/:id",
+    path = "/api/photoSeries/{id}",
     params(
         ("id" = String, Path, description = "AssetSeriesId"),
     ),
@@ -87,7 +87,7 @@ pub async fn delete_series(
     Ok(())
 }
 
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AddAssetsToSeriesRequest {
     pub asset_ids: Vec<AssetId>,
@@ -95,7 +95,7 @@ pub struct AddAssetsToSeriesRequest {
 
 #[utoipa::path(
     patch,
-    path = "/api/photoSeries/:id",
+    path = "/api/photoSeries/{id}",
     params(
         ("id" = String, Path, description = "AssetSeriesId"),
     ),

@@ -19,12 +19,16 @@ use super::media_metadata::{TimestampGuess, figure_out_utc_timestamp, read_media
 pub async fn try_index_file(
     path: &Path,
     asset_root: &AssetRootDir,
+    canon_root_path: &Path,
     pool: &DbPool,
     bin_paths: Option<&config::BinPaths>,
 ) -> Result<Option<AssetId>> {
-    let path_in_asset_root = path
-        .strip_prefix(&asset_root.path)
-        .wrap_err("file to index is not in provided asset root")?;
+    let path_in_asset_root = path.strip_prefix(canon_root_path).wrap_err_with(|| {
+        format!(
+            "file to index {} is not in provided asset root {}",
+            path, canon_root_path
+        )
+    })?;
     let path_in_asset_root2 = path_in_asset_root.to_owned();
     let asset_root_id = asset_root.id;
     let conn = pool.get().await?;
@@ -251,7 +255,7 @@ async fn index_file(
     let create_asset_base = CreateAssetBase {
         root_dir_id: asset_root.id,
         file_type: file_type.clone(),
-        file_path: path.strip_prefix(&asset_root.path)?.to_owned(),
+        file_path: path_in_asset_root.to_owned(),
         taken_date: timestamp,
         timestamp_info,
         size,

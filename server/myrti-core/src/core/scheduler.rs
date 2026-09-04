@@ -1,3 +1,4 @@
+use std::sync::{Arc, Mutex};
 use std::{str::FromStr, time::Duration};
 
 use camino::Utf8Path as Path;
@@ -49,7 +50,7 @@ pub struct SchedulerHandle {
     pub send: mpsc::Sender<SchedulerMessage>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MessageFromScheduler {
     IndexingFinished(AssetRootDirId),
 }
@@ -68,7 +69,7 @@ struct ActorState {
 struct Scheduler {
     db_pool: DbPool,
     storage: Storage,
-    config: Config,
+    config: Arc<Mutex<Config>>,
 
     waiting_for_shutdown: bool,
     from_scheduler_send: broadcast::Sender<MessageFromScheduler>,
@@ -86,7 +87,7 @@ impl SchedulerHandle {
     pub fn new(
         db_pool: DbPool,
         storage: Storage,
-        config: Config,
+        config: Arc<Mutex<Config>>,
     ) -> (Self, broadcast::Receiver<MessageFromScheduler>) {
         let (from_us_send, from_us_recv) = broadcast::channel(100);
         let (from_indexing_send, from_indexing_recv) = mpsc::unbounded_channel();
@@ -186,7 +187,8 @@ async fn run_scheduler(
             }
             _ = check_disk_rx.recv(), if !sched.waiting_for_shutdown && have_written_to_disk => {
                 have_written_to_disk = false;
-                match is_disk_almost_full(&sched.config.data_dir.path).await {
+                let data_dir_path = sched.config.lock().unwrap().data_dir.path.clone();
+                match is_disk_almost_full(&data_dir_path).await {
                     Ok(false) => {}
                     Ok(true) => {
                         tracing::warn!("Disk almost full, pausing processing");
@@ -307,10 +309,11 @@ impl Scheduler {
         }
         match &asset.sp {
             AssetSpe::Video(video) => {
+                let bin_paths = self.config.lock().unwrap().bin_paths.clone();
                 let video_packaging_required = rules::required_video_packaging_for_asset(
                     &mut conn,
                     video.file_id,
-                    self.config.bin_paths.as_ref(),
+                    bin_paths.as_ref(),
                 )
                 .await?;
                 for vid_pack in video_packaging_required {
@@ -446,12 +449,9 @@ impl Scheduler {
                         Ok(required_video_packaging)
                     }
 
-                    match handle_disable_ghi(
-                        self.db_pool.clone(),
-                        self.config.bin_paths.as_ref(),
-                        file_ids,
-                    )
-                    .await
+                    let bin_paths = self.config.lock().unwrap().bin_paths.clone();
+                    match handle_disable_ghi(self.db_pool.clone(), bin_paths.as_ref(), file_ids)
+                        .await
                     {
                         Ok(tasks) => {
                             for p in tasks {
@@ -598,9 +598,6 @@ impl Scheduler {
         // }
 
         drop(conn);
-        if let Err(err) = reindex_all(&self.db_pool, &self.indexing_actor).await {
-            tracing::error!(?err, "Error reindexing asset roots");
-        }
     }
 
     async fn enqueue_required_image_jobs(&mut self, conn: &mut PooledDbConn) -> Result<()> {

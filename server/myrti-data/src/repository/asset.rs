@@ -71,6 +71,15 @@ pub fn get_asset_file(conn: &mut DbConn, id: FileId) -> Result<model::AssetFile>
         .try_into()
 }
 
+pub fn get_all_asset_files(conn: &mut DbConn) -> Result<Vec<model::AssetFile>> {
+    schema::AssetFile::table
+        .select(DbAssetFile::as_select())
+        .load::<DbAssetFile>(conn)?
+        .into_iter()
+        .map(AssetFile::try_from)
+        .try_collect()
+}
+
 pub fn get_video_file(conn: &mut DbConn, id: FileId) -> Result<(model::Video, model::AssetFile)> {
     use schema::{AssetFile, VideoFile};
     let (db_video, db_file) = VideoFile::table

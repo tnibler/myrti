@@ -16,7 +16,7 @@ pub enum AssetType {
     Video,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetFile {
     pub file_id: FileId,
@@ -31,7 +31,7 @@ pub struct AssetFile {
     pub thumbhash: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Asset {
     pub asset_id: AssetId,
@@ -41,7 +41,7 @@ pub struct Asset {
     pub rep_file: AssetFile,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetWithSpe {
     #[serde(flatten)]
@@ -50,21 +50,21 @@ pub struct AssetWithSpe {
     pub spe: AssetSpe,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", tag = "assetType")]
 pub enum AssetSpe {
     Image(Image),
     Video(Video),
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Image {
     #[schema(value_type = Vec::<ImageRepresentation>)]
-    pub representations: Box<serde_json::value::RawValue>,
+    pub representations: Vec<ImageRepresentation>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageRepresentation {
     pub id: String,
@@ -74,7 +74,7 @@ pub struct ImageRepresentation {
     pub size: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Video {
     pub has_dash: bool,

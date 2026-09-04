@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use axum::{Router, http::Method};
-use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
+use camino::Utf8Path as Path;
 use eyre::{Context, Result};
 use myrti_core::{
     config::Config,
@@ -16,7 +16,7 @@ use myrti_data::{
     model::{self, AssetRootDir},
     repository,
 };
-use tokio::sync::{broadcast, oneshot};
+use tokio::sync::broadcast;
 use tower_http::cors::CorsLayer;
 
 use crate::{
@@ -28,10 +28,11 @@ pub struct Server {
     pub app: Router<()>,
     pub scheduler: SchedulerHandle,
     pub scheduler_recv: broadcast::Receiver<MessageFromScheduler>,
+    pub db_pool: DbPool,
 }
 
 pub struct SetupConfig<'a> {
-    pub config: Config,
+    pub config: Arc<Mutex<Config>>,
     pub config_dir: &'a Path,
     pub db_url: &'a str,
     pub storage: Storage,
@@ -57,7 +58,7 @@ pub async fn make_app(
     let pool = db_setup(db_url)
         .await
         .wrap_err("error setting up database")?;
-    store_asset_roots_from_config(config_dir, &config, &pool).await?;
+    store_asset_roots_from_config(config_dir, &config.lock().unwrap(), &pool).await?;
 
     let (scheduler, scheduler_recv) = SchedulerHandle::new(pool.clone(), storage.clone(), config);
     let shared_state: SharedState = Arc::new(AppState {
@@ -89,6 +90,7 @@ pub async fn make_app(
         app,
         scheduler,
         scheduler_recv,
+        db_pool: pool,
     })
 }
 

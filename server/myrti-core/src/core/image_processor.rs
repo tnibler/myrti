@@ -1,6 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::num::NonZeroUsize;
 use std::os::unix::fs::MetadataExt;
+use std::sync::{Arc, Mutex};
 
 use eyre::{Context, Result, eyre};
 use tokio::sync::mpsc;
@@ -48,7 +49,7 @@ pub(super) struct ImageJobProcessor {
 
     db_pool: DbPool,
     storage: Storage,
-    config: Config,
+    config: Arc<Mutex<Config>>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,7 +71,7 @@ impl ImageJobProcessor {
         result_send: mpsc::Sender<ImageProcessingMsg>,
         db_pool: DbPool,
         storage: Storage,
-        config: Config,
+        config: Arc<Mutex<Config>>,
     ) -> Self {
         Self {
             max_running: max_running.get(),

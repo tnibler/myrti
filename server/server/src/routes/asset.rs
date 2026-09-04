@@ -17,9 +17,9 @@ use crate::{
 
 pub fn router() -> Router<SharedState> {
     Router::new()
-        .route("/:id", get(get_asset))
+        .route("/{id}", get(get_asset))
         .route("/hidden", post(set_assets_hidden))
-        .route("/:id/seriesSelection", post(set_asset_is_series_selection))
+        .route("/{id}/seriesSelection", post(set_asset_is_series_selection))
 }
 
 #[utoipa::path(get, path = "/api/assets/{id}",
@@ -77,18 +77,19 @@ async fn set_assets_hidden(
     Ok(())
 }
 
-#[derive(Debug, Clone, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SetAssetSeriesSelectionRequest {
     pub is_series_selection: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SetAssetIsSeriesSelectionResponse {
-    series_id: AssetSeriesId,
-    asset_ids: Vec<AssetId>,
-    selection_indices: Vec<usize>,
+    pub series_id: AssetSeriesId,
+    /// All assets in the series
+    pub asset_ids: Vec<AssetId>,
+    pub selection_indices: Vec<usize>,
 }
 
 #[utoipa::path(

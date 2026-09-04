@@ -1,12 +1,23 @@
+use diesel::prelude::*;
 use eyre::{Context, Result, eyre};
 
 use super::schema;
 use crate::db::DbConn;
 use crate::model::{AssetId, AssetSeries, AssetSeriesId};
 
+pub fn get_all_series(conn: &mut DbConn) -> Result<Vec<AssetSeriesId>> {
+    use schema::AssetSeries;
+    Ok(AssetSeries::table
+        .select(AssetSeries::series_id)
+        .load(conn)
+        .wrap_err("error querying table AssetSeries")?
+        .into_iter()
+        .map(AssetSeriesId)
+        .collect())
+}
+
 #[tracing::instrument(skip(conn))]
 pub fn create_series(conn: &mut DbConn, asset_ids: &[AssetId]) -> Result<AssetSeriesId> {
-    use diesel::prelude::*;
     use schema::{Asset, AssetSeries};
 
     if asset_ids.is_empty() {
@@ -57,7 +68,6 @@ pub fn create_series(conn: &mut DbConn, asset_ids: &[AssetId]) -> Result<AssetSe
 
 #[tracing::instrument(skip(conn))]
 pub fn get_series_for_asset(conn: &mut DbConn, asset_id: AssetId) -> Result<Option<AssetSeries>> {
-    use diesel::prelude::*;
     use schema::Asset;
     conn.transaction(|conn| {
         let (asset1, asset2) = diesel::alias!(Asset as asset1, Asset as asset2);

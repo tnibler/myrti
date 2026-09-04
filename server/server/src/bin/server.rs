@@ -1,4 +1,7 @@
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Mutex,
+};
 
 use camino::Utf8PathBuf as PathBuf;
 use clap::Parser;
@@ -158,8 +161,9 @@ async fn main() -> Result<()> {
         app,
         scheduler,
         mut scheduler_recv,
+        ..
     } = make_app(SetupConfig {
-        config,
+        config: Mutex::new(config).into(),
         storage,
         config_dir,
         db_url: db_url.as_str(),

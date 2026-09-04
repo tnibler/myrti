@@ -13,8 +13,8 @@ pub fn make_api_asset(
         ) => AssetWithSpe {
             asset: asset.into(),
             spe: AssetSpe::Image(Image {
-                representations: serde_json::value::RawValue::from_string(representations)
-                    .expect("sqlite produces valid json"),
+                representations: serde_json::from_str(&representations)
+                    .expect("got invalid ImageRepresentation json from db"),
             }),
         },
         (model::AssetSpe::Video(_video), repository::timeline::AssetInTimelineExtra::Video {}) => {

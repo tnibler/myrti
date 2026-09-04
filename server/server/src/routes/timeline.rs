@@ -26,25 +26,26 @@ pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/rebuild", post(rebuild_timeline))
         .route("/sections", get(get_timeline_sections))
-        .route("/sections/:id", get(get_timeline_segments))
+        .route("/sections/{id}", get(get_timeline_segments))
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineSegmentsWithId {
     pub section_id: TimelineSectionId,
     pub segments: Vec<TimelineSegment>,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineSectionsResponse {
     pub sections: Vec<TimelineSection>,
     pub months_summary: Vec<Vec<TimelineMonthSlice>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub initial_asset_section: Option<TimelineSegmentsWithId>,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineSection {
     pub id: TimelineSectionId,
@@ -56,7 +57,7 @@ pub struct TimelineSection {
     pub end_date: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineMonthSlice {
     pub year: i32,
@@ -173,7 +174,7 @@ pub async fn get_timeline_sections(
     }))
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum SegmentType {
     DateRange {
@@ -186,7 +187,7 @@ pub enum SegmentType {
     },
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TimelineSegment {
     #[serde(rename = "segment")]
@@ -196,7 +197,7 @@ pub struct TimelineSegment {
     pub items: Vec<TimelineItem>,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", tag = "itemType")]
 pub enum TimelineItem {
     Asset(AssetWithSpe),
@@ -215,7 +216,7 @@ pub struct TimelineSegmentsRequest {
     pub section_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct TimelineSegmentsResponse {
     pub segments: Vec<TimelineSegment>,
 }

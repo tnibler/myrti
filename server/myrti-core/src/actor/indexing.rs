@@ -1,4 +1,5 @@
 use std::collections::{HashSet, VecDeque};
+use std::sync::{Arc, Mutex};
 
 use camino::Utf8PathBuf as PathBuf;
 use eyre::{Context, Result, eyre};
@@ -11,6 +12,7 @@ use myrti_data::db::DbPool;
 use myrti_data::model::{AssetId, AssetRootDir, AssetRootDirId};
 use myrti_data::{interact, repository};
 
+use crate::config::Config;
 use crate::{config, processing::indexing::try_index_file};
 
 #[derive(Debug)]
@@ -59,7 +61,7 @@ pub struct IndexingActorHandle {
 impl IndexingActorHandle {
     pub fn new(
         db_pool: DbPool,
-        config: config::Config,
+        config: Arc<Mutex<Config>>,
         send_from_us: mpsc::UnboundedSender<MsgFromIndexing>,
     ) -> Self {
         let (send, recv) = mpsc::unbounded_channel();
@@ -103,7 +105,7 @@ impl IndexingActorHandle {
 
 struct IndexingActor {
     pub db_pool: DbPool,
-    pub config: config::Config,
+    pub config: Arc<Mutex<Config>>,
     pub send_from_us: mpsc::UnboundedSender<MsgFromIndexing>,
     subtask_recv: mpsc::UnboundedReceiver<(AssetRootDirId, MsgFromIndexing)>,
     subtask_send: mpsc::UnboundedSender<(AssetRootDirId, MsgFromIndexing)>,
@@ -123,7 +125,7 @@ async fn run_indexing_actor(
     loop {
         tokio::select! {
             Some((asset_root_id, msg)) = actor.subtask_recv.recv() => {
-                tracing::trace!(target="indexing", ?msg, "message from subtask");
+                tracing::trace!(target: "indexing", ?msg, "message from subtask");
                 match &msg {
                     MsgFromIndexing::FailedToStartIndexing { root_dir_id, .. }
                     | MsgFromIndexing::IndexingComplete { root_dir_id }
@@ -136,7 +138,7 @@ async fn run_indexing_actor(
                             queued_tasks: queue.len()
                         }).expect("receiver must be alive");
                         if actor.cancel.is_cancelled() && actor.running_tasks.is_empty() {
-                            tracing::debug!(target="indexing", "last indexing child task cancelled, shutting down");
+                            tracing::debug!(target: "indexing", "last indexing child task cancelled, shutting down");
                             debug_assert!(!is_running);
                             return;
                         }
@@ -150,13 +152,13 @@ async fn run_indexing_actor(
                 let _ = actor.send_from_us.send(msg);
             },
             Some(msg) = recv.recv() => {
-                tracing::trace!(target="indexing", ?msg, "message to indexing actor");
+                tracing::trace!(target: "indexing", ?msg, "message to indexing actor");
                 match msg {
                     MsgToIndexing::Shutdown => {
                         is_running = false;
                         actor.cancel.cancel();
                         if actor.running_tasks.is_empty() {
-                            tracing::debug!(target="indexing", "no indexing child tasks running, shutting down");
+                            tracing::debug!(target: "indexing", "no indexing child tasks running, shutting down");
                             return;
                         }
                     }
@@ -213,7 +215,7 @@ impl IndexingActor {
                 let start_result = handle_indexing_message(
                     self.db_pool.clone(),
                     send_copy,
-                    &self.config,
+                    self.config.clone(),
                     root_dir_id,
                     self.cancel.child_token(),
                 )
@@ -237,7 +239,7 @@ impl IndexingActor {
 async fn handle_indexing_message(
     db_pool: DbPool,
     send_result: mpsc::UnboundedSender<(AssetRootDirId, MsgFromIndexing)>,
-    config: &config::Config,
+    config: Arc<Mutex<config::Config>>,
     root_dir_id: AssetRootDirId,
     cancel: CancellationToken,
 ) -> Result<()> {
@@ -247,44 +249,58 @@ async fn handle_indexing_message(
     })
     .await?
     .wrap_err("Error getting AssetRootDir from db")?;
-    let bin_paths = config.bin_paths.clone();
-    let dir_config = config
-        .asset_dirs
-        .iter()
-        .find(|dir| dir.path == asset_root.path);
-    let exclude_globs = dir_config.iter().flat_map(|dir| dir.exclude_globs.iter());
-    // let data_dir_globs = config.da
-    let exclude_set = GlobSet::new(exclude_globs)?;
+    let config = config.lock().unwrap().clone();
+
+    let root_path = asset_root
+        .path
+        .canonicalize_utf8()
+        .wrap_err("error canonicalizing asset root path")?;
     tokio::spawn(async move {
-        index_asset_root(
-            db_pool,
-            send_result,
-            bin_paths,
-            asset_root,
-            exclude_set,
-            cancel,
-        )
-        .await;
+        index_asset_root(db_pool, config, send_result, asset_root, root_path, cancel).await;
     });
     Ok(())
 }
 
 async fn index_asset_root(
     pool: DbPool,
+    config: Config,
     send_result: mpsc::UnboundedSender<(AssetRootDirId, MsgFromIndexing)>,
-    bin_paths: Option<config::BinPaths>,
     asset_root: AssetRootDir,
-    exclude_set: GlobSet,
+    canon_root_path: PathBuf,
     cancel: CancellationToken,
 ) {
     tracing::info!(path=%asset_root.path, "Start indexing");
+
+    let bin_paths = config.bin_paths.clone();
+    let dir_config = config
+        .asset_dirs
+        .iter()
+        .find(|dir| dir.path == asset_root.path)
+        .cloned();
+    let exclude_set = {
+        let exclude_globs = dir_config.iter().flat_map(|dir| dir.exclude_globs.iter());
+        GlobSet::new(exclude_globs).expect("failed to build GlobSet")
+    };
+    let include_set = {
+        let include_globs = dir_config.iter().flat_map(|dir| dir.include_globs.iter());
+        GlobSet::new(include_globs).expect("failed to build GlobSet")
+    };
+
     // TODO WalkDir is synchronous
     let mut new_asset_count = 0;
     let mut stack: Vec<(PathBuf, i32)> = Default::default();
-    for entry in WalkDir::new(asset_root.path.as_path())
+    for entry in WalkDir::new(canon_root_path.as_path())
         .follow_links(true)
         .into_iter()
-        .filter_entry(|ent| !exclude_set.is_match(ent.path()))
+        .filter_entry(|ent| {
+            let canon = ent.path().canonicalize().expect("path must exist");
+            let relative = canon
+                .strip_prefix(&canon_root_path)
+                .expect("subdirectory must have root as prefix");
+            ent.file_type().is_dir()
+                || !exclude_set.is_match(relative)
+                || include_set.is_match(relative)
+        })
     {
         if cancel.is_cancelled() {
             send_result
@@ -301,13 +317,20 @@ async fn index_asset_root(
             Ok(entry) if entry.file_type().is_file() => {
                 let utf8_path = camino::Utf8Path::from_path(entry.path());
                 if let Some(path) = utf8_path {
-                    let indexing_res =
-                        try_index_file(path, &asset_root, &pool, bin_paths.as_ref()).await;
+                    let indexing_res = try_index_file(
+                        path,
+                        &asset_root,
+                        &canon_root_path,
+                        &pool,
+                        bin_paths.as_ref(),
+                    )
+                    .await;
                     let msg = match indexing_res {
                         Ok(None) => {
                             continue;
                         }
                         Ok(Some(asset_id)) => {
+                            tracing::debug!(%path, id=%asset_id, "new asset");
                             new_asset_count += 1;
                             stack
                                 .last_mut()
@@ -377,7 +400,7 @@ async fn index_asset_root(
                 }
             }
             Err(err) => {
-                tracing::warn!(target = "indexing", ?err, "error while listing directory");
+                tracing::warn!(target: "indexing", ?err, "error while listing directory");
                 send_result
                     .send((
                         asset_root.id,
@@ -395,14 +418,6 @@ async fn index_asset_root(
             }
         }
     }
-    send_result
-        .send((
-            asset_root.id,
-            MsgFromIndexing::IndexingComplete {
-                root_dir_id: asset_root.id,
-            },
-        ))
-        .expect("receiver must be alive");
     #[allow(clippy::redundant_closure_call)]
     if let Err(err) = (async || {
         let conn = pool.get().await?;
@@ -423,5 +438,13 @@ async fn index_asset_root(
     {
         tracing::error!("{:?}", err);
     }
+    send_result
+        .send((
+            asset_root.id,
+            MsgFromIndexing::IndexingComplete {
+                root_dir_id: asset_root.id,
+            },
+        ))
+        .expect("receiver must be alive");
     tracing::info!(path=%asset_root.path, new_assets=new_asset_count, "Finished indexing");
 }

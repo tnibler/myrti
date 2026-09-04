@@ -28,10 +28,10 @@ pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/", get(get_all_albums))
         .route("/", post(create_album))
-        .route("/:id/assets", put(append_assets_to_album))
-        .route("/:id", get(get_album_details))
-        .route("/:id/thumbnail/:size/:format", get(get_album_thumbnail))
-        .route("/:id/deleteItems", post(delete_album_items))
+        .route("/{id}/assets", put(append_assets_to_album))
+        .route("/{id}", get(get_album_details))
+        .route("/{id}/thumbnail/{size}/{format}", get(get_album_thumbnail))
+        .route("/{id}/deleteItems", post(delete_album_items))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, ToSchema, IntoParams)]
@@ -151,10 +151,7 @@ pub async fn get_album_details(
                     asset: AssetWithSpe {
                         spe: match &asset.sp {
                             model::AssetSpe::Image(_image) => AssetSpe::Image(Image {
-                                representations: serde_json::value::RawValue::from_string(
-                                    "[]".to_owned(),
-                                )
-                                .expect("TODO"), //FIXME
+                                representations: Default::default(), //FIXME
                             }),
                             model::AssetSpe::Video(video) => AssetSpe::Video(Video {
                                 has_dash: true, // FIXME: field doesn't exist anymore

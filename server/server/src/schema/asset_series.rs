@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use myrti_data::model;
@@ -7,7 +7,7 @@ use crate::schema::AssetId;
 
 use super::AssetSeriesId;
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetSeries {
     pub id: AssetSeriesId,

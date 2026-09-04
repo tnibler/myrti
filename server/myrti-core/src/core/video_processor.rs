@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     num::NonZeroUsize,
+    sync::{Arc, Mutex},
 };
 
 use eyre::{Context, Result};
@@ -46,7 +47,7 @@ pub(super) struct VideoJobProcessor {
 
     db_pool: DbPool,
     storage: Storage,
-    config: Config,
+    config: Arc<Mutex<Config>>,
 }
 
 impl VideoJobProcessor {
@@ -56,7 +57,7 @@ impl VideoJobProcessor {
         result_send: mpsc::Sender<VideoProcessingMsg>,
         db_pool: DbPool,
         storage: Storage,
-        config: Config,
+        config: Arc<Mutex<Config>>,
     ) -> Self {
         Self {
             max_running: max_running.get(),
@@ -172,7 +173,7 @@ impl VideoJobProcessor {
 async fn process(
     db_pool: DbPool,
     storage: Storage,
-    config: Config,
+    config: Arc<Mutex<Config>>,
     job: VideoJob,
     mut control_recv: JobControlRecv,
 ) -> Result<Result<()>, JobError> {
@@ -180,11 +181,12 @@ async fn process(
         VideoJob::PackageVideo(package_op) => {
             tracing::trace!(?package_op, "packaging video");
             let (process_control_send, process_control_recv) = tokio::sync::mpsc::channel(1);
+            let bin_paths = config.lock().unwrap().bin_paths.clone();
             let result_fut = do_package_video(
                 &db_pool,
                 &storage,
                 package_op.clone(),
-                config.bin_paths.as_ref(),
+                bin_paths.as_ref(),
                 process_control_recv,
             );
             run_process_loop(result_fut, &mut control_recv, process_control_send)

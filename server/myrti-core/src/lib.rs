@@ -9,3 +9,5 @@ pub mod util;
 pub fn global_init() {
     processing::image::vips_init();
 }
+
+pub use globset;

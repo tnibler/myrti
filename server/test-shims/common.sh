@@ -6,8 +6,8 @@ if [ "$#" -lt 2 ]; then
     exit 1
 fi
 
-library_dir='/test-library'
-fake_dir='./test-metadata'
+library_dir='../test-library'
+fake_dir='../test-metadata'
 mkdir -p $fake_dir
 
 in_path="$1";     shift

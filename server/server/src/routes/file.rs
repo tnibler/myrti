@@ -36,11 +36,11 @@ pub fn router() -> Router<SharedState> {
         .route("/thumbnails/regenerate", post(regenerate_thumbnail))
         .route("/disableGhiStreaming", post(disable_ghi_streaming))
         .nest(
-            "/:id/",
+            "/{id}/",
             Router::new()
-                .route("/repr/:repr_id", get(get_image_asset_representation))
+                .route("/repr/{repr_id}", get(get_image_asset_representation))
                 .route("/details", get(get_file_details))
-                .route("/thumbnail/:size/:format", get(get_thumbnail))
+                .route("/thumbnail/{size}/{format}", get(get_thumbnail))
                 .route("/original", get(get_original_file))
                 .route("/transform", post(set_asset_transform_correction)),
         )

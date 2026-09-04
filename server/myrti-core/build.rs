@@ -1,8 +1,6 @@
 use std::{env, path::PathBuf, process::Command};
 
 fn main() {
-    // trigger recompilation when a new migration is added
-    println!("cargo:rerun-if-changed=migrations");
     println!("cargo:rerun-if-changed=vips_wrapper");
 
     pkg_config::Config::new()

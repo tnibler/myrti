@@ -18,6 +18,7 @@ CREATE TEMP TABLE IF NOT EXISTS LocalSequences (
 	, existing_series_id INTEGER
 	, existing_series_type INTEGER
 	, existing_series_is_auto INTEGER
+	, existing_series_selection INTEGER
 	, taken_date INTEGER NOT NULL
 	, dirname TEXT NOT NULL
 	, exif_make TEXT
@@ -62,6 +63,7 @@ INSERT INTO LocalSequences (
 	, existing_series_id
 	, existing_series_type
 	, existing_series_is_auto
+	, existing_series_selection
 	, taken_date
 	, dirname
 	, exif_make
@@ -70,7 +72,7 @@ INSERT INTO LocalSequences (
 	, local_seq_id
 	, is_seq_start
 )
-SELECT file_id, asset_id, asset_type, file_ext, series_id, series_type, is_auto, taken_date, dirname, exif_make, exif_model, timelapse_idx
+SELECT file_id, asset_id, asset_type, file_ext, series_id, series_type, is_auto, is_series_selection, taken_date, dirname, exif_make, exif_model, timelapse_idx
 , CASE WHEN is_in_seq IS 1
 	THEN (SUM(COALESCE(is_seq_start, 0)) OVER (
 		PARTITION BY asset_type, file_ext, dirname, exif_make, exif_model
@@ -87,6 +89,7 @@ CREATE TEMP TABLE IF NOT EXISTS GlobalSequences (
 	, is_seq_start INTEGER
 	, existing_series_id INTEGER
 	, existing_series_is_auto INTEGER
+	, existing_series_selection INTEGER
 	) STRICT;
 
 
@@ -121,6 +124,7 @@ WITH GroupedLocalSeqs AS (
 		, ls.existing_series_id
 		, ls.existing_series_type
 		, ls.existing_series_is_auto
+		, ls.existing_series_selection
 		FROM UniqueSeqIds gs INNER JOIN LocalSequences ls
 		ON gs.local_seq_id=ls.local_seq_id
 		AND gs.asset_type=ls.asset_type
@@ -147,12 +151,13 @@ WITH GroupedLocalSeqs AS (
 	GROUP BY asset_ids
 	HAVING MIN(existing_series_is_auto) IS NOT 0
 )
-INSERT INTO GlobalSequences(asset_id, final_series_id, is_seq_start, existing_series_id, existing_series_is_auto)
+INSERT INTO GlobalSequences(asset_id, final_series_id, is_seq_start, existing_series_id, existing_series_is_auto, existing_series_selection)
 SELECT asset_id
 , GlobalLocalMap.global_series_id
 , GlobalLocalMap.is_seq_start
 , DedupedSeqs.existing_series_id
 , DedupedSeqs.existing_series_is_auto
+, GlobalLocalMap.existing_series_selection
 FROM GlobalLocalMap
 INNER JOIN DedupedSeqs ON 
 GlobalLocalMap.global_series_id = DedupedSeqs.global_series_id;
@@ -183,7 +188,7 @@ WHERE Asset.asset_id = cte.asset_id;
 WITH cte AS (
 	SELECT asset_id
 	, MIN(existing_series_id) OVER (PARTITION BY final_series_id) AS final_series_id
-	, is_seq_start AS is_series_selection
+	, COALESCE(existing_series_selection, 0) AS is_series_selection
 	FROM GlobalSequences
 	WHERE existing_series_id IS NOT NULL
 )
@@ -203,3 +208,7 @@ DELETE FROM AssetSeries
 WHERE AssetSeries.is_auto = 1
 AND AssetSeries.series_type = 2
 AND AssetSeries.series_id <> (SELECT retained_series FROM RetainedSeries WHERE existing_series_id = AssetSeries.series_id);
+
+-- Shouldn't be necessary? existing series are supposed to be reused but apparently that's not working
+DELETE FROM AssetSeries 
+WHERE NOT EXISTS (SELECT * FROM Asset WHERE series_id = AssetSeries.series_id);

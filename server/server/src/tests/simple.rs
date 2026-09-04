@@ -479,7 +479,8 @@ async fn simple_integration() {
                 series_id,
                 assets,
                 selection_indices
-            } if *series_id == series.series_id.into() && selection_indices == &[2]
+            } if *series_id == series.series_id.into() && selection_indices == &[3]
+                && assets[3].asset.asset_id == asset_46.base.id.into()
         );
     }
 

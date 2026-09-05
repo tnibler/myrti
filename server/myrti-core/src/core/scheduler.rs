@@ -180,7 +180,7 @@ async fn run_scheduler(
     loop {
         tokio::select! {
             _ = &mut tick_task => {}
-            _ = reindex_rx.recv(), if !sched.waiting_for_shutdown && have_written_to_disk => {
+            _ = reindex_rx.recv(), if !sched.waiting_for_shutdown => {
                 if let Err(err) = reindex_all(&sched.db_pool, &sched.indexing_actor).await {
                     tracing::error!(?err, "Error reindexing asset roots");
                 }

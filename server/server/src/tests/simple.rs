@@ -5,9 +5,11 @@ use axum::http::header;
 use axum::{
     Router,
     body::Body,
-    http::{Request, Response, StatusCode},
+    http::{Response, StatusCode},
 };
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
+use chrono::DateTime;
+use claims::{assert_err, assert_some_eq};
 use eyre::Result;
 
 use http_body_util::BodyExt;
@@ -28,23 +30,23 @@ use myrti_data::{
     repository,
 };
 use serde::{Serialize, de::DeserializeOwned};
-use serde_json::json;
 use tokio::sync::broadcast::{self, error::RecvError};
 use tower::{Service, ServiceExt};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::routes::asset::{SetAssetIsSeriesSelectionResponse, SetAssetSeriesSelectionRequest};
-use crate::schema::AssetId;
+use crate::routes::timeline::{SegmentType, TimelineMonthSlice};
+use crate::routes::timeline_group::{
+    CreateTimelineGroupRequest, CreateTimelineGroupResponse, EditTimelineGroup,
+    EditTimelineGroupRequest,
+};
 use crate::schema::asset::{AssetSpe, AssetWithSpe};
+use crate::schema::{AssetId, TimelineGroupId};
 use crate::{
-    routes::{
-        photo_series::AddAssetsToSeriesRequest,
-        timeline::{
-            TimelineItem, TimelineSectionsResponse, TimelineSegmentsResponse,
-            TimelineSegmentsWithId,
-        },
+    routes::timeline::{
+        TimelineItem, TimelineSectionsResponse, TimelineSegmentsResponse, TimelineSegmentsWithId,
     },
-    schema::{AssetSeriesId, asset_series::AssetSeries},
+    schema::AssetSeriesId,
     server::{Server, SetupConfig, make_app},
 };
 
@@ -166,8 +168,469 @@ impl Test {
     }
 }
 
-#[tokio::test()]
-async fn simple_integration() {
+#[tokio::test]
+async fn timeline_group_basic() {
+    let tracing = tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::from_env("MYRTI_LOG"))
+        .with(tracing_error::ErrorLayer::default())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .compact()
+                .with_target(true)
+                .with_file(false)
+                .with_line_number(false)
+                .with_writer(std::io::stderr),
+        );
+    tracing.init();
+
+    let mut test = Test::new().await;
+
+    test.set_exclude(&["*"]);
+
+    test.send_scheduler(SchedulerMessage::Startup).await;
+    test.send_scheduler(SchedulerMessage::PauseAllProcessing)
+        .await;
+    test.wait_for_message(MessageFromScheduler::IndexingFinished(AssetRootDirId(1)))
+        .await;
+
+    {
+        let sections_resp: TimelineSectionsResponse =
+            test.app.get("/api/timeline/sections").await.json().await;
+        assert_eq!(sections_resp.sections.len(), 0);
+        assert_eq!(sections_resp.months_summary.len(), 0);
+    }
+
+    test.add_includes(&[
+        "GP010797.JPG",
+        "GP010822.JPG",
+        "GP010824.JPG",
+        "20250625_*.jpg",
+        "20250626_*.jpg",
+        "20251231_170735.jpg",
+    ]);
+    test.reindex_wait().await;
+    assert_eq!(
+        test.db_query(repository::asset::get_assets)
+            .await
+            .unwrap()
+            .len(),
+        7
+    );
+
+    {
+        let sections_resp: TimelineSectionsResponse =
+            test.app.get("/api/timeline/sections").await.json().await;
+        assert_eq!(sections_resp.sections.len(), 1);
+        assert_eq!(sections_resp.months_summary.len(), 1);
+        assert_eq!(sections_resp.months_summary[0].len(), 3);
+        assert_matches!(
+            &sections_resp.months_summary[0][0],
+            TimelineMonthSlice {
+                year: 2026,
+                month: 5,
+                num_assets: 3,
+                total_normalized_width: _
+            }
+        );
+        assert_matches!(
+            &sections_resp.months_summary[0][1],
+            TimelineMonthSlice {
+                year: 2025,
+                month: 12,
+                num_assets: 1,
+                total_normalized_width: _
+            }
+        );
+        assert_matches!(
+            &sections_resp.months_summary[0][2],
+            TimelineMonthSlice {
+                year: 2025,
+                month: 6,
+                num_assets: 3,
+                total_normalized_width: _
+            }
+        );
+    }
+    {
+        let segments: TimelineSegmentsResponse =
+            test.app.get("/api/timeline/sections/1").await.json().await;
+        assert_eq!(segments.segments.len(), 5);
+        let want_assets: &[&[&str]] = &[
+            &["GP010824.JPG", "GP010822.JPG"],
+            &["GP010797.JPG"],
+            &["20251231_170735.jpg"],
+            &["20250626_223936.jpg", "20250626_175438.jpg"],
+            &["20250625_154822.jpg"],
+        ];
+        for (segment, want) in segments.segments.iter().zip_eq(want_assets) {
+            for (item, want_filename) in segment.items.iter().zip_eq(*want) {
+                match item {
+                    TimelineItem::Asset(asset_with_spe) => {
+                        assert_eq!(
+                            asset_with_spe.asset.rep_file.path_in_root, *want_filename,
+                            "{:?}",
+                            segments.segments
+                        );
+                    }
+                    other => panic!("expected Asset, got {other:?}"),
+                }
+            }
+        }
+    }
+    let asset1 = test.asset_with_path("GP010822.JPG").await;
+    let asset2 = test.asset_with_path("20251231_170735.jpg").await;
+    let asset4 = test.asset_with_path("20250625_154822.jpg").await;
+    let asset1_id = asset1.base.id;
+
+    {
+        let group_resp: CreateTimelineGroupResponse = test
+            .app
+            .post(
+                "/api/timelinegroups",
+                &CreateTimelineGroupRequest {
+                    assets: vec![asset4.base.id.into()],
+                    name: "unrelated group".to_owned(),
+                },
+            )
+            .await
+            .json()
+            .await;
+        assert_eq!(group_resp.display_date, asset4.base.taken_date);
+    }
+
+    // add asset1 and asset2
+    let group = {
+        let group_resp: CreateTimelineGroupResponse = test
+            .app
+            .post(
+                "/api/timelinegroups",
+                &CreateTimelineGroupRequest {
+                    assets: vec![asset1.base.id.into(), asset2.base.id.into()],
+                    name: "test group".to_owned(),
+                },
+            )
+            .await
+            .json()
+            .await;
+        assert_eq!(group_resp.display_date, asset1.base.taken_date);
+
+        let segments: TimelineSegmentsResponse =
+            test.app.get("/api/timeline/sections/1").await.json().await;
+        assert_eq!(segments.segments.len(), 5);
+        let want_assets: &[&[&str]] = &[
+            &["GP010824.JPG"],
+            &["GP010822.JPG", "20251231_170735.jpg"],
+            &["GP010797.JPG"],
+            &["20250626_223936.jpg", "20250626_175438.jpg"],
+            &["20250625_154822.jpg"],
+        ];
+        for (segment, want) in segments.segments.iter().zip_eq(want_assets) {
+            for (item, want_filename) in segment.items.iter().zip_eq(*want) {
+                match item {
+                    TimelineItem::Asset(asset_with_spe) => {
+                        assert_eq!(
+                            asset_with_spe.asset.rep_file.path_in_root, *want_filename,
+                            "{:?}",
+                            segments.segments
+                        );
+                    }
+                    other => panic!("expected Asset, got {other:?}"),
+                }
+            }
+        }
+        assert_eq!(
+            segments.segments[1].segment,
+            SegmentType::UserGroup {
+                id: group_resp.timeline_group_id.clone(),
+                name: Some("test group".to_owned())
+            }
+        );
+        let group_id: model::TimelineGroupId = group_resp.timeline_group_id.try_into().unwrap();
+        let assets_in_group = test
+            .db_query(move |conn| repository::timeline_group::get_assets_in_group(conn, group_id))
+            .await
+            .unwrap();
+        assert_eq!(assets_in_group, &[asset1.base.clone(), asset2.base.clone()]);
+        let group_for_asset = test
+            .db_query(move |conn| {
+                repository::timeline_group::get_timeline_group_for_asset(conn, asset1_id)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(group_for_asset.id, group_id);
+        assert_eq!(group_for_asset.name.as_deref(), Some("test group"));
+        group_for_asset
+    };
+
+    let str_group_id = TimelineGroupId::from(group.id);
+    let asset3 = test.asset_with_path("20250626_175438.jpg").await;
+    // add asset 3
+    {
+        assert!(
+            !test
+                .app
+                .patch(
+                    &format!("/api/timelinegroups/{str_group_id}"),
+                    &EditTimelineGroupRequest {
+                        assets: vec![asset3.base.id.into()],
+                        operation: EditTimelineGroup::Remove,
+                    },
+                )
+                .await
+                .status()
+                .is_success(),
+            "removing Asset that's not in group should return an error"
+        );
+        assert_eq!(
+            test.app
+                .patch(
+                    &format!("/api/timelinegroups/{str_group_id}"),
+                    &EditTimelineGroupRequest {
+                        assets: vec![asset3.base.id.into()],
+                        operation: EditTimelineGroup::Add,
+                    },
+                )
+                .await
+                .status(),
+            StatusCode::OK
+        );
+
+        let want_assets: &[&[&str]] = &[
+            &["GP010824.JPG"],
+            &["GP010822.JPG", "20251231_170735.jpg", "20250626_175438.jpg"],
+            &["GP010797.JPG"],
+            &["20250626_223936.jpg"],
+            &["20250625_154822.jpg"],
+        ];
+        let segments: TimelineSegmentsResponse =
+            test.app.get("/api/timeline/sections/1").await.json().await;
+        for (segment, want) in segments.segments.iter().zip_eq(want_assets) {
+            for (item, want_filename) in segment.items.iter().zip_eq(*want) {
+                match item {
+                    TimelineItem::Asset(asset_with_spe) => {
+                        assert_eq!(
+                            asset_with_spe.asset.rep_file.path_in_root, *want_filename,
+                            "{:?}",
+                            segments.segments
+                        );
+                    }
+                    other => panic!("expected Asset, got {other:?}"),
+                }
+            }
+        }
+        assert_eq!(
+            segments.segments[1].segment,
+            SegmentType::UserGroup {
+                id: group.id.into(),
+                name: Some("test group".to_owned())
+            }
+        );
+    }
+    // remove asset1
+    {
+        let remove_resp = test
+            .app
+            .patch(
+                &format!("/api/timelinegroups/{str_group_id}"),
+                &EditTimelineGroupRequest {
+                    assets: vec![asset1.base.id.into()],
+                    operation: EditTimelineGroup::Remove,
+                },
+            )
+            .await;
+        assert_eq!(remove_resp.status(), StatusCode::OK,);
+
+        let add_again_resp = test
+            .app
+            .patch(
+                &format!("/api/timelinegroups/{str_group_id}"),
+                &EditTimelineGroupRequest {
+                    assets: vec![asset1.base.id.into()],
+                    operation: EditTimelineGroup::Remove,
+                },
+            )
+            .await;
+        assert!(!add_again_resp.status().is_success());
+
+        let want_assets: &[&[&str]] = &[
+            &["GP010824.JPG", "GP010822.JPG"],
+            &["GP010797.JPG"],
+            &["20251231_170735.jpg", "20250626_175438.jpg"],
+            &["20250626_223936.jpg"],
+            &["20250625_154822.jpg"],
+        ];
+        let segments: TimelineSegmentsResponse =
+            test.app.get("/api/timeline/sections/1").await.json().await;
+        for (segment, want) in segments.segments.iter().zip_eq(want_assets) {
+            for (item, want_filename) in segment.items.iter().zip_eq(*want) {
+                match item {
+                    TimelineItem::Asset(asset_with_spe) => {
+                        assert_eq!(
+                            asset_with_spe.asset.rep_file.path_in_root, *want_filename,
+                            "{:?}",
+                            segments.segments
+                        );
+                    }
+                    other => panic!("expected Asset, got {other:?}"),
+                }
+            }
+        }
+        assert_eq!(
+            segments.segments[2].segment,
+            SegmentType::UserGroup {
+                id: group.id.into(),
+                name: Some("test group".to_owned())
+            }
+        );
+        assert_eq!(segments.segments[2].sort_date, asset2.base.taken_date);
+
+        let no_group_for_asset = test
+            .db_query(move |conn| {
+                repository::timeline_group::get_timeline_group_for_asset(conn, asset1_id)
+            })
+            .await
+            .unwrap();
+        assert_matches!(no_group_for_asset, None);
+
+        let group_for_asset = test
+            .db_query(move |conn| {
+                repository::timeline_group::get_timeline_group_for_asset(conn, asset3.base.id)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(group_for_asset.id, group.id);
+    }
+    {
+        assert_eq!(
+            test.app
+                .patch(
+                    &format!("/api/timelinegroups/{str_group_id}"),
+                    &EditTimelineGroupRequest {
+                        assets: vec![asset2.base.id.into(), asset3.base.id.into()],
+                        operation: EditTimelineGroup::Remove,
+                    },
+                )
+                .await
+                .status(),
+            StatusCode::OK
+        );
+
+        let deleted_group = test
+            .db_query(move |conn| repository::timeline_group::get_timeline_group(conn, group.id))
+            .await;
+        _ = assert_err!(deleted_group);
+
+        let unrelated_group = test
+            .db_query(move |conn| {
+                repository::timeline_group::get_timeline_group_for_asset(conn, asset4.base.id)
+            })
+            .await
+            .unwrap()
+            .expect("unrelated group should not have been deleted");
+        assert_some_eq!(unrelated_group.name, "unrelated group".to_owned());
+    }
+}
+
+#[tokio::test]
+async fn timeline_group_and_series() {
+    let tracing = tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::from_env("MYRTI_LOG"))
+        .with(tracing_error::ErrorLayer::default())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .compact()
+                .with_target(true)
+                .with_file(false)
+                .with_line_number(false)
+                .with_writer(std::io::stderr),
+        );
+    tracing.init();
+
+    let mut test = Test::new().await;
+
+    test.set_exclude(&["*"]);
+
+    test.send_scheduler(SchedulerMessage::Startup).await;
+    test.send_scheduler(SchedulerMessage::PauseAllProcessing)
+        .await;
+    test.wait_for_message(MessageFromScheduler::IndexingFinished(AssetRootDirId(1)))
+        .await;
+
+    {
+        let sections_resp: TimelineSectionsResponse =
+            test.app.get("/api/timeline/sections").await.json().await;
+        assert_eq!(sections_resp.sections.len(), 0);
+        assert_eq!(sections_resp.months_summary.len(), 0);
+    }
+
+    test.add_includes(&[
+        "timelapse/raw-and-jpeg/P107024?.*", // ignore _copy.JPG for now
+        "timelapse/jpeg-only-1/*",
+        "timelapse/jpeg-only-2-start/*",
+    ]);
+    test.reindex_wait().await;
+
+    {
+        let sections_resp: TimelineSectionsResponse =
+            test.app.get("/api/timeline/sections").await.json().await;
+        assert_eq!(sections_resp.sections.len(), 1);
+        assert_eq!(sections_resp.months_summary.len(), 1);
+        assert_eq!(sections_resp.months_summary[0].len(), 1);
+        assert_matches!(
+            &sections_resp.months_summary[0][0],
+            TimelineMonthSlice {
+                year: 2016,
+                month: 8,
+                num_assets: 3, // 3 merged series, not 3 assets
+                total_normalized_width: _
+            }
+        );
+    }
+    {
+        let segments: TimelineSegmentsResponse =
+            test.app.get("/api/timeline/sections/1").await.json().await;
+        assert_eq!(segments.segments.len(), 2);
+        assert_eq!(segments.segments[0].items.len(), 2);
+
+        let seg1 = &segments.segments[1];
+        assert_eq!(
+            seg1.segment,
+            SegmentType::DateRange {
+                // AssetSeries gets assigned a single date, so start and end are equal
+                start: DateTime::parse_from_rfc3339("2016-08-08T11:51:28.433+02:00")
+                    .unwrap()
+                    .to_utc(),
+                end: DateTime::parse_from_rfc3339("2016-08-08T11:51:28.433+02:00")
+                    .unwrap()
+                    .to_utc(),
+            }
+        );
+
+        match seg1.items.first().unwrap() {
+            TimelineItem::AssetSeries {
+                series_id: _,
+                assets,
+                selection_indices,
+            } => {
+                assert_eq!(
+                    assets.first().unwrap().asset.taken_date,
+                    DateTime::parse_from_rfc3339("2016-08-08T11:51:28.433+02:00").unwrap()
+                );
+                assert_eq!(
+                    assets.last().unwrap().asset.taken_date,
+                    DateTime::parse_from_rfc3339("2016-08-08T11:51:03.291+02:00").unwrap()
+                );
+                assert_eq!(selection_indices, &[assets.len() - 1]);
+            }
+            other => panic!("expected AssetSeries, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn timelapse_raw_jpeg() {
     let tracing = tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::from_env("MYRTI_LOG"))
         .with(tracing_error::ErrorLayer::default())
@@ -511,6 +974,9 @@ pub trait RouterTestExt {
     async fn post<T>(&mut self, url: impl AsRef<str>, json: &T) -> Response<Body>
     where
         T: Serialize;
+    async fn patch<T>(&mut self, url: impl AsRef<str>, json: &T) -> Response<Body>
+    where
+        T: Serialize;
 }
 
 pub trait ResponseTestExt {
@@ -538,6 +1004,23 @@ impl RouterTestExt for Router<()> {
         T: Serialize,
     {
         let req = axum::http::Request::post(url.as_ref())
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(json).unwrap()))
+            .unwrap();
+
+        ServiceExt::<axum::http::Request<Body>>::ready(self)
+            .await
+            .unwrap()
+            .call(req)
+            .await
+            .unwrap()
+    }
+
+    async fn patch<T>(&mut self, url: impl AsRef<str>, json: &T) -> Response<Body>
+    where
+        T: Serialize,
+    {
+        let req = axum::http::Request::patch(url.as_ref())
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(serde_json::to_vec(json).unwrap()))
             .unwrap();

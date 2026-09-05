@@ -174,7 +174,7 @@ pub async fn get_timeline_sections(
     }))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum SegmentType {
     DateRange {

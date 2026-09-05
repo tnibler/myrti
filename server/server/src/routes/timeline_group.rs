@@ -1,7 +1,7 @@
 use axum::{
     Json, Router,
-    extract::State,
-    routing::{patch, post},
+    extract::{Path, State},
+    routing::{delete, patch, post},
 };
 use chrono::{DateTime, Utc};
 use eyre::{Context, Result, eyre};
@@ -19,17 +19,17 @@ use crate::{
 pub fn router() -> Router<SharedState> {
     Router::new()
         .route("/", post(create_timeline_group))
-        .route("/", patch(edit_timeline_group))
+        .route("/{id}", patch(edit_timeline_group))
 }
 
-#[derive(Debug, Clone, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateTimelineGroupRequest {
     pub assets: Vec<AssetId>,
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateTimelineGroupResponse {
     pub timeline_group_id: TimelineGroupId,
@@ -82,29 +82,32 @@ pub async fn create_timeline_group(
     }))
 }
 
-#[derive(Debug, Copy, Clone, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum EditTimelineGroup {
     Add,
     Remove,
 }
 
-#[derive(Debug, Clone, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct EditTimelineGroupRequest {
     pub assets: Vec<AssetId>,
-    pub group_id: TimelineGroupId,
     pub operation: EditTimelineGroup,
 }
 
 #[utoipa::path(
     patch,
-    path = "/api/timelinegroups",
+    path = "/api/timelinegroups/{id}",
     request_body = EditTimelineGroupRequest,
     responses((status = 200)),
+    params(
+        ("id" = String, Path, description = "timeline group id"),
+    ),
 )]
 pub async fn edit_timeline_group(
     State(app_state): State<SharedState>,
+    Path(group_id): Path<TimelineGroupId>,
     Json(request): Json<EditTimelineGroupRequest>,
 ) -> ApiResult<()> {
     if request.assets.is_empty() {
@@ -115,7 +118,7 @@ pub async fn edit_timeline_group(
         .into_iter()
         .map(|id| id.try_into())
         .collect::<Result<Vec<_>>>()?;
-    let group_id: model::TimelineGroupId = request.group_id.try_into()?;
+    let group_id: model::TimelineGroupId = group_id.try_into()?;
     let conn = app_state.pool.get().await?;
     interact!(conn, move |conn| {
         match request.operation {

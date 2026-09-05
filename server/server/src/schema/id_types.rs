@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use eyre::eyre;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -6,6 +8,12 @@ use myrti_data::model;
 
 macro_rules! impl_api_id {
     ($ident:ident) => {
+        impl Display for $ident {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_fmt(format_args!("{}", self.0))
+            }
+        }
+
         impl From<&model::$ident> for $ident {
             fn from(value: &model::$ident) -> Self {
                 $ident(value.0.to_string())

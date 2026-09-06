@@ -1353,7 +1353,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       return;
     }
 
-    await editTimelineGroup({ assets: assetIdsInGroup, groupId, operation: 'add' });
+    await editTimelineGroup(groupId, { assets: assetIdsInGroup, operation: 'add' });
 
     let mergeInto: (TimelineSegment & { type: 'group' }) | null = null;
     outer: for (const [sectionIdx, section] of sections.entries()) {
@@ -1568,7 +1568,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
       console.error('not items in group selected');
       return;
     }
-    await editTimelineGroup({ groupId, assets: assetIds, operation: 'remove' });
+    await editTimelineGroup(groupId, { assets: assetIds, operation: 'remove' });
     clearSelection();
     for (const sectionIdx of affectedSections) {
       await loadSection(sectionIdx, 'reload');

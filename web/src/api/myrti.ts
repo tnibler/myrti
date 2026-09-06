@@ -201,7 +201,6 @@ export const EditTimelineGroup = {
 
 export interface EditTimelineGroupRequest {
   assets: AssetId[];
-  groupId: TimelineGroupId;
   operation: EditTimelineGroup;
 }
 
@@ -292,6 +291,7 @@ export type SegmentTypeOneOfThree = {
 export type SegmentType = SegmentTypeOneOf | SegmentTypeOneOfThree;
 
 export interface SetAssetIsSeriesSelectionResponse {
+  /** All assets in the series */
   assetIds: AssetId[];
   selectionIndices: number[];
   seriesId: AssetSeriesId;
@@ -595,16 +595,18 @@ export const createSeries = <TData = AxiosResponse<CreateSeriesResponse>>(
 };
 
 export const deleteSeries = <TData = AxiosResponse<DeleteSeries200>>(
+  id: string,
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
-  return axios.delete(`/api/photoSeries/:id`, options);
+  return axios.delete(`/api/photoSeries/${id}`, options);
 };
 
 export const addAssetsToSeries = <TData = AxiosResponse<AssetSeries>>(
+  id: string,
   addAssetsToSeriesRequest: AddAssetsToSeriesRequest,
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
-  return axios.patch(`/api/photoSeries/:id`, addAssetsToSeriesRequest, options);
+  return axios.patch(`/api/photoSeries/${id}`, addAssetsToSeriesRequest, options);
 };
 
 export const rebuildTimeline = <TData = AxiosResponse<void>>(
@@ -638,10 +640,11 @@ export const createTimelineGroup = <TData = AxiosResponse<CreateTimelineGroupRes
 };
 
 export const editTimelineGroup = <TData = AxiosResponse<void>>(
+  id: string,
   editTimelineGroupRequest: EditTimelineGroupRequest,
   options?: AxiosRequestConfig,
 ): Promise<TData> => {
-  return axios.patch(`/api/timelinegroups`, editTimelineGroupRequest, options);
+  return axios.patch(`/api/timelinegroups/${id}`, editTimelineGroupRequest, options);
 };
 
 export type GetAllAlbumsResult = AxiosResponse<Album[]>;

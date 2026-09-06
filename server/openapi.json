@@ -649,7 +649,7 @@
         }
       }
     },
-    "/api/photoSeries/:id": {
+    "/api/photoSeries/{id}": {
       "delete": {
         "tags": [
           "crate::routes::photo_series"
@@ -828,12 +828,25 @@
             }
           }
         }
-      },
+      }
+    },
+    "/api/timelinegroups/{id}": {
       "patch": {
         "tags": [
           "crate::routes::timeline_group"
         ],
         "operationId": "editTimelineGroup",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "timeline group id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1332,7 +1345,6 @@
         "type": "object",
         "required": [
           "assets",
-          "groupId",
           "operation"
         ],
         "properties": {
@@ -1341,9 +1353,6 @@
             "items": {
               "$ref": "#/components/schemas/AssetId"
             }
-          },
-          "groupId": {
-            "$ref": "#/components/schemas/TimelineGroupId"
           },
           "operation": {
             "$ref": "#/components/schemas/EditTimelineGroup"
@@ -1524,7 +1533,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/AssetId"
-            }
+            },
+            "description": "All assets in the series"
           },
           "selectionIndices": {
             "type": "array",

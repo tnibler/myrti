@@ -167,7 +167,7 @@ export const setAssetIsSeriesSelectionBody = zod.object({
 export const setAssetIsSeriesSelectionResponseSelectionIndicesItemMin = 0;
 
 export const setAssetIsSeriesSelectionResponse = zod.object({
-  assetIds: zod.array(zod.string()),
+  assetIds: zod.array(zod.string()).describe('All assets in the series'),
   selectionIndices: zod.array(
     zod.number().min(setAssetIsSeriesSelectionResponseSelectionIndicesItemMin),
   ),
@@ -592,8 +592,11 @@ export const createTimelineGroupResponse = zod.object({
   timelineGroupId: zod.string(),
 });
 
+export const editTimelineGroupParams = zod.object({
+  id: zod.string().describe('timeline group id'),
+});
+
 export const editTimelineGroupBody = zod.object({
   assets: zod.array(zod.string()),
-  groupId: zod.string(),
   operation: zod.enum(['add', 'remove']),
 });

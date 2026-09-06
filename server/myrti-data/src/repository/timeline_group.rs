@@ -165,12 +165,21 @@ pub fn remove_assets_from_group(
         )
         .execute(conn)?;
         if affected_rows < asset_ids.len() {
-            Err(eyre!(
+            return Err(eyre!(
                 "mismatch: not all asset_ids belonged to specified group_id"
-            ))
-        } else {
-            Ok(())
+            ));
         }
+        let deleted = diesel::delete(TimelineGroup::table)
+            .filter(diesel::dsl::not(diesel::dsl::exists(
+                TimelineGroupItem::table
+                    .filter(TimelineGroupItem::group_id.eq(TimelineGroup::timeline_group_id)),
+            )))
+            .execute(conn)
+            .wrap_err("error deleting newly empty timeline group")?;
+        if deleted > 0 {
+            tracing::debug!(?group_id, removed_assets=?asset_ids, "deleted newly empty timeline group")
+        }
+        Ok(())
     })?;
     if let Err(err) = super::timeline::update_timeline_dirty(conn) {
         tracing::error!("Error updating dirty timeline:\n{:?}", err);

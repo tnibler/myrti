@@ -50,6 +50,26 @@ use crate::{
     server::{Server, SetupConfig, make_app},
 };
 
+fn setup_tracing() {
+    let tracing = tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(tracing_subscriber::filter::LevelFilter::DEBUG.into())
+                .with_env_var("MYRTI_LOG")
+                .from_env_lossy(),
+        )
+        .with(tracing_error::ErrorLayer::default())
+        .with(
+            tracing_subscriber::fmt::layer()
+                .compact()
+                .with_target(true)
+                .with_file(false)
+                .with_line_number(false)
+                .with_test_writer(),
+        );
+    _ = tracing.try_init();
+}
+
 pub struct Test {
     pub app: Router<()>,
     pub scheduler: SchedulerHandle,
@@ -63,7 +83,11 @@ impl Test {
         let config = Config {
             asset_dirs: vec![AssetDir {
                 name: None,
-                path: PathBuf::from("../test-library"),
+                path: if std::env::var("MYRTI_TEST_REAL_DATA").is_ok_and(|s| !s.is_empty()) {
+                    PathBuf::from("../test-data/library")
+                } else {
+                    PathBuf::from("../test-data/fake-tree")
+                },
                 exclude_globs: Default::default(),
                 include_globs: Default::default(),
             }],
@@ -170,19 +194,7 @@ impl Test {
 
 #[tokio::test]
 async fn timeline_group_basic() {
-    let tracing = tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::from_env("MYRTI_LOG"))
-        .with(tracing_error::ErrorLayer::default())
-        .with(
-            tracing_subscriber::fmt::layer()
-                .compact()
-                .with_target(true)
-                .with_file(false)
-                .with_line_number(false)
-                .with_writer(std::io::stderr),
-        );
-    tracing.init();
-
+    setup_tracing();
     let mut test = Test::new().await;
 
     test.set_exclude(&["*"]);
@@ -535,18 +547,7 @@ async fn timeline_group_basic() {
 
 #[tokio::test]
 async fn timeline_group_and_series() {
-    let tracing = tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::from_env("MYRTI_LOG"))
-        .with(tracing_error::ErrorLayer::default())
-        .with(
-            tracing_subscriber::fmt::layer()
-                .compact()
-                .with_target(true)
-                .with_file(false)
-                .with_line_number(false)
-                .with_writer(std::io::stderr),
-        );
-    tracing.init();
+    setup_tracing();
 
     let mut test = Test::new().await;
 
@@ -631,18 +632,7 @@ async fn timeline_group_and_series() {
 
 #[tokio::test]
 async fn timelapse_raw_jpeg() {
-    let tracing = tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::from_env("MYRTI_LOG"))
-        .with(tracing_error::ErrorLayer::default())
-        .with(
-            tracing_subscriber::fmt::layer()
-                .compact()
-                .with_target(true)
-                .with_file(false)
-                .with_line_number(false)
-                .with_writer(std::io::stderr),
-        );
-    tracing.init();
+    setup_tracing();
 
     let mut test = Test::new().await;
 

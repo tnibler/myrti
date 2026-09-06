@@ -128,7 +128,7 @@
   const transformString = $derived(`translate3d(${Math.round(xTransform)}px, 0px, 0px)`);
   let backgroundOpacity = $state(0);
   /** enable CSS transition when assigning backgroundOpacity. Only set on open and close. */
-  let backgroundOpacityTransition = $state(true);
+  let backgroundOpacityTransition = $state(useOpenTransition);
 
   let hasMouse = $state(false);
 
@@ -426,7 +426,7 @@
     bind:offsetWidth={viewport.width}
   >
     <div
-      class="w-full h-full top-0 left-0 bg-black z-0 transition-opacity duration-300 ease-in-out"
+      class="w-full h-full top-0 left-0 bg-black z-0 duration-300"
       style:opacity={backgroundOpacity}
       style:will-change="opacity"
       class:transition-opacity={backgroundOpacityTransition}

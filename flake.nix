@@ -40,7 +40,7 @@
         version = "0.1";
         src = ./web;
         pnpm = pkgs.pnpm_11;
-        fetcherVersion = 3; # See https://nixos.org/manual/nixpkgs/stable/#javascript-pnpm-fetcherVersion
+        fetcherVersion = 4; # See https://nixos.org/manual/nixpkgs/stable/#javascript-pnpm-fetcherVersion
         hash = "sha256-Wdoh3V3jTs0zipybwK2rYd4RoRoZ5mOKt1zuHaNTQxc=";
       };
 

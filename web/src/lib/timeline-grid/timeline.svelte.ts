@@ -310,7 +310,7 @@ export function createTimeline(opts: TimelineOptions): ITimelineGrid {
     for (const [key, height] of totalMonthHeights.entries()) {
       const scaled =
         height > compressThresh ? compressThresh * (1 + Math.log(height / compressThresh)) : height;
-      const scale = scaled / height;
+      const scale = height > 0.0 ? scaled / height : 1.0;
       monthScaling.set(key, scale);
     }
 

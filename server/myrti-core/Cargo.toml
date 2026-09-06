@@ -3,6 +3,9 @@ name = "myrti-core"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+__private-test = []
+
 [dependencies]
 myrti-data = { path = "../myrti-data" }
 

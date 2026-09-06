@@ -3,7 +3,10 @@ use fasthash::{SeaHasher, StreamHasher};
 use std::hash::Hasher;
 
 #[tracing::instrument(skip(s), level = "trace")]
-pub async fn hash_file(mut s: std::fs::File) -> Result<u64> {
+pub async fn hash_file<R>(mut s: R) -> Result<u64>
+where
+    R: std::io::Read + Send + 'static,
+{
     let (tx, rx) = tokio::sync::oneshot::channel::<std::io::Result<u64>>();
     rayon::spawn(move || {
         let mut hasher: SeaHasher = Default::default();

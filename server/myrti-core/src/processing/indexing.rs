@@ -132,7 +132,7 @@ async fn index_file(
         // TODO: Should probably use libmagic or something faster and more accurate at some point
         Some(mime) if mime.starts_with("image") && !mime.eq_ignore_ascii_case("image/vnd.fpx") => {
             let p = path.to_owned();
-            let size = if cfg!(test) {
+            let size = if cfg!(any(test, feature = "__private-test")) {
                 if let Some(exiftool::Composite {
                     width: Some(width),
                     height: Some(height),
@@ -206,7 +206,11 @@ async fn index_file(
         .wrap_err("could not open asset file")?
         .try_into_std()
         .unwrap();
+    #[cfg(feature = "__private-test")]
+    let hash = hash_file(std::io::Cursor::new(String::from(path.as_str()))).await?;
+    #[cfg(not(feature = "__private-test"))]
     let hash = hash_file(file).await?;
+
     let conn = pool.get().await?;
     let path_in_asset_root2 = path_in_asset_root.to_owned();
     let is_duplicate = interact!(conn, move |conn| {
@@ -238,7 +242,10 @@ async fn index_file(
             TimestampInfo::TzCertain(*dt.offset()),
         ),
         TimestampGuess::Local(dt) => (
-            dt.and_utc(),
+            dt.and_local_timezone(chrono::offset::Local)
+                .unwrap()
+                .fixed_offset()
+                .to_utc(),
             TimestampInfo::TzGuessedLocal(*Local::now().offset()),
         ),
     };

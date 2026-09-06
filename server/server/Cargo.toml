@@ -38,6 +38,8 @@ pkg-config = "0.3.27"
 bindgen = "0.66.1"
 
 [dev-dependencies]
+myrti-core = { path = "../myrti-core", features = ["__private-test"] }
+
 claims = "0.7.1"
 http-body-util = "0.1.5"
 pretty_assertions = "1.4.0"

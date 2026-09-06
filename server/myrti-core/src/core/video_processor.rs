@@ -5,7 +5,7 @@ use std::{
 };
 
 use eyre::{Context, Result};
-use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 
 use myrti_data::db::DbPool;
 
@@ -32,16 +32,14 @@ pub(super) enum VideoJob {
     PackageVideo(PackageVideo),
 }
 
-pub(super) type VideoProcessingMsg = (JobId, Result<Result<()>, JobError>);
+pub(super) type VideoJobResult = (JobId, Result<Result<()>, JobError>);
 
-#[derive(Clone)]
 pub(super) struct VideoJobProcessor {
     max_running: usize,
     max_queued: usize,
     queue: VecDeque<(JobId, VideoJob)>,
     accepting_new: bool,
-    // back up to scheduler
-    result_send: Option<mpsc::Sender<VideoProcessingMsg>>,
+    pub join_set: JoinSet<VideoJobResult>,
     running_jobs: HashMap<JobId, RunningJob>,
     next_job_id: u64,
 
@@ -54,7 +52,6 @@ impl VideoJobProcessor {
     pub fn new(
         max_running: NonZeroUsize,
         max_queued: NonZeroUsize,
-        result_send: mpsc::Sender<VideoProcessingMsg>,
         db_pool: DbPool,
         storage: Storage,
         config: Arc<Mutex<Config>>,
@@ -64,12 +61,12 @@ impl VideoJobProcessor {
             max_queued: max_queued.get(),
             queue: Default::default(),
             accepting_new: true,
-            result_send: Some(result_send),
             running_jobs: Default::default(),
             next_job_id: 0,
             db_pool,
             storage,
             config,
+            join_set: Default::default(),
         }
     }
 
@@ -129,7 +126,6 @@ impl VideoJobProcessor {
 
     pub fn shutdown(&mut self) {
         self.cancel_all();
-        self.result_send = None;
     }
 
     pub fn on_job_finished(&mut self, job_id: JobId) {
@@ -147,7 +143,6 @@ impl VideoJobProcessor {
         assert!(self.running_jobs.len() < self.max_running);
         tracing::trace!(?job_id, "starting job");
         let (control_send, control_recv) = new_job_control();
-        let result_send = self.result_send.clone().expect("must not be shut down");
         self.running_jobs.insert(
             job_id,
             RunningJob {
@@ -158,9 +153,9 @@ impl VideoJobProcessor {
         let db_pool = self.db_pool.clone();
         let storage = self.storage.clone();
         let config = self.config.clone();
-        tokio::task::spawn(async move {
+        self.join_set.spawn(async move {
             let result = process(db_pool, storage, config, job, control_recv).await;
-            let _ = result_send.send((job_id, result)).await;
+            (job_id, result)
         });
     }
 

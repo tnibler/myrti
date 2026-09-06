@@ -12,9 +12,9 @@ use myrti_data::db::{DbPool, PooledDbConn};
 use myrti_data::model::{AssetId, AssetRootDirId, AssetSpe, FileId};
 use myrti_data::{interact, repository};
 
-use crate::core::image_processor::{ImageJob, ImageJobProcessor, ImageProcessingMsg};
+use crate::core::image_processor::{ImageJob, ImageJobProcessor, ImageJobResult};
 use crate::core::job_control::{JobError, JobId};
-use crate::core::video_processor::{VideoJob, VideoJobProcessor, VideoProcessingMsg};
+use crate::core::video_processor::{VideoJob, VideoJobProcessor, VideoJobResult};
 use crate::{
     actor::indexing::{IndexingActorHandle, MsgFromIndexing},
     catalog::{
@@ -94,13 +94,9 @@ impl SchedulerHandle {
         let indexing_actor =
             IndexingActorHandle::new(db_pool.clone(), config.clone(), from_indexing_send);
 
-        let (from_imageproc_send, from_imageproc_recv) = mpsc::channel(100);
-        let (from_videoproc_send, from_videoproc_recv) = mpsc::channel(100);
-
         let video_proc = VideoJobProcessor::new(
             2.try_into().unwrap(),
             100.try_into().unwrap(),
-            from_videoproc_send,
             db_pool.clone(),
             storage.clone(),
             config.clone(),
@@ -108,7 +104,6 @@ impl SchedulerHandle {
         let image_proc = ImageJobProcessor::new(
             4.try_into().unwrap(),
             1000.try_into().unwrap(),
-            from_imageproc_send,
             db_pool.clone(),
             storage.clone(),
             config.clone(),
@@ -128,13 +123,7 @@ impl SchedulerHandle {
             dropped_image_jobs: false,
             dropped_video_jobs: false,
         };
-        tokio::spawn(run_scheduler(
-            sched,
-            recv,
-            from_indexing_recv,
-            from_imageproc_recv,
-            from_videoproc_recv,
-        ));
+        tokio::spawn(run_scheduler(sched, recv, from_indexing_recv));
         (Self { send }, from_us_recv)
     }
 }
@@ -143,8 +132,6 @@ async fn run_scheduler(
     mut sched: Scheduler,
     mut recv: mpsc::Receiver<SchedulerMessage>,
     mut indexing_recv: mpsc::UnboundedReceiver<MsgFromIndexing>,
-    mut imageproc_recv: mpsc::Receiver<ImageProcessingMsg>,
-    mut videoproc_recv: mpsc::Receiver<VideoProcessingMsg>,
 ) {
     let mut have_written_to_disk = true;
     let (reindex_tx, mut reindex_rx) = mpsc::channel::<()>(5);
@@ -152,7 +139,7 @@ async fn run_scheduler(
     let cancel_ticks = CancellationToken::default();
     let cancel_copy = cancel_ticks.clone();
 
-    let mut tick_task = tokio::task::spawn(async move {
+    let tick_task = tokio::task::spawn(async move {
         let mut reindex_interval = { tokio::time::interval(Duration::from_mins(60)) };
         let mut check_disk_interval = {
             let mut int = tokio::time::interval(Duration::from_mins(5));
@@ -175,7 +162,6 @@ async fn run_scheduler(
     });
     loop {
         tokio::select! {
-            _ = &mut tick_task => {}
             _ = reindex_rx.recv(), if !sched.waiting_for_shutdown => {
                 if let Err(err) = reindex_all(&sched.db_pool, &sched.indexing_actor).await {
                     tracing::error!(?err, "Error reindexing asset roots");
@@ -207,16 +193,30 @@ async fn run_scheduler(
                     tracing::error!(?err, "error in scheduler");
                 }
             }
-            Some(msg) = imageproc_recv.recv() => {
+            Some(join_result) = sched.image_proc.join_set.join_next() => {
                 have_written_to_disk = true;
-                if let Err(err) = sched.on_image_msg(msg).await {
-                    tracing::error!(?err, "error in scheduler");
+                match join_result {
+                    Ok(result) => {
+                        if let Err(err) = sched.on_image_msg(result).await {
+                            tracing::error!(?err, "error in scheduler");
+                        }
+                    }
+                    Err(join_err) => {
+                        tracing::error!(%join_err);
+                    }
                 }
             }
-            Some(msg) = videoproc_recv.recv() => {
+            Some(join_result) = sched.video_proc.join_set.join_next() => {
                 have_written_to_disk = true;
-                if let Err(err) = sched.on_video_msg(msg).await {
-                    tracing::error!(?err, "error in scheduler");
+                match join_result {
+                    Ok(result) => {
+                        if let Err(err) = sched.on_video_msg(result).await {
+                            tracing::error!(?err, "error in scheduler");
+                        }
+                    }
+                    Err(join_err) => {
+                        tracing::error!(%join_err);
+                    }
                 }
             }
             else => {
@@ -225,6 +225,7 @@ async fn run_scheduler(
         }
     }
     tracing::info!("Exiting main loop");
+    _ = tick_task.await;
 }
 
 impl Scheduler {
@@ -348,10 +349,7 @@ impl Scheduler {
         Ok(())
     }
 
-    async fn on_image_msg(
-        &mut self,
-        (job_id, result): (JobId, Result<Result<()>, JobError>),
-    ) -> Result<()> {
+    async fn on_image_msg(&mut self, (job_id, result): ImageJobResult) -> Result<()> {
         match result {
             Err(JobError::Cancelled) => {
                 tracing::debug!(?job_id, "image job cancelled");
@@ -376,10 +374,7 @@ impl Scheduler {
         Ok(())
     }
 
-    async fn on_video_msg(
-        &mut self,
-        (job_id, result): (JobId, Result<Result<()>, JobError>),
-    ) -> Result<()> {
+    async fn on_video_msg(&mut self, (job_id, result): VideoJobResult) -> Result<()> {
         match result {
             Err(JobError::Cancelled) => {
                 tracing::debug!(?job_id, "video job cancelled");

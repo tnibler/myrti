@@ -13,6 +13,7 @@ use myrti_data::model::{
     ImageRepresentationId, Size, ThumbnailFormat, ThumbnailType,
 };
 use myrti_data::{interact, repository};
+use tokio::task::JoinSet;
 
 use crate::catalog::image_conversion_target::heif::AvifTarget;
 use crate::catalog::image_conversion_target::{ImageFormatTarget, image_format_name};
@@ -36,20 +37,18 @@ struct RunningJob {
     job: ImageJob,
 }
 
-#[derive(Clone)]
 pub(super) struct ImageJobProcessor {
     max_running: usize,
     max_queued: usize,
     queue: VecDeque<(FileId, VecDeque<(JobId, ImageJob)>)>,
     n_queued: usize,
     accepting_new: bool,
-    // back up to scheduler
-    result_send: Option<mpsc::Sender<ImageProcessingMsg>>,
     running_jobs: HashMap<JobId, RunningJob>,
     next_job_id: u64,
 
     db_pool: DbPool,
     storage: Storage,
+    pub join_set: JoinSet<ImageJobResult>,
     config: Arc<Mutex<Config>>,
 }
 
@@ -63,13 +62,12 @@ pub(super) enum ImageJob {
     ConvertImage(ConvertImage),
 }
 
-pub(super) type ImageProcessingMsg = (JobId, Result<Result<()>, JobError>);
+pub(super) type ImageJobResult = (JobId, Result<Result<()>, JobError>);
 
 impl ImageJobProcessor {
     pub fn new(
         max_running: NonZeroUsize,
         max_queued: NonZeroUsize,
-        result_send: mpsc::Sender<ImageProcessingMsg>,
         db_pool: DbPool,
         storage: Storage,
         config: Arc<Mutex<Config>>,
@@ -80,12 +78,12 @@ impl ImageJobProcessor {
             queue: Default::default(),
             n_queued: 0,
             accepting_new: true,
-            result_send: Some(result_send),
             running_jobs: Default::default(),
             next_job_id: 0,
             db_pool,
             storage,
             config,
+            join_set: Default::default(),
         }
     }
 
@@ -177,7 +175,6 @@ impl ImageJobProcessor {
 
     pub fn shutdown(&mut self) {
         self.cancel_all();
-        self.result_send = None;
     }
 
     pub fn on_job_finished(&mut self, job_id: JobId) {
@@ -196,7 +193,6 @@ impl ImageJobProcessor {
         assert!(self.running_jobs.len() < self.max_running);
         tracing::trace!(?job_id, ?file_id, "starting job");
         let (control_send, control_recv) = new_job_control();
-        let result_send = self.result_send.clone().expect("must not be shut down");
         self.running_jobs.insert(
             job_id,
             RunningJob {
@@ -206,9 +202,9 @@ impl ImageJobProcessor {
         );
         let db_pool = self.db_pool.clone();
         let storage = self.storage.clone();
-        tokio::task::spawn(async move {
+        self.join_set.spawn(async move {
             let result = process(db_pool, storage, file_id, job, control_recv).await;
-            let _ = result_send.send((job_id, result)).await;
+            (job_id, result)
         });
     }
 

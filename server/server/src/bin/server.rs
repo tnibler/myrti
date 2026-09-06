@@ -238,6 +238,7 @@ async fn main() -> Result<()> {
         .send(SchedulerMessage::Shutdown)
         .await
         .expect("scheduler must be alive");
+    drop(scheduler);
     info!("Waiting for shutdown...");
     loop {
         let received = scheduler_recv.recv().await;

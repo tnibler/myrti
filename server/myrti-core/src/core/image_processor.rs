@@ -1,4 +1,5 @@
 use std::collections::{HashMap, VecDeque};
+use std::io::ErrorKind;
 use std::num::NonZeroUsize;
 use std::os::unix::fs::MetadataExt;
 use std::sync::{Arc, Mutex};
@@ -377,6 +378,15 @@ async fn convert_image(conn: &mut PooledDbConn, storage: &Storage, op: ConvertIm
     .await??;
 
     let out_path = storage.local_path(&op.output_file_key);
+    tracing::debug!(convert_image=?op, %out_path, "converting image");
+    let out_dir = out_path
+        .parent()
+        .expect("ouput path has directory component");
+    match tokio::fs::create_dir(out_dir).await {
+        Err(err) if err.kind() == ErrorKind::AlreadyExists => Ok(()),
+        result => result,
+    }
+    .wrap_err_with(|| format!("error creating output directory {}", out_dir))?;
     let input_path = asset_path.path_on_disk();
     let target = op.target.clone();
     let (tx, rx) = tokio::sync::oneshot::channel();

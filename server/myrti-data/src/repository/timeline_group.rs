@@ -131,7 +131,7 @@ pub fn remove_assets_from_group(
     asset_ids: &[AssetId],
 ) -> Result<()> {
     use diesel::sql_types::BigInt;
-    use schema::TimelineGroupItem;
+    use schema::{TimelineGroup, TimelineGroupItem};
     define_sql_function! { fn coalesce(x: BigInt, y: BigInt) -> BigInt; }
 
     if asset_ids.is_empty() {
@@ -164,6 +164,13 @@ pub fn remove_assets_from_group(
                 .filter(TimelineGroupItem::timeline_group_item_id.eq_any(&tgi_ids)),
         )
         .execute(conn)?;
+        diesel::delete(TimelineGroup::table)
+            .filter(diesel::dsl::not(diesel::dsl::exists(
+                TimelineGroupItem::table
+                    .filter(TimelineGroupItem::group_id.eq(TimelineGroup::timeline_group_id)),
+            )))
+            .execute(conn)
+            .wrap_err("error deleting newly empty timeline group")?;
         if affected_rows < asset_ids.len() {
             return Err(eyre!(
                 "mismatch: not all asset_ids belonged to specified group_id"

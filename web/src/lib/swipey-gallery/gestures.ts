@@ -1,13 +1,16 @@
 import { finishDrag, updateDrag } from './drag';
 import type { GalleryControls } from './Pager.svelte';
+import { clampPanToBounds, computePanBounds } from './pan-bounds';
+import type { SlideControls } from './types';
 import { distance, type Point } from './util_types';
-import { finishZoom, updateZoom } from './zoom';
+import { computePanForChangedZoomLevel, finishZoom, updateZoom } from './zoom';
 
 export type GestureController = {
   onClick: (e: MouseEvent) => void;
   onPointerDown: (e: PointerEvent) => void;
   onPointerUp: (e: PointerEvent) => void;
   onPointerMove: (e: PointerEvent) => void;
+  onWheel: (e: WheelEvent) => void;
 };
 
 const AXIS_DRAG_HYSTERESIS = 10;
@@ -336,11 +339,50 @@ export function newGestureController(
     rafCallback = requestAnimationFrame(rafRenderLoop);
   }
 
+  function onWheel(e: WheelEvent) {
+    if (!e.ctrlKey) {
+      return;
+    }
+    e.preventDefault();
+    const slideControls: SlideControls = gallery.currentSlide;
+    const currentZoom = slideControls.currentZoomLevel;
+    const speed = [0.01, 0.04, 0.1]; // DOM_DELTA_PIXEL, DOM_DELTA_LINE, DOM_DELTA_PAGE
+    const factor = 1 - e.deltaY * (speed[e.deltaMode] ?? speed[0]);
+    const newZoom = Math.min(
+      slideControls.zoomLevels.max,
+      Math.max(slideControls.zoomLevels.min, currentZoom * factor),
+    );
+    const point = {
+      x: e.pageX - gallery.pager.viewportSize.width / 2,
+      y: e.pageY - gallery.pager.viewportSize.height / 2,
+    };
+    const panX = computePanForChangedZoomLevel(
+      'x',
+      newZoom,
+      currentZoom,
+      point,
+      point,
+      slideControls.pan,
+    );
+    const panY = computePanForChangedZoomLevel(
+      'y',
+      newZoom,
+      currentZoom,
+      point,
+      point,
+      slideControls.pan,
+    );
+    slideControls.setZoomLevel(newZoom);
+    const bounds = computePanBounds(slideControls.size, gallery.pager.viewportSize, newZoom);
+    slideControls.pan = clampPanToBounds({ x: panX, y: panY }, bounds);
+  }
+
   return {
     onClick,
     onPointerDown,
     onPointerUp,
     onPointerMove,
+    onWheel,
   };
 }
 

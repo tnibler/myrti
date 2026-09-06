@@ -224,6 +224,7 @@
         return;
       }
     };
+    pagerWrapper.onwheel = gestureController.onWheel;
     pagerWrapper.onpointercancel = gestureController.onPointerUp;
     document.documentElement.onpointerleave = gestureController.onPointerUp;
     pagerWrapper.onmousemove = () => {
@@ -234,6 +235,7 @@
   function unbindEvents() {
     pagerWrapper.onpointerdown = null;
     document.documentElement.onpointerleave = null;
+    pagerWrapper.onwheel = null;
     pagerWrapper.onpointercancel = null;
     pagerWrapper.onclick = null;
     pagerWrapper.onmousemove = null;

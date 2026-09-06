@@ -3,7 +3,7 @@
     myrti turns your photo dump into a friendly gallery
   </h3>
 
-  <video align="center" width="800" src="https://private-user-images.githubusercontent.com/62287652/646932255-f097b965-39ad-47d9-9da2-d4c28d866b9b.mp4?jwt=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3ODg3MDY3NTksIm5iZiI6MTc4ODcwNjQ1OSwicGF0aCI6Ii82MjI4NzY1Mi82NDY5MzIyNTUtZjA5N2I5NjUtMzlhZC00N2Q5LTlkYTItZDRjMjhkODY2YjliLm1wND9YLUFtei1BbGdvcml0aG09QVdTNC1ITUFDLVNIQTI1NiZYLUFtei1DcmVkZW50aWFsPUFLSUFWQ09EWUxTQTUzUFFLNFpBJTJGMjAyNjA5MDYlMkZ1cy1lYXN0LTElMkZzMyUyRmF3czRfcmVxdWVzdCZYLUFtei1EYXRlPTIwMjYwOTA2VDE0NTQxOVomWC1BbXotRXhwaXJlcz0zMDAmWC1BbXotU2lnbmF0dXJlPTU0Njc5MzM4NGJlZTYzZThjYTM1Y2E3YjBiNDUyMTQ3NDI2NTc5ZGQyZjRiN2E5YWMxYjNlZDBjZWUxYTNkNzcmWC1BbXotU2lnbmVkSGVhZGVycz1ob3N0JnJlc3BvbnNlLWNvbnRlbnQtdHlwZT12aWRlbyUyRm1wNCJ9.iyYEQ_1x87rdpIral1xYp1hDmMPj4xA7yplmVG_BQX8"></video>
+  <video align="center" width="800" src="https://github.com/user-attachments/assets/2a232517-3e86-48cc-8caf-4c6682b8a916"></video>
   <p align="center">Example timeline with 50k photos and videos</p>
 </p>
 

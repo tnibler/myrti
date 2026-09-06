@@ -12,7 +12,6 @@
 
 int init() {
   int ret = VIPS_INIT("vips_wrapper"); 
-  vips_cache_set_max(0);
   return ret;
 }
 

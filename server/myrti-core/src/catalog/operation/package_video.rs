@@ -33,7 +33,6 @@ use crate::{
             transcode::{ffmpeg_audio_flags, ffmpeg_video_flags},
         },
     },
-    util::OptionPathExt,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,9 +91,9 @@ pub async fn do_package_video(
     })
     .await??;
 
-    let ffmpeg_path = bin_paths.and_then(|bp| bp.ffmpeg.as_opt_path());
-    let ffprobe_path = bin_paths.and_then(|bp| bp.ffprobe.as_opt_path());
-    let gpac_path = bin_paths.and_then(|bp| bp.gpac.as_opt_path());
+    let ffmpeg_path = bin_paths.and_then(|bp| bp.ffmpeg.as_deref());
+    let ffprobe_path = bin_paths.and_then(|bp| bp.ffprobe.as_deref());
+    let gpac_path = bin_paths.and_then(|bp| bp.gpac.as_deref());
 
     let asset_dash_dir = storage.local_path(&storage_key::dash_file(file_id, format_args!("")));
     tokio::fs::create_dir_all(&asset_dash_dir)

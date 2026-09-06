@@ -7,27 +7,26 @@ use tokio::process::Command;
 use crate::{
     catalog::{
         encoding_target::{
-            audio_codec_name, av1::AV1Target, avc::AVCTarget, codec_name, CodecTarget,
-            VideoEncodingTarget,
+            CodecTarget, VideoEncodingTarget, audio_codec_name, av1::AV1Target, avc::AVCTarget,
+            codec_name,
         },
         image_conversion_target::{heif::AvifTarget, jpeg::JpegTarget},
         operation::package_video::AudioEncodingTarget,
     },
     config::BinPaths,
-    util::OptionPathExt,
 };
 
 use super::video::transcode::{ffmpeg_audio_flags, ffmpeg_video_flags};
 
 pub async fn run_self_check(bin_paths: Option<&BinPaths>) -> Result<(), ()> {
-    let ffmpeg_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.ffmpeg.as_opt_path());
+    let ffmpeg_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.ffmpeg.as_deref());
     check_can_run_ffmpeg(ffmpeg_bin_path).await?;
     check_can_encode_video(ffmpeg_bin_path).await?;
     check_can_encode_audio(ffmpeg_bin_path).await?;
-    let exiftool_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.exiftool.as_opt_path());
+    let exiftool_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.exiftool.as_deref());
     check_can_run_exiftool(exiftool_bin_path).await?;
     check_can_encode_vips_images().await?;
-    let gpac_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.gpac.as_opt_path());
+    let gpac_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.gpac.as_deref());
     check_can_run_gpac(gpac_bin_path).await?;
     Ok(())
 }

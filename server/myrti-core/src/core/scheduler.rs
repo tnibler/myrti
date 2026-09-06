@@ -153,11 +153,7 @@ async fn run_scheduler(
     let cancel_copy = cancel_ticks.clone();
 
     let mut tick_task = tokio::task::spawn(async move {
-        let mut reindex_interval = {
-            let mut int = tokio::time::interval(Duration::from_mins(60));
-            int.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            int
-        };
+        let mut reindex_interval = { tokio::time::interval(Duration::from_mins(60)) };
         let mut check_disk_interval = {
             let mut int = tokio::time::interval(Duration::from_mins(5));
             int.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);

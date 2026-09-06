@@ -27,6 +27,10 @@ use myrti_core::core::{
     storage::Storage,
 };
 
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {

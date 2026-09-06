@@ -79,14 +79,14 @@
           llvmPackages.libclang
           clang
         ];
-        buildInputs = with pkgs;
-          [
-            vips.dev
-            glib.dev
-            ffmpeg
-            exiftool
-          ]
-          ++ [pkgs.gpac];
+        buildInputs = with pkgs; [
+          vips.dev
+          glib.dev
+          ffmpeg
+          exiftool
+          gpac
+          rust-jemalloc-sys-unprefixed
+        ];
 
         LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
       };
@@ -153,8 +153,7 @@
         server = let
           runServer = pkgs.writeShellScriptBin "run-server" ''
             export PATH="${pkgs.lib.makeBinPath [pkgs.ffmpeg pkgs.exiftool pkgs.gpac]}:$PATH"
-            export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [pkgs.glib pkgs.vips]}"
-            export LD_PRELOAD="${pkgs.jemalloc}/lib/libjemalloc.so"
+            export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [pkgs.glib pkgs.vips pkgs.rust-jemalloc-sys-unprefixed]}"
             exec ${server}/bin/server --serve-static ${myrtiWeb} "$@"
           '';
         in {
@@ -187,8 +186,7 @@
           sqlite
         ];
 
-        JEMALLOC_PATH = "${pkgs.jemalloc}/lib/libjemalloc.so";
-        LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.glib pkgs.vips];
+        LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.glib pkgs.vips pkgs.rust-jemalloc-sys-unprefixed];
         LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
       };
     });

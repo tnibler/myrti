@@ -85,9 +85,9 @@
           ffmpeg
           exiftool
           gpac
-          rust-jemalloc-sys-unprefixed
         ];
 
+        CFLAGS = "-DJEMALLOC_STRERROR_R_RETURNS_CHAR_WITH_GNU_SOURCE";
         LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
       };
 
@@ -153,7 +153,7 @@
         server = let
           runServer = pkgs.writeShellScriptBin "run-server" ''
             export PATH="${pkgs.lib.makeBinPath [pkgs.ffmpeg pkgs.exiftool pkgs.gpac]}:$PATH"
-            export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [pkgs.glib pkgs.vips pkgs.rust-jemalloc-sys-unprefixed]}"
+            export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [pkgs.glib pkgs.vips]}"
             exec ${server}/bin/server --serve-static ${myrtiWeb} "$@"
           '';
         in {
@@ -184,9 +184,11 @@
           prettier
           diesel-cli
           sqlite
+          litecli
         ];
 
-        LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.glib pkgs.vips pkgs.rust-jemalloc-sys-unprefixed];
+        hardeningDisable = ["fortify"];
+        LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.glib pkgs.vips];
         LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
       };
     });

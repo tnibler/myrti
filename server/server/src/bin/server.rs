@@ -20,7 +20,7 @@ use tower_http::{
 };
 use tracing::{Level, info};
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{EnvFilter, fmt::format::FmtSpan, prelude::*};
+use tracing_subscriber::{EnvFilter, filter::LevelFilter, fmt::format::FmtSpan, prelude::*};
 
 use myrti_core::core::{
     scheduler::{MessageFromScheduler, SchedulerMessage},
@@ -63,18 +63,20 @@ async fn main() -> Result<()> {
         }
     }
     color_eyre::install()?;
-    if std::env::var("MYRTI_LOG").is_err() {
-        unsafe { std::env::set_var("MYRTI_LOG", "info") }
-    }
     let file_appender = tracing_appender::rolling::never("/tmp/", "myrti.log");
     let (non_blocking_appender, _guard) = tracing_appender::non_blocking(file_appender);
     let tracing = tracing_subscriber::registry()
-        .with(EnvFilter::from_env("MYRTI_LOG"))
+        .with(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .with_env_var("MYRTI_LOG")
+                .from_env()?,
+        )
         .with(ErrorLayer::default())
         .with(
             tracing_subscriber::fmt::layer()
                 .compact()
-                .with_target(false)
+                .with_target(true)
                 .with_file(false)
                 .with_line_number(false)
                 .with_span_events(FmtSpan::CLOSE)

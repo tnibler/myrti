@@ -91,14 +91,33 @@ export function newGestureController(
     }
   }
 
+  function isZoomClickable(e: UIEvent): boolean {
+    let node = e.target;
+    if (!(node instanceof HTMLElement)) {
+      return false;
+    }
+    if (node.dataset && 'gestureNoclick' in node.dataset) {
+      return false;
+    }
+    while (node instanceof HTMLElement && node.dataset) {
+      if ('gestureNoclickRecursive' in node.dataset) {
+        return false;
+      }
+      node = node.parentNode;
+    }
+    return true;
+  }
+
   function onPointerDown(e: PointerEvent) {
+    if (isZoomClickable(e)) {
+      e.preventDefault();
+    }
     // Desktop Safari allows to drag images when preventDefault isn't called on mousedown,
     // even though preventDefault IS called on mousemove. That's why we preventDefault mousedown.
     if (e.pointerType === 'mouse') {
       onMouseDetected();
-      e.preventDefault();
-      // ignore if it's not left mouse button
-      if (e.button > 0) {
+      if (e.button !== 0) {
+        // ignore if it's not left mouse button
         return;
       }
     }
@@ -144,28 +163,16 @@ export function newGestureController(
   }
 
   function onPointerUp(e: PointerEvent) {
-    const isClickable = (() => {
-      let node = e.target;
-      if (node.dataset && 'gestureNoclick' in node.dataset) {
-        return false;
-      }
-      while (node && node.dataset) {
-        if ('gestureNoclickRecursive' in node.dataset) {
-          return false;
-        }
-        node = node.parentNode;
-      }
-      return true;
-    })();
     // console.assert(state.points > 0); // not really true, this fires on up events for the entire window
-    e.preventDefault();
     if (state.points === 1) {
       rafLoopStop();
       if ('gesture' in state && state.gesture === 'drag') {
+        e.preventDefault();
         updateDragVelocity(state, true);
         gallery.animations.stopAllAnimations();
         finishDrag(state, gallery);
-      } else if (isClickable) {
+      } else if (isZoomClickable(e)) {
+        e.preventDefault();
         onTap(state.p1, e);
       }
       state = {
@@ -173,6 +180,7 @@ export function newGestureController(
       };
       gallery.currentSlide?.onGrabbingStateChange(false);
     } else if (state.points === 2) {
+      e.preventDefault();
       if ('gesture' in state && state.gesture === 'zoom') {
         finishZoom(state, gallery.currentSlide, gallery);
       }

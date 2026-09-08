@@ -566,6 +566,15 @@ impl Scheduler {
             .expect("TODO how do we handle errors in scheduler");
 
         if let Err(err) = interact!(conn, move |conn| {
+            repository::startup_delete_stale_rows(conn)
+        })
+        .await
+        .flatten()
+        {
+            tracing::error!("Error deleting stale db rows:\n{:?}", (err));
+        }
+
+        if let Err(err) = interact!(conn, move |conn| {
             repository::timeline::rebuild_timeline_full(conn)
         })
         .await

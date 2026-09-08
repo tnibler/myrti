@@ -167,6 +167,7 @@ async fn main() -> Result<()> {
         app,
         scheduler,
         mut scheduler_recv,
+        task_tracker,
         ..
     } = make_app(SetupConfig {
         config: Mutex::new(config).into(),
@@ -239,7 +240,9 @@ async fn main() -> Result<()> {
         .await
         .expect("scheduler must be alive");
     drop(scheduler);
+    task_tracker.close();
     info!("Waiting for shutdown...");
+    task_tracker.wait().await;
     loop {
         let received = scheduler_recv.recv().await;
         match received {

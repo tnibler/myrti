@@ -17,6 +17,7 @@ use myrti_data::{
     repository,
 };
 use tokio::sync::broadcast;
+use tokio_util::task::TaskTracker;
 use tower_http::cors::CorsLayer;
 
 use crate::{
@@ -29,6 +30,7 @@ pub struct Server {
     pub scheduler: SchedulerHandle,
     pub scheduler_recv: broadcast::Receiver<MessageFromScheduler>,
     pub db_pool: DbPool,
+    pub task_tracker: TaskTracker,
 }
 
 pub struct SetupConfig<'a> {
@@ -61,10 +63,12 @@ pub async fn make_app(
     store_asset_roots_from_config(config_dir, &config.lock().unwrap(), &pool).await?;
 
     let (scheduler, scheduler_recv) = SchedulerHandle::new(pool.clone(), storage.clone(), config);
+    let task_tracker = TaskTracker::new();
     let shared_state: SharedState = Arc::new(AppState {
         pool: pool.clone(),
         storage,
         scheduler: scheduler.clone(),
+        task_tracker: task_tracker.clone(),
     });
     let cors = CorsLayer::new()
         // allow `GET` and `POST` when accessing the resource
@@ -91,6 +95,7 @@ pub async fn make_app(
         scheduler,
         scheduler_recv,
         db_pool: pool,
+        task_tracker,
     })
 }
 

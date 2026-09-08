@@ -51,9 +51,15 @@ pub async fn create_ghi_and_manifest(
     // gm=main produces broken init segments even though docs say it only writes manifests
     mpd_command.args(["-i", &format!("{}:gm=all", opts.ghi_out_path,), "-o"]);
     if let Some(base) = opts.mpd_base_url.as_ref() {
-        mpd_command.arg(format!("{}:base={}:stl=true", opts.mpd_out_path, base));
+        mpd_command.arg(format!(
+            "{}:base={}:stl=true:segdur={}:profile=live:nofragdef=true",
+            opts.mpd_out_path, base, opts.segment_duration
+        ));
     } else {
-        mpd_command.arg(format!("{}:stl=true:profile=live", opts.mpd_out_path));
+        mpd_command.arg(format!(
+            "{}:stl=true:segdur={}:profile=live:nofragdef=true",
+            opts.mpd_out_path, opts.segment_duration
+        ));
     }
     tracing::debug!(?mpd_command);
     let child = mpd_command.spawn().context("error calling gpac")?;
@@ -113,7 +119,7 @@ pub async fn create_segment(
         }
         .as_str(),
         "-o",
-        out_dir.join("unused.mpd").as_str(),
+        format!("{}:nofragdef=true", out_dir.join("unused.mpd")).as_str(),
     ]);
     tracing::trace!(?command);
     let child = command.spawn().context("error calling gpac")?;
@@ -124,12 +130,14 @@ pub async fn create_segment(
         // RX100 Mk VII slow motion video prints this error, but files are still created:
         // [GHIX] Failed to locate source filter for pid A2
         // Failed to connect filter mp4dmx PID A2 to filter ghidmx: Internal Service Error
-        let worked_despite_error =
-            tokio::fs::metadata(out_dir.join(format!("{rep_id}-{segment}.m4s")))
-                .await
-                .is_ok_and(|md| md.size() > 100);
+        let out_path = out_dir.join(format!("{rep_id}-{segment}.m4s"));
+        let worked_despite_error = tokio::fs::metadata(&out_path)
+            .await
+            .is_ok_and(|md| md.size() > 100);
         if !worked_despite_error {
             return Err(err);
+        } else {
+            tracing::debug!(%out_path, "gpac command failed, but output file looks okay");
         }
     }
     Ok(())

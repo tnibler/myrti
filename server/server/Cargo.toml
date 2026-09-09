@@ -42,6 +42,8 @@ bindgen = "0.66.1"
 
 [dev-dependencies]
 myrti-core = { path = "../myrti-core", features = ["__private-test"] }
+camino-tempfile = "1.4.1"
+camino-tempfile-ext = "0.3.3"
 
 claims = "0.7.1"
 http-body-util = "0.1.5"

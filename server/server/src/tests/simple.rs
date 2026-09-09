@@ -8,6 +8,7 @@ use axum::{
     http::{Response, StatusCode},
 };
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
+use camino_tempfile_ext::prelude::*;
 use chrono::DateTime;
 use claims::{assert_err, assert_some_eq};
 use eyre::Result;
@@ -30,6 +31,7 @@ use myrti_data::{
     repository,
 };
 use serde::{Serialize, de::DeserializeOwned};
+use tokio::process::Command;
 use tokio::sync::broadcast::{self, error::RecvError};
 use tower::{Service, ServiceExt};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -76,18 +78,34 @@ pub struct Test {
     pub scheduler_recv: broadcast::Receiver<MessageFromScheduler>,
     pub db_pool: DbPool,
     pub config: Arc<Mutex<Config>>,
+    pub asset_dir: Utf8TempDir,
 }
 
 impl Test {
     pub async fn new() -> Self {
+        let orig_dir = if std::env::var("MYRTI_TEST_REAL_DATA").is_ok_and(|s| !s.is_empty()) {
+            PathBuf::from("../test-data/library")
+        } else {
+            PathBuf::from("../test-data/fake-tree")
+        };
+        let asset_dir = tokio::task::spawn_blocking(|| camino_tempfile::tempdir().unwrap())
+            .await
+            .expect("directory setup panicked");
+
+        let mut cp = Command::new("cp");
+        cp.arg(orig_dir.join("."))
+            .arg(asset_dir.path())
+            .args(["-a", "-r"]);
+        cp.spawn()
+            .expect("error calling cp")
+            .wait_with_output()
+            .await
+            .expect("cp exited with an error");
+
         let config = Config {
             asset_dirs: vec![AssetDir {
                 name: None,
-                path: if std::env::var("MYRTI_TEST_REAL_DATA").is_ok_and(|s| !s.is_empty()) {
-                    PathBuf::from("../test-data/library")
-                } else {
-                    PathBuf::from("../test-data/fake-tree")
-                },
+                path: asset_dir.path().to_path_buf(),
                 exclude_globs: Default::default(),
                 include_globs: Default::default(),
             }],
@@ -96,12 +114,18 @@ impl Test {
                 name: None,
                 db_path: None,
             },
-            bin_paths: Some(BinPaths {
-                exiftool: Some(PathBuf::from("../test-shims/exiftool.sh")),
-                ffmpeg: Some(PathBuf::from("../test-shims/ffmpeg.sh")),
-                ffprobe: Some(PathBuf::from("../test-shims/ffprobe.sh")),
-                gpac: Some(PathBuf::from("../test-shims/gpac.sh")),
-            }),
+            bin_paths: BinPaths {
+                exiftool: Some((
+                    PathBuf::from("../scripts/test-shims/exiftool.sh"),
+                    vec![asset_dir.path().to_owned().into()],
+                )),
+                ffmpeg: Some((PathBuf::from("../scripts/test-shims/ffmpeg.sh"), vec![])),
+                ffprobe: Some((
+                    PathBuf::from("../scripts/test-shims/ffprobe.sh"),
+                    vec![asset_dir.path().to_owned().into()],
+                )),
+                gpac: Some((PathBuf::from("../scripts/test-shims/gpac.sh"), vec![])),
+            },
             address: None,
             port: None,
         };
@@ -113,6 +137,7 @@ impl Test {
             scheduler,
             scheduler_recv,
             db_pool,
+            ..
         } = make_app(SetupConfig {
             config: config.clone(),
             config_dir: "config_directory".into(),
@@ -128,6 +153,7 @@ impl Test {
             scheduler_recv,
             db_pool,
             config,
+            asset_dir,
         }
     }
 
@@ -956,6 +982,76 @@ async fn timelapse_raw_jpeg() {
                 tracing::info!(?msg);
             }
         }
+    }
+}
+
+#[tokio::test]
+async fn moving_asset_files_works() {
+    setup_tracing();
+
+    let mut test = Test::new().await;
+
+    test.set_exclude(&["*"]);
+
+    test.send_scheduler(SchedulerMessage::Startup).await;
+    test.send_scheduler(SchedulerMessage::PauseAllProcessing)
+        .await;
+    test.wait_for_message(MessageFromScheduler::IndexingFinished(AssetRootDirId(1)))
+        .await;
+
+    test.add_includes(&["GP010824*"]);
+
+    test.reindex_wait().await;
+
+    {
+        let assets = test.db_query(repository::asset::get_assets).await.unwrap();
+        let asset_paths = assets
+            .iter()
+            .map(|a| a.rep_file.file_path.clone())
+            .collect_vec();
+        assert_eq!(asset_paths, &["GP010824.JPG"]);
+
+        let resp = test
+            .app
+            .get(&format!("/api/files/{}/original", assets[0].rep_file.id))
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()
+                .get(header::CONTENT_TYPE)
+                .map(|h| h.to_str().unwrap()),
+            Some("image/jpeg")
+        );
+    }
+
+    tokio::fs::rename(
+        test.asset_dir.child("GP010824.JPG"),
+        test.asset_dir.child("GP010824.jpg"),
+    )
+    .await
+    .unwrap();
+
+    test.reindex_wait().await;
+
+    {
+        let assets = test.db_query(repository::asset::get_assets).await.unwrap();
+        let asset_paths = assets
+            .iter()
+            .map(|a| a.rep_file.file_path.clone())
+            .collect_vec();
+        assert_eq!(asset_paths, &["GP010824.JPG"]);
+
+        let resp = test
+            .app
+            .get(&format!("/api/files/{}/original", assets[0].rep_file.id))
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            resp.headers()
+                .get(header::CONTENT_TYPE)
+                .map(|h| h.to_str().unwrap()),
+            Some("image/jpeg")
+        );
     }
 }
 

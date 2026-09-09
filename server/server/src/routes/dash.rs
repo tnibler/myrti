@@ -61,6 +61,8 @@ async fn get_dash_file(
         let file_exists = tokio::fs::try_exists(&fs_path).await?;
         let conn = app_state.pool.get().await?;
         let fs_path = fs_path.clone();
+        let config = app_state.config.lock().unwrap().clone();
+
         app_state.task_tracker.spawn(async move {
             let do_cache_insert = match (segment_number, file_exists) {
                 // init segment (0) is ignored for cache bookkeeping
@@ -100,7 +102,7 @@ async fn get_dash_file(
                     &out_dir,
                     repr,
                     segment_number,
-                    None,
+                    config.bin_paths.gpac_path(),
                     &mut rx,
                 )
                 .await?;

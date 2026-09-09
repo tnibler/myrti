@@ -77,7 +77,7 @@ pub async fn do_package_video(
     pool: &DbPool,
     storage: &Storage,
     package_video: PackageVideo,
-    bin_paths: Option<&config::BinPaths>,
+    bin_paths: &config::BinPaths,
     mut process_control_recv: mpsc::Receiver<ProcessControl>,
 ) -> Result<()> {
     let file_id = package_video.file_id;
@@ -91,9 +91,9 @@ pub async fn do_package_video(
     })
     .await??;
 
-    let ffmpeg_path = bin_paths.and_then(|bp| bp.ffmpeg.as_deref());
-    let ffprobe_path = bin_paths.and_then(|bp| bp.ffprobe.as_deref());
-    let gpac_path = bin_paths.and_then(|bp| bp.gpac.as_deref());
+    let ffmpeg_path = bin_paths.ffmpeg_path();
+    let ffprobe_path = bin_paths.ffprobe_path();
+    let gpac_path = bin_paths.gpac_path();
 
     let asset_dash_dir = storage.local_path(&storage_key::dash_file(file_id, format_args!("")));
     tokio::fs::create_dir_all(&asset_dash_dir)

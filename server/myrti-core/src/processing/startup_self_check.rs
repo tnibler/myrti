@@ -18,21 +18,19 @@ use crate::{
 
 use super::video::transcode::{ffmpeg_audio_flags, ffmpeg_video_flags};
 
-pub async fn run_self_check(bin_paths: Option<&BinPaths>) -> Result<(), ()> {
-    let ffmpeg_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.ffmpeg.as_deref());
-    check_can_run_ffmpeg(ffmpeg_bin_path).await?;
-    check_can_encode_video(ffmpeg_bin_path).await?;
-    check_can_encode_audio(ffmpeg_bin_path).await?;
-    let exiftool_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.exiftool.as_deref());
-    check_can_run_exiftool(exiftool_bin_path).await?;
+pub async fn run_self_check(bin_paths: &BinPaths) -> Result<(), ()> {
+    check_can_run_ffmpeg(bin_paths.ffmpeg_path()).await?;
+    check_can_encode_video(bin_paths.ffmpeg_path()).await?;
+    check_can_encode_audio(bin_paths.ffmpeg_path()).await?;
+    check_can_run_exiftool(bin_paths.exiftool_path()).await?;
     check_can_encode_vips_images().await?;
-    let gpac_bin_path: Option<&Path> = bin_paths.and_then(|bp| bp.gpac.as_deref());
-    check_can_run_gpac(gpac_bin_path).await?;
+    check_can_run_gpac(bin_paths.gpac_path()).await?;
     Ok(())
 }
 
-async fn check_can_run_ffmpeg(ffmpeg_bin_path: Option<&Path>) -> Result<(), ()> {
-    let spawn_result = Command::new(ffmpeg_bin_path.map(|p| p.as_str()).unwrap_or("ffmpeg"))
+async fn check_can_run_ffmpeg((ffmpeg_path, args): (&Path, &[String])) -> Result<(), ()> {
+    let spawn_result = Command::new(ffmpeg_path)
+        .args(args)
         .arg("-version")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -71,7 +69,7 @@ async fn check_can_run_ffmpeg(ffmpeg_bin_path: Option<&Path>) -> Result<(), ()> 
     Ok(())
 }
 
-async fn check_can_encode_video(ffmpeg_bin_path: Option<&Path>) -> Result<(), ()> {
+async fn check_can_encode_video((ffmpeg_path, args): (&Path, &[String])) -> Result<(), ()> {
     let encoding_targets = [
         VideoEncodingTarget {
             codec: CodecTarget::AVC(AVCTarget::default()),
@@ -97,8 +95,9 @@ async fn check_can_encode_video(ffmpeg_bin_path: Option<&Path>) -> Result<(), ()
             .collect();
         let out_path: PathBuf = format!("/tmp/_myrti_test_{}.mp4", name).into();
 
-        let mut command = Command::new(ffmpeg_bin_path.unwrap_or("ffmpeg".into()));
+        let mut command = Command::new(ffmpeg_path);
         command
+            .args(args)
             .arg("-nostdin")
             .arg("-y")
             .stdout(Stdio::piped())
@@ -139,7 +138,7 @@ async fn check_can_encode_video(ffmpeg_bin_path: Option<&Path>) -> Result<(), ()
     Ok(())
 }
 
-async fn check_can_encode_audio(ffmpeg_bin_path: Option<&Path>) -> Result<(), ()> {
+async fn check_can_encode_audio((ffmpeg_path, args): (&Path, &[String])) -> Result<(), ()> {
     let encoding_targets = [
         AudioEncodingTarget::AAC,
         AudioEncodingTarget::OPUS,
@@ -159,8 +158,9 @@ async fn check_can_encode_audio(ffmpeg_bin_path: Option<&Path>) -> Result<(), ()
             .collect();
         let out_path: PathBuf = format!("/tmp/_myrti_test_{}.mp4", name).into();
 
-        let mut command = Command::new(ffmpeg_bin_path.unwrap_or("ffmpeg".into()));
+        let mut command = Command::new(ffmpeg_path);
         command
+            .args(args)
             .arg("-nostdin")
             .arg("-y")
             .stdout(Stdio::piped())
@@ -201,9 +201,10 @@ async fn check_can_encode_audio(ffmpeg_bin_path: Option<&Path>) -> Result<(), ()
     Ok(())
 }
 
-async fn check_can_run_gpac(gpac_bin_path: Option<&Path>) -> Result<(), ()> {
-    let mut command = Command::new(gpac_bin_path.map(|p| p.as_str()).unwrap_or("gpac"));
+async fn check_can_run_gpac((gpac_path, args): (&Path, &[String])) -> Result<(), ()> {
+    let mut command = Command::new(gpac_path);
     command
+        .args(args)
         .args(["-h", "-version"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -211,13 +212,7 @@ async fn check_can_run_gpac(gpac_bin_path: Option<&Path>) -> Result<(), ()> {
         Ok(c) => c,
         Err(err) => match err.kind() {
             std::io::ErrorKind::NotFound => {
-                if let Some(gpac_path) = gpac_bin_path {
-                    tracing::error!("Could not find gpac at path from config: {}", gpac_path);
-                } else {
-                    tracing::error!(
-                        "Could not find gpac (no 'gpac' in $PATH). Please download it and specify its location in the config file",
-                    );
-                }
+                tracing::error!("Could not find gpac ({})", gpac_path);
                 return Err(());
             }
             _kind => {
@@ -292,8 +287,9 @@ async fn check_can_encode_vips_images() -> Result<(), ()> {
     Ok(())
 }
 
-async fn check_can_run_exiftool(exiftool_bin_path: Option<&Path>) -> Result<(), ()> {
-    let spawn_result = Command::new(exiftool_bin_path.map(|p| p.as_str()).unwrap_or("exiftool"))
+async fn check_can_run_exiftool((exiftool_path, args): (&Path, &[String])) -> Result<(), ()> {
+    let spawn_result = Command::new(exiftool_path)
+        .args(args)
         .arg("-ver")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -302,7 +298,7 @@ async fn check_can_run_exiftool(exiftool_bin_path: Option<&Path>) -> Result<(), 
         Ok(c) => c,
         Err(err) => match err.kind() {
             std::io::ErrorKind::NotFound => {
-                tracing::error!("Could not find exiftool. Is it installed?");
+                tracing::error!("Could not find exiftool ({})", exiftool_path);
                 return Err(());
             }
             _kind => {

@@ -62,13 +62,15 @@ pub async fn make_app(
         .wrap_err("error setting up database")?;
     store_asset_roots_from_config(config_dir, &config.lock().unwrap(), &pool).await?;
 
-    let (scheduler, scheduler_recv) = SchedulerHandle::new(pool.clone(), storage.clone(), config);
+    let (scheduler, scheduler_recv) =
+        SchedulerHandle::new(pool.clone(), storage.clone(), config.clone());
     let task_tracker = TaskTracker::new();
     let shared_state: SharedState = Arc::new(AppState {
         pool: pool.clone(),
         storage,
         scheduler: scheduler.clone(),
         task_tracker: task_tracker.clone(),
+        config,
     });
     let cors = CorsLayer::new()
         // allow `GET` and `POST` when accessing the resource

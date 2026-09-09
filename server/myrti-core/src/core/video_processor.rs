@@ -181,7 +181,7 @@ async fn process(
                 &db_pool,
                 &storage,
                 package_op.clone(),
-                bin_paths.as_ref(),
+                &bin_paths,
                 process_control_recv,
             );
             run_process_loop(result_fut, &mut control_recv, process_control_send)

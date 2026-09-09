@@ -104,10 +104,11 @@ pub mod exiftool {
 // #[tracing::instrument(skip(exiftool_bin_path), level = "debug")]
 pub async fn read_media_metadata(
     path: &Path,
-    exiftool_bin_path: Option<&Path>,
+    (exiftool_path, args): (&Path, &[String]),
 ) -> Result<(Vec<u8>, exiftool::Output)> {
-    let mut command = Command::new(exiftool_bin_path.unwrap_or("exiftool".into()));
+    let mut command = Command::new(exiftool_path);
     command
+        .args(args)
         .args([
             "-j", // JSON
             "-g", // group headings (File, EXIF, Maker Notes, Copmosite)
@@ -117,13 +118,16 @@ pub async fn read_media_metadata(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     tracing::trace!(command=?command.as_std());
-    let output = command
-        .spawn()
-        .wrap_err("failed to call exiftool")?
-        .wait_with_output()
-        .await
-        .wrap_err("exiftool error")?;
-    tracing::trace!(exiftool_status = ?output.status, stderr=%String::from_utf8_lossy(&output.stderr));
+    let child = command.spawn().wrap_err("failed to call exiftool")?;
+    let output = child.wait_with_output().await.wrap_err("exiftool error")?;
+    let stderr_out = String::from_utf8_lossy(&output.stderr);
+    if output.status.success() {
+        tracing::trace!(stderr=%stderr_out, status=%output.status, "exiftool exited");
+    } else {
+        let stdout_out = String::from_utf8_lossy(&output.stdout);
+        tracing::debug!(stdout=%stdout_out, stderr=%stderr_out, status=%output.status, "exiftool exited with error");
+    }
+
     let raw_json = output.stdout;
     let parsed: exiftool::Output = serde_json::from_slice::<Vec<exiftool::Output>>(&raw_json)
         .wrap_err("failed to parse exiftool output")?

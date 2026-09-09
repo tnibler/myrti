@@ -145,7 +145,7 @@ async fn main() -> Result<()> {
 
     if !args.skip_startup_check {
         tracing::info!("Running self check");
-        myrti_core::startup_self_check::run_self_check(config.bin_paths.as_ref())
+        myrti_core::startup_self_check::run_self_check(&config.bin_paths)
             .await
             .expect("Self check failed");
         tracing::info!("Self check successful");

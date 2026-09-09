@@ -307,12 +307,9 @@ impl Scheduler {
         match &asset.sp {
             AssetSpe::Video(video) => {
                 let bin_paths = self.config.lock().unwrap().bin_paths.clone();
-                let video_packaging_required = rules::required_video_packaging_for_asset(
-                    &mut conn,
-                    video.file_id,
-                    bin_paths.as_ref(),
-                )
-                .await?;
+                let video_packaging_required =
+                    rules::required_video_packaging_for_asset(&mut conn, video.file_id, &bin_paths)
+                        .await?;
                 for vid_pack in video_packaging_required {
                     if self
                         .video_proc
@@ -414,7 +411,7 @@ impl Scheduler {
                     tracing::debug!(?file_ids, "request DisableGhiStreaming");
                     async fn handle_disable_ghi(
                         db_pool: DbPool,
-                        bin_paths: Option<&BinPaths>,
+                        bin_paths: &BinPaths,
                         file_ids: Vec<FileId>,
                     ) -> Result<Vec<PackageVideo>> {
                         let mut conn = db_pool.get().await?;
@@ -441,9 +438,7 @@ impl Scheduler {
                     }
 
                     let bin_paths = self.config.lock().unwrap().bin_paths.clone();
-                    match handle_disable_ghi(self.db_pool.clone(), bin_paths.as_ref(), file_ids)
-                        .await
-                    {
+                    match handle_disable_ghi(self.db_pool.clone(), &bin_paths, file_ids).await {
                         Ok(tasks) => {
                             for p in tasks {
                                 if self

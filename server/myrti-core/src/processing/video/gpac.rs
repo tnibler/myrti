@@ -20,10 +20,11 @@ pub struct CreateGHIOptions {
 pub async fn create_ghi_and_manifest(
     input: &Path,
     opts: &CreateGHIOptions,
-    gpac_bin_path: Option<&Path>,
+    gpac_bin_path: (&Path, &[String]),
     control_recv: &mut ProcessControlReceiver,
 ) -> Result<()> {
-    let mut ghi_command = Command::new(gpac_bin_path.unwrap_or("gpac".into()));
+    let (gpac_path, args) = gpac_bin_path;
+    let mut ghi_command = Command::new(gpac_path);
     let input_arg = match (opts.video_rep_id.as_deref(), opts.audio_rep_id.as_deref()) {
         (None, None) => return Err(eyre!("at least one video or audio track must be selected")),
         (Some(v), None) => format!("{}:#Representation=(video){}:tkid=video", input, v),
@@ -32,7 +33,7 @@ pub async fn create_ghi_and_manifest(
         (None, Some(a)) => format!("{}:#Representation=(video)ignored,(audio){}", input, a),
         (Some(v), Some(a)) => format!("{}:#Representation=(video){},(audio){}", input, v, a),
     };
-    ghi_command.args([
+    ghi_command.args(args).args([
         "-i",
         &input_arg,
         "-o",
@@ -47,9 +48,11 @@ pub async fn create_ghi_and_manifest(
         .await
         .wrap_err("Error running gpac to create ghi index")?;
 
-    let mut mpd_command = Command::new(gpac_bin_path.unwrap_or("gpac".into()));
+    let mut mpd_command = Command::new(gpac_path);
     // gm=main produces broken init segments even though docs say it only writes manifests
-    mpd_command.args(["-i", &format!("{}:gm=all", opts.ghi_out_path,), "-o"]);
+    mpd_command
+        .args(args)
+        .args(["-i", &format!("{}:gm=all", opts.ghi_out_path,), "-o"]);
     if let Some(base) = opts.mpd_base_url.as_ref() {
         mpd_command.arg(format!(
             "{}:base={}:stl=true:segdur={}:profile=live:nofragdef=true",
@@ -106,11 +109,12 @@ pub async fn create_segment(
     out_dir: &Path,
     rep_id: &str,
     segment: i32,
-    gpac_bin_path: Option<&Path>,
+    gpac_bin_path: (&Path, &[String]),
     control_recv: &mut ProcessControlReceiver,
 ) -> Result<()> {
-    let mut command = Command::new(gpac_bin_path.unwrap_or("gpac".into()));
-    command.args([
+    let (gpac_path, args) = gpac_bin_path;
+    let mut command = Command::new(gpac_path);
+    command.args(args).args([
         "-i",
         if segment == 0 {
             format!("{}:rep={}:gm=init", ghi_path, rep_id,)
@@ -161,11 +165,12 @@ pub async fn run_dasher(
     input_path: &Path,
     out_dir: &Path,
     opts: DasherOptions<'_>,
-    gpac_bin_path: Option<&Path>,
+    gpac_bin_path: (&Path, &[String]),
     control_recv: &mut ProcessControlReceiver,
 ) -> Result<GpacDashResult> {
-    let mut command = Command::new(gpac_bin_path.unwrap_or("gpac".into()));
-    command.current_dir(out_dir).args([
+    let (gpac_path, args) = gpac_bin_path;
+    let mut command = Command::new(gpac_path);
+    command.current_dir(out_dir).args(args).args([
         "-i",
         input_path.as_str(),
         "-o",

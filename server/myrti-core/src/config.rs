@@ -58,17 +58,47 @@ pub struct DataDir {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BinPaths {
-    pub ffmpeg: Option<PathBuf>,
-    pub ffprobe: Option<PathBuf>,
-    pub exiftool: Option<PathBuf>,
-    pub gpac: Option<PathBuf>,
+    pub ffmpeg: Option<(PathBuf, Vec<String>)>,
+    pub ffprobe: Option<(PathBuf, Vec<String>)>,
+    pub exiftool: Option<(PathBuf, Vec<String>)>,
+    pub gpac: Option<(PathBuf, Vec<String>)>,
+}
+
+impl BinPaths {
+    pub fn ffmpeg_path(&self) -> (&Path, &[String]) {
+        match self.ffmpeg.as_ref() {
+            Some((path, args)) => (path.as_path(), args.as_slice()),
+            None => ("ffmpeg".into(), &[]),
+        }
+    }
+
+    pub fn ffprobe_path(&self) -> (&Path, &[String]) {
+        match self.ffprobe.as_ref() {
+            Some((path, args)) => (path.as_path(), args.as_slice()),
+            None => ("ffprobe".into(), &[]),
+        }
+    }
+
+    pub fn exiftool_path(&self) -> (&Path, &[String]) {
+        match self.exiftool.as_ref() {
+            Some((path, args)) => (path.as_path(), args.as_slice()),
+            None => ("exiftool".into(), &[]),
+        }
+    }
+
+    pub fn gpac_path(&self) -> (&Path, &[String]) {
+        match self.gpac.as_ref() {
+            Some((path, args)) => (path.as_path(), args.as_slice()),
+            None => ("gpac".into(), &[]),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Config {
     pub asset_dirs: Vec<AssetDir>,
     pub data_dir: DataDir,
-    pub bin_paths: Option<BinPaths>,
+    pub bin_paths: BinPaths,
     pub address: Option<String>,
     pub port: Option<u16>,
 }
@@ -119,12 +149,27 @@ pub async fn read_config(path: &Path) -> Result<Config> {
             db_path: toml_config.data_dir.db_path.map(PathBuf::from),
         }
     };
-    let bin_paths = toml_config.bin_paths.map(|bin_paths| BinPaths {
-        ffmpeg: bin_paths.ffmpeg.map(PathBuf::from),
-        ffprobe: bin_paths.ffprobe.map(PathBuf::from),
-        exiftool: bin_paths.exiftool.map(PathBuf::from),
-        gpac: bin_paths.gpac.map(PathBuf::from),
-    });
+    let bin_paths = toml_config
+        .bin_paths
+        .map(|bin_paths| BinPaths {
+            ffmpeg: bin_paths
+                .ffmpeg
+                .map(PathBuf::from)
+                .map(|p| (p, Default::default())),
+            ffprobe: bin_paths
+                .ffprobe
+                .map(PathBuf::from)
+                .map(|p| (p, Default::default())),
+            exiftool: bin_paths
+                .exiftool
+                .map(PathBuf::from)
+                .map(|p| (p, Default::default())),
+            gpac: bin_paths
+                .gpac
+                .map(PathBuf::from)
+                .map(|p| (p, Default::default())),
+        })
+        .unwrap_or_default();
     let address = toml_config.address;
     let port: Option<u16> = toml_config.port;
     Ok(Config {

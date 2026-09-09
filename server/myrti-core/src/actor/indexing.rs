@@ -319,14 +319,9 @@ async fn index_asset_root(
             Ok(entry) if entry.file_type().is_file() => {
                 let utf8_path = camino::Utf8Path::from_path(entry.path());
                 if let Some(path) = utf8_path {
-                    let indexing_res = try_index_file(
-                        path,
-                        &asset_root,
-                        &canon_root_path,
-                        &pool,
-                        bin_paths.as_ref(),
-                    )
-                    .await;
+                    let indexing_res =
+                        try_index_file(path, &asset_root, &canon_root_path, &pool, &bin_paths)
+                            .await;
                     let msg = match indexing_res {
                         Ok(None) => {
                             continue;

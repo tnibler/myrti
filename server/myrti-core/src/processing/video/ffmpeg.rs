@@ -20,11 +20,12 @@ pub async fn run_ffmpeg(
     output: &Path,
     pre_input_flags: &[OsString],
     flags: &[OsString],
-    ffmpeg_bin_path: Option<&Path>,
+    (ffmpeg_path, args): (&Path, &[String]),
     control_recv: &mut ProcessControlReceiver,
 ) -> Result<()> {
-    let mut command = Command::new(ffmpeg_bin_path.unwrap_or("ffmpeg".into()));
+    let mut command = Command::new(ffmpeg_path);
     command
+        .args(args)
         .arg("-nostdin")
         .arg("-y")
         .stdout(Stdio::null())

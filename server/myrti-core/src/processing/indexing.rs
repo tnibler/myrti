@@ -21,7 +21,7 @@ pub async fn try_index_file(
     asset_root: &AssetRootDir,
     canon_root_path: &Path,
     pool: &DbPool,
-    bin_paths: Option<&config::BinPaths>,
+    bin_paths: &config::BinPaths,
 ) -> Result<Option<AssetId>> {
     let path_in_asset_root = path.strip_prefix(canon_root_path).wrap_err_with(|| {
         format!(
@@ -54,11 +54,11 @@ async fn index_file(
     path_in_asset_root: &Path,
     asset_root: &AssetRootDir,
     pool: &DbPool,
-    bin_paths: Option<&config::BinPaths>,
+    bin_paths: &config::BinPaths,
 ) -> Result<Option<AssetId>> {
     let asset_root_id = asset_root.id;
-    let exiftool_path = bin_paths.and_then(|bp| bp.exiftool.as_deref());
-    let ffprobe_path = bin_paths.and_then(|bp| bp.ffprobe.as_deref());
+    let exiftool_path = bin_paths.exiftool_path();
+    let ffprobe_path = bin_paths.ffprobe_path();
     let (exiftool_json, metadata) = read_media_metadata(path, exiftool_path)
         .await
         .wrap_err("could not read file metadata")?;
@@ -84,7 +84,7 @@ async fn index_file(
             let (is_original_streamable, max_iframe_interval) = if file_type == "mp4" {
                 let max_iframe_interval = processing::video::ffprobe_get_max_iframe_interval(
                     path,
-                    bin_paths.and_then(|p| p.ffprobe.as_deref()),
+                    bin_paths.ffprobe_path(),
                 )
                 .await?;
                 if let Some(interval_seconds) = max_iframe_interval {

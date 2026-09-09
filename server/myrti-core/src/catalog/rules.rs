@@ -32,7 +32,7 @@ use super::{
 pub async fn required_video_packaging_for_asset(
     conn: &mut PooledDbConn,
     file_id: FileId,
-    bin_paths: Option<&config::BinPaths>,
+    bin_paths: &config::BinPaths,
 ) -> Result<Vec<PackageVideo>> {
     let acceptable_video_codecs = ["h264", "av1", "vp9"];
     let acceptable_audio_codecs = ["aac", "opus", "flac", "mp3"];

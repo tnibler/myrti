@@ -42,9 +42,10 @@ pub fn ffprobe_get_streams_from_json(json: &[u8]) -> Result<FFProbeStreams> {
 #[instrument(err, level = "debug")]
 pub async fn ffprobe_get_streams(
     path: &Path,
-    ffprobe_bin_path: Option<&Path>,
+    (ffprobe_path, args): (&Path, &[String]),
 ) -> Result<(Vec<u8>, FFProbeStreams)> {
-    let ffprobe_result = Command::new(ffprobe_bin_path.unwrap_or("ffprobe".into()))
+    let ffprobe_result = Command::new(ffprobe_path)
+        .args(args)
         .args(["-v", "error", "-show_streams", "-of", "json=compact=1"])
         .arg(path)
         .stdout(Stdio::piped())
@@ -203,9 +204,10 @@ fn parse_ffprobe_output(json: &[u8]) -> Result<Vec<StreamType>> {
 #[tracing::instrument(level = "trace")]
 pub async fn ffprobe_get_max_iframe_interval(
     path: &Path,
-    ffprobe_bin_path: Option<&Path>,
+    (ffprobe_path, args): (&Path, &[String]),
 ) -> Result<Option<f64>> {
-    let ffprobe_result = Command::new(ffprobe_bin_path.unwrap_or("ffprobe".into()))
+    let ffprobe_result = Command::new(ffprobe_path)
+        .args(args)
         .args([
             "-v",
             "error",

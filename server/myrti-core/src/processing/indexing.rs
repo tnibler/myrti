@@ -1,3 +1,5 @@
+use std::io::Read;
+
 use camino::Utf8Path as Path;
 use chrono::{DateTime, Local, Utc};
 use eyre::{Context, Result, eyre};
@@ -6,6 +8,7 @@ use myrti_data::db::DbPool;
 use myrti_data::model::*;
 use myrti_data::repository::duplicate_asset::NewDuplicateAsset;
 use myrti_data::{interact, repository};
+use tokio::io::AsyncReadExt;
 
 use crate::processing::media_metadata::exiftool;
 use crate::processing::video::ffprobe_get_streams;
@@ -201,15 +204,17 @@ async fn index_file(
             return Ok(None);
         }
     };
-    let file = tokio::fs::File::open(&path)
+    #[allow(unused_mut)]
+    let mut file = tokio::fs::File::open(&path)
         .await
-        .wrap_err("could not open asset file")?
-        .try_into_std()
-        .unwrap();
+        .wrap_err("could not open asset file")?;
     #[cfg(feature = "__private-test")]
-    let hash = hash_file(std::io::Cursor::new(String::from(path.as_str()))).await?;
+    let hash = tokio::io::BufReader::new(file)
+        .read_u64()
+        .await
+        .expect("error reading 8 bytes of hash from file");
     #[cfg(not(feature = "__private-test"))]
-    let hash = hash_file(file).await?;
+    let hash = hash_file(std::io::BufReader::new(file.try_into_std().unwrap())).await?;
 
     let conn = pool.get().await?;
     let path_in_asset_root2 = path_in_asset_root.to_owned();

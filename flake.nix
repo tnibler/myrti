@@ -184,6 +184,7 @@
           prettier
           diesel-cli
           sqlite
+          shellcheck
           litecli
         ];
 

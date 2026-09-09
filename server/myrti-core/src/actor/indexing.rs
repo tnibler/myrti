@@ -5,6 +5,7 @@ use camino::Utf8PathBuf as PathBuf;
 use eyre::{Context, Result, eyre};
 use globset::GlobSet;
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use walkdir::WalkDir;
 
@@ -74,6 +75,7 @@ impl IndexingActorHandle {
             subtask_recv,
             running_tasks: Default::default(),
             cancel: CancellationToken::new(),
+            join_set: JoinSet::new(),
         };
         tokio::spawn(run_indexing_actor(recv, actor));
         Self { send }
@@ -111,6 +113,7 @@ struct IndexingActor {
     subtask_send: mpsc::UnboundedSender<(AssetRootDirId, MsgFromIndexing)>,
     running_tasks: HashSet<AssetRootDirId>,
     cancel: CancellationToken,
+    join_set: JoinSet<()>,
 }
 
 const MAX_TASKS: usize = 4;
@@ -124,6 +127,14 @@ async fn run_indexing_actor(
     let mut queue: VecDeque<DoTaskMsg> = Default::default();
     loop {
         tokio::select! {
+            Some(result) = actor.join_set.join_next() => {
+                match result {
+                    Ok(()) => {}
+                    Err(err) => {
+                        tracing::error!(?err, "indexing task panicked");
+                    }
+                }
+            }
             Some((asset_root_id, msg)) = actor.subtask_recv.recv() => {
                 tracing::trace!(target: "indexing", ?msg, "message from subtask");
                 match &msg {
@@ -211,15 +222,7 @@ impl IndexingActor {
                     return;
                 }
 
-                let send_copy = self.subtask_send.clone();
-                let start_result = handle_indexing_message(
-                    self.db_pool.clone(),
-                    send_copy,
-                    self.config.clone(),
-                    root_dir_id,
-                    self.cancel.child_token(),
-                )
-                .await;
+                let start_result = self.handle_indexing_message(root_dir_id).await;
 
                 if let Err(report) = start_result {
                     let _ = self
@@ -234,31 +237,30 @@ impl IndexingActor {
             }
         }
     }
-}
 
-async fn handle_indexing_message(
-    db_pool: DbPool,
-    send_result: mpsc::UnboundedSender<(AssetRootDirId, MsgFromIndexing)>,
-    config: Arc<Mutex<config::Config>>,
-    root_dir_id: AssetRootDirId,
-    cancel: CancellationToken,
-) -> Result<()> {
-    let conn = db_pool.get().await?;
-    let asset_root = interact!(conn, move |conn| {
-        repository::asset_root_dir::get_asset_root(conn, root_dir_id)
-    })
-    .await?
-    .wrap_err("Error getting AssetRootDir from db")?;
-    let config = config.lock().unwrap().clone();
+    async fn handle_indexing_message(&mut self, root_dir_id: AssetRootDirId) -> Result<()> {
+        let conn = self.db_pool.get().await?;
+        let asset_root = interact!(conn, move |conn| {
+            repository::asset_root_dir::get_asset_root(conn, root_dir_id)
+        })
+        .await?
+        .wrap_err("Error getting AssetRootDir from db")?;
 
-    let root_path = asset_root
-        .path
-        .canonicalize_utf8()
-        .wrap_err("error canonicalizing asset root path")?;
-    tokio::spawn(async move {
-        index_asset_root(db_pool, config, send_result, asset_root, root_path, cancel).await;
-    });
-    Ok(())
+        let root_path = asset_root
+            .path
+            .canonicalize_utf8()
+            .wrap_err("error canonicalizing asset root path")?;
+        drop(conn);
+
+        let db_pool = self.db_pool.clone();
+        let config = self.config.lock().unwrap().clone();
+        let cancel = self.cancel.child_token();
+        let send_result = self.subtask_send.clone();
+        self.join_set.spawn(async move {
+            index_asset_root(db_pool, config, send_result, asset_root, root_path, cancel).await;
+        });
+        Ok(())
+    }
 }
 
 async fn index_asset_root(

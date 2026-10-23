@@ -25,9 +25,9 @@ use crate::{
         self,
         process_control::ProcessControl,
         video::{
+            dash_index,
             ffmpeg::run_ffmpeg,
             ffprobe_get_streams,
-            gpac::{CreateGHIOptions, DasherOptions},
             mp4_rotate::copy_mp4_rotation_metadata,
             mpd::{self, BaseURL},
             transcode::{ffmpeg_audio_flags, ffmpeg_video_flags},
@@ -35,7 +35,7 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PackageVideo {
     pub file_id: FileId,
     pub repr_name: String,
@@ -43,14 +43,14 @@ pub struct PackageVideo {
     pub task: PackageVideoTask,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PackageVideoTask {
     TranscodeVideo(VideoEncodingTarget),
     TranscodeAudio(AudioEncodingTarget),
     CreateGHIIndex {
         include_video: bool,
         include_audio: bool,
-        segment_duration: i32,
+        segment_duration: f32,
     },
     DashSegment,
 }
@@ -119,15 +119,12 @@ pub async fn do_package_video(
             .path_on_disk();
 
             let mpd_name = "stream.mpd";
-            let _dash_result = processing::video::gpac::run_dasher(
+            let _mp4_path = processing::video::ffmpeg::ffmpeg_package_dash(
                 &in_path,
                 &orig_dash_dir,
-                DasherOptions {
-                    mpd_name,
-                    base_url: None,
-                    segment_duration: 2, // TODO
-                },
-                gpac_path,
+                mpd_name,
+                2.0, // TODO
+                ffmpeg_path,
                 &mut process_control_recv,
             )
             .await?;
@@ -142,19 +139,23 @@ pub async fn do_package_video(
             include_audio,
             segment_duration,
         } => {
-            let out_dir = storage.local_path(&package_video.output_key);
-            processing::video::gpac::create_ghi_and_manifest(
-                &file_path.path_on_disk(),
-                &CreateGHIOptions {
-                    segment_duration: *segment_duration,
-                    video_rep_id: include_video.then(|| String::from("original_video")),
-                    audio_rep_id: include_audio.then(|| String::from("original_audio")),
-                    mpd_base_url: None,
-                    ghi_out_path: out_dir.join("index.ghi"),
-                    mpd_out_path: out_dir.join("stream.mpd"),
-                },
-                gpac_path,
-                &mut process_control_recv,
+            let out_dir = storage
+                .local_path(&package_video.output_key)
+                .into_std_path_buf();
+            let file_path = file_path.path_on_disk().into_std_path_buf();
+            let segment_duration = *segment_duration;
+
+            match tokio::fs::create_dir(&out_dir).await {
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+                result => result,
+            }
+            .wrap_err_with(|| format!("error creating directory {}", out_dir.display()))?;
+            dash_index::index_file(
+                &file_path,
+                &out_dir,
+                "original",
+                "stream.mpd",
+                segment_duration,
             )
             .await?;
         }
@@ -204,17 +205,14 @@ pub async fn do_package_video(
             let out_dir = asset_dash_dir.join(&repr_file_stem);
             tokio::fs::create_dir(&out_dir)
                 .await
-                .wrap_err_with(|| format!("error creating directory {}", &out_dir))?;
+                .wrap_err_with(|| format!("error creating directory {}", out_dir))?;
             let mpd_name = "stream.mpd";
-            let _dash_result = processing::video::gpac::run_dasher(
+            let _mp4_path = processing::video::ffmpeg::ffmpeg_package_dash(
                 &utf8_path,
                 &out_dir,
-                DasherOptions {
-                    mpd_name,
-                    base_url: None,
-                    segment_duration: 2, // TODO
-                },
-                gpac_path,
+                mpd_name,
+                5.0, // TODO
+                ffmpeg_path,
                 &mut process_control_recv,
             )
             .await?;
@@ -277,16 +275,13 @@ pub async fn do_package_video(
                 .await
                 .wrap_err_with(|| format!("error creating directory {}", out_dir))?;
             let mpd_name = "stream.mpd";
-            tracing::debug!("running gpac dasher");
-            let dash_result = processing::video::gpac::run_dasher(
+            tracing::debug!("running ffmpeg dash segmenter");
+            let mp4_path = processing::video::ffmpeg::ffmpeg_package_dash(
                 &utf8_path,
                 &out_dir,
-                DasherOptions {
-                    mpd_name,
-                    base_url: None,
-                    segment_duration: 2, // TODO
-                },
-                gpac_path,
+                mpd_name,
+                2.0, // TODO
+                ffmpeg_path,
                 &mut process_control_recv,
             )
             .await?;
@@ -294,7 +289,7 @@ pub async fn do_package_video(
             if no_autorotate {
                 copy_mp4_rotation_metadata(
                     file_path.path_on_disk().as_std_path(),
-                    dash_result.mp4_path.as_std_path(),
+                    mp4_path.as_std_path(),
                 )
                 .await
                 .context(
@@ -302,12 +297,9 @@ pub async fn do_package_video(
                 )?;
             }
 
-            let (_, streams) = ffprobe_get_streams(&dash_result.mp4_path, ffprobe_path).await?;
+            let (_, streams) = ffprobe_get_streams(&mp4_path, ffprobe_path).await?;
             let bitrate = streams.video.bitrate.ok_or_else(|| {
-                eyre!(
-                    "transcoded mp4 has no bitrate in stream info: {}",
-                    dash_result.mp4_path
-                )
+                eyre!("transcoded mp4 has no bitrate in stream info: {}", mp4_path)
             })?;
             let repr_name = package_video.repr_name.clone();
             interact!(conn, move |conn| {
@@ -361,7 +353,12 @@ async fn create_merged_manifest(
     .await??;
 
     let mut merged_manifest = None;
-    let mut adaptation_sets = vec![];
+    let mut adaptation_set_video = None;
+    let mut adaptation_set_audio = None;
+    let mut adaptation_set_orig_video = None;
+    let mut adaptation_set_orig_audio = None;
+    let mut mpd_reprs_video = vec![];
+    let mut mpd_reprs_audio = vec![];
 
     let repr_info = existing_video_reprs
         .into_iter()
@@ -372,6 +369,7 @@ async fn create_merged_manifest(
                 .map(|repr| (repr.id.0, repr.name)),
         );
 
+    let mut max_segment_duration: Option<std::time::Duration> = None;
     for (repr_id, repr_name) in repr_info {
         let mpd_key = storage_key::dash_file(
             file_id,
@@ -385,11 +383,22 @@ async fn create_merged_manifest(
             .await?;
         let manifest = mpd::parse(&mpd_str)?;
         debug_assert_eq!(manifest.periods.len(), 1);
+        max_segment_duration =
+            max_segment_duration.and_then(|md| manifest.maxSegmentDuration.map(|md2| md.max(md2)));
 
-        let mut adaptations = manifest.periods[0].adaptations.clone();
         let prepend_base = format_args!("{}-{}", repr_id, repr_name);
-        for adap in &mut adaptations {
-            for rep in &mut adap.representations {
+        for adap in &manifest.periods[0].adaptations {
+            let is_video = adap.contentType.as_deref() == Some("video")
+                || adap.mimeType.as_deref() == Some("video/mp4");
+            let is_audio = adap.contentType.as_deref() == Some("audio")
+                || adap.mimeType.as_deref() == Some("audio/mp4");
+            if is_video && adaptation_set_video.is_none() {
+                adaptation_set_video = Some(adap.clone());
+            }
+            if is_audio && adaptation_set_audio.is_none() {
+                adaptation_set_audio = Some(adap.clone());
+            }
+            for mut rep in adap.representations.clone() {
                 if rep.BaseURL.is_empty() {
                     rep.BaseURL.push(BaseURL {
                         base: format!("{prepend_base}"),
@@ -400,9 +409,13 @@ async fn create_merged_manifest(
                         base.base = format!("{prepend_base}/{}", base.base);
                     }
                 }
+                if is_video {
+                    mpd_reprs_video.push(rep);
+                } else if is_audio {
+                    mpd_reprs_audio.push(rep);
+                }
             }
         }
-        adaptation_sets.extend(adaptations);
         if merged_manifest.is_none() {
             merged_manifest = Some(manifest)
         }
@@ -420,13 +433,23 @@ async fn create_merged_manifest(
             .read_to_string(&mut mpd_str)
             .await?;
         let manifest = mpd::parse(&mpd_str)?;
+        max_segment_duration =
+            max_segment_duration.and_then(|md| manifest.maxSegmentDuration.map(|md2| md.max(md2)));
 
-        let mut adaptations = manifest.periods[0].adaptations.clone();
         let prepend_base = "original";
-        for adap in &mut adaptations {
-            adap.representations
-                .retain(|rep| rep.id.as_deref() != Some("ignored"));
+        for mut adap in manifest.periods[0].adaptations.clone() {
+            let is_video = adap.contentType.as_deref() == Some("video")
+                || adap.mimeType.as_deref() == Some("video/mp4");
+            let is_audio = adap.contentType.as_deref() == Some("audio")
+                || adap.mimeType.as_deref() == Some("audio/mp4");
             for rep in &mut adap.representations {
+                if let Some(codecs) = rep.codecs.as_mut() {
+                    codecs.make_ascii_lowercase();
+                    // 0x00 is an invalid level but can be found in some old files and will not play
+                    // in browsers.
+                    // Set it to baseline @ 3.1 as a safe bet.
+                    *codecs = codecs.replace("avc1.42e000", "avc1.42e01f");
+                }
                 if rep.BaseURL.is_empty() {
                     rep.BaseURL.push(BaseURL {
                         base: format!("{prepend_base}/"),
@@ -437,28 +460,41 @@ async fn create_merged_manifest(
                         base.base = format!("{prepend_base}/{}", base.base);
                     }
                 }
-                if let Some(codecs) = rep.codecs.as_mut() {
-                    codecs.make_ascii_lowercase();
-                    // 0x00 is an invalid level but can be found in some old files and will not play
-                    // in browsers.
-                    // Set it to baseline @ 3.1 as a safe bet.
-                    *codecs = codecs.replace("avc1.42e000", "avc1.42e01f");
-                }
+            }
+            if is_video {
+                adaptation_set_orig_video = Some(adap);
+            } else if is_audio {
+                adaptation_set_orig_audio = Some(adap);
             }
         }
-        adaptation_sets.extend(
-            adaptations
-                .into_iter()
-                .filter(|adap| !adap.representations.is_empty()),
-        );
         if merged_manifest.is_none() {
             merged_manifest = Some(manifest);
         }
     }
 
-    // TODO: set full profile
+    debug_assert_eq!(adaptation_set_audio.is_none(), mpd_reprs_audio.is_empty());
+    debug_assert_eq!(adaptation_set_video.is_none(), mpd_reprs_video.is_empty());
+    for (idx, rep) in mpd_reprs_video.iter_mut().enumerate() {
+        rep.id = Some(format!("{idx}"));
+    }
+    for (idx, rep) in mpd_reprs_audio.iter_mut().enumerate() {
+        rep.id = Some(format!("{idx}"));
+    }
+    if let Some(adap) = &mut adaptation_set_video {
+        adap.representations = mpd_reprs_video;
+    }
+    if let Some(adap) = &mut adaptation_set_audio {
+        adap.representations = mpd_reprs_audio;
+    }
+
     let mut merged_manifest = merged_manifest.expect("at least one manifest was just created");
-    merged_manifest.periods[0].adaptations = adaptation_sets;
+    merged_manifest.maxSegmentDuration = max_segment_duration;
+    merged_manifest.periods[0].adaptations = adaptation_set_video
+        .into_iter()
+        .chain(adaptation_set_audio)
+        .chain(adaptation_set_orig_video)
+        .chain(adaptation_set_orig_audio)
+        .collect();
 
     let mpd_path = storage.local_path(&storage_key::dash_file(file_id, format_args!("stream.mpd")));
     tokio::fs::OpenOptions::new()

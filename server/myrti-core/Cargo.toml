@@ -39,6 +39,8 @@ num-traits = "0.2.19"
 iso8601 = "0.6.3"
 globset = "0.4.19"
 fast-thumbhash = "0.2.0"
+rkyv = "0.8.18"
+mp4-atom = { version = "0.17.0", features = ["bytes", "tokio"] }
 
 [build-dependencies]
 cc = "1.0.79"

@@ -12,7 +12,10 @@ use serde::Deserialize;
 use tower::util::ServiceExt;
 use tracing::Instrument;
 
-use myrti_core::catalog::storage_key;
+use myrti_core::{
+    catalog::storage_key,
+    processing::{process_control::ProcessControl, video::dash_index},
+};
 use myrti_data::{interact, model, repository};
 
 use crate::{app_state::SharedState, http_error::ApiResult, schema::FileId};
@@ -40,95 +43,96 @@ async fn get_dash_file(
     let storage = app_state.storage.clone();
     let fs_path = storage.local_path(&key);
 
-    if let Some(repr_filename_concat) = path.path.strip_prefix("original/original_") {
+    if let Some(repr_filename_concat) = path.path.strip_prefix("original/original-") {
         let (repr, rest) = match repr_filename_concat.strip_prefix("video-") {
             None => match repr_filename_concat.strip_prefix("audio-") {
-                Some(rest) => ("original_audio", rest),
+                Some(rest) => (dash_index::TrackType::Audio, rest),
                 None => return Err(eyre!("bad path '{}'", path.path).into()),
             },
-            Some(rest) => ("original_video", rest),
+            Some(rest) => (dash_index::TrackType::Video, rest),
         };
-        let segment_number: i32 = {
-            if rest == "init.mp4" {
-                0
-            } else {
-                let rest = rest.strip_suffix(".m4s").ok_or(eyre!("bad path"))?;
-                rest.parse().context("error parsing segment number")?
-            }
-        };
-        let filename = format!("{repr}-{rest}");
-
-        let file_exists = tokio::fs::try_exists(&fs_path).await?;
-        let conn = app_state.pool.get().await?;
-        let fs_path = fs_path.clone();
-        let config = app_state.config.lock().unwrap().clone();
-
-        app_state.task_tracker.spawn(async move {
-            let do_cache_insert = match (segment_number, file_exists) {
-                // init segment (0) is ignored for cache bookkeeping
-                (0, _) => false,
-                (_, true) => {
-                    let filename = filename.clone();
-                    let row_exists = interact!(conn, move |conn| {
-                        repository::ghi_cache::update_accessed_time(conn, file_id, &filename)
-                    })
-                    .await??;
-                    !row_exists
+        // TODO: clean this mess up
+        if rest != "init.mp4" {
+            let segment_number: usize = {
+                if rest == "init.mp4" {
+                    0
+                } else {
+                    let rest = rest.strip_suffix(".m4s").ok_or(eyre!("bad path"))?;
+                    rest.parse().context("error parsing segment number")?
                 }
-                (_, false) => true,
             };
-            let out_dir =
-                storage.local_path(&storage_key::dash_file(file_id, format_args!("original")));
-            if do_cache_insert {
-                let filename_copy = filename.clone();
-                // TODO: handle unlikely error here. if segment is already being created, wait for it
-                // Actually, this should be a completely separate db.
-                // running transactions shouldn't block this
-                // also on startup delete stray rows with status=0
-                interact!(conn, move |conn| {
-                    repository::ghi_cache::insert_pending_segment(conn, file_id, &filename_copy)
-                })
-                .await??;
-            }
-            if !file_exists {
-                let (_tx, mut rx) = tokio::sync::mpsc::channel(5);
-                let ghi_path = storage.local_path(&storage_key::dash_file(
-                    file_id,
-                    format_args!("original/index.ghi"),
-                ));
+            let filename = format!("original-{repr}-{rest}");
 
-                myrti_core::processing::video::gpac::create_segment(
-                    &ghi_path,
-                    &out_dir,
-                    repr,
-                    segment_number,
-                    config.bin_paths.gpac_path(),
-                    &mut rx,
-                )
-                .await?;
-            }
-            if do_cache_insert {
-                if file_exists {
-                    tracing::debug!(path = ?fs_path, "GHI segment file exists, but no row in GhiSegmentCache");
-                }
-                let metadata = tokio::fs::metadata(out_dir.join(&filename))
-                    .await
-                    .wrap_err("error reading segment file metadata")?;
-                let filename_copy = filename.clone();
-                interact!(conn, move |conn| {
-                    repository::ghi_cache::finalize_segment(
-                        conn,
-                        file_id,
-                        &filename_copy,
-                        metadata.size().try_into().expect("fits in i64"),
-                    )
+            let file_exists = tokio::fs::try_exists(&fs_path).await?;
+            if !file_exists {
+                let conn = app_state.pool.get().await?;
+                let fs_path = fs_path.clone();
+
+                let dash_index_path = storage.local_path(&storage_key::dash_file(
+                    file_id,
+                    format_args!("original/original.dash_index"),
+                ));
+                app_state.task_tracker.spawn(async move {
+                    let index = tokio::fs::read(dash_index_path).await.wrap_err("error reading dash index file")?;
+                    let index =
+                        dash_index::DeserializedIndex::new(index).wrap_err("error reading dash index")?;
+                    let do_cache_insert = match (segment_number, file_exists) {
+                        // init segment (0) is ignored for cache bookkeeping
+                        (0, _) => false,
+                        (_, true) => {
+                            let filename = filename.clone();
+                            let row_exists = interact!(conn, move |conn| {
+                                repository::ghi_cache::update_accessed_time(conn, file_id, &filename)
+                            })
+                            .await??;
+                            !row_exists
+                        }
+                        (_, false) => true,
+                    };
+                    let out_dir =
+                        storage.local_path(&storage_key::dash_file(file_id, format_args!("original"))).into_std_path_buf();
+                    if do_cache_insert {
+                        let filename_copy = filename.clone();
+                        // TODO: handle unlikely error here. if segment is already being created, wait for it
+                        // Actually, this should be a completely separate db.
+                        // running transactions shouldn't block this
+                        // also on startup delete stray rows with status=0
+                        interact!(conn, move |conn| {
+                            repository::ghi_cache::insert_pending_segment(conn, file_id, &filename_copy)
+                        })
+                        .await??;
+                    }
+                    if !file_exists {
+                        let original_file_path = interact!(conn, move |conn| repository::asset::get_asset_path_on_disk(conn, file_id))
+                            .await??.path_on_disk().into_std_path_buf();
+                        let out_dir2 = out_dir.clone();
+                        dash_index::write_segment(&index, repr, segment_number , &original_file_path, &out_dir2).await?;
+
+                    }
+                    if do_cache_insert {
+                        if file_exists {
+                            tracing::debug!(path = ?fs_path, "GHI segment file exists, but no row in GhiSegmentCache");
+                        }
+                        let metadata = tokio::fs::metadata(out_dir.join(&filename))
+                            .await
+                            .wrap_err("error reading segment file metadata")?;
+                        let filename_copy = filename.clone();
+                        interact!(conn, move |conn| {
+                            repository::ghi_cache::finalize_segment(
+                                conn,
+                                file_id,
+                                &filename_copy,
+                                metadata.size().try_into().expect("fits in i64"),
+                            )
+                        })
+                        .await??;
+                    }
+                    Ok::<_, eyre::Error>(())
                 })
-                .await??;
+                .await
+                .wrap_err("GHI cache task panicked")??;
             }
-            Ok::<_, eyre::Error>(())
-        })
-        .await
-        .wrap_err("GHI cache task panicked")??;
+        }
     }
     let serve_dir = tower_http::services::ServeFile::new(&fs_path)
         .oneshot(request)

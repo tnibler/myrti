@@ -5,3 +5,4 @@ pub mod transcode;
 pub use ffprobe::*;
 pub mod mp4_rotate;
 pub mod mpd;
+pub mod dash_index;

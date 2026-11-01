@@ -105,8 +105,4 @@
     position: absolute;
     max-width: none; /* override tailwind */
   }
-
-  .slide-image.hidden {
-    display: none;
-  }
 </style>

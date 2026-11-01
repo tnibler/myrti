@@ -189,6 +189,7 @@ pub async fn do_package_video(
             let pre_input_flags = [];
             let audio_flags = ffmpeg_audio_flags(transcode)
                 .into_iter()
+                .chain(["-vn".to_owned()])
                 .map(OsString::from)
                 .collect_vec();
             run_ffmpeg(

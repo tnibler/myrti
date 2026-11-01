@@ -86,8 +86,8 @@ pub fn ffmpeg_audio_flags(encoding_target: &AudioEncodingTarget) -> Vec<String> 
     vec![
         "-c:a".to_owned(),
         match encoding_target {
-            AudioEncodingTarget::AAC => "libopus".to_owned(),
-            AudioEncodingTarget::OPUS => "aac".to_owned(),
+            AudioEncodingTarget::OPUS => "libopus".to_owned(),
+            AudioEncodingTarget::AAC => "aac".to_owned(),
             AudioEncodingTarget::FLAC => "flac".to_owned(),
             AudioEncodingTarget::MP3 => "libmp3lame".to_owned(),
         },

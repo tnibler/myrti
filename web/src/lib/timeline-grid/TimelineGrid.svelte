@@ -523,10 +523,7 @@
     >
       <!-- eslint-disable-next-line svelte/require-each-key -->
       {#each visibleSections as section (section.sectionIdx)}
-        <div
-          class="w-full absolute contain-layout"
-          style:top="{timeline.sectionTops[section.sectionIdx]}px"
-        >
+        <div class="w-full absolute" style:top="{timeline.sectionTops[section.sectionIdx]}px">
           <!-- eslint-disable-next-line svelte/require-each-key -->
           {#each section.blocks as block, blockIdx (block.sortDate)}
             {@const blockTop = block.top + timeline.sectionTops[section.sectionIdx]}
@@ -536,7 +533,7 @@
               block.fullHeight -
               block.gridHeight}
             <div
-              class="relative w-full contain-layout"
+              class="relative w-full"
               data-section={section.sectionIdx}
               data-block={blockIdx}
               {@attach registerBlockResize}

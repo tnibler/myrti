@@ -11,9 +11,17 @@
     isVisible: boolean;
     isActive: boolean;
     onContentReady: () => void;
+    placeholderTransitionState: 'No' | 'Running' | 'Finished';
   };
 
-  const { size, slideData, isVisible, isActive, onContentReady }: SlideVideoProps = $props();
+  const {
+    size,
+    slideData,
+    isVisible,
+    isActive,
+    onContentReady,
+    placeholderTransitionState,
+  }: SlideVideoProps = $props();
 
   let isCloseTransitionRunning = $state(false);
   let videoEl: HTMLVideoElement | undefined = $state();
@@ -61,20 +69,17 @@
     });
   }
 
-  async function shakaInitPlayer() {
-    if (!videoEl || !videoContainerEl) {
+  let uiControls = null;
+  let player = null;
+  $effect(() => {
+    if (!isActive || placeholderTransitionState !== 'Finished') {
       return;
     }
-    const player = new shaka.Player();
-    const ui = new shaka.ui.Overlay(player, videoContainerEl, videoEl);
-    await player.attach(videoEl);
-    if (slideData.videoSource === 'original') {
-      await player.load(slideData.src);
-    } else {
-      await player.load(slideData.mpdManifestUrl);
+    if (!videoEl || !player || uiControls) {
+      return;
     }
-
-    const controls = ui.getControls();
+    const ui = new shaka.ui.Overlay(player, videoContainerEl, videoEl);
+    uiControls = ui.getControls();
     ui.configure({
       topControlPanelElements: [],
       controlPanelElements: [
@@ -90,30 +95,46 @@
       // doubleClickForFullscreen: false,
       // seekOnTaps: true,
     });
-    controls.addEventListener('error', console.log);
+    uiControls.addEventListener('error', console.log);
+  });
+
+  async function shakaInitPlayer() {
+    if (!videoEl || !videoContainerEl) {
+      return;
+    }
+    player = new shaka.Player();
+    await player.attach(videoEl);
+    if (slideData.videoSource === 'original') {
+      await player.load(slideData.src);
+    } else {
+      await player.load(slideData.mpdManifestUrl);
+    }
   }
 </script>
 
 {#if isActive}
-  <div
-    class="flex flex-row items-center"
-    bind:this={videoContainerEl}
-    data-gesture-noclick-recursive
-  >
-    <video
-      autoplay={isActive}
-      class="flex-1"
-      bind:this={videoEl}
-      onloadeddata={onContentReady}
-      width={size.width}
-      style:width="{size.width}px"
-      style:height="{size.height}px"
-      style:user-select="none"
-      class:slide-transition-transform={isCloseTransitionRunning}
-      class:slide-transition-opacity={!isCloseTransitionRunning}
-      class:hidden={!isVisible}
+  <!-- this wrapper is bc shaka will set position: relative on the container div -->
+  <div class="absolute" style:width="{size.width}px" style:height="{size.height}px">
+    <div
+      class="flex flex-row items-center"
+      bind:this={videoContainerEl}
+      data-gesture-noclick-recursive
     >
-    </video>
+      <video
+        autoplay={isActive}
+        class="flex-1"
+        bind:this={videoEl}
+        onloadeddata={onContentReady}
+        width={size.width}
+        style:width="{size.width}px"
+        style:height="{size.height}px"
+        style:user-select="none"
+        class:slide-transition-transform={isCloseTransitionRunning}
+        class:slide-transition-opacity={!isCloseTransitionRunning}
+        class:invisible={!isVisible}
+      >
+      </video>
+    </div>
   </div>
 {/if}
 

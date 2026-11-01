@@ -262,6 +262,8 @@
   $effect(() => {
     if (openTransition != null && placeholderEl && placeholderTransitionState === 'No') {
       addOpenTransition(placeholderEl, openTransition);
+    } else if (openTransition === null && placeholderTransitionState === 'No') {
+      placeholderTransitionState = 'Finished';
     }
   });
 
@@ -443,6 +445,7 @@
         isVisible={isContentVisible}
         {isActive}
         onContentReady={onSlideContentReady}
+        {placeholderTransitionState}
       />
     {/if}
   {/key}

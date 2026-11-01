@@ -93,7 +93,6 @@ pub async fn do_package_video(
 
     let ffmpeg_path = bin_paths.ffmpeg_path();
     let ffprobe_path = bin_paths.ffprobe_path();
-    let gpac_path = bin_paths.gpac_path();
 
     let asset_dash_dir = storage.local_path(&storage_key::dash_file(file_id, format_args!("")));
     tokio::fs::create_dir_all(&asset_dash_dir)

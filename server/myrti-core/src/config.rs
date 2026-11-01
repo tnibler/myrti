@@ -26,7 +26,6 @@ struct TomlBinPaths {
     pub ffmpeg: Option<String>,
     pub ffprobe: Option<String>,
     pub exiftool: Option<String>,
-    pub gpac: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -61,7 +60,6 @@ pub struct BinPaths {
     pub ffmpeg: Option<(PathBuf, Vec<String>)>,
     pub ffprobe: Option<(PathBuf, Vec<String>)>,
     pub exiftool: Option<(PathBuf, Vec<String>)>,
-    pub gpac: Option<(PathBuf, Vec<String>)>,
 }
 
 impl BinPaths {
@@ -83,13 +81,6 @@ impl BinPaths {
         match self.exiftool.as_ref() {
             Some((path, args)) => (path.as_path(), args.as_slice()),
             None => ("exiftool".into(), &[]),
-        }
-    }
-
-    pub fn gpac_path(&self) -> (&Path, &[String]) {
-        match self.gpac.as_ref() {
-            Some((path, args)) => (path.as_path(), args.as_slice()),
-            None => ("gpac".into(), &[]),
         }
     }
 }
@@ -162,10 +153,6 @@ pub async fn read_config(path: &Path) -> Result<Config> {
                 .map(|p| (p, Default::default())),
             exiftool: bin_paths
                 .exiftool
-                .map(PathBuf::from)
-                .map(|p| (p, Default::default())),
-            gpac: bin_paths
-                .gpac
                 .map(PathBuf::from)
                 .map(|p| (p, Default::default())),
         })

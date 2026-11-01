@@ -20,7 +20,7 @@ Nobody has to change any habits (copying from an SD card to NAS/cloud works as b
 
 With nix: `nix run .#server -- --config path/to/config`. This is currently the only build method that's always up to date.
 
-Runtime dependencies: `ffmpeg`, `exiftool`, `gpac`, `libvips`. There are important fixes in the latest versions of `gpac` and `libvips`, distribution repos might be outdated.
+Runtime dependencies: `ffmpeg`, `exiftool`, `libvips`. There are important fixes in the latest versions of `libvips`, distribution repos might be outdated.
 
 Build dependencies: pnpm, Rust, C compiler, `pkg-config`, headers for `libvips`, `glib-2.0` and `gobject-2.0`.
 
@@ -70,7 +70,6 @@ path = "/mnt/my-media-nas/"
 # ffmpeg = "..."
 # ffprobe = "..."
 # exiftool = "..."
-# gpac = "..."
 ```
 
 #### Frontend Dev Server

@@ -124,7 +124,6 @@ impl Test {
                     PathBuf::from("../scripts/test-shims/ffprobe.sh"),
                     vec![asset_dir.path().to_owned().into()],
                 )),
-                gpac: Some((PathBuf::from("../scripts/test-shims/gpac.sh"), vec![])),
             },
             address: None,
             port: None,

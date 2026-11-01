@@ -84,7 +84,6 @@
           glib.dev
           ffmpeg
           exiftool
-          gpac
         ];
 
         CFLAGS = "-DJEMALLOC_STRERROR_R_RETURNS_CHAR_WITH_GNU_SOURCE";
@@ -152,7 +151,7 @@
       apps = {
         server = let
           runServer = pkgs.writeShellScriptBin "run-server" ''
-            export PATH="${pkgs.lib.makeBinPath [pkgs.ffmpeg pkgs.exiftool pkgs.gpac]}:$PATH"
+            export PATH="${pkgs.lib.makeBinPath [pkgs.ffmpeg pkgs.exiftool]}:$PATH"
             export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [pkgs.glib pkgs.vips]}"
             exec ${server}/bin/server --serve-static ${myrtiWeb} "$@"
           '';
@@ -186,6 +185,7 @@
           sqlite
           shellcheck
           litecli
+          yt-dlp
         ];
 
         hardeningDisable = ["fortify"];

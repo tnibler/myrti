@@ -24,7 +24,6 @@ pub async fn run_self_check(bin_paths: &BinPaths) -> Result<(), ()> {
     check_can_encode_audio(bin_paths.ffmpeg_path()).await?;
     check_can_run_exiftool(bin_paths.exiftool_path()).await?;
     check_can_encode_vips_images().await?;
-    check_can_run_gpac(bin_paths.gpac_path()).await?;
     Ok(())
 }
 
@@ -198,46 +197,6 @@ async fn check_can_encode_audio((ffmpeg_path, args): (&Path, &[String])) -> Resu
         }
         tracing::debug!("ok: can encode {} audio", name);
     }
-    Ok(())
-}
-
-async fn check_can_run_gpac((gpac_path, args): (&Path, &[String])) -> Result<(), ()> {
-    let mut command = Command::new(gpac_path);
-    command
-        .args(args)
-        .args(["-h", "-version"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let proc = match command.spawn() {
-        Ok(c) => c,
-        Err(err) => match err.kind() {
-            std::io::ErrorKind::NotFound => {
-                tracing::error!("Could not find gpac ({})", gpac_path);
-                return Err(());
-            }
-            _kind => {
-                tracing::error!("Error running gpac: {}", err);
-                return Err(());
-            }
-        },
-    };
-    let result = proc.wait_with_output().await;
-    match result {
-        Ok(result) => {
-            if !result.status.success() {
-                tracing::error!(
-                    "Testing gpac with 'gpac -h -version' exited with an error:\n{}",
-                    String::from_utf8_lossy(&result.stderr)
-                );
-                return Err(());
-            }
-        }
-        Err(err) => {
-            tracing::error!("Testing gpac with 'gpac -h -version' failed:\n{:?}", err);
-            return Err(());
-        }
-    }
-    tracing::debug!("ok: can run gpac");
     Ok(())
 }
 

@@ -43,8 +43,10 @@ diesel::table! {
         root_dir_id -> BigInt,
         file_path -> Text,
         file_type -> Text,
-        hash -> Nullable<Binary>,
+        hash -> Binary,
         added_at -> BigInt,
+        verified_at -> BigInt,
+        deleted_on_disk -> Integer,
         width -> Integer,
         height -> Integer,
         rotation_correction -> Integer,
@@ -121,6 +123,8 @@ diesel::table! {
         file_id -> BigInt,
         root_dir_id -> BigInt,
         file_path -> Text,
+        added_at -> BigInt,
+        verified_at -> BigInt,
     }
 }
 

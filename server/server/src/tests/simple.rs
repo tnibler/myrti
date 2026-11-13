@@ -1038,7 +1038,7 @@ async fn moving_asset_files_works() {
             .iter()
             .map(|a| a.rep_file.file_path.clone())
             .collect_vec();
-        assert_eq!(asset_paths, &["GP010824.JPG"]);
+        assert_eq!(asset_paths, &["GP010824.jpg"]);
 
         let resp = test
             .app

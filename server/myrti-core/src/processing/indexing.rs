@@ -1,12 +1,12 @@
 use std::io::Read;
 
-use camino::Utf8Path as Path;
+use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use chrono::{DateTime, Local, Utc};
 use eyre::{Context, Result, eyre};
 
-use myrti_data::db::DbPool;
+use myrti_data::db::{DbPool, PooledDbConn};
 use myrti_data::model::*;
-use myrti_data::repository::duplicate_asset::NewDuplicateAsset;
+use myrti_data::repository::duplicate_asset::NewDuplicateFile;
 use myrti_data::{interact, repository};
 use tokio::io::AsyncReadExt;
 
@@ -14,7 +14,7 @@ use crate::processing::media_metadata::exiftool;
 use crate::processing::video::ffprobe_get_streams;
 use crate::{
     config,
-    processing::{self, hash::hash_file},
+    processing::{self},
 };
 
 use super::media_metadata::{TimestampGuess, figure_out_utc_timestamp, read_media_metadata};
@@ -59,7 +59,6 @@ async fn index_file(
     pool: &DbPool,
     bin_paths: &config::BinPaths,
 ) -> Result<Option<AssetId>> {
-    let asset_root_id = asset_root.id;
     let exiftool_path = bin_paths.exiftool_path();
     let ffprobe_path = bin_paths.ffprobe_path();
     let (exiftool_json, metadata) = read_media_metadata(path, exiftool_path)
@@ -214,30 +213,16 @@ async fn index_file(
         .await
         .expect("error reading 8 bytes of hash from file");
     #[cfg(not(feature = "__private-test"))]
-    let hash = hash_file(std::io::BufReader::new(file.try_into_std().unwrap())).await?;
+    let hash =
+        processing::hash::hash_file(std::io::BufReader::new(file.try_into_std().unwrap())).await?;
 
-    let conn = pool.get().await?;
-    let path_in_asset_root2 = path_in_asset_root.to_owned();
-    let is_duplicate = interact!(conn, move |conn| {
-        let existing_with_same_hash = repository::asset::get_asset_with_hash(conn, hash)?;
-        if let Some(existing_file_id) = existing_with_same_hash {
-            repository::duplicate_asset::insert_duplicate_asset(
-                conn,
-                NewDuplicateAsset {
-                    existing_file_id,
-                    asset_root_dir_id: asset_root_id,
-                    path_in_asset_root: &path_in_asset_root2,
-                },
-            )?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
-    })
-    .await??;
-    if is_duplicate {
-        return Ok(None);
+    let mut conn = pool.get().await?;
+    match was_file_moved(&mut conn, asset_root, path_in_asset_root, hash).await? {
+        DupeCheckResult::InsertedNewDupe(_) => return Ok(None),
+        DupeCheckResult::UpdatedExistingFile(_) => return Ok(None),
+        DupeCheckResult::NoDuplicates => {}
     }
+
     let timestamp_guess = figure_out_utc_timestamp(&metadata);
     let (timestamp, timestamp_info): (DateTime<Utc>, TimestampInfo) = match timestamp_guess {
         TimestampGuess::None => (Utc::now(), TimestampInfo::NoTimestamp),
@@ -286,4 +271,82 @@ async fn index_file(
     })
     .await??;
     Ok(Some(id))
+}
+
+#[derive(Debug, Clone)]
+#[allow(unused)]
+enum DupeCheckResult {
+    InsertedNewDupe(DuplicateFileId),
+    UpdatedExistingFile(FileId),
+    NoDuplicates,
+}
+
+async fn was_file_moved(
+    conn: &mut PooledDbConn,
+    asset_root: &AssetRootDir,
+    path_in_root: &Path,
+    hash: u64,
+) -> Result<DupeCheckResult> {
+    let (file_id, dupe_ids) =
+        match interact!(conn, move |conn| repository::asset::get_files_with_hash(
+            conn, hash
+        ))
+        .await??
+        {
+            Some((file_id, dupe_ids)) => (file_id, dupe_ids),
+            None => return Ok(DupeCheckResult::NoDuplicates),
+        };
+    let main_path: PathBuf = interact!(
+        conn,
+        move |conn| repository::asset::get_asset_path_on_disk(conn, file_id)
+    )
+    .await??
+    .path_on_disk();
+
+    let main_file_exists = tokio::fs::try_exists(&main_path).await?;
+    for dupe_id in dupe_ids {
+        let dupe_path = interact!(conn, move |conn| {
+            repository::duplicate_asset::get_duplicate_path_on_disk(conn, dupe_id)
+        })
+        .await??;
+        tracing::info!(
+            ?dupe_id,
+            ?dupe_path,
+            "Duplicate file no longer exists on disk, deleting it."
+        );
+        if !tokio::fs::try_exists(&dupe_path).await? {
+            interact!(conn, move |conn| {
+                repository::duplicate_asset::delete_duplicate_file(conn, dupe_id)
+            })
+            .await??;
+        }
+    }
+    let abs_path = asset_root.path.join(path_in_root);
+    let path_in_root = path_in_root.to_owned();
+    let root_dir_id = asset_root.id;
+    if !main_file_exists {
+        tracing::info!(?file_id, old_path = ?main_path, new_path = ?path_in_root, "Asset file moved");
+        interact!(conn, move |conn| repository::asset::update_file_path(
+            conn,
+            file_id,
+            root_dir_id,
+            &path_in_root
+        ))
+        .await??;
+        Ok(DupeCheckResult::UpdatedExistingFile(file_id))
+    } else {
+        tracing::info!(?main_path, duplicate = ?abs_path, "New duplicate");
+        let new_dupe_id = interact!(conn, move |conn| {
+            repository::duplicate_asset::insert_duplicate_file(
+                conn,
+                NewDuplicateFile {
+                    existing_file_id: file_id,
+                    asset_root_dir_id: root_dir_id,
+                    path_in_asset_root: &path_in_root,
+                },
+            )
+        })
+        .await??;
+        Ok(DupeCheckResult::InsertedNewDupe(new_dupe_id))
+    }
 }

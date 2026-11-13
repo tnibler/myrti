@@ -26,8 +26,10 @@ pub struct DbAssetFile {
     pub root_dir_id: i64,
     pub file_type: String,
     pub file_path: String,
-    pub hash: Option<Vec<u8>>,
+    pub hash: Vec<u8>,
     pub added_at: i64,
+    pub verified_at: i64,
+    pub deleted_on_disk: i32,
     pub width: i32,
     pub height: i32,
     pub rotation_correction: i32,
@@ -89,7 +91,7 @@ impl TryFrom<DbAssetFile> for AssetFile {
     type Error = eyre::Report;
 
     fn try_from(value: DbAssetFile) -> Result<Self, Self::Error> {
-        let hash: Option<u64> = value.hash.as_ref().map(hash_vec8_to_u64).transpose()?;
+        let hash: Option<u64> = Some(hash_vec8_to_u64(value.hash)?);
         Ok(AssetFile {
             id: FileId(value.file_id),
             ty: from_db_asset_ty(value.asset_type)?,
@@ -97,6 +99,8 @@ impl TryFrom<DbAssetFile> for AssetFile {
             file_type: value.file_type,
             file_path: value.file_path.into(),
             added_at: datetime_from_db_repr(value.added_at)?,
+            verified_at: datetime_from_db_repr(value.verified_at)?,
+            deleted_on_disk: value.deleted_on_disk != 0,
             hash,
             size: Size {
                 width: value.width,
@@ -235,6 +239,7 @@ pub struct DbInsertAssetFile<'a> {
     pub file_path: Cow<'a, str>,
     pub hash: Option<Cow<'a, [u8]>>,
     pub added_at: i64,
+    pub verified_at: i64,
 
     pub width: i32,
     pub height: i32,

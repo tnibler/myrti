@@ -64,9 +64,14 @@ CREATE TABLE AssetFile (
   , merge_reason INTEGER DEFAULT NULL
   , file_path TEXT NOT NULL
   , file_type TEXT NOT NULL -- FileType from exiftool
-  , hash BLOB UNIQUE
+  , hash BLOB UNIQUE NOT NULL
   -- UTC timestamp in milliseconds since UNIX epoch
   , added_at INTEGER NOT NULL
+  , deleted_on_disk INTEGER NOT NULL DEFAULT 0
+    CONSTRAINT bool_deleted_on_disk CHECK (deleted_on_disk IN (0, 1))
+  -- last time the file was checked on disk
+  , verified_at INTEGER NOT NULL
+    CONSTRAINT valid_verified_at CHECK (verified_at >= added_at)
   -- width and height of the image/video as it is displayed, all metadata taken into account
   , width INTEGER NOT NULL
   , height INTEGER NOT NULL
@@ -165,6 +170,10 @@ CREATE TABLE DuplicateFile (
   , file_id INTEGER NOT NULL
   , root_dir_id INTEGER NOT NULL
   , file_path TEXT NOT NULL
+  , added_at INTEGER NOT NULL
+  -- last time the file was checked on disk
+  , verified_at INTEGER NOT NULL
+    CONSTRAINT valid_verified_at CHECK (verified_at >= added_at)
   , FOREIGN KEY (file_id) REFERENCES AssetFile(file_id)
   , FOREIGN KEY (root_dir_id) REFERENCES AssetRootDir(asset_root_dir_id)
   , UNIQUE(root_dir_id, file_path)
@@ -335,6 +344,8 @@ CREATE TABLE AcceptableAudioCodec (
   , CONSTRAINT is_lowercase CHECK(LOWER(codec_name) = codec_name)
 ) STRICT;
 
+-- Assets in an AssetSeries can not belong to different TimelineGroups, so if one asset in a series is part of a group,
+-- then logically the entire series is in the group. The view encapsulates that logic.
 CREATE VIEW AssetsInTimelineGroup AS
 SELECT COALESCE(series_group.asset_id, asset_group.asset_id) AS asset_id
 	, TimelineGroupItem.group_id AS group_id

@@ -26,7 +26,7 @@ impl_id!(AssetThumbnailId);
 impl_id!(AlbumId);
 impl_id!(AlbumItemId);
 impl_id!(DataDirId);
-impl_id!(DuplicateAssetId);
+impl_id!(DuplicateFileId);
 impl_id!(AlbumThumbnailId);
 impl_id!(FileId);
 impl_id!(VideoRepresentationId);

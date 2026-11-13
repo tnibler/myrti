@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use camino::Utf8Path as Path;
 use chrono::Utc;
 use diesel::connection::SimpleConnection;
+use diesel::dsl::update;
 use diesel::{insert_into, prelude::*};
 use eyre::{Context, Result, eyre};
 use itertools::Itertools;
@@ -19,8 +20,9 @@ use super::{
 use crate::db::DbConn;
 use crate::model::{
     self, Asset, AssetFile, AssetId, AssetPathOnDisk, AssetRootDirId, AssetSpe, AssetThumbnail,
-    AssetThumbnailId, AssetType, CreateAsset, CreateAssetSpe, FileId, Image, IsOriginalStreamable,
-    MirrorCorrection, OriginalStreaming, RotationCorrection, ThumbnailType, TimestampInfo, Video,
+    AssetThumbnailId, AssetType, CreateAsset, CreateAssetSpe, DuplicateFile, DuplicateFileId,
+    FileId, Image, IsOriginalStreamable, MirrorCorrection, OriginalStreaming, RotationCorrection,
+    ThumbnailType, TimestampInfo, Video,
 };
 use crate::repository::db_entity::{
     DbAssetFile, DbImageFile, DbInsertAssetFile, DbInsertVideoFile, DbVideoFile,
@@ -100,15 +102,33 @@ pub fn get_image_file(conn: &mut DbConn, id: FileId) -> Result<(model::Image, mo
     Ok((db_image.try_into()?, db_file.try_into()?))
 }
 
-pub fn get_asset_with_hash(conn: &mut DbConn, with_hash: u64) -> Result<Option<FileId>> {
-    use schema::AssetFile;
-    let with_hash = hash_u64_to_vec8(with_hash);
-    let maybe_id: Option<i64> = AssetFile::table
-        .select(AssetFile::asset_id)
-        .filter(AssetFile::hash.eq(Some(with_hash)))
-        .first(conn)
-        .optional()?;
-    Ok(maybe_id.map(FileId))
+pub fn get_files_with_hash(
+    conn: &mut DbConn,
+    with_hash: u64,
+) -> Result<Option<(FileId, Vec<DuplicateFileId>)>> {
+    use schema::{AssetFile, DuplicateFile};
+    let with_hash = with_hash.to_le_bytes();
+    conn.transaction(|conn| {
+        let file_id: Option<i64> = AssetFile::table
+            .select(AssetFile::file_id)
+            .filter(AssetFile::hash.eq(with_hash))
+            .first(conn)
+            .optional()
+            .wrap_err("error querying table AssetFile by hash")?;
+        let file_id = match file_id {
+            Some(id) => FileId(id),
+            None => return Ok(None),
+        };
+        let dupe_ids: Vec<i64> = DuplicateFile::table
+            .select(DuplicateFile::dup_file_id)
+            .filter(DuplicateFile::file_id.eq(file_id.0))
+            .load(conn)
+            .wrap_err("error querying table DuplicateFile by hash")?;
+        Ok(Some((
+            file_id,
+            dupe_ids.into_iter().map(DuplicateFileId).collect(),
+        )))
+    })
 }
 
 pub fn get_asset_path_on_disk(conn: &mut DbConn, id: FileId) -> Result<AssetPathOnDisk> {
@@ -309,6 +329,7 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
         TimestampInfo::UtcCertain | TimestampInfo::NoTimestamp => None,
     };
     conn.immediate_transaction(|conn| {
+        let now = Utc::now();
         let insertable_file = DbInsertAssetFile {
             file_id: None,
             asset_id: Some(0),
@@ -323,7 +344,8 @@ pub fn create_asset(conn: &mut DbConn, create_asset: CreateAsset) -> Result<Asse
                 .base
                 .hash
                 .map(|h| Cow::Owned(h.to_le_bytes().to_vec())),
-            added_at: datetime_to_db_repr(&Utc::now()),
+            added_at: datetime_to_db_repr(&now),
+            verified_at: datetime_to_db_repr(&now),
             width: create_asset.base.size.width,
             height: create_asset.base.size.height,
             rotation_correction: match create_asset.base.rotation_correction {
@@ -831,4 +853,21 @@ pub fn detect_image_sequences(conn: &mut DbConn) -> Result<()> {
         conn.batch_execute(include_str!("detect_image_sequences.sql"))
             .wrap_err("error executing detect_image_sequence query")
     })
+}
+
+pub fn update_file_path(
+    conn: &mut DbConn,
+    file_id: FileId,
+    asset_root_dir_id: AssetRootDirId,
+    path_in_root: &Path,
+) -> Result<()> {
+    use schema::AssetFile;
+    update(AssetFile::table.find(file_id.0))
+        .set((
+            AssetFile::root_dir_id.eq(asset_root_dir_id.0),
+            AssetFile::file_path.eq(path_in_root.as_str()),
+        ))
+        .execute(conn)
+        .wrap_err("error updating AssetFile path")?;
+    Ok(())
 }

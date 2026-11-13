@@ -17,6 +17,8 @@ pub struct AssetFile {
     pub file_type: String,
     pub file_path: PathBuf,
     pub added_at: DateTime<Utc>,
+    pub verified_at: DateTime<Utc>,
+    pub deleted_on_disk: bool,
     pub size: Size,
     pub rotation_correction: RotationCorrection,
     pub mirror_correction: MirrorCorrection,

@@ -2,6 +2,8 @@ use camino::Utf8PathBuf as PathBuf;
 use chrono::{DateTime, Utc};
 use eyre::{Report, eyre};
 
+use crate::model::DuplicateFileId;
+
 use super::{AssetBase, AssetFile, AssetRootDirId, FileId, GpsCoordinates, Size, TimestampInfo};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -53,6 +55,13 @@ pub struct ImageAsset {
 pub struct CreateAsset {
     pub base: CreateAssetBase,
     pub spe: CreateAssetSpe,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct DuplicateFile {
+    pub id: DuplicateFileId,
+    pub file_id: FileId,
+    pub path: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

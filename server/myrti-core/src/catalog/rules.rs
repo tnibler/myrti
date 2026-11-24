@@ -372,16 +372,13 @@ async fn check_create_ghi_task(
         return Ok((is_streamable, None));
     };
 
-    let acceptable_video_codecs = interact!(conn, move |conn| {
-        repository::config::get_acceptable_video_codecs(conn)
-    })
-    .await??;
+    let acceptable_video_codecs = ["h264", "hevc", "av1", "vp9"];
     let acceptable_audio_codecs = interact!(conn, move |conn| {
         repository::config::get_acceptable_audio_codecs(conn)
     })
     .await??;
 
-    let orig_codec_ok = acceptable_video_codecs.contains(&video.video_codec_name);
+    let orig_codec_ok = acceptable_video_codecs.contains(&video.video_codec_name.as_str());
     let orig_audio_codec_ok = video
         .audio_codec_name
         .as_ref()

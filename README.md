@@ -18,7 +18,7 @@ Nobody has to change any habits (copying from an SD card to NAS/cloud works as b
 
 ## Building and Running
 
-With nix: `nix run .#server -- --config path/to/config`. This is currently the only build method that's always up to date.
+With nix: `nix run -- --config path/to/config`. This is currently the only build method that's always up to date.
 
 Runtime dependencies: `ffmpeg`, `exiftool`, `libvips`. There are important fixes in the latest versions of `libvips`, distribution repos might be outdated.
 

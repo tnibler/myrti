@@ -96,7 +96,7 @@
           inherit (craneLib.crateNameFromCargoToml ./server/server) name version;
         };
 
-      server = craneLib.buildPackage (commonArgs
+      myrti-unwrapped = craneLib.buildPackage (commonArgs
         // {
           inherit cargoArtifacts;
           inherit (craneLib.crateNameFromCargoToml {inherit src;}) version;
@@ -119,10 +119,15 @@
           };
           doCheck = false;
         });
+    myrti = pkgs.writeShellScriptBin "myrti" ''
+      export PATH="${pkgs.lib.makeBinPath [ pkgs.ffmpeg pkgs.exiftool ]}:$PATH"
+      export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [ pkgs.glib pkgs.vips ]}"
+      exec ${myrti-unwrapped}/bin/server --serve-static ${myrtiWeb} "$@"
+    '';
     in {
       checks = {
         # Build the crates as part of `nix flake check` for convenience
-        inherit server;
+        inherit myrti-unwrapped myrti;
 
         # Ensure that cargo-hakari is up to date
         my-workspace-hakari = craneLib.mkCargoDerivation {
@@ -145,22 +150,17 @@
       };
 
       packages = {
-        inherit server;
+        inherit myrti-unwrapped myrti;
+        default = myrti;
       };
 
       apps = {
-        server = let
-          runServer = pkgs.writeShellScriptBin "run-server" ''
-            export PATH="${pkgs.lib.makeBinPath [pkgs.ffmpeg pkgs.exiftool]}:$PATH"
-            export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [pkgs.glib pkgs.vips]}"
-            exec ${server}/bin/server --serve-static ${myrtiWeb} "$@"
-          '';
-        in {
+        myrti = {
           type = "app";
-          program = "${runServer}/bin/run-server";
+          program = "${myrti}/bin/server";
         };
         print-openapi = flake-utils.lib.mkApp {
-          drv = server;
+          drv = myrti-unwrapped;
           name = "print-openapi";
         };
       };
@@ -169,7 +169,7 @@
         # Inherit inputs from checks.
         checks = self.checks.${system};
 
-        inputsFrom = [server];
+        inputsFrom = [myrti-unwrapped];
 
         # Extra inputs can be added here; cargo and rustc are provided by default.
         packages = with pkgs; [

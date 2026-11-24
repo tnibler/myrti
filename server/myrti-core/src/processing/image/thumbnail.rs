@@ -28,8 +28,6 @@ pub struct ThumbnailResult {
 }
 
 pub async fn generate_thumbnail(params: ThumbnailParams) -> Result<ThumbnailResult> {
-    let tempdir = tempfile::tempdir()?;
-
     let vips_params = VipsThumbnailParams {
         in_path: params.in_path.clone(),
         out_dimension: params.out_dimension,
@@ -43,7 +41,11 @@ pub async fn generate_thumbnail(params: ThumbnailParams) -> Result<ThumbnailResu
                 let filename = out_path
                     .file_name()
                     .ok_or_else(|| eyre!("thumbnail output path {} has no file_name", out_path))?;
-                let tmp_out: PathBuf = tempdir
+                let tmp_dir = out_path
+                    .parent()
+                    .map(tempfile::tempdir_in)
+                    .unwrap_or(tempfile::tempdir())?;
+                let tmp_out: PathBuf = tmp_dir
                     .path()
                     .with_file_name(filename)
                     .try_into()

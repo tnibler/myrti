@@ -1,8 +1,9 @@
 use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
+use chrono::Utc;
 use diesel::{dsl::delete, prelude::*};
 use eyre::{Context, Result, eyre};
 
-use crate::model::{AssetRootDirId, DuplicateFileId, FileId};
+use crate::{model::{AssetRootDirId, DuplicateFileId, FileId}, repository::util::datetime_to_db_repr};
 
 use super::schema::{self};
 use crate::db::DbConn;
@@ -19,11 +20,14 @@ pub fn insert_duplicate_file<'a>(
     dupe: NewDuplicateFile<'a>,
 ) -> Result<DuplicateFileId> {
     use schema::DuplicateFile;
+    let now = Utc::now();
     let id = diesel::insert_into(DuplicateFile::table)
         .values((
             DuplicateFile::file_id.eq(dupe.existing_file_id.0),
             DuplicateFile::root_dir_id.eq(dupe.asset_root_dir_id.0),
             DuplicateFile::file_path.eq(dupe.path_in_asset_root.as_str()),
+            DuplicateFile::added_at.eq(datetime_to_db_repr(&now)),
+            DuplicateFile::verified_at.eq(datetime_to_db_repr(&now)),
         ))
         .returning(DuplicateFile::dup_file_id)
         .get_result(conn)?;

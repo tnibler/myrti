@@ -111,11 +111,7 @@ async fn main() -> Result<()> {
         std::fs::create_dir(&data_dir)
             .with_context(|| format!("error creating data directory at {}", data_dir))?;
     }
-    let db_path = config.data_dir.db_path.as_deref().unwrap_or(&data_dir);
-    if !std::fs::exists(db_path)? {
-        std::fs::create_dir(db_path)
-            .with_context(|| format!("error creating database directory at {}", db_path))?;
-    }
+    let db_path = config.db_path.clone();
 
     let data_dir_canon = match config.data_dir.path.canonicalize_utf8() {
         Ok(p) => p,
@@ -161,7 +157,6 @@ async fn main() -> Result<()> {
         .unwrap_or("127.0.0.1".parse().expect("is a valid address"));
     let port = args.port.unwrap_or(3000);
     let pmtiles_path = data_dir.join("map.pmtiles");
-    let db_url = db_path.join("myrti_media.db");
     let storage = Storage::new(data_dir);
     let Server {
         app,
@@ -173,7 +168,7 @@ async fn main() -> Result<()> {
         config: Mutex::new(config).into(),
         storage,
         config_dir,
-        db_url: db_url.as_str(),
+        db_url: db_path.as_str(),
     })
     .await?;
 

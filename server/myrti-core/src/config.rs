@@ -18,7 +18,6 @@ struct TomlAssetDir {
 struct TomlDataDir {
     path: String,
     name: Option<String>,
-    db_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -34,6 +33,7 @@ struct TomlConfig {
     pub asset_dirs: Vec<TomlAssetDir>,
     #[serde(rename = "DataDir")]
     pub data_dir: TomlDataDir,
+    pub database_path: Option<String>,
     #[serde(rename = "BinPaths")]
     pub bin_paths: Option<TomlBinPaths>,
     pub address: Option<String>,
@@ -52,7 +52,6 @@ pub struct AssetDir {
 pub struct DataDir {
     pub path: PathBuf,
     pub name: Option<String>,
-    pub db_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -89,6 +88,7 @@ impl BinPaths {
 pub struct Config {
     pub asset_dirs: Vec<AssetDir>,
     pub data_dir: DataDir,
+    pub db_path: PathBuf,
     pub bin_paths: BinPaths,
     pub address: Option<String>,
     pub port: Option<u16>,
@@ -137,7 +137,6 @@ pub async fn read_config(path: &Path) -> Result<Config> {
         DataDir {
             path,
             name: toml_config.data_dir.name,
-            db_path: toml_config.data_dir.db_path.map(PathBuf::from),
         }
     };
     let bin_paths = toml_config
@@ -159,9 +158,15 @@ pub async fn read_config(path: &Path) -> Result<Config> {
         .unwrap_or_default();
     let address = toml_config.address;
     let port: Option<u16> = toml_config.port;
+    let db_path = toml_config
+        .database_path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| data_dir.path.join("myrti_media.db"))
+        .into();
     Ok(Config {
         asset_dirs,
         data_dir,
+        db_path,
         bin_paths,
         address,
         port,

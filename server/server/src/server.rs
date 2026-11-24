@@ -61,6 +61,12 @@ pub async fn make_app(
         .await
         .wrap_err("error setting up database")?;
     store_asset_roots_from_config(config_dir, &config.lock().unwrap(), &pool).await?;
+    for subdir in ["thumb", "dash", "image"] {
+        let path = config.lock().unwrap().data_dir.path.join(&subdir);
+        tokio::fs::create_dir_all(path)
+            .await
+            .wrap_err("error creating subdirectory in data directory")?;
+    }
 
     let (scheduler, scheduler_recv) =
         SchedulerHandle::new(pool.clone(), storage.clone(), config.clone());

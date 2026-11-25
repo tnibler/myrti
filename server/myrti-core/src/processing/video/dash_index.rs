@@ -906,6 +906,7 @@ async fn index_moov<P: AsRef<Path>>(
                 ..Default::default()
             }),
             representations: vec![mpd::Representation {
+                id: Some(format!("{}", 0)),
                 codecs: Some(audio.base.codec.clone()),
                 ..Default::default()
             }],

@@ -541,6 +541,7 @@ impl Display for TrackType {
     }
 }
 
+#[tracing::instrument(level = "trace", skip(index))]
 pub async fn write_segment(
     index: &DeserializedIndex,
     track: TrackType,

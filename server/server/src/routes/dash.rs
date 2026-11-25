@@ -10,7 +10,7 @@ use axum::{
 use eyre::{Context, eyre};
 use serde::Deserialize;
 use tower::util::ServiceExt;
-use tracing::Instrument;
+use tracing::{Instrument, trace};
 
 use myrti_core::{
     catalog::storage_key,
@@ -62,17 +62,18 @@ async fn get_dash_file(
                 }
             };
             let filename = format!("original-{repr}-{rest}");
-            let have_segment = {
-                let filename = filename.clone();
+            let file_exists = tokio::fs::try_exists(&fs_path).await?;
+            let cache_row_exists = {
                 let conn = app_state.pool.get().await?;
+                let filename = filename.clone();
                 interact!(conn, move |conn| {
-                    repository::ghi_cache::have_finalized_segment(conn, file_id, &filename)
+                    repository::ghi_cache::update_accessed_time(conn, file_id, &filename)
                 })
                 .await??
             };
 
-            let file_exists = tokio::fs::try_exists(&fs_path).await?;
-            if !file_exists || !have_segment {
+            trace!(?cache_row_exists, ?file_exists);
+            if !file_exists || !cache_row_exists {
                 let dash_index_path = storage.local_path(&storage_key::dash_file(
                     file_id,
                     format_args!("original/original.dash_index"),
@@ -82,24 +83,10 @@ async fn get_dash_file(
                     .wrap_err("error reading dash index file")?;
                 let index = dash_index::DeserializedIndex::new(index)
                     .wrap_err("error reading dash index")?;
-                let do_cache_insert = match (segment_number, file_exists) {
-                    // init segment (0) is ignored for cache bookkeeping
-                    (0, _) => false,
-                    (_, true) => {
-                        let conn = app_state.pool.get().await?;
-                        let filename = filename.clone();
-                        let row_exists = interact!(conn, move |conn| {
-                            repository::ghi_cache::update_accessed_time(conn, file_id, &filename)
-                        })
-                        .await??;
-                        !row_exists
-                    }
-                    (_, false) => true,
-                };
                 let out_dir = storage
                     .local_path(&storage_key::dash_file(file_id, format_args!("original")))
                     .into_std_path_buf();
-                if do_cache_insert {
+                if !cache_row_exists {
                     let filename_copy = filename.clone();
                     let conn = app_state.pool.get().await?;
                     // TODO: handle unlikely error here. if segment is already being created, wait for it
@@ -130,21 +117,23 @@ async fn get_dash_file(
                 )
                 .await
                 .wrap_err("Failed to create DASH segment")?;
-                if do_cache_insert {
+                if !cache_row_exists {
                     let metadata = tokio::fs::metadata(out_dir.join(&filename))
                         .await
                         .wrap_err("error reading segment file metadata")?;
                     let filename_copy = filename.clone();
                     let conn = app_state.pool.get().await?;
+                    let file_size: i64 = metadata.size().try_into().expect("fits in i64");
                     interact!(conn, move |conn| {
                         repository::ghi_cache::finalize_segment(
                             conn,
                             file_id,
                             &filename_copy,
-                            metadata.size().try_into().expect("fits in i64"),
+                            file_size,
                         )
                     })
                     .await??;
+                    trace!(file_size, "created DASH segment");
                 }
             }
         }

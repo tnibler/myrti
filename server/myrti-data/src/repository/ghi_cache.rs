@@ -14,6 +14,7 @@ struct InsertSegmentRow<'a> {
     status: i32,
 }
 
+#[tracing::instrument(level = "trace", skip(conn))]
 pub fn insert_pending_segment(conn: &mut DbConn, file_id: FileId, file_name: &str) -> Result<()> {
     use schema::GhiSegmentCache;
     conn.immediate_transaction(|conn| {
@@ -31,13 +32,17 @@ pub fn insert_pending_segment(conn: &mut DbConn, file_id: FileId, file_name: &st
                     .eq(file_id.0)
                     .and(GhiSegmentCache::file_name.eq(file_name)),
             )
-            .set((GhiSegmentCache::status.eq(0), GhiSegmentCache::size.eq(None::<i64>)))
+            .set((
+                GhiSegmentCache::status.eq(0),
+                GhiSegmentCache::size.eq(None::<i64>),
+            ))
             .execute(conn)
             .wrap_err("error updating able GhiSegmentCache")?;
         Ok(())
     })
 }
 
+#[tracing::instrument(level = "trace", skip(conn))]
 pub fn finalize_segment(
     conn: &mut DbConn,
     file_id: FileId,
@@ -82,4 +87,20 @@ pub fn update_accessed_time(conn: &mut DbConn, file_id: FileId, file_name: &str)
             .execute(conn)?;
         Ok(n_affected == 1)
     })
+}
+
+pub fn have_finalized_segment(conn: &mut DbConn, file_id: FileId, file_name: &str) -> Result<bool> {
+    use schema::GhiSegmentCache;
+    Ok(GhiSegmentCache::table
+        .filter(
+            GhiSegmentCache::file_id
+                .eq(file_id.0)
+                .and(GhiSegmentCache::file_name.eq(file_name))
+                .and(GhiSegmentCache::status.eq(1)),
+        )
+        .select(GhiSegmentCache::file_id)
+        .first::<i64>(conn)
+        .optional()
+        .wrap_err("error querying table GhiSegmentCache")?
+        .is_some())
 }

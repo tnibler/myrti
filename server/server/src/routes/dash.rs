@@ -62,11 +62,17 @@ async fn get_dash_file(
                 }
             };
             let filename = format!("original-{repr}-{rest}");
+            let have_segment = {
+                let filename = filename.clone();
+                let conn = app_state.pool.get().await?;
+                interact!(conn, move |conn| {
+                    repository::ghi_cache::have_finalized_segment(conn, file_id, &filename)
+                })
+                .await??
+            };
 
             let file_exists = tokio::fs::try_exists(&fs_path).await?;
-            if !file_exists {
-                let conn = app_state.pool.get().await?;
-
+            if !file_exists || !have_segment {
                 let dash_index_path = storage.local_path(&storage_key::dash_file(
                     file_id,
                     format_args!("original/original.dash_index"),
@@ -80,6 +86,7 @@ async fn get_dash_file(
                     // init segment (0) is ignored for cache bookkeeping
                     (0, _) => false,
                     (_, true) => {
+                        let conn = app_state.pool.get().await?;
                         let filename = filename.clone();
                         let row_exists = interact!(conn, move |conn| {
                             repository::ghi_cache::update_accessed_time(conn, file_id, &filename)
@@ -94,6 +101,7 @@ async fn get_dash_file(
                     .into_std_path_buf();
                 if do_cache_insert {
                     let filename_copy = filename.clone();
+                    let conn = app_state.pool.get().await?;
                     // TODO: handle unlikely error here. if segment is already being created, wait for it
                     // Actually, this should be a completely separate db.
                     // running transactions shouldn't block this
@@ -103,13 +111,15 @@ async fn get_dash_file(
                     })
                     .await??;
                 }
-                let original_file_path =
+                let original_file_path = {
+                    let conn = app_state.pool.get().await?;
                     interact!(conn, move |conn| repository::asset::get_asset_path_on_disk(
                         conn, file_id
                     ))
                     .await??
                     .path_on_disk()
-                    .into_std_path_buf();
+                    .into_std_path_buf()
+                };
                 let out_dir2 = out_dir.clone();
                 dash_index::write_segment(
                     &index,
@@ -125,6 +135,7 @@ async fn get_dash_file(
                         .await
                         .wrap_err("error reading segment file metadata")?;
                     let filename_copy = filename.clone();
+                    let conn = app_state.pool.get().await?;
                     interact!(conn, move |conn| {
                         repository::ghi_cache::finalize_segment(
                             conn,

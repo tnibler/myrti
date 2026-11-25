@@ -16,7 +16,7 @@ use tower_http::{
     ServiceBuilderExt,
     request_id::MakeRequestUuid,
     services::{ServeDir, ServeFile},
-    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
+    trace::{DefaultMakeSpan, DefaultOnFailure, DefaultOnResponse, TraceLayer},
 };
 use tracing::{Level, info};
 use tracing_error::ErrorLayer;
@@ -208,7 +208,8 @@ async fn main() -> Result<()> {
                             DefaultOnResponse::new()
                                 .level(Level::TRACE)
                                 .include_headers(false),
-                        ),
+                        )
+                        .on_failure(DefaultOnFailure::new().level(Level::ERROR)),
                 ),
         );
     let app = match args.serve_static.as_deref() {

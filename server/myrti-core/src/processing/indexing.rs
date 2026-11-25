@@ -59,6 +59,12 @@ async fn index_file(
     pool: &DbPool,
     bin_paths: &config::BinPaths,
 ) -> Result<Option<AssetId>> {
+    let fs_metadata = tokio::fs::metadata(path)
+        .await
+        .wrap_err("error reading file metadata")?;
+    if fs_metadata.len() == 0 {
+        return Ok(None);
+    }
     let exiftool_path = bin_paths.exiftool_path();
     let ffprobe_path = bin_paths.ffprobe_path();
     let (exiftool_json, metadata) = read_media_metadata(path, exiftool_path)

@@ -298,9 +298,7 @@ pub async fn do_package_video(
             }
 
             let (_, streams) = ffprobe_get_streams(&mp4_path, ffprobe_path).await?;
-            let bitrate = streams.video.bitrate.ok_or_else(|| {
-                eyre!("transcoded mp4 has no bitrate in stream info: {}", mp4_path)
-            })?;
+            let bitrate = streams.video.bitrate.unwrap_or(0); // TODO: ffprobe on init segment gives 0 bitrate, read from mpd or just get rid of it
             let repr_name = package_video.repr_name.clone();
             interact!(conn, move |conn| {
                 repository::representation::finalize_video_representation(

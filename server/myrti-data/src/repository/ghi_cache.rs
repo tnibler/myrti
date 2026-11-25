@@ -17,7 +17,7 @@ struct InsertSegmentRow<'a> {
 pub fn insert_pending_segment(conn: &mut DbConn, file_id: FileId, file_name: &str) -> Result<()> {
     use schema::GhiSegmentCache;
     conn.immediate_transaction(|conn| {
-        diesel::insert_into(GhiSegmentCache::table)
+        diesel::insert_or_ignore_into(GhiSegmentCache::table)
             .values(InsertSegmentRow {
                 file_id: file_id.0,
                 file_name,
@@ -25,6 +25,15 @@ pub fn insert_pending_segment(conn: &mut DbConn, file_id: FileId, file_name: &st
             })
             .execute(conn)
             .wrap_err("error inserting into table GhiSegmentCache")?;
+        diesel::update(GhiSegmentCache::table)
+            .filter(
+                GhiSegmentCache::file_id
+                    .eq(file_id.0)
+                    .and(GhiSegmentCache::file_name.eq(file_name)),
+            )
+            .set((GhiSegmentCache::status.eq(0), GhiSegmentCache::size.eq(None::<i64>)))
+            .execute(conn)
+            .wrap_err("error updating able GhiSegmentCache")?;
         Ok(())
     })
 }

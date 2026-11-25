@@ -401,7 +401,7 @@ async fn create_merged_manifest(
             for mut rep in adap.representations.clone() {
                 if rep.BaseURL.is_empty() {
                     rep.BaseURL.push(BaseURL {
-                        base: format!("{prepend_base}"),
+                        base: format!("{prepend_base}/"),
                         ..Default::default()
                     })
                 } else {

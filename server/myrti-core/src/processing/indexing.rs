@@ -309,12 +309,12 @@ async fn was_file_moved(
             repository::duplicate_asset::get_duplicate_path_on_disk(conn, dupe_id)
         })
         .await??;
-        tracing::info!(
-            ?dupe_id,
-            ?dupe_path,
-            "Duplicate file no longer exists on disk, deleting it."
-        );
         if !tokio::fs::try_exists(&dupe_path).await? {
+            tracing::info!(
+                ?dupe_id,
+                ?dupe_path,
+                "Duplicate file no longer exists on disk, deleting it."
+            );
             interact!(conn, move |conn| {
                 repository::duplicate_asset::delete_duplicate_file(conn, dupe_id)
             })

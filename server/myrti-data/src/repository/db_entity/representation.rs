@@ -19,7 +19,8 @@ pub struct DbVideoRepresentation {
     pub codec_name: String,
     pub width: Option<i32>,
     pub height: Option<i32>,
-    pub bitrate: Option<i64>,
+    pub bitrate_cap: Option<i64>,
+    pub bitrate_final: Option<i64>,
 }
 
 #[derive(Debug, Clone, Queryable, Selectable)]
@@ -77,7 +78,10 @@ impl TryFrom<DbVideoRepresentation> for VideoRepresentation {
             name: value.name,
             width: value.width.ok_or(eyre!("width must not be null"))?,
             height: value.height.ok_or(eyre!("height must not be null"))?,
-            bitrate: value.bitrate.ok_or(eyre!("bitrate must not be null"))?,
+            bitrate_cap: value.bitrate_cap,
+            bitrate_final: value
+                .bitrate_final
+                .ok_or(eyre!("bitrate_final must not be null"))?,
         })
     }
 }

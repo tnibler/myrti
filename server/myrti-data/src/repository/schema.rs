@@ -219,7 +219,8 @@ diesel::table! {
         codec_name -> Text,
         width -> Nullable<Integer>,
         height -> Nullable<Integer>,
-        bitrate -> Nullable<BigInt>,
+        bitrate_cap -> Nullable<BigInt>,
+        bitrate_final -> Nullable<BigInt>,
     }
 }
 

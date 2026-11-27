@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use camino::Utf8Path as Path;
+use camino::{Utf8Path as Path, Utf8PathBuf as PathBuf};
 use chrono::Utc;
 use diesel::connection::SimpleConnection;
 use diesel::dsl::update;
@@ -80,6 +80,21 @@ pub fn get_all_asset_files(conn: &mut DbConn) -> Result<Vec<model::AssetFile>> {
         .into_iter()
         .map(AssetFile::try_from)
         .try_collect()
+}
+
+pub fn get_file_paths_in_root(
+    conn: &mut DbConn,
+    root_id: AssetRootDirId,
+) -> Result<Vec<(FileId, PathBuf)>> {
+    use schema::AssetFile;
+    Ok(AssetFile::table
+        .filter(AssetFile::root_dir_id.eq(root_id.0))
+        .select((AssetFile::file_id, AssetFile::file_path))
+        .load::<(i64, String)>(conn)
+        .wrap_err("error querying table AssetFiles")?
+        .into_iter()
+        .map(|(id, path)| (FileId(id), PathBuf::from(path)))
+        .collect())
 }
 
 pub fn get_video_file(conn: &mut DbConn, id: FileId) -> Result<(model::Video, model::AssetFile)> {
@@ -528,6 +543,72 @@ pub fn get_video_files_with_no_acceptable_video_repr(
         .collect::<Result<Vec<_>>>()
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct VideoQualityRung {
+    pub bitrate_cap: i32,
+    pub minor_dim: i32,
+}
+
+#[instrument(skip(conn), level = "debug")]
+pub fn get_missing_video_ladders(
+    conn: &mut DbConn,
+) -> Result<Vec<(AssetFile, Video, VideoQualityRung)>> {
+    let query = diesel::sql_query(
+        r#"
+            WITH Rungs(dim_upper, bitrate) AS (VALUES
+                (1080, 3500)
+              , (764, 1800)
+              , (372, 600)
+            )
+            , Ladder(dim_upper, dim_lower, bitrate) AS (
+                SELECT r1.dim_upper, (SELECT COALESCE(MAX(r2.dim_upper), 0) FROM Rungs r2 WHERE r2.dim_upper < r1.dim_upper) AS dim_lower, r1.bitrate
+                FROM Rungs r1
+            )
+            , Vidrep AS (SELECT *, MIN(VideoRepresentation.width, VideoRepresentation.height) AS minor_dim FROM VideoRepresentation)
+            , MajorDim AS (SELECT AssetFile.file_id, MAX(AssetFile.width, AssetFile.height) AS minor_dim FROM AssetFile WHERE AssetFile.asset_type = 2)
+            SELECT AssetFile.*, VideoFile.*, Ladder.dim_upper AS minor_dim, Ladder.bitrate AS bitrate FROM
+            AssetFile INNER JOIN VideoFile ON AssetFile.file_id = VideoFile.file_id
+            INNER JOIN MajorDim ON VideoFile.file_id = MajorDim.file_id
+            INNER JOIN Ladder ON MajorDim.minor_dim > Ladder.dim_upper
+            LEFT JOIN Vidrep
+            ON Vidrep.file_id = VideoFile.file_id
+            AND Ladder.dim_lower < Vidrep.minor_dim
+            AND Vidrep.minor_dim <= Ladder.dim_upper
+            AND Vidrep.bitrate_cap = Ladder.bitrate
+            WHERE Vidrep.file_id IS NULL
+            ORDER BY bitrate;
+        "#,
+    );
+    #[derive(Debug, Clone, QueryableByName)]
+    struct Row {
+        #[diesel(embed)]
+        pub asset_file: DbAssetFile,
+        #[diesel(embed)]
+        pub video_file: DbVideoFile,
+        #[diesel(sql_type = diesel::sql_types::Integer)]
+        #[diesel(column_name = minor_dim)]
+        pub minor_dim: i32,
+        #[diesel(sql_type = diesel::sql_types::Integer)]
+        #[diesel(column_name = bitrate)]
+        pub bitrate: i32,
+    }
+    let rows: Vec<Row> = query
+        .load(conn)
+        .wrap_err("error querying for VideoFiles with missing quality ladder")?;
+    rows.into_iter()
+        .map(|row| {
+            Ok((
+                AssetFile::try_from(row.asset_file)?,
+                Video::try_from(row.video_file)?,
+                VideoQualityRung {
+                    minor_dim: row.minor_dim,
+                    bitrate_cap: row.bitrate,
+                },
+            ))
+        })
+        .try_collect()
+}
+
 #[instrument(skip(conn))]
 pub fn get_video_files_with_original_streaming_due(
     conn: &mut DbConn,
@@ -870,4 +951,34 @@ pub fn update_file_path(
         .execute(conn)
         .wrap_err("error updating AssetFile path")?;
     Ok(())
+}
+
+pub fn get_video_mp4_rotation_metadata(conn: &mut DbConn, file_id: FileId) -> Result<Option<i32>> {
+    #[derive(Copy, Clone, QueryableByName)]
+    #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+    struct Row {
+        #[diesel(sql_type = diesel::sql_types::Integer)]
+        pub rotation: i32,
+    }
+    let rotation: Option<Row> = diesel::sql_query(
+        r#"
+    WITH VideoStreams AS (
+        SELECT json_each.value AS stream
+        FROM AssetFile, VideoFile, json_each(json_extract(VideoFile.ffprobe_output, '$.streams'))
+        WHERE AssetFile.file_id = VideoFile.file_id
+            AND AssetFile.file_id = $1
+            AND AssetFile.file_type = 'mp4'
+            AND json_extract(stream, '$.codec_type') = 'video'
+    )
+    , SideData AS (
+        SELECT json_each.value AS side_data FROM VideoStreams, json_each(json_extract(VideoStreams.stream, '$.side_data_list'))
+    )
+    SELECT json_extract(side_data, '$.rotation') AS rotation
+    FROM SideData
+    WHERE json_extract(side_data, '$.side_data_type') = 'Display Matrix';
+        "#)
+        .bind::<diesel::sql_types::BigInt, _>(file_id.0)
+        .get_result(conn).optional()
+        .wrap_err("Error querying VideoFile rotation metadata")?;
+    Ok(rotation.map(|r| r.rotation))
 }

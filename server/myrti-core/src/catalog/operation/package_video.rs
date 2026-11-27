@@ -175,7 +175,7 @@ pub async fn do_package_video(
             })
             .await??;
 
-            let repr_file_stem = format!("{}-{}", repr_id.0, package_video.repr_name);
+            let repr_file_stem = format!("a-{}-{}", repr_id.0, package_video.repr_name);
             let ffmpeg_out_dir = tempfile::tempdir()?;
             let ffmpeg_out_path = ffmpeg_out_dir
                 .path()
@@ -226,6 +226,7 @@ pub async fn do_package_video(
             let repr_name = package_video.repr_name.clone();
             let codec_name = codec_name(&transcode.codec);
             let codec_name2 = codec_name.to_owned();
+            let bitrate_cap = transcode.bitrate_cap;
             let repr_id = interact!(conn, move |conn| {
                 repository::representation::insert_video_representation(
                     conn,
@@ -233,12 +234,13 @@ pub async fn do_package_video(
                         file_id,
                         name: repr_name,
                         codec_name: codec_name2,
+                        bitrate_cap,
                     },
                 )
             })
             .await??;
 
-            let repr_file_stem = format!("{}-{}", repr_id.0, package_video.repr_name);
+            let repr_file_stem = format!("v-{}-{}", repr_id.0, package_video.repr_name);
             let ffmpeg_out_dir = tempfile::tempdir()?;
             let ffmpeg_out_path = ffmpeg_out_dir
                 .path()
@@ -297,9 +299,13 @@ pub async fn do_package_video(
                 )?;
             }
 
-            let (_, streams) = ffprobe_get_streams(&mp4_path, ffprobe_path).await?;
-            let bitrate = streams.video.bitrate.unwrap_or(0); // TODO: ffprobe on init segment gives 0 bitrate, read from mpd or just get rid of it
+            let (_, streams) = ffprobe_get_streams(&out_dir.join(&mpd_name), ffprobe_path).await?;
+            let bitrate_final = streams
+                .video
+                .bitrate
+                .expect("transcoded mp4 has no bitrate in stream info"); // TODO: ffprobe on init segment gives 0 bitrate, read from mpd or just get rid of it
             let repr_name = package_video.repr_name.clone();
+            let bitrate_cap = transcode.bitrate_cap;
             interact!(conn, move |conn| {
                 repository::representation::finalize_video_representation(
                     conn,
@@ -310,7 +316,8 @@ pub async fn do_package_video(
                         codec_name: codec_name.to_owned(),
                         width: streams.video.width,
                         height: streams.video.height,
-                        bitrate,
+                        bitrate_final,
+                        bitrate_cap,
                     },
                 )
             })
@@ -360,18 +367,18 @@ async fn create_merged_manifest(
 
     let repr_info = existing_video_reprs
         .into_iter()
-        .map(|repr| (repr.id.0, repr.name))
+        .map(|repr| ("v", repr.id.0, repr.name))
         .chain(
             existing_audio_reprs
                 .into_iter()
-                .map(|repr| (repr.id.0, repr.name)),
+                .map(|repr| ("a", repr.id.0, repr.name)),
         );
 
     let mut max_segment_duration: Option<std::time::Duration> = None;
-    for (repr_id, repr_name) in repr_info {
+    for (repr_type_prefix, repr_id, repr_name) in repr_info {
         let mpd_key = storage_key::dash_file(
             file_id,
-            format_args!("{}-{}/stream.mpd", repr_id, repr_name),
+            format_args!("{}-{}-{}/stream.mpd", repr_type_prefix, repr_id, repr_name),
         );
         let mut mpd_str = String::new();
         storage
@@ -384,7 +391,7 @@ async fn create_merged_manifest(
         max_segment_duration =
             max_segment_duration.and_then(|md| manifest.maxSegmentDuration.map(|md2| md.max(md2)));
 
-        let prepend_base = format_args!("{}-{}", repr_id, repr_name);
+        let prepend_base = format_args!("{}-{}-{}", repr_type_prefix, repr_id, repr_name);
         for adap in &manifest.periods[0].adaptations {
             let is_video = adap.contentType.as_deref() == Some("video")
                 || adap.mimeType.as_deref() == Some("video/mp4");

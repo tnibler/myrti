@@ -44,6 +44,7 @@ pub fn insert_video_representation(
             VideoRepresentation::file_id.eq(repr.file_id.0),
             VideoRepresentation::name.eq(&repr.name),
             VideoRepresentation::codec_name.eq(&repr.codec_name),
+            VideoRepresentation::bitrate_cap.eq(repr.bitrate_cap),
             VideoRepresentation::created_status.eq(0),
         ))
         .returning(VideoRepresentation::video_repr_id)
@@ -68,7 +69,7 @@ pub fn finalize_video_representation(conn: &mut DbConn, repr: &VideoRepresentati
     .set((
         VideoRepresentation::width.eq(repr.width),
         VideoRepresentation::height.eq(repr.height),
-        VideoRepresentation::bitrate.eq(repr.bitrate),
+        VideoRepresentation::bitrate_final.eq(repr.bitrate_final),
         VideoRepresentation::created_status.eq(1),
     ))
     .execute(conn)

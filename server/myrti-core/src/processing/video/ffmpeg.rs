@@ -55,7 +55,7 @@ pub async fn ffmpeg_package_dash(
         input.file_stem().ok_or(eyre!("bad input filename"))?
     );
     let media_segment_name = format!(
-        "{}-$RepresentationID$-$Number$.m4s",
+        "{}-$Number$.m4s",
         input.file_stem().ok_or(eyre!("bad input filename"))?
     );
     let mut command = Command::new(ffmpeg_path);

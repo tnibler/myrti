@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use crate::catalog::{
     encoding_target::{CodecTarget, Scale, VideoEncodingTarget},
     operation::package_video::AudioEncodingTarget,
@@ -14,6 +16,9 @@ pub fn ffmpeg_video_flags(encoding_target: &VideoEncodingTarget) -> Vec<String> 
                 "-preset".to_owned(),
                 target.preset.to_string(),
             ];
+            if let Some(bitrate) = encoding_target.bitrate_cap {
+                f.extend(["-b:v".to_owned(), format!("{}k", bitrate)]);
+            }
             if let Some(interv) = encoding_target.force_keyframe_interval {
                 f.extend([
                     "-g".to_owned(),
@@ -24,15 +29,11 @@ pub fn ffmpeg_video_flags(encoding_target: &VideoEncodingTarget) -> Vec<String> 
                     format!("expr:gte(t,n_forced*{})", interv),
                     "-sc_threshold".to_owned(),
                     "0".to_owned(),
-                ])
+                ]);
             }
             if let Some(tune) = target.tune {
                 f.push("-tune".to_owned());
                 f.push(tune.to_string());
-            }
-            if let Some(max_bitrate) = target.max_bitrate {
-                f.push("-maxrate".to_owned());
-                f.push(max_bitrate.to_string());
             }
 
             f
@@ -45,16 +46,21 @@ pub fn ffmpeg_video_flags(encoding_target: &VideoEncodingTarget) -> Vec<String> 
                 target.crf.crf().to_string(),
             ];
             if let Some(preset) = target.preset {
-                f.push("-preset".to_string());
-                f.push(preset.preset().to_string());
+                f.extend(["-preset".to_owned(), format!("{}", preset.preset())]);
             }
-            if let Some(max_bitrate) = target.max_bitrate {
-                f.push("-maxrate".to_string());
-                f.push(max_bitrate.to_string());
+            let mut svtav1_params = Vec::default();
+            if let Some(grain) = target.film_grain {
+                svtav1_params.push(format!("film-grain={}", grain));
             }
             if let Some(fast_decode) = target.fast_decode {
-                f.push("-svtav1-params".to_string());
-                f.push(format!("fast-decode={}", fast_decode.fast_decode()));
+                svtav1_params.push(format!("fast-decode={}", fast_decode.fast_decode()));
+            }
+            if let Some(mbr) = encoding_target.bitrate_cap {
+                svtav1_params.push(format!("mbr={}k", mbr));
+            }
+            if !svtav1_params.is_empty() {
+                f.push("-svtav1-params".to_owned());
+                f.push(svtav1_params.join(":"));
             }
             if let Some(interv) = encoding_target.force_keyframe_interval {
                 f.extend([

@@ -202,13 +202,14 @@ CREATE TABLE VideoRepresentation (
   , codec_name TEXT NOT NULL
   , width INTEGER
   , height INTEGER
-  , bitrate INTEGER
+  , bitrate_cap INTEGER
+  , bitrate_final INTEGER
   , created_status INTEGER NOT NULL
     CONSTRAINT enum_created_status CHECK(created_status IN (0, 1))
   , CONSTRAINT opt_cols_status CHECK(created_status = 0 OR (
       width IS NOT NULL
       AND height IS NOT NULL
-      AND bitrate IS NOT NULL
+      AND bitrate_final IS NOT NULL
   ))
   , FOREIGN KEY (file_id) REFERENCES VideoFile(file_id)
 ) STRICT;

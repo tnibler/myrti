@@ -5,6 +5,8 @@ pub struct VideoEncodingTarget {
     pub codec: CodecTarget,
     pub scale: Option<Scale>,
     pub force_keyframe_interval: Option<i32>,
+    // kbps
+    pub bitrate_cap: Option<i64>,
 }
 
 #[allow(dead_code)]
@@ -32,7 +34,6 @@ pub mod avc {
         pub preset: Preset,
         pub tune: Option<Tune>,
         pub crf: Crf,
-        pub max_bitrate: Option<u32>,
     }
 
     #[allow(dead_code)]
@@ -136,12 +137,23 @@ pub mod av1 {
     use eyre::{Report, eyre};
 
     /// For libsvtav1 only
-    #[derive(Debug, Clone, PartialEq, Eq, Default)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub struct AV1Target {
         pub crf: Crf,
         pub fast_decode: Option<FastDecode>,
         pub preset: Option<Preset>,
-        pub max_bitrate: Option<u32>,
+        pub film_grain: Option<i32>,
+    }
+
+    impl Default for AV1Target {
+        fn default() -> Self {
+            Self {
+                crf: Crf::default(),
+                fast_decode: None,
+                preset: None,
+                film_grain: Some(8),
+            }
+        }
     }
 
     /// https://trac.ffmpeg.org/wiki/Encode/AV1#CRF

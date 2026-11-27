@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::f32;
 
 use eyre::{Context, Result};
 use itertools::Itertools;
@@ -12,6 +13,7 @@ use myrti_data::model::{
 };
 use myrti_data::repository::asset::AssetHasThumbnails;
 
+use crate::catalog::encoding_target::{self, Scale};
 use crate::{
     catalog::{
         encoding_target::{CodecTarget, VideoEncodingTarget, audio_codec_name, av1},
@@ -93,12 +95,11 @@ pub async fn required_video_packaging_for_asset(
             task: PackageVideoTask::TranscodeVideo(VideoEncodingTarget {
                 codec: CodecTarget::AV1(av1::AV1Target {
                     crf: av1::Crf::default(),
-                    fast_decode: None,
-                    preset: None,
-                    max_bitrate: None,
+                    ..Default::default()
                 }),
                 scale: None,
                 force_keyframe_interval: Some(keyframe_interval),
+                bitrate_cap: None,
             }),
             output_key: video_out_key,
         });
@@ -258,22 +259,6 @@ pub async fn album_thumbnails_to_create(
 }
 
 pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageVideo>> {
-    // priority:
-    //  - videos with original in acceptable codec and no DASH packaged
-    //  - videos with no representation in acceptable codec
-    //  - videos with any representation from their quality ladder missing
-    //    (hightest qualities come first)
-    // For now, scan through all videos to check.
-    // Later, set a flag if all required transcoding has been done
-    // and clear the flag when the config (quality ladder, acceptable codecs)
-    // change and recheck
-    //
-    // If we have a lot of video at the same time (e.g. initial index), we might not want to do this
-    // if disk space is limited and prefer transcoding to a more efficient codec first.
-    // Also only package originals if there is space for the original codec + transcode,
-    // and allow setting this per storage provider (don't want to upload loads to S3 only to
-    // delete it later when transcoding is done)
-
     let acceptable_video_codecs = ["h264", "av1", "vp9"];
     let acceptable_audio_codecs = ["aac", "opus", "flac", "mp3"];
     // TODO yes we're clearing and putting the config back in every time lol
@@ -325,21 +310,26 @@ pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageV
         repository::asset::get_video_files_with_no_acceptable_video_repr(conn)
     })
     .await??;
-    let video_tasks = no_good_video.into_iter().map(|(asset_file, _video)| {
+    let video_tasks = no_good_video.into_iter().map(|(asset_file, video)| {
         let repr_name = format!("{}x{}", asset_file.size.width, asset_file.size.height);
         let video_out_key = storage_key::dash_file(
             asset_file.id,
             format_args!("{}x{}.mp4", asset_file.size.width, asset_file.size.height),
         );
+        let keyframe_interval = (match video.frame_rate {
+            Some((nom, denom)) if nom > 0 && denom > 0 => (nom as f32) / (denom as f32),
+            _ => 30f32,
+        } * 2f32)
+            .round()
+            .max(10.0) as i32;
         let video_target = VideoEncodingTarget {
             codec: CodecTarget::AV1(av1::AV1Target {
                 crf: av1::Crf::default(),
-                fast_decode: None,
-                preset: None,
-                max_bitrate: None,
+                ..Default::default()
             }),
             scale: None,
-            force_keyframe_interval: None,
+            force_keyframe_interval: Some(keyframe_interval),
+            bitrate_cap: None,
         };
         PackageVideo {
             file_id: asset_file.id,
@@ -348,9 +338,67 @@ pub async fn video_packaging_due(conn: &mut PooledDbConn) -> Result<Vec<PackageV
             output_key: video_out_key,
         }
     });
+    let missing_ladder = interact!(conn, move |conn| {
+        repository::asset::get_missing_video_ladders(conn)
+    })
+    .await??;
+    let ladder_tasks = {
+        let mut tasks = Vec::default();
+        for (asset_file, video, rung) in missing_ladder {
+            let mp4_rotation: Option<i32> = interact!(conn, move |conn| {
+                repository::asset::get_video_mp4_rotation_metadata(conn, asset_file.id)
+            })
+            .await??;
+
+            let minor = asset_file.size.width.min(asset_file.size.height);
+            let shrink_factor = f32::consts::FRAC_1_SQRT_2;
+            let exponent =
+                ((rung.minor_dim as f32 / minor as f32).ln() / shrink_factor.ln()).round();
+            let scale = shrink_factor.powf(exponent);
+            let out_width = (asset_file.size.width as f32 * scale).round() as i32;
+            let out_height = (asset_file.size.height as f32 * scale).round() as i32;
+            tracing::debug!(?asset_file.size, ?rung, ?exponent, ?out_width, ?out_height);
+            assert!(out_width > 0, "{:?}", out_width);
+            assert!(out_height > 0, "{:?}", out_height);
+            let out_height: u32 = out_height.try_into().expect("must be positive");
+
+            let repr_name = format!("{}x{}-{}k", out_width, out_height, rung.bitrate_cap);
+            let video_out_key = storage_key::dash_file(
+                asset_file.id,
+                format_args!("{}x{}.mp4", asset_file.size.width, asset_file.size.height),
+            );
+            let keyframe_interval = (match video.frame_rate {
+                Some((nom, denom)) if nom > 0 && denom > 0 => (nom as f32) / (denom as f32),
+                _ => 30f32,
+            } * 2f32)
+                .round()
+                .max(10.0) as i32;
+            let scale = match mp4_rotation {
+                Some(rot) if rot % 180 != 0 => Scale::WidthKeepAspect { width: out_height },
+                _ => Scale::HeightKeepAspect { height: out_height },
+            };
+            let video_target = VideoEncodingTarget {
+                codec: CodecTarget::AV1(av1::AV1Target {
+                    crf: av1::Crf::default(),
+                    ..Default::default()
+                }),
+                scale: Some(scale),
+                force_keyframe_interval: Some(keyframe_interval),
+                bitrate_cap: Some(rung.bitrate_cap.into()),
+            };
+            tasks.push(PackageVideo {
+                file_id: asset_file.id,
+                task: PackageVideoTask::TranscodeVideo(video_target),
+                repr_name,
+                output_key: video_out_key,
+            });
+        }
+        tasks
+    };
     Ok(ghi_tasks
         .into_iter()
         .chain(video_tasks)
+        .chain(ladder_tasks)
         .chain(audio_tasks)
         .collect())
 }

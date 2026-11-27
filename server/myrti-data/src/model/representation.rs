@@ -5,6 +5,7 @@ pub struct CreateVideoRepresentation {
     pub file_id: FileId,
     pub name: String,
     pub codec_name: String,
+    pub bitrate_cap: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -15,7 +16,8 @@ pub struct VideoRepresentation {
     pub codec_name: String,
     pub width: i32,
     pub height: i32,
-    pub bitrate: i64,
+    pub bitrate_cap: Option<i64>,
+    pub bitrate_final: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

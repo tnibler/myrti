@@ -28,6 +28,26 @@ declare namespace shaka {
      */
     addFont (name : string , url : string ) : Promise < undefined > ;
     /**
+     * Declares a range [start, end) to be skipped: its segments are not fetched
+     * or buffered, and buffering continues from <code>end</code> as if it
+     * followed <code>start</code>, with the gap-jumping logic carrying the
+     * playhead across.
+     * <p>
+     * A range that overlaps or touches an existing range is merged with it.  A
+     * range that is already buffered is accepted, but only takes effect once its
+     * span is no longer buffered.  A range is only skipped if both of its ends
+     * line up with segment boundaries of the video stream (or the audio stream
+     * for audio-only content); otherwise it is kept in the list but never
+     * skipped, and a warning is logged.
+     * <p>
+     * May be called before load(); such ranges are applied when streaming
+     * starts, which lets a preroll be skipped before it buffers.  Recoverable
+     * via removeSkipRange / clearSkipRanges.  Supported for VOD content played
+     * through MediaSource in segments mode (DASH and HLS); not supported for
+     * live content, sequence mode or src= playback.
+     */
+    addSkipRange (start : number , end : number ) : boolean ;
+    /**
      * Adds the given text track to the loaded manifest.  <code>load()</code> must
      * resolve before calling.  The presentation must have a duration.
      * This returns the created track, which can immediately be selected by the
@@ -58,6 +78,10 @@ declare namespace shaka {
      * content this will be a no-op.
      */
     cancelTrickPlay ( ) : void ;
+    /**
+     * Removes all skip ranges and re-fetches them.
+     */
+    clearSkipRanges ( ) : void ;
     /**
      * Changes low latency configuration settings on the Player.
      * @param config This object should follow the {@link shaka.extern.PlayerConfiguration} object.  Not all fields need to be set; unset fields retain their old values.
@@ -134,6 +158,10 @@ declare namespace shaka {
      */
     getAllMetadataRegions ( ) : shaka.extern.MetadataTimelineRegionInfo [] ;
     /**
+     * Get SCTE-35 messages retained on the presentation timeline.
+     */
+    getAllScte35Events ( ) : shaka.extern.Scte35Event [] ;
+    /**
      * Returns Thumbnail objects for each thumbnail.
      * If the player has not loaded content, this will return a null.
      */
@@ -150,7 +178,8 @@ declare namespace shaka {
      */
     getAssetUri ( ) : string | null ;
     /**
-     * Return a list of audio tracks compatible with the current video track.
+     * Return a list of the audio tracks of the current video track, in any of
+     * its qualities.  Selecting one may change the video quality too.
      */
     getAudioTracks ( ) : shaka.extern.AudioTrack [] ;
     /**
@@ -203,6 +232,11 @@ declare namespace shaka {
      * Gets a map of EME key ID to the current key status.
      */
     getKeyStatuses ( ) : { [ key: string ]: string } ;
+    /**
+     * Get latency in milliseconds between the live edge and what's currently
+     * playing.
+     */
+    getLiveLatency ( ) : number | null ;
     /**
      * Get the current load mode.
      */
@@ -274,6 +308,14 @@ declare namespace shaka {
      */
     getSegmentAvailabilityDuration ( ) : number | null ;
     /**
+     * Gets the current skip ranges as a sorted, disjoint list of
+     * <code>{start, end}</code> intervals.  Reflects any merging done at
+     * <code>addSkipRange</code> time and any splitting/trimming done at
+     * <code>removeSkipRange</code> time.  The returned array is a copy; mutating
+     * it does not affect the player.
+     */
+    getSkipRanges ( ) : shaka.extern.BufferedRange [] ;
+    /**
      * Get statistics for the current playback session. If the player is not
      * playing content, this will return an empty stats object.
      */
@@ -307,9 +349,8 @@ declare namespace shaka {
      * Check if the manifest contains only audio-only content. If the player has
      * not loaded content, this will return <code>false</code>.
      * <p>
-     * The player does not support content that contain more than one type of
-     * variants (i.e. mixing audio-only, video-only, audio-video). Content will be
-     * filtered to only contain one type of variant.
+     * Content is considered audio-only only when none of its variants carries
+     * video.
      */
     isAudioOnly ( ) : boolean ;
     /**
@@ -349,9 +390,9 @@ declare namespace shaka {
      * Check if the manifest contains only video-only content. If the player has
      * not loaded content, this will return <code>false</code>.
      * <p>
-     * The player does not support content that contain more than one type of
-     * variants (i.e. mixing audio-only, video-only, audio-video). Content will be
-     * filtered to only contain one type of variant.
+     * Content is considered video-only only when every variant carries video
+     * and none of them carries audio, either as a separate stream or muxed into
+     * the video stream.
      */
     isVideoOnly ( ) : boolean ;
     /**
@@ -363,7 +404,7 @@ declare namespace shaka {
     /**
      * Loads a new stream.
      * If another stream was already playing, first unloads that stream.
-     * @param startTime When <code>startTime</code> is <code>null</code> or <code>undefined</code>, playback will start at the default start time (0 for VOD and liveEdge for LIVE).
+     * @param startTime The position at which playback should start, interpreted as follows: <ul> <li><code>null</code> or <code>undefined</code>: the default start time. If the manifest specifies a start position (e.g. HLS <code>EXT-X-START</code>), that is used; otherwise playback starts at the beginning of the seek range for VOD and at the end of the seek range (the live edge, minus the presentation delay) for live.</li> <li>A non-negative number: an absolute position in seconds on the presentation timeline, the same timeline used by <code>seekRange()</code> and <code>video.currentTime</code>. For live streams this is not an offset from the first available segment; use <code>seekRange()</code> (e.g. in a <code>canupdatestarttime</code> listener) to compute it.</li> <li>A negative number: an offset in seconds from the end of the seek range, e.g. <code>-10</code> starts 10 seconds before the live edge. With MediaSource this also works for VOD (10 seconds before the end).</li> <li>A <code>Date</code>: a wall-clock time, mapped to the timeline using the program date time (HLS) or the availability start time (DASH).</li> </ul> With MediaSource, the resulting position is clamped to the seek range (which honors <code>playRangeStart</code> and <code>playRangeEnd</code>), so values beyond either end start at that end. If <code>streaming.startAtSegmentBoundary</code> is enabled, it is then moved back to the start of the segment that contains it. <br> With src= (native playback), the start time is applied by seeking the media element once it reaches <code>HAVE_FUTURE_DATA</code>, so the browser may briefly start from its own default position. Numbers are not clamped, a negative number is relative to the position the browser chose (the live edge for native live HLS, 0 for VOD, so it has no effect on VOD), and a <code>Date</code> is only honored when the browser implements <code>getStartDate()</code> (e.g. Safari); otherwise it is ignored. The manifest start position is left to the browser. <br> When loading a <code>shaka.media.PreloadManager</code>, a non-<code>null</code> value overrides the start time given to <code>preload()</code>; <code>null</code> keeps it. <br> The start time can still be changed with <code>updateStartTime()</code> until the <code>canupdatestarttime</code> event has been handled.
      */
     load (assetUriOrPreloader : string | shaka.media.PreloadManager | null , startTime ? : number | null | Date , mimeType ? : string | null ) : Promise < any > ;
     /**
@@ -379,13 +420,22 @@ declare namespace shaka {
      * the |destroy| method on the manager if the preload is no longer necessary.
      * If this returns null rather than a PreloadManager, that indicates that the
      * asset must be played with src=, which cannot be preloaded.
-     * @param startTime When <code>startTime</code> is <code>null</code> or <code>undefined</code>, playback will start at the default start time (0 for VOD and liveEdge for LIVE).
+     * @param startTime The position at which playback should start once the PreloadManager is passed to <code>load()</code>. It is interpreted exactly like the <code>startTime</code> parameter of <code>load()</code> (see there), and it is ignored if <code>load()</code> is given a non-<code>null</code> start time of its own. <br> For VOD, a numeric start time also selects which media segment is preloaded: the one containing that position (with no start time, a negative number or a <code>Date</code>, the first segment). For live, only the initialization segment is preloaded, regardless of the start time.
      */
     preload (assetUri : string , startTime ? : number | null | Date , mimeType ? : string | null , config ? : shaka.extern.PlayerConfiguration | null , throwOnPreloadNotSupported ? : boolean ) : Promise < shaka.media.PreloadManager | null > ;
     /**
      * Releases all of the mutexes of the player. Meant for use by the tests.
      */
     releaseAllMutexes ( ) : void ;
+    /**
+     * Removes the interval [start, end) from the skip ranges, so its content is
+     * fetched again.  This is interval subtraction, not an exact-match delete:
+     * removing part of a range trims it, and removing its middle splits it in
+     * two.  A removed range that
+     * is already behind the playhead is not re-fetched until the user seeks
+     * back across it.
+     */
+    removeSkipRange (start : number , end : number ) : void ;
     /**
      * Trigger a manual license renewal for the given session, or all sessions
      * if sessionId is not provided.
@@ -428,7 +478,9 @@ declare namespace shaka {
      */
     seekRange ( ) : shaka.extern.BufferedRange ;
     /**
-     * Select an audio track compatible with the current video track.
+     * Select one of the audio tracks returned by getAudioTracks().  This may
+     * change the video quality too, if the audio is only paired with other
+     * qualities.
      * If the player has not loaded any content, this will be a no-op.
      * @param safeMargin Optional amount of buffer (in seconds) to retain when clearing the buffer. Useful for switching quickly without causing a buffering event. Defaults to 0 if not provided. Can cause hiccups on some browsers if chosen too small, e.g. The amount of two segments is a fair minimum to consider as safeMargin value.
      */
@@ -703,13 +755,6 @@ declare namespace shaka.ads {
   class ServerSideAd extends shaka.ads.AbstractAd {
     private noStructuralTyping_shaka_ads_ServerSideAd : any;
     constructor (imaAd : any | null , video : HTMLMediaElement | null ) ;
-  }
-}
-// Generated from /home/runner/work/shaka-player/shaka-player/dist/shaka-player.compiled.externs.js
-declare namespace shaka.ads {
-  class SvtaAd extends shaka.ads.AbstractAd {
-    private noStructuralTyping_shaka_ads_SvtaAd : any;
-    constructor (video : HTMLMediaElement | null , info : shaka.extern.AdTrackingInfo ) ;
   }
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/dist/shaka-player.compiled.externs.js
@@ -1031,6 +1076,17 @@ declare namespace shaka.cea {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/dist/shaka-player.compiled.externs.js
 declare namespace shaka.config {
+  enum CharacterEdgeStyle {
+    DEFAULT = 0.0 ,
+    DEPRESSED = 4.0 ,
+    DROP_SHADOW = 2.0 ,
+    NONE = 1.0 ,
+    OUTLINE = 5.0 ,
+    RAISED = 3.0 ,
+  }
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/dist/shaka-player.compiled.externs.js
+declare namespace shaka.config {
   enum CodecSwitchingStrategy {
     RELOAD = 'reload' ,
     SMOOTH = 'smooth' ,
@@ -1047,20 +1103,32 @@ declare namespace shaka.config {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/dist/shaka-player.compiled.externs.js
 declare namespace shaka.config {
-  enum MsfFilterType {
-    ABSOLUTE_RANGE = 4.0 ,
-    ABSOLUTE_START = 3.0 ,
-    LARGEST_OBJECT = 2.0 ,
-    NEXT_GROUP_START = 1.0 ,
-    NONE = 0.0 ,
+  /**
+   * Preset font families for the subtitles.  Each value is a CSS
+   * <code>font-family</code> that lists several fonts, so a similar one is
+   * found on every platform.
+   */
+  /**
+   * Preset font families for the subtitles.  Each value is a CSS
+   * <code>font-family</code> that lists several fonts, so a similar one is
+   * found on every platform.
+   */
+  enum FontFamily {
+    DEFAULT = '' ,
+    MONOSPACED_SANS_SERIF = '\"Deja Vu Sans Mono\", \"Lucida Console\", Monaco, Consolas, \"PT Mono\", monospace' ,
+    MONOSPACED_SERIF = '\"Courier New\", Courier, \"Nimbus Mono L\", \"Cutive Mono\", monospace' ,
+    PROPORTIONAL_SANS_SERIF = 'Roboto, Arial, Helvetica, Verdana, \"PT Sans Caption\", sans-serif' ,
+    PROPORTIONAL_SERIF = '\"Times New Roman\", Times, Georgia, Cambria, \"PT Serif Caption\", serif' ,
   }
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/dist/shaka-player.compiled.externs.js
 declare namespace shaka.config {
   enum MsfVersion {
     AUTO = 'auto' ,
-    DRAFT_14 = 'draft-14' ,
-    DRAFT_16 = 'draft-16' ,
+    DRAFT_18 = 'draft-18' ,
+    DRAFT_20 = 'draft-20' ,
+    DRAFT_21 = 'draft-21' ,
+    DRAFT_22 = 'draft-22' ,
   }
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/dist/shaka-player.compiled.externs.js
@@ -1460,6 +1528,19 @@ declare namespace shaka.media {
      * time, so we can move closer to the live edge.
      */
     setAvailabilityTimeOffset (offset : number ) : void ;
+    /**
+     * Sets whether the live edge is clamped to the segments reported via
+     * notifySegments().  Once the start time is locked, the live edge is a pure
+     * wall-clock extrapolation and drifts ahead of the content whenever the
+     * source lags, which makes seekRange().end point at segments that do not
+     * exist yet.  When clamped, the edge may run at most one segment duration
+     * past the newest known segment: that keeps it moving smoothly between
+     * playlist updates while the content keeps up, and only pins it once the
+     * content is actually behind.  DASH defines segment availability from the
+     * wall clock, so this is only appropriate for formats where the segment
+     * list is the sole authority (HLS).
+     */
+    setClampLiveEdgeToSegments (clamp : boolean ) : void ;
     /**
      * Sets the clock offset, which is the difference between the client's clock
      * and the server's clock, in milliseconds (i.e., serverTime = Date.now() +
@@ -1982,6 +2063,7 @@ declare namespace shaka.net.NetworkingEngine {
     INIT_SEGMENT = 0.0 ,
     INTERSTITIAL_AD_URL = 12.0 ,
     INTERSTITIAL_ASSET_LIST = 11.0 ,
+    LINKED_MPD = 15.0 ,
     MASTER_PLAYLIST = 3.0 ,
     MEDIATAILOR_SESSION_INFO = 7.0 ,
     MEDIATAILOR_STATIC_RESOURCE = 9.0 ,
@@ -1992,6 +2074,7 @@ declare namespace shaka.net.NetworkingEngine {
     MPD = 4.0 ,
     MPD_PATCH = 6.0 ,
     TRACKING_EVENT = 13.0 ,
+    XLINK = 14.0 ,
   }
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/dist/shaka-player.compiled.externs.js
@@ -2495,7 +2578,8 @@ declare namespace shaka.text {
      */
     fontFamily : string ;
     /**
-     * Text font size in px or em (e.g. '100px'/'100em').
+     * Text font size in px, em, % or c (e.g. '100px'/'100em'/'90%'/'0.8c').
+     * % and c are relative to the cell height, as in TTML.
      */
     fontSize : string ;
     /**
@@ -2625,6 +2709,13 @@ declare namespace shaka.text {
      * Text stroke width as a CSS stroke-width value.
      */
     textStrokeWidth : string ;
+    /**
+     * The visibility of the cue: "visible", "hidden", or an empty string to
+     * inherit the visibility of the parent cue, so that a top-level cue is
+     * visible.  A hidden cue still takes its place, and its nested cues can
+     * be visible.
+     */
+    visibility : string ;
     /**
      * Whether or not line wrapping should be applied to the cue.
      */
@@ -2786,6 +2877,11 @@ declare namespace shaka.text {
   class CueRegion {
     private noStructuralTyping_shaka_text_CueRegion : any;
     /**
+     * The background color of the region, painted on its whole area.  An empty
+     * string means no background.
+     */
+    backgroundColor : string ;
+    /**
      * Create a copy of the CueRegion with the same properties.
      */
     clone ( ) : shaka.text.CueRegion ;
@@ -2801,6 +2897,21 @@ declare namespace shaka.text {
      * Region identifier.
      */
     id : string ;
+    /**
+     * The opacity of the region and of its content, from 0 to 1.
+     */
+    opacity : number ;
+    /**
+     * The CSS overflow of the region, for example "hidden" to hide the content
+     * which overflows the region.  An empty string means the default overflow.
+     */
+    overflow : string ;
+    /**
+     * The padding of the region, as its top, right, bottom and left lengths,
+     * in pixels or in percentage of the height or width of the region, for
+     * example "10% 5px 0% 5px".  An empty string means no padding.
+     */
+    padding : string ;
     /**
      * The X offset to start the rendering area in percentage (0-100) of this
      * region width.
@@ -2840,6 +2951,11 @@ declare namespace shaka.text {
      * The units (percentage or pixels) the region width is in.
      */
     widthUnits : shaka.text.CueRegion.units ;
+    /**
+     * The stacking order of the region relative to the other regions, or null
+     * for the default order.
+     */
+    zIndex : number | null ;
   }
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/dist/shaka-player.compiled.externs.js
@@ -3023,7 +3139,7 @@ declare namespace shaka.transmuxer {
 // Generated from /home/runner/work/shaka-player/shaka-player/dist/shaka-player.compiled.externs.js
 declare namespace shaka.transmuxer {
   /**
-   * A base class for transmuxers that package transmuxed samples into fMP4
+   * A base class for transmuxers that package transmuxed samples into media
    * segments.  It factors out the state and bookkeeping shared by every such
    * transmuxer (the original MIME type, the running frame index and the cache of
    * generated init segments), leaving subclasses to implement only the
@@ -3110,7 +3226,7 @@ declare namespace shaka.transmuxer.TransmuxerEngine {
 declare namespace shaka.transmuxer {
   class TransmuxerProxy implements shaka.extern.Transmuxer {
     private noStructuralTyping_shaka_transmuxer_TransmuxerProxy : any;
-    constructor (innerTransmuxer : shaka.extern.Transmuxer , workerUrl ? : string ) ;
+    constructor (innerTransmuxer : shaka.extern.Transmuxer , workerUrl ? : string , pluginPriority ? : number | null ) ;
     convertCodecs (contentType : string , mimeType : string ) : string ;
     destroy ( ) : any ;
     getOriginalMimeType ( ) : string ;
@@ -3494,7 +3610,6 @@ declare namespace shaka.util.Error {
     DASH_DUPLICATE_REPRESENTATION_ID = 4018.0 ,
     DASH_EMPTY_ADAPTATION_SET = 4003.0 ,
     DASH_EMPTY_PERIOD = 4004.0 ,
-    DASH_INVALID_JSON = 4061.0 ,
     DASH_INVALID_PATCH = 4052.0 ,
     DASH_INVALID_XML = 4001.0 ,
     DASH_MSE_ENCRYPTED_LEGACY_APPLE_MEDIA_KEYS_NOT_SUPPORTED = 4054.0 ,
@@ -3561,12 +3676,18 @@ declare namespace shaka.util.Error {
     MISSING_EME_SUPPORT = 6020.0 ,
     MISSING_STORAGE_CELL = 9013.0 ,
     MISSING_TEXT_PLUGIN = 2014.0 ,
+    MKV_INVALID_FILE = 4069.0 ,
+    MKV_MISSING_INDEX = 4070.0 ,
+    MKV_NO_SUPPORTED_TRACKS = 4071.0 ,
     MODIFY_OPERATION_NOT_SUPPORTED = 9016.0 ,
     MP4_SIDX_INVALID_TIMESCALE = 3005.0 ,
     MP4_SIDX_TYPE_NOT_SUPPORTED = 3006.0 ,
     MP4_SIDX_WRONG_BOX_TYPE = 3004.0 ,
     MSF_CATALOG_TIMEOUT = 4064.0 ,
-    MSF_NO_CATALOG = 4062.0 ,
+    MSF_CONNECTION_CLOSED = 4065.0 ,
+    MSF_SUBSCRIBE_FAILED = 4066.0 ,
+    MSF_UNSUPPORTED_CATALOG_VERSION = 4068.0 ,
+    MSF_UNSUPPORTED_COMPRESSION = 4067.0 ,
     MSF_VOD_CONTENT_NOT_SUPPORTED = 4058.0 ,
     NEW_KEY_OPERATION_NOT_SUPPORTED = 9011.0 ,
     NO_CAST_RECEIVERS = 8001.0 ,
@@ -4419,7 +4540,7 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/ads.js
 declare namespace shaka.extern {
-  type AdInterstitial = { background : string | null , canJump : boolean , clickThroughUrl : string | null , currentVideo : shaka.extern.AdPositionInfo | null , displayOnBackground : boolean , endTime : number | null , groupId : string | null , id : string | null , isSkippable : boolean , loop : boolean , mimeType : string | null , once : boolean , overlay : shaka.extern.AdPositionInfo | null , playoutLimit : number | null , post : boolean , pre : boolean , resolutionTimeOffset ? : number , resumeOffset : number | null , skipFor : number | null , skipOffset : number | null , startTime : number , timelineRange : boolean , tracking : shaka.extern.AdTrackingEvent | null , uri : string } ;
+  type AdInterstitial = { adCreativeSignaling ? : shaka.extern.AdCreativeSignaling.Slot | null , background : string | null , canJump : boolean , clickThroughUrl : string | null , currentVideo : shaka.extern.AdPositionInfo | null , displayOnBackground : boolean , endTime : number | null , groupId : string | null , id : string | null , isSkippable : boolean , loop : boolean , mimeType : string | null , once : boolean , overlay : shaka.extern.AdPositionInfo | null , playbackMode ? : string , playoutLimit : number | null , pod ? : shaka.extern.AdCreativeSignaling.Pod | null , podOffset ? : number , podPosition ? : number , podSize ? : number , post : boolean , pre : boolean , resolutionTimeOffset ? : number , resumeOffset : number | null , skipFor : number | null , skipOffset : number | null , startOffset ? : number , startTime : number , timelineRange : boolean , tracking : shaka.extern.AdTrackingEvent | null , uri : string | null } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/ads.js
 declare namespace shaka.extern {
@@ -4431,11 +4552,11 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/ads.js
 declare namespace shaka.extern {
-  type AdTrackingInfo = { endTime : number | null , position : number , sequenceLength : number , startTime : number , tracking : shaka.extern.AdTrackingEvent | null } ;
+  type AdsStats = { averageLoadTime : number , errors : number , loadTimes : number [] , overlayAds : number , playedCompletely : number , skipped : number , started : number } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/ads.js
 declare namespace shaka.extern {
-  type AdsStats = { averageLoadTime : number , errors : number , loadTimes : number [] , overlayAds : number , playedCompletely : number , skipped : number , started : number } ;
+  type DeferredInterstitial = { abort : shaka.extern.CreateSegmentIndexFunction , canJump : boolean , endTime : number | null , id : string | null , playoutLimit : number | null , post : boolean , pre : boolean , resolutionTimeOffset ? : number , resolve : (a : number ) => Promise < shaka.extern.AdInterstitial [] > , resolved : boolean , resolving : boolean , startTime : number , timelineRange : boolean } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/ads.js
 declare namespace shaka.extern {
@@ -4659,6 +4780,18 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/manifest.js
 declare namespace shaka.extern {
+  type BasicInfo = { channelCount : number | null , closedCaptions : Map < string , string > | null , codecs : string , colorGamut : string | null , drmInfos : shaka.extern.DrmInfo [] , frameRate : number | null , height : string | null , language : string | null , mimeType : string , sampleRate : number | null , timescale : number | null , type : string , videoRange : string | null , width : string | null } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/manifest.js
+declare namespace shaka.extern {
+  type ClientDataReporting = { adaptationSets : string [] | null , cmcdParameters : shaka.extern.CmcdParameters | null , schemeIdUri : string , serviceLocationBaseUris : shaka.extern.ServiceLocationBaseUri [] , serviceLocations : string [] | null } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/manifest.js
+declare namespace shaka.extern {
+  type CmcdParameters = { contentId : string | null , includeInRequests : string [] , keys : string [] | null , mode : string , sessionId : string | null , version : number } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/manifest.js
+declare namespace shaka.extern {
   /**
    * Creates a SegmentIndex; returns a Promise that resolves after the
    * SegmentIndex has been created.
@@ -4680,6 +4813,10 @@ declare namespace shaka.extern {
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/manifest.js
 declare namespace shaka.extern {
   type Period = { audioStreams : shaka.extern.Stream [] , id : string , imageStreams : shaka.extern.Stream [] , textStreams : shaka.extern.Stream [] , videoStreams : shaka.extern.Stream [] } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/manifest.js
+declare namespace shaka.extern {
+  type Preselection = { id : string , tag : string | null } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/manifest.js
 declare namespace shaka.extern {
@@ -4711,11 +4848,15 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/manifest.js
 declare namespace shaka.extern {
-  type ServiceDescription = { maxLatency : number | null , maxPlaybackRate : number | null , minLatency : number | null , minPlaybackRate : number | null , targetLatency : number | null } ;
+  type ServiceDescription = { clientDataReporting : shaka.extern.ClientDataReporting | null , maxLatency : number | null , maxPlaybackRate : number | null , minLatency : number | null , minPlaybackRate : number | null , targetLatency : number | null } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/manifest.js
 declare namespace shaka.extern {
-  type Stream = { accessibilityPurpose : shaka.media.ManifestParser.AccessibilityPurpose | null , audioSamplingRate : number | null , bandwidth ? : number , baseOriginalId : string | null , channelsCount : number | null , closeSegmentIndex ? : ( ) => any , closedCaptions : Map < string , string > | null , codecs : string , colorGamut ? : string , createSegmentIndex : shaka.extern.CreateSegmentIndexFunction , dependencyStream : any , drmInfos : shaka.extern.DrmInfo [] , emsgSchemeIdUris : string [] | null , encrypted : boolean , external : boolean , fastSwitching : boolean , forced : boolean , frameRate ? : number , fullMimeTypes : Set < string > , groupId : string | null , hdr ? : string , height ? : number , id : number , isAudioMuxedInVideo : boolean , isIframe : boolean , keyIds : Set < string > , kind ? : string , label : string | null , language : string , matchedStreams ? : any [] , mimeType : string , originalId : string | null , originalLanguage : string | null , pixelAspectRatio ? : string , primary : boolean , roles : string [] , segmentIndex : shaka.media.SegmentIndex | null , spatialAudio : boolean , supplementalCodecs : string , tilesLayout ? : string , trickModeVideo : any , type : string , videoLayout ? : string , width ? : number } ;
+  type ServiceLocationBaseUri = { serviceLocation : string , uri : string } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/manifest.js
+declare namespace shaka.extern {
+  type Stream = { accessibilityPurpose : shaka.media.ManifestParser.AccessibilityPurpose | null , audioSamplingRate : number | null , bandwidth ? : number , baseOriginalId : string | null , channelsCount : number | null , closeSegmentIndex ? : ( ) => any , closedCaptions : Map < string , string > | null , codecs : string , colorGamut ? : string , createSegmentIndex : shaka.extern.CreateSegmentIndexFunction , dependencyStream : any , drmInfos : shaka.extern.DrmInfo [] , emsgSchemeIdUris : string [] | null , encrypted : boolean , external : boolean , fastSwitching : boolean , forced : boolean , frameRate ? : number , fullMimeTypes : Set < string > , groupId : string | null , hdr ? : string , height ? : number , id : number , isAudioMuxedInVideo : boolean , isIframe : boolean , keyIds : Set < string > , kind ? : string , label : string | null , language : string , matchedStreams ? : any [] , mimeType : string , originalId : string | null , originalLanguage : string | null , pixelAspectRatio ? : string , preselection : shaka.extern.Preselection | null , primary : boolean , roles : string [] , segmentIndex : shaka.media.SegmentIndex | null , spatialAudio : boolean , supplementalCodecs : string , tilesLayout ? : string , trickModeVideo : any , type : string , videoLayout ? : string , width ? : number } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/manifest.js
 declare namespace shaka.extern {
@@ -4815,7 +4956,7 @@ declare namespace shaka.extern.ManifestParser {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/manifest_parser.js
 declare namespace shaka.extern.ManifestParser {
-  type PlayerInterface = { addFont : (a : string , b : string ) => any , disableStream : (a : shaka.extern.Stream ) => any , filter : (a : shaka.extern.Manifest ) => Promise < any > , getBandwidthEstimate : ( ) => number , getStreamingRetryParameters : ( ) => shaka.extern.RetryParameters , isLowLatencyMode : ( ) => boolean , makeTextStreamsForClosedCaptions : (a : shaka.extern.Manifest ) => any , networkingEngine : shaka.net.NetworkingEngine , newDrmInfo : (a : shaka.extern.Stream ) => any , onError : (a : shaka.util.Error ) => any , onEvent : shaka.util.EventManager.ListenerType , onManifestUpdated : ( ) => any , onMetadata : (a : string , b : number , c : number | null , d : shaka.extern.MetadataFrame [] ) => Promise < any > , onSegmentReceived : (a : number , b : number ) => any , onTimelineRegionAdded : (a : shaka.extern.TimelineRegionInfo ) => any , updateDuration : ( ) => any } ;
+  type PlayerInterface = { addFont : (a : string , b : string ) => any , disableStream : (a : shaka.extern.Stream ) => any , filter : (a : shaka.extern.Manifest ) => Promise < any > , getBandwidthEstimate : ( ) => number , getStreamingRetryParameters : ( ) => shaka.extern.RetryParameters , isLowLatencyMode : ( ) => boolean , makeTextStreamsForClosedCaptions : (a : shaka.extern.Manifest ) => any , networkingEngine : shaka.net.NetworkingEngine , newDrmInfo : (a : shaka.extern.Stream ) => any , onError : (a : shaka.util.Error ) => any , onEvent : shaka.util.EventManager.ListenerType , onManifestUpdated : ( ) => any , onMetadata : (a : string , b : number , c : number | null , d : shaka.extern.MetadataFrame [] ) => Promise < any > , onScte35Event : (a : shaka.extern.Scte35Event ) => any , onSegmentReceived : (a : number , b : number ) => any , onTimelineRegionAdded : (a : shaka.extern.TimelineRegionInfo ) => any , updateDuration : ( ) => any } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/metadata_parser.js
 declare namespace shaka.extern {
@@ -4881,6 +5022,249 @@ declare namespace shaka.extern.MetadataParser {
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/mp4_parser.js
 declare namespace shaka.extern {
   type ParsedBox = { flags : number | null , has64BitSize : boolean , name : string , parser : shaka.util.Mp4Parser , partialOkay : boolean , reader : shaka.util.DataViewReader , size : number , start : number , stopOnPartial : boolean , version : number | null } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/msf_dialect.js
+declare namespace shaka.extern {
+  /**
+   * Encodes and decodes the primitive types a MoQT draft is built from.
+   *
+   * This is the lowest layer of the dialect stack. It exists separately because
+   * the variable-length integer encoding is not stable across drafts: draft-16
+   * and earlier use the QUIC (RFC 9000) encoding, where the two most significant
+   * bits of the first byte give a length of 1, 2, 4 or 8 bytes, while draft-17
+   * replaced it with a leading-ones-count encoding of 1 to 9 bytes. Every integer
+   * on the wire is affected, so the codec has to be selected per draft rather
+   * than assumed.
+   *
+   * Implementations are stateless and operate on a caller-supplied byte sink or
+   * slice, which keeps them usable from both the buffered stream reader and the
+   * message writers.
+   */
+  interface MsfCodec {
+    /**
+     * Decodes a variable-length integer from a slice holding exactly the bytes
+     * of one encoded value, as reported by varIntLength().
+     */
+    decodeVarInt (bytes : Uint8Array ) : any | null ;
+    /**
+     * Decodes the variable-length integer starting at the given offset within a
+     * larger buffer, reporting how many bytes it consumed so the caller can
+     * continue.
+     */
+    decodeVarIntAt (bytes : Uint8Array , offset : number ) : { bytesRead : number , value : any | null } ;
+    /**
+     * Appends a variable-length integer to the writer.
+     */
+    encodeVarInt (writer : shaka.util.DataViewWriter , value : any | null ) : any ;
+    /**
+     * Returns the total length in bytes of the variable-length integer that
+     * starts with the given byte, so a reader knows how much to buffer before
+     * decoding.
+     */
+    varIntLength (firstByte : number ) : number ;
+  }
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/msf_dialect.js
+declare namespace shaka.extern {
+  /**
+   * A MoQT draft dialect: everything about a draft of the Media over QUIC
+   * Transport specification that differs from the other drafts, gathered behind
+   * one interface.
+   *
+   * A dialect is chosen once, when the session is established, and passed down
+   * from there. Nothing above this layer branches on the draft version, so
+   * supporting a new draft means providing an implementation of this interface
+   * and registering it with shaka.msf.DialectRegistry.
+   *
+   * The interface exists because the differences between drafts run deeper than
+   * message layouts. Draft-17 replaced the variable-length integer encoding
+   * outright, so even reading an integer is draft-specific, and message type IDs
+   * are reassigned between drafts and reused with different meanings, so each
+   * dialect owns its own type constants rather than sharing an enum.
+   */
+  interface MsfDialect {
+    /**
+     * Performs this draft's setup handshake over an established WebTransport
+     * connection and returns the resulting session.
+     *
+     * The handshake is part of the dialect because it is not stable across
+     * drafts: draft-16 opens a single bidirectional stream and exchanges
+     * CLIENT_SETUP and SERVER_SETUP over it, while draft-17 collapsed the two
+     * into one SETUP message sent on each of a pair of unidirectional streams.
+     */
+    connect (webTransport : any , config : shaka.extern.MsfManifestConfiguration , authorizationToken ? : string | null ) : Promise < shaka.extern.MsfSession > ;
+    /**
+     * The primitive codec for this draft, which encodes and decodes the
+     * variable-length integers every other field is built from.
+     */
+    getCodec ( ) : shaka.extern.MsfCodec ;
+    /**
+     * The draft number, e.g. 16. Used to order dialects by preference during
+     * negotiation, newest first.
+     */
+    getDraftNumber ( ) : number ;
+    /**
+     * The draft name, matching the shaka.config.MsfVersion value this dialect is
+     * registered under, e.g. 'draft-18'.
+     */
+    getName ( ) : string ;
+    /**
+     * The WebTransport subprotocol string that selects this draft, e.g.
+     * 'moqt-18'.
+     */
+    getSubprotocol ( ) : string ;
+  }
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/msf_dialect.js
+declare namespace shaka.extern.MsfDialect {
+  /**
+   * A factory for creating a MoQT dialect. This function is registered with
+   * shaka.msf.DialectRegistry to create dialect instances.
+   */
+  type Factory = ( ) => shaka.extern.MsfDialect ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/msf_dialect.js
+declare namespace shaka.extern {
+  /**
+   * Where an Object sits in a track: the MoQT Location, a Group ID and an
+   * Object ID within that Group.
+   *
+   * Defined here for the same reason as shaka.extern.MsfObject: it is part of
+   * the dialect plugin contract, and externs are compiled into every build,
+   * including the ones that leave the MSF parser out.
+   */
+  type MsfLocation = { group : any | null , object : any | null , subgroup ? : any | null } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/msf_dialect.js
+declare namespace shaka.extern {
+  /**
+   * An object delivered on a subscription or fetch.
+   *
+   * Defined here rather than borrowed from shaka.msf.Utils because externs are
+   * compiled into every build, including ones that leave the MSF parser out, so
+   * this file cannot depend on lib/msf being present.
+   */
+  type MsfObject = { data : Uint8Array , extensions ? : Uint8Array | null , location : shaka.extern.MsfLocation , payloadReadStartMs : number , receiveTimestampMs : number , status ? : any | null , trackAlias : any | null , trackProperties ? : Uint8Array | null } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/msf_dialect.js
+declare namespace shaka.extern {
+  type MsfObjectCallback = (a : shaka.extern.MsfObject ) => any ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/msf_dialect.js
+declare namespace shaka.extern {
+  /**
+   * An established MoQT session.
+   *
+   * This is the boundary between the draft-specific layers and the rest of the
+   * player: it speaks only intent, and hands back objects in the draft-neutral
+   * shaka.extern.MsfObject shape. Nothing above it knows how a request is
+   * addressed, how a response is matched to it, or how object data is framed --
+   * all of which change between drafts.
+   */
+  interface MsfSession extends shaka.util.IReleasable {
+    /**
+     * Closes the underlying transport.
+     */
+    close (code ? : number , reason ? : string ) : Promise < any > ;
+    configure (config : shaka.extern.MsfManifestConfiguration ) : any ;
+    /**
+     * Retrieves a track once rather than subscribing to it. Resolves when the
+     * request has been accepted; objects arrive on the callback.
+     */
+    fetch (namespace : string [] | null , trackName : string , callback : shaka.extern.MsfObjectCallback ) : Promise < any > ;
+    /**
+     * Registers a callback for namespaces the peer announces it can serve.
+     */
+    onNamespacePublished (callback : (a : string [] | null ) => any ) : ( ) => any ;
+    /**
+     * Subscribes to a track, delivering its objects to the callback until
+     * unsubscribed. Resolves with the track alias assigned by the publisher.
+     * @param startLocation Where delivery should begin, for a subscription that is not meant to start at the live edge, which is what a seek into published-but-not-yet-received content needs. Every draft carries it, though not alike: draft-18 in the SUBSCRIPTION_FILTER parameter, draft-20 in LOCATION_FILTER. A publisher may still refuse it, in which case the subscription fails rather than silently starting somewhere else.
+     * @param joinCurrentGroup Also deliver the Group the live edge is in from its first Object, rather than only what comes after the subscription starts. MSF requires it of the catalog, whose current state is the first Object of the latest Group plus the ones after it. Draft-18 does it with a Joining FETCH and draft-20 with FILL_PARAMETERS; the Objects arrive on the same callback as the subscription's, in Location order and without repeats. A session that cannot do it, or whose publisher does not answer in time, delivers only what the subscription does.
+     */
+    subscribe (namespace : string [] | null , trackName : string , callback : shaka.extern.MsfObjectCallback , startLocation ? : shaka.extern.MsfLocation | null , joinCurrentGroup ? : boolean ) : Promise < any | null > ;
+    /**
+     * Stops delivery for a subscription.
+     */
+    unsubscribe (trackAlias : any | null ) : Promise < any > ;
+  }
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/msf_packaging.js
+declare namespace shaka.extern {
+  /**
+   * How a catalog track's media is packaged into MoQT objects: everything the
+   * MSF parser needs to know about a `packaging` value, gathered behind one
+   * interface.
+   *
+   * A packaging is chosen once per track, from the catalog's `packaging` field,
+   * and nothing above this layer branches on it. Supporting a new packaging
+   * means providing an implementation of this interface and registering it with
+   * shaka.msf.PackagingRegistry.
+   *
+   * The interface has two halves because the differences between packagings run
+   * deeper than how a payload is framed. A CMAF chunk is self-describing, so one
+   * object is one segment; a LOC object is one frame, timed from a fixed frame
+   * duration; an MPEG-2 TS object is a run of transport packets that carries no
+   * timing of its own and is not independently decodable, so segments can only
+   * be cut at Group boundaries. An implementation therefore owns both how a
+   * track presents itself and how its objects turn into segments.
+   *
+   * An instance is created per track, so it may keep whatever state
+   * describeTrack() derived for createSegmenter() to use.
+   */
+  interface MsfPackaging {
+    /**
+     * Creates a segmenter for the track this instance described. Called each
+     * time the stream's segment index is created, so a track that is unsubscribed
+     * and resubscribed starts from a clean segmenter.
+     * @param codec The negotiated draft's primitive codec. A packaging whose objects carry MoQT-encoded fields -- Object Properties, for one -- needs it, because that encoding changed between draft-16 and draft-18 and the object bytes alone do not say which one they are in. Packagings that read no such field ignore it.
+     */
+    createSegmenter (codec ? : shaka.extern.MsfCodec | null ) : shaka.extern.MsfSegmenter ;
+    /**
+     * Inspects a catalog track and describes how to present it, or returns null
+     * if this packaging cannot handle the track, in which case the track is
+     * skipped. Called once per track, before any objects arrive.
+     * @param initData The track's resolved initialization data, empty when the catalog carries none. Its meaning is packaging-specific: an MP4 initialization segment for CMAF, PAT/PMT transport packets for m2ts.
+     */
+    describeTrack (track : any | null , initData : Uint8Array ) : shaka.extern.MsfTrackDescription | null ;
+  }
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/msf_packaging.js
+declare namespace shaka.extern.MsfPackaging {
+  /**
+   * A factory for creating a packaging. This function is registered with
+   * shaka.msf.PackagingRegistry to create packaging instances.
+   */
+  type Factory = ( ) => shaka.extern.MsfPackaging ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/msf_packaging.js
+declare namespace shaka.extern {
+  /**
+   * One segment, ready to append, produced from one or more MoQT objects.
+   */
+  type MsfSegment = { data : Uint8Array , discontinuitySequence : number , duration : number , startTime : number , timestampOffset : number } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/msf_packaging.js
+declare namespace shaka.extern {
+  /**
+   * Turns a track's stream of MoQT objects into segments ready to append.
+   */
+  interface MsfSegmenter {
+    /**
+     * Consumes one MoQT object and returns the segments it completed, which is
+     * usually none or one. Objects with an empty payload carry an object status
+     * rather than media and are delivered here too, because for some packagings
+     * they are the signal that a Group has ended.
+     */
+    push (obj : shaka.extern.MsfObject ) : shaka.extern.MsfSegment [] ;
+  }
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/msf_packaging.js
+declare namespace shaka.extern {
+  /**
+   * How a track presents itself, as derived from the catalog.
+   */
+  type MsfTrackDescription = { basicInfo : shaka.extern.BasicInfo , initSegmentReference : shaka.media.InitSegmentReference | null } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/net.js
 declare namespace shaka.extern {
@@ -5114,7 +5498,7 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/offline.js
 declare namespace shaka.extern {
-  type StreamDB = { audioSamplingRate : number | null , channelsCount : number | null , closedCaptions : Map < string , string > | null , codecs : string , colorGamut ? : string , encrypted : boolean , external : boolean , fastSwitching : boolean , forced : boolean , frameRate ? : number , groupId : string | null , hdr ? : string , height : number | null , id : number , isAudioMuxedInVideo : boolean , isIframe : boolean , keyIds : Set < string > , kind ? : string , label : string | null , language : string , mimeType : string , originalId : string | null , originalLanguage ? : string | null , pixelAspectRatio ? : string , primary : boolean , roles : string [] , segments : shaka.extern.SegmentDB [] , spatialAudio : boolean , tilesLayout ? : string , type : string , variantIds : number [] , videoLayout ? : string , width : number | null } ;
+  type StreamDB = { audioSamplingRate : number | null , channelsCount : number | null , closedCaptions : Map < string , string > | null , codecs : string , colorGamut ? : string , encrypted : boolean , external : boolean , fastSwitching : boolean , forced : boolean , frameRate ? : number , groupId : string | null , hdr ? : string , height : number | null , id : number , isAudioMuxedInVideo : boolean , isIframe : boolean , keyIds : Set < string > , kind ? : string , label : string | null , language : string , mimeType : string , originalId : string | null , originalLanguage ? : string | null , pixelAspectRatio ? : string , preselection : shaka.extern.Preselection | null , primary : boolean , roles : string [] , segments : shaka.extern.SegmentDB [] , spatialAudio : boolean , tilesLayout ? : string , type : string , variantIds : number [] , videoLayout ? : string , width : number | null } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/offline_compat_v1.js
 declare namespace shaka.extern {
@@ -5158,7 +5542,7 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
-  type AbrConfiguration = { advanced : shaka.extern.AdvancedAbrConfiguration , bandwidthDowngradeTarget : number , bandwidthUpgradeTarget : number , cacheLoadThreshold : number , clearBufferSwitch : boolean , defaultBandwidthEstimate : number , droppedFrames : boolean , enabled : boolean , ignoreDevicePixelRatio : boolean , minTimeToSwitch : number , preferNetworkInformationBandwidth : boolean , restrictToElementSize : boolean , restrictToScreenSize : boolean , restrictions : shaka.extern.Restrictions , safeMarginSwitch : number , switchInterval : number , useNetworkInformation : boolean } ;
+  type AbrConfiguration = { advanced : shaka.extern.AdvancedAbrConfiguration , allowAudioFallback : boolean , bandwidthDowngradeTarget : number , bandwidthUpgradeTarget : number , cacheLoadThreshold : number , clearBufferSwitch : boolean , defaultBandwidthEstimate : number , droppedFrames : boolean , enabled : boolean , ignoreDevicePixelRatio : boolean , minTimeToSwitch : number , preferNetworkInformationBandwidth : boolean , restrictToElementSize : boolean , restrictToScreenSize : boolean , restrictions : shaka.extern.Restrictions , safeMarginSwitch : number , switchInterval : number , useNetworkInformation : boolean } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
@@ -5166,7 +5550,7 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
-  type AdsConfiguration = { allowPreloadOnDomElements : boolean , allowStartInMiddleOfInterstitial : boolean , customPlayheadTracker : boolean , disableDASHInterstitial : boolean , disableHLSInterstitial : boolean , disablePlayedLinearAdSkip : boolean , disableSnapback : boolean , disableTrackingEvents : boolean , disableTrackingForPlayedLinearAds : boolean , interstitialPreloadAheadTime : number , skipPlayDetection : boolean , supportsMultipleMediaElements : boolean } ;
+  type AdsConfiguration = { allowPreloadOnDomElements : boolean , allowStartInMiddleOfInterstitial : boolean , customPlayheadTracker : boolean , disableDASHInterstitial : boolean , disableHLSInterstitial : boolean , disablePlayedLinearAdSkip : boolean , disableSVTA : boolean , disableSnapback : boolean , disableTrackingEvents : boolean , disableTrackingForPlayedLinearAds : boolean , interstitialCooldown : number , interstitialPreloadAheadTime : number , skipPlayDetection : boolean , supportsMultipleMediaElements : boolean } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
@@ -5182,7 +5566,7 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
-  type AudioTrack = { accessibilityPurpose : shaka.media.ManifestParser.AccessibilityPurpose | null , active : boolean , audioSamplingRate : number | null , channelsCount : number | null , codecs : string | null , label : string | null , language : string , mimeType : string | null , originalLanguage : string | null , primary : boolean , roles : string [] , spatialAudio : boolean } ;
+  type AudioTrack = { accessibilityPurpose : shaka.media.ManifestParser.AccessibilityPurpose | null , active : boolean , audioSamplingRate : number | null , channelsCount : number | null , codecs : string | null , id ? : number , label : string | null , language : string , mimeType : string | null , originalLanguage : string | null , primary : boolean , roles : string [] , spatialAudio : boolean } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
@@ -5202,7 +5586,7 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
-  type CmcdConfiguration = { contentId : string , enabled : boolean , eventTargets : shaka.extern.CmcdTarget [] | null , includeKeys : string [] , rtpSafetyFactor : number , sessionId : string , useHeaders : boolean , version : number } ;
+  type CmcdConfiguration = { applyParametersFromManifest : boolean , contentId : string , enabled : boolean , eventTargets : shaka.extern.CmcdTarget [] | null , includeInRequests : string [] , includeKeys : string [] , rtpSafetyFactor : number , sessionId : string , useHeaders : boolean , version : number } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
@@ -5218,7 +5602,7 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
-  type DrmConfiguration = { advanced : { [ key: string ]: shaka.extern.AdvancedDrmConfiguration } | null , clearKeys : { [ key: string ]: string } , defaultAudioRobustnessForWidevine : string , defaultVideoRobustnessForWidevine : string , delayLicenseRequestUntilPlayed : boolean , failureCallback : (a : shaka.util.Error ) => any , ignoreDuplicateInitData : boolean , initDataTransform ? : shaka.extern.InitDataTransform , keySystemsMapping : { [ key: string ]: string } , logLicenseExchange : boolean , minHdcpVersion : string , parseInbandPsshEnabled : boolean , persistentSessionOnlinePlayback : boolean , persistentSessionsMetadata : shaka.extern.PersistentSessionMetadata [] , preferredKeySystems : string [] , renewalIntervalSec : number , retryParameters : shaka.extern.RetryParameters , servers : { [ key: string ]: string } , updateExpirationTime : number } ;
+  type DrmConfiguration = { advanced : { [ key: string ]: shaka.extern.AdvancedDrmConfiguration } | null , clearKeys : { [ key: string ]: string } , defaultAudioRobustnessForWidevine : string , defaultVideoRobustnessForWidevine : string , delayLicenseRequestUntilPlayed : boolean , failureCallback : (a : shaka.util.Error ) => any , ignoreDuplicateInitData : boolean , initDataTransform ? : shaka.extern.InitDataTransform , keepDrmEngineOnDetach : boolean , keySystemsMapping : { [ key: string ]: string } , logLicenseExchange : boolean , minHdcpVersion : string , parseInbandPsshEnabled : boolean , persistentSessionOnlinePlayback : boolean , persistentSessionsMetadata : shaka.extern.PersistentSessionMetadata [] , preferredKeySystems : string [] , renewalIntervalSec : number , retryParameters : shaka.extern.RetryParameters , servers : { [ key: string ]: string } , updateExpirationTime : number } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
@@ -5294,7 +5678,7 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
-  type MediaSourceConfiguration = { addExtraFeaturesToSourceBuffer : (a : string ) => string , codecSwitchingStrategy : shaka.config.CodecSwitchingStrategy , correctEc3Enca : boolean , dispatchAllEmsgBoxes : boolean , durationReductionEmitsUpdateEnd : boolean , forceTransmux : boolean , insertFakeEncryptionInInit : boolean , modifyCueCallback : shaka.extern.TextParser.ModifyCueCallback , repairIFrames : boolean , transmuxWorkerUrl : string , useSourceElements : boolean } ;
+  type MediaSourceConfiguration = { addExtraFeaturesToSourceBuffer : (a : string ) => string , codecSwitchingStrategy : shaka.config.CodecSwitchingStrategy , correctEc3Enca : boolean , dispatchAllEmsgBoxes : boolean , durationReductionEmitsUpdateEnd : boolean , forceTransmux : boolean , insertFakeEncryptionInInit : boolean , modifyCueCallback : shaka.extern.TextParser.ModifyCueCallback , modifyPreselectionSegmentCallback : shaka.extern.ModifyPreselectionSegmentCallback , repairIFrames : boolean , transmuxWorkerUrl : string , useSourceElements : boolean } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
@@ -5310,7 +5694,11 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
-  type MsfManifestConfiguration = { authorizationToken : string , catalogPreprocessor : (a : any ) => any , fingerprintUri : string , namespaces : string [] , subscribeFilterType : shaka.config.MsfFilterType , useFetchCatalog : boolean , version : shaka.config.MsfVersion } ;
+  type ModifyPreselectionSegmentCallback = (a : shaka.extern.PreselectionSegmentInfo ) => shaka.extern.PreselectionSegmentInfo ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
+declare namespace shaka.extern {
+  type MsfManifestConfiguration = { authorizationToken : string , catalogPreprocessor : (a : any ) => any , fingerprintUri : string , namespaces : string [] , version : shaka.config.MsfVersion } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
@@ -5338,11 +5726,15 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
+  type PreselectionSegmentInfo = { contentType : string , data : ArrayBuffer | ArrayBufferView , isInitSegment : boolean , preselection : shaka.extern.Preselection , stream : shaka.extern.Stream } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
+declare namespace shaka.extern {
   type ProducerReferenceTime = { programStartDate : Date | null , wallClockTime : number } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
-  type QueueConfiguration = { preloadNextUrlWindow : number , preloadPrevItem : boolean , repeatMode : shaka.config.RepeatMode } ;
+  type QueueConfiguration = { autoPlayNext : boolean , preloadNextUrlWindow : number , preloadPrevItem : boolean , repeatMode : shaka.config.RepeatMode } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
@@ -5362,7 +5754,7 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
-  type StreamingConfiguration = { allowMediaSourceRecoveries : boolean , avoidEvictionOnQuotaExceededError : boolean , bufferBehind : number , bufferingGoal : number , clampAppendWindowToDuration : boolean , clearDecodingCache : boolean , crossBoundaryStrategy : shaka.config.CrossBoundaryStrategy , disableAudioPrefetch : boolean , disableTextPrefetch : boolean , disableVideoPrefetch : boolean , dontChooseCodecs : boolean , durationBackoff : number , evictionGoal : number , failureCallback : (a : shaka.util.Error ) => any , gapDetectionThreshold : number , gapJumpTimerTime : number , gapPadding : number , ignoreTextStreamFailures : boolean , inaccurateManifestTolerance : number , liveSync : shaka.extern.LiveSyncConfiguration , loadTimeout : number , lowLatencyMode : boolean , maxDisabledTime : number , minTimeBetweenRecoveries : number , observeQualityChanges : boolean , preferNativeDash : boolean , preferNativeHls : boolean , prefetchAudioLanguages : string [] , preloadNextUrlWindow : number , processSrcEqualMetadata : boolean , rebufferingGoal : number , retryParameters : shaka.extern.RetryParameters , returnToEndOfLiveWindowWhenOutside : boolean , safeSeekEndOffset : number , safeSeekOffset : number , segmentPrefetchLimit : number , shouldFixTimestampOffset : boolean , stallEnabled : boolean , stallSkip : number , stallThreshold : number , startAtSegmentBoundary : boolean , stopFetchingOnPause : boolean , updateIntervalSeconds : number , useNativeHlsForFairPlay : boolean , vodDynamicPlaybackRate : boolean , vodDynamicPlaybackRateBufferRatio : number , vodDynamicPlaybackRateLowBufferRate : number } ;
+  type StreamingConfiguration = { allowMediaSourceRecoveries : boolean , avoidEvictionOnQuotaExceededError : boolean , bufferBehind : number , bufferingGoal : number , clampAppendWindowToDuration : boolean , clearDecodingCache : boolean , crossBoundaryStrategy : shaka.config.CrossBoundaryStrategy , disableAudioPrefetch : boolean , disableTextPrefetch : boolean , disableVideoPrefetch : boolean , dontChooseCodecs : boolean , durationBackoff : number , evictionGoal : number , failureCallback : (a : shaka.util.Error ) => any , fallbackToNativeHlsOnMseError : boolean , gapDetectionThreshold : number , gapJumpTimerTime : number , gapPadding : number , ignoreTextStreamFailures : boolean , inaccurateManifestTolerance : number , liveSync : shaka.extern.LiveSyncConfiguration , loadTimeout : number , lowLatencyMode : boolean , maxDisabledTime : number , minTimeBetweenRecoveries : number , observeQualityChanges : boolean , preferNativeDash : boolean , preferNativeHls : boolean , prefetchAudioLanguages : string [] , preloadNextUrlWindow : number , processSrcEqualMetadata : boolean , rebufferingGoal : number , retryParameters : shaka.extern.RetryParameters , returnToEndOfLiveWindowWhenOutside : boolean , safeSeekEndOffset : number , safeSeekOffset : number , segmentPrefetchLimit : number , shouldFixTimestampOffset : boolean , stallEnabled : boolean , stallSkip : number , stallThreshold : number , startAtSegmentBoundary : boolean , stopFetchingOnPause : boolean , updateIntervalSeconds : number , useNativeHlsForFairPlay : boolean , vodDynamicPlaybackRate : boolean , vodDynamicPlaybackRateBufferRatio : number , vodDynamicPlaybackRateLowBufferRate : number } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
@@ -5370,7 +5762,7 @@ declare namespace shaka.extern {
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
-  type TextDisplayerConfiguration = { fontScaleFactor : number , positionArea : shaka.config.PositionArea , subtitleDelay : number , suspendRenderingWhenHidden : boolean } ;
+  type TextDisplayerConfiguration = { backgroundColor : string , backgroundOpacity : number , characterEdgeStyle : shaka.config.CharacterEdgeStyle , fontColor : string , fontFamily : string , fontOpacity : number , fontScaleFactor : number , positionArea : shaka.config.PositionArea , subtitleDelay : number , suspendRenderingWhenHidden : boolean } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/player.js
 declare namespace shaka.extern {
@@ -5496,6 +5888,38 @@ declare namespace shaka.extern {
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/resolution.js
 declare namespace shaka.extern {
   type Resolution = { height : number , width : number } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/scte35.js
+declare namespace shaka.extern {
+  type Scte35Event = { data : Uint8Array | null , endTime : number , id : string , kind : string , node : shaka.extern.xml.Node | null , schemeIdUri : string , source : string , startTime : number } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/svta-ad-creative-signaling.js
+declare namespace shaka.extern.AdCreativeSignaling {
+  type AdIdentifier = { scheme : string , value : string } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/svta-ad-creative-signaling.js
+declare namespace shaka.extern.AdCreativeSignaling {
+  type CarriageEnvelope = { features ? : { remoteFields : boolean } , payload : ( shaka.extern.AdCreativeSignaling.Slot | shaka.extern.AdCreativeSignaling.Pod | shaka.extern.AdCreativeSignaling.TrackingEvent | shaka.extern.AdCreativeSignaling.Verification ) [] , type ? : string , version ? : number } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/svta-ad-creative-signaling.js
+declare namespace shaka.extern.AdCreativeSignaling {
+  type Pod = { $remote ? : shaka.extern.AdCreativeSignaling.RemoteFields , duration : number , slots : shaka.extern.AdCreativeSignaling.Slot [] , start ? : number , tracking ? : shaka.extern.AdCreativeSignaling.TrackingEvent [] } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/svta-ad-creative-signaling.js
+declare namespace shaka.extern.AdCreativeSignaling {
+  type RemoteFields = { slots ? : string , tracking ? : string , verifications ? : string } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/svta-ad-creative-signaling.js
+declare namespace shaka.extern.AdCreativeSignaling {
+  type Slot = { $remote ? : shaka.extern.AdCreativeSignaling.RemoteFields , clickThrough ? : string , duration : number , identifiers : shaka.extern.AdCreativeSignaling.AdIdentifier [] , skipOffset ? : number , start : number , tracking ? : shaka.extern.AdCreativeSignaling.TrackingEvent [] , type ? : string , verifications ? : shaka.extern.AdCreativeSignaling.Verification [] } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/svta-ad-creative-signaling.js
+declare namespace shaka.extern.AdCreativeSignaling {
+  type TrackingEvent = { offset ? : number , type : string , urls : string [] } ;
+}
+// Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/svta-ad-creative-signaling.js
+declare namespace shaka.extern.AdCreativeSignaling {
+  type Verification = { parameters ? : string , resource ? : string , vendor : string } ;
 }
 // Generated from /home/runner/work/shaka-player/shaka-player/externs/shaka/text.js
 declare namespace shaka.extern {
